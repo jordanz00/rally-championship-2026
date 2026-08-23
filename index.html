@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rally Championship 2026</title>
+    <meta name="description" content="Arcade browser rally — six cars, four stages, championship mode, power slides, co-driver calls." />
+    <meta property="og:title" content="Rally Championship 2026" />
+    <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="css/game.css?v=22" />
+    <!-- Background warm: music + first stage assets while the splash is open -->
+    <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
+    <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" />
+    <link rel="prefetch" href="assets/music/forest.mp3?v=4" as="audio" />
+    <link rel="prefetch" href="assets/music/mountain.mp3?v=4" as="audio" />
+    <link rel="prefetch" href="assets/music/lakeside.mp3?v=4" as="audio" />
+    <link rel="prefetch" href="assets/music/result.mp3?v=4" as="audio" />
+    <script>
+      window.__rallyLeftTitle = false;
+      function rallyShow(id) {
+        document.querySelectorAll(".screen").forEach(function (el) {
+          el.classList.toggle("active", el.id === id);
+        });
+      }
+      function rallyLeaveTitle() {
+        var title = document.getElementById("screen-title");
+        if (!title || !title.classList.contains("active")) return;
+        window.__rallyLeftTitle = true;
+        if (window.game && typeof window.game._leaveTitle === "function") {
+          window.game._leaveTitle();
+          return;
+        }
+        rallyShow("screen-menu");
+      }
+      window.addEventListener(
+        "pointerdown",
+        function (e) {
+          var title = document.getElementById("screen-title");
+          if (!title || !title.classList.contains("active")) return;
+          if (e.target.closest("#celica-drop, a, input, details, summary, label")) return;
+          rallyLeaveTitle();
+        },
+        true
+      );
+      window.addEventListener(
+        "keydown",
+        function (e) {
+          var title = document.getElementById("screen-title");
+          if (!title || !title.classList.contains("active")) return;
+          if (e.key === "Enter" || e.key === " " || e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") {
+            e.preventDefault();
+            rallyLeaveTitle();
+          }
+        },
+        true
+      );
+
+      // Boot watchdog. A dead engine used to look identical to a slow one:
+      // the splash painted, Start advanced to SELECT MODE, and every button
+      // after that silently did nothing. Surface the real cause instead.
+      (function () {
+        var reported = false;
+        function report(label, detail) {
+          if (reported) return;
+          reported = true;
+          var el = document.getElementById("boot-error");
+          if (!el) return;
+          el.hidden = false;
+          el.textContent = label + "\n\n" + detail + "\n\nThe engine did not start. Reload with a hard refresh; if this repeats, the message above names the file at fault.";
+        }
+        window.addEventListener("error", function (e) {
+          if (e && e.target && e.target.tagName === "SCRIPT") {
+            report("Engine script failed to load.", String(e.target.src || "js/main.js"));
+            return;
+          }
+          if (e && e.message) report("Engine crashed while starting.", String(e.message) + (e.filename ? "\n" + e.filename + ":" + e.lineno : ""));
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e && e.reason;
+          report("Engine failed during async startup.", String(r && r.stack ? r.stack : r));
+        });
+        window.setTimeout(function () {
+          if (!window.game) report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct within 8s.");
+        }, 8000);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="crt">
+      <div id="game-view"></div>
+      <div class="scanlines"></div>
+
+      <section id="screen-title" class="screen active">
+          <div class="sr-emblem" aria-hidden="true">
+            <svg class="sr-emblem-svg" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg" role="img">
+              <defs>
+                <path id="sr-arc-top" d="M 52 208 Q 210 78 368 208" fill="none" />
+                <path id="sr-arc-bot" d="M 368 288 Q 210 418 52 288" fill="none" />
+              </defs>
+              <circle class="sr-red-disc" cx="210" cy="232" r="172" />
+              <text class="sr-arc-label sr-arc-label-top">
+                <textPath href="#sr-arc-top" startOffset="50%" text-anchor="middle">RALLY CHAMPIONSHIP</textPath>
+              </text>
+              <text class="sr-arc-label sr-arc-label-bot">
+                <textPath href="#sr-arc-bot" startOffset="50%" text-anchor="middle">INTERNATIONAL RALLY</textPath>
+              </text>
+            </svg>
+
+            <div class="sr-emblem-core">
+              <div class="sr-green-plate">
+                <span class="sr-green-word">RALLY</span>
+              </div>
+              <div class="sr-silver-ribbon"><span>CHAMPIONSHIP</span></div>
+              <p class="sr-year">2026</p>
+            </div>
+            <span class="sr-tm">TM</span>
+          </div>
+
+          <h1 class="sr-a11y">Rally Championship 2026</h1>
+
+          <div class="sr-push-wrap">
+            <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
+            <p class="press sr-input-hint">ENTER · SPACE · CLICK</p>
+          </div>
+
+          <footer class="sr-title-foot">
+            <details id="celica-drop">
+              <summary>Garage — drop a GLB</summary>
+              <p id="celica-status">Loading car models…</p>
+              <a class="file-link" href="https://sketchfab.com/3d-models/toyota-celica-gt4-rally-6e63b42ef7ab4d8d98b9990b0caad704" target="_blank" rel="noopener">Celica GLB (ColdLasagna)</a>
+              <a class="file-link" href="https://sketchfab.com/3d-models/free-lancia-delta-hf-integrale-evo-2-85614131e0dc4613a948472aaa935fc7" target="_blank" rel="noopener">Delta GLB (TARANTULA)</a>
+              <a class="file-link" href="https://sketchfab.com/3d-models/lancia-stratos-hf-rally-alitalia-livery-76dfbe905346419d817fa03d1e46e547" target="_blank" rel="noopener">Stratos GLB (optional drop)</a>
+              <label class="file-link">or drop / choose a GLB
+                <input id="celica-file" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" />
+              </label>
+            </details>
+          </footer>
+      </section>
+      <pre id="boot-error" hidden></pre>
+
+      <section id="screen-menu" class="screen">
+        <h2>SELECT MODE</h2>
+        <button data-menu="championship">CHAMPIONSHIP</button>
+        <button data-menu="timeattack">TIME ATTACK</button>
+        <button data-menu="practice">PRACTICE</button>
+        <button data-menu="controls">CONTROLS</button>
+      </section>
+
+      <section id="screen-cars" class="screen">
+        <h2>SELECT CAR</h2>
+        <p class="hint">Rally GLBs from assets/ — T toggles AT/MT</p>
+        <button data-car="celica">CELICA GT-FOUR  ·  4WD</button>
+        <button data-car="delta">DELTA HF  ·  4WD</button>
+        <button data-car="stratos">STRATOS HF  ·  2WD</button>
+        <button data-car="jaguar">E-TYPE  ·  RWD</button>
+        <button data-car="focus">FOCUS ST  ·  FWD</button>
+        <button data-car="accord">ACCORD SPORT  ·  FWD</button>
+        <button data-menu="back" class="ghost">BACK</button>
+      </section>
+
+      <section id="screen-courses" class="screen">
+        <h2>SELECT COURSE</h2>
+        <button data-course="desert">DESERT  ·  EASY  ·  SAFARI  ·  TUNNEL</button>
+        <button data-course="forest">FOREST  ·  MEDIUM  ·  YOSEMITE</button>
+        <button data-course="mountain">MOUNTAIN  ·  HARD  ·  CORSE</button>
+        <button data-course="lakeside" hidden>LAKESIDE  ·  BONUS</button>
+        <button data-menu="back" class="ghost">BACK</button>
+      </section>
+
+      <section id="screen-controls" class="screen">
+        <h2>CONTROLS</h2>
+        <ul>
+          <li>W / ↑  ACCEL</li>
+          <li>S / ↓  BRAKE</li>
+          <li>A D / ← →  STEER</li>
+          <li>SPACE  HANDBRAKE DRIFT</li>
+          <li>Q  DOWNSHIFT DRIFT  ·  E  UPSHIFT</li>
+          <li>T  AUTO / MANUAL</li>
+          <li>C  CAMERA  POV / MEDIUM / FAR  ·  R  RESET  ·  P  PAUSE</li>
+          <li>GAMEPAD  STICK + TRIGGERS</li>
+        </ul>
+        <p class="hint">AM3: ease the wheel — snapping opposite lock kills speed. Manual: Q while turning drifts (no brake). Auto: trail-brake and steer. Jumps: lift before the crest, then brake in the air to drop the nose. Ride the bank.</p>
+        <button data-menu="back">BACK</button>
+      </section>
+
+      <section id="screen-hud" class="screen hud">
+        <div class="hud-top">
+          <div>
+            <span class="label">COURSE</span>
+            <strong id="hud-course">DESERT</strong>
+          </div>
+          <div>
+            <span class="label">TIME</span>
+            <strong id="hud-time">0'00"00</strong>
+          </div>
+          <div>
+            <span class="label">POSITION</span>
+            <strong id="hud-pos">9th</strong>
+          </div>
+        </div>
+        <canvas id="minimap" width="140" height="100"></canvas>
+        <div id="hud-flash"></div>
+        <div id="hud-pace"></div>
+        <div id="cluster" hidden>
+          <canvas id="gauge-mph" width="280" height="280"></canvas>
+          <div class="cluster-hub">
+            <span class="cluster-gear" id="cluster-gear">1</span>
+            <small id="cluster-trans">AT</small>
+            <span class="cluster-surface" id="cluster-surface">SAND</span>
+            <div class="cluster-grip" id="cluster-grip" aria-hidden="true">
+              <span class="cluster-grip-label">GRIP</span>
+              <div class="grip-bar"><div id="cluster-grip-fill"></div></div>
+            </div>
+            <span class="cluster-slide" id="cluster-slide" hidden>SLIDE</span>
+          </div>
+          <canvas id="gauge-rpm" width="280" height="280"></canvas>
+        </div>
+        <div class="hud-bottom">
+          <div class="speed-block">
+            <span id="hud-speed">000</span>
+            <small>km/h</small>
+          </div>
+          <div class="gear-block">
+            <span id="hud-gear">1</span>
+            <small id="hud-trans">AT</small>
+            <div class="rpm"><div id="hud-rpm-fill"></div></div>
+          </div>
+          <div class="meta">
+            <div><span class="label">SURFACE</span> <strong id="hud-surface">SAND</strong></div>
+            <div><span class="label">STAGE TIME</span> <strong id="hud-best">--'--"--</strong></div>
+            <div id="hud-fps">60 FPS</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="screen-paused" class="screen">
+        <h2>PAUSED</h2>
+        <div class="vol-stack">
+          <label class="vol-row">
+            <span>MUSIC <strong id="vol-music-val">100</strong></span>
+            <input id="vol-music" type="range" min="0" max="100" step="1" value="100" aria-label="Music volume" />
+          </label>
+          <label class="vol-row">
+            <span>SFX <strong id="vol-sfx-val">100</strong></span>
+            <input id="vol-sfx" type="range" min="0" max="100" step="1" value="100" aria-label="Sound effects volume" />
+          </label>
+          <label class="vol-row">
+            <span>NAVIGATOR <strong id="vol-nav-val">100</strong></span>
+            <input id="vol-nav" type="range" min="0" max="100" step="1" value="100" aria-label="Navigator volume" />
+          </label>
+        </div>
+        <button data-menu="resume">RESUME</button>
+        <button data-menu="retry">RESTART</button>
+        <button data-menu="title">TITLE</button>
+      </section>
+
+      <section id="screen-result" class="screen">
+        <h2>RESULT</h2>
+        <p id="result-headline" class="result-headline"></p>
+        <ul id="result-detail" class="result-detail"></ul>
+        <p id="result-copy" hidden aria-hidden="true"></p>
+        <button id="result-next" data-menu="next">NEXT STAGE</button>
+        <button data-menu="retry">RETRY</button>
+        <button data-menu="title">TITLE</button>
+      </section>
+
+      <section id="screen-loading" class="screen" aria-live="polite" aria-busy="true">
+        <div class="load-shell">
+          <p class="eyebrow">RALLY CHAMPIONSHIP</p>
+          <h2 id="load-stage">LOADING STAGE</h2>
+          <p id="load-sub" class="load-sub"></p>
+          <div id="load-bar" class="load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="load-bar-fill" class="load-bar-fill"></div>
+            <div class="load-bar-shine" aria-hidden="true"></div>
+          </div>
+          <div class="load-meta">
+            <strong id="load-pct">0%</strong>
+            <span id="load-status">Preparing course…</span>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="js/main.js?v=323"></script>
+  </body>
+</html>

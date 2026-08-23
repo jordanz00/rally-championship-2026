@@ -1,0 +1,2 @@
+Honda Accord 2.0T Sport — user-provided GLB (Cursor Projects/honda_accord_2.0t_sport_2020.glb).
+Hero optimized with gltf-transform (simplify + 512² textures). Rival: rival.glb.

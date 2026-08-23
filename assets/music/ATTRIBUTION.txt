@@ -1,0 +1,40 @@
+Soundtrack beds — 44.1 kHz stereo / 320 kbps MP3 (not Sega Rally CD audio).
+Title stays Midnight Cruiser. Race and result discs are uptempo jazz fusion
+with drums, bass, and guitar. All tracks are free to use as licensed below.
+
+Title    title.mp3     "Midnight Cruiser" — Zane Little Music, New Peach Radio, CC0
+                       https://opengameart.org/content/midnight-cruiser
+                       https://ko-fi.com/zanelittle
+
+Desert   desert.mp3    "Husky Strut" — Van Loon, (Jazz Funk) Huh? Vol. 1, CC BY 4.0
+                       Guitar: Mich Shirey · Bass: Nick Fane · Drums: Dave Brandwein
+                       https://freemusicarchive.org/music/van-loon/jazz-funk-huh-vol-1/husky-strut/
+                       https://vanloon.bandcamp.com/album/huh-vol-1
+                       https://creativecommons.org/licenses/by/4.0/
+
+Forest   forest.mp3    "Badoobap" — Van Loon, (Jazz Funk) Huh? Vol. 1, CC BY 4.0
+                       Guitar: Mich Shirey · Bass: Nick Fane · Drums: Dave Brandwein
+                       https://freemusicarchive.org/music/van-loon/jazz-funk-huh-vol-1/badoobap/
+                       https://vanloon.bandcamp.com/album/huh-vol-1
+                       https://creativecommons.org/licenses/by/4.0/
+
+Mountain mountain.mp3  "Hell No" — Van Loon, (Jazz Funk) Huh? Vol. 1, CC BY 4.0
+                       Guitar: Mich Shirey · Bass: Nick Fane · Drums: Dave Brandwein
+                       https://freemusicarchive.org/music/van-loon/jazz-funk-huh-vol-1/hell-no/
+                       https://vanloon.bandcamp.com/album/huh-vol-1
+                       https://creativecommons.org/licenses/by/4.0/
+
+Lakeside lakeside.mp3  "Lan Voon" — Van Loon, (Jazz Funk) Huh? Vol. 1, CC BY 4.0
+                       Guitar: Mich Shirey · Bass: Nick Fane · Drums: Dave Brandwein
+                       https://freemusicarchive.org/music/van-loon/jazz-funk-huh-vol-1/lan-voon/
+                       https://vanloon.bandcamp.com/album/huh-vol-1
+                       https://creativecommons.org/licenses/by/4.0/
+
+Result   result.mp3    "Wednesday Night" — Zane Little Music, CC0
+                       Funk fusion; drums, bass, and guitar-forward mix.
+                       https://opengameart.org/content/wednesday-night-funk-fusion
+                       https://ko-fi.com/zanelittle
+
+Van Loon released Huh? Vol. 1 on Free Music Archive as CC BY 4.0. Zane Little
+released Midnight Cruiser and Wednesday Night as CC0. This tribute does not
+use Sega’s Saturn CD soundtrack.

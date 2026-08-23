@@ -1,0 +1,12 @@
+.DS_Store
+.backups/
+agent-tools/
+.qa/
+output/
+renders/
+node_modules/
+*.log
+.env
+.env.*
+*.pem
+*.key

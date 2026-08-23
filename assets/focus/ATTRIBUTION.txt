@@ -1,0 +1,2 @@
+Ford Focus ST — user-provided GLB (Cursor Projects/ford_focus_st.glb).
+In-game hero: focus.glb · rival LOD: rival.glb (gltf-transform simplify).

@@ -1,0 +1,46 @@
+Sound effects — recorded 44.1 kHz beds (not Sega Rally PCM).
+
+Celica GT-Four (3S-GTE)
+  celica-idle.mp3 / celica-load.mp3 / celica-lift.mp3
+  Character: 1995 Toyota Celica ST205 GT-Four WRC and 1992 ST185 GT-Four WRC
+             at Goodwood Festival of Speed — Ed Pond (Edvvc), CC BY-SA 3.0
+             https://commons.wikimedia.org/wiki/File:Toyota_WRC_Celica_ST205_GT-Four_(1995).ogg
+             https://commons.wikimedia.org/wiki/File:Toyota_WRC_Celica_ST185_GT-Four_(1992).ogg
+  Body: close-mic turbo-four exhaust — ulose2piranha, CC0
+        https://freesound.org/people/ulose2piranha/sounds/273334/
+
+Delta HF Integrale (2.0 16v turbo)
+  delta-idle.mp3 / delta-load.mp3 / delta-lift.mp3
+  Character: Renault 5 Maxi Turbo (1985) Group B turbo-four — Ed Pond (Edvvc), CC BY-SA 3.0
+             https://commons.wikimedia.org/wiki/File:Renault_5_Maxi_Turbo_(1985).ogg
+             Mitsubishi Lancer Evo IX (4G63 turbo-four) Jyväskylän Talviralli 2023
+             — Antti Leppänen, CC BY 4.0
+             https://commons.wikimedia.org/wiki/File:Mitsubishi_Lancer_Evo_IX_Jyv%C3%A4skyl%C3%A4n_Talviralli_2023_Kuohu.opus
+  Body: close-mic turbo-four exhaust pitched down — ulose2piranha, CC0
+  No freely licensed Integrale close-mic was available; these are period
+  turbo-four rally engines mixed to sit in that register.
+
+Stratos HF (Dino 2.4 V6)
+  stratos-idle.mp3 / stratos-load.mp3 / stratos-lift.mp3
+  Character: Alfa Romeo 155 DTM (1993) Italian racing V6 — Ed Pond (Edvvc), CC BY-SA 3.0
+             https://commons.wikimedia.org/wiki/File:Alfa_Romeo_155_DTM_(1993).ogg
+  Body: 3.2L V6 exhaust close-mic — EvanBoyerman, CC BY 4.0
+        https://freesound.org/people/EvanBoyerman/sounds/754777/
+        https://freesound.org/people/EvanBoyerman/sounds/754775/
+  No freely licensed Stratos/Dino close-mic was available; this is a
+  period Italian V6 howl mixed over a recorded V6 exhaust.
+
+Tires / road / UI
+  skid-asphalt.mp3  audible-edge (Tom Haigh), CC BY 3.0
+  road-gravel.mp3   seth-m, CC0
+  checkpoint.mp3    throttle blip from ulose2piranha WRX, CC0
+  overrun.mp3       overrun tail from the same recording, CC0
+
+Loops were trimmed, denoised, loudness-matched, and mixed for in-game use.
+Adapted Wikimedia recordings remain CC BY-SA 3.0. This tribute does not
+use Sega’s Saturn engine or tire samples.
+
+Crowd beds (clap / cheer)
+  Synthesised in js/audio/crowd.js at runtime — no third-party sample.
+  Soft noise-burst claps and a band-limited sports-fan wash with manual
+  Doppler (playbackRate from closing speed). Not licensed from Sega.

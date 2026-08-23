@@ -1,0 +1,49 @@
+{
+  "generated": "2026-08-23T22:06:11.105Z",
+  "cars": [
+    {
+      "id": "celica",
+      "glbs": [
+        "gt4.glb",
+        "rival.glb"
+      ]
+    },
+    {
+      "id": "delta",
+      "glbs": [
+        "integrale.glb",
+        "rival.glb"
+      ]
+    },
+    {
+      "id": "stratos",
+      "glbs": [
+        "rival.glb",
+        "stratos-lowpoly-backup.glb",
+        "stratos.glb"
+      ]
+    },
+    {
+      "id": "jaguar",
+      "glbs": [
+        "etype.glb",
+        "rival.glb"
+      ]
+    },
+    {
+      "id": "focus",
+      "glbs": [
+        "focus.glb",
+        "rival.glb"
+      ]
+    },
+    {
+      "id": "accord",
+      "glbs": [
+        "accord.glb",
+        "rival.glb"
+      ]
+    }
+  ],
+  "damageVariants": "runtime shader tiers 0-3 (author damaged.glb per car for mesh swap)"
+}

@@ -1,0 +1,2 @@
+Jaguar E-Type — user-provided GLB (Cursor Projects/jaguar_e_type.glb).
+In-game hero: etype.glb · rival LOD: rival.glb (gltf-transform simplify).

@@ -7,11 +7,170 @@
  */
 
 export const FIXED_DT = 1 / 60;
-export const MAX_SUBSTEPS = 4;
+/**
+ * Fixed steps the loop may run to catch up after one slow frame.
+ * Three lets a 20 ms hitch stay in real time; more than that and a stall
+ * would snowball into a substep spiral, so the loop drops the surplus.
+ */
+export const MAX_SUBSTEPS = 3;
 
-/** Internal Saturn-like framebuffer. Upscaled with nearest-neighbor. */
-export const INTERNAL_WIDTH = 640;
-export const INTERNAL_HEIGHT = 448;
+/** Native framebuffer — PBR needs real resolution, not a 640px Saturn blit. */
+export const INTERNAL_WIDTH = 1600;
+export const INTERNAL_HEIGHT = 900;
+
+/**
+ * GPU budget for a 60 Hz arcade pack (14 cars on Desert).
+ * Live CubeCamera is 6 extra scene draws — leave it off; sky IBL is enough.
+ * Shadows update every frame (skipping frames feels like hitching).
+ */
+export const GFX = {
+  /** Race — photoreal at 60 Hz: prefer frame time over pixel density. */
+  maxPixelRatio: 1.5,
+  maxPixels: 2800000,
+  /** Title splash — one car, no pack; afford sharper pixels and IBL. */
+  titleMaxPixelRatio: 2,
+  titleMaxPixels: 4200000,
+  /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
+  targetFps: 60,
+  lockRenderFps: true,
+  /** Title attract may render uncapped for smooth orbit on high-refresh panels. */
+  unlockFpsOnTitle: true,
+  /** Soft shadows — update every frame so the blob under the car does not strobe. */
+  shadowMap: 4096,
+  shadowExtent: 22,
+  /** Race shadow ortho half-width — tighter = sharper contact (Sprint 32 PBR). */
+  shadowExtentRace: 17,
+  shadowNear: 3,
+  shadowFar: 96,
+  shadowEvery: 1,
+  reflectEvery: 0,
+  cubeSize: 64,
+  /** Rearview RT — wide enough to read, refreshed often enough to feel live. */
+  mirrorW: 512,
+  mirrorH: 160,
+  mirrorEvery: 2,
+  /** PMREM sky capture far plane (internal bake is 256³). */
+  pmremFar: 240,
+  /**
+   * Adaptive present quality (Sprint 24 / 30 fps floor).
+   * frameMs above highMs → drop post bloom; above floorMs → emergency low + DPR cut.
+   */
+  adaptHighMs: 22,
+  adaptLowMs: 14.5,
+  /** Hard floor — present cost above this forces low post + thinner pixel ratio. */
+  adaptFloorMs: 33.3,
+  /** Minimum DPR when the 30 fps floor trips (restored when cost recovers). */
+  minPixelRatio: 0.85,
+  /** Sprint 39 — integrated GPU targets (iGPU / M-series low power). */
+  integratedFloorMs: 18.5,
+  integratedEmergencyMs: 22,
+  integratedShadowMap: 2048,
+};
+
+/**
+ * Sprint 23–25 photoreal / UE5-inspired look — Sprint 30 cinema realism (tier 13).
+ */
+export const VISUAL = {
+  realisticArcade: true,
+  /** SK1 tier — tier 13: photographic environment, textures, lighting (Sprint 30). */
+  tier: 13,
+  /** ACES filmic path + denser procedural albedo (not arcade punch alone). */
+  cinemaRealism: true,
+  /** Clearcoat paint, metal chrome, roughness maps, stronger IBL response. */
+  ue5Look: true,
+  /** Physically based sun/hemi intensities (no legacy light model). */
+  physicalLighting: true,
+  /**
+   * Photographic grade — believable midtones, restrained sat, soft bloom.
+   * Depth comes from ACES + IBL + texture, not saturation/bloom boosts.
+   */
+  postFx: true,
+  bloomStrength: 0.15,
+  bloomThreshold: 0.76,
+  vignette: 0.34,
+  gradeContrast: 1.14,
+  gradeSaturation: 1.06,
+  gradeWarmth: 0.09,
+  /** Fine film grain — cinema read; adaptive low still zeros this. */
+  sharpen: 0,
+  fxaa: false,
+  filmGrain: 0.026,
+  /** Trackside crowds, animals, trees, rocks from assets/props/*.glb. */
+  glbProps: true,
+  /** Extra dune/bank/ridge octaves + denser procedural land paint. */
+  terrainRealism: true,
+  /** Ghost only fragments on the cam→car sightline (tight tube; opaque otherwise). */
+  cameraOcclusionFade: true,
+  /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
+  aerialPerspective: true,
+  aerialStrength: 0.38,
+  aerialStart: 55,
+  aerialEnd: 640,
+  /** One authored silhouette cluster per stage (desert arch, forest cedars, lakeside pier). */
+  heroLandmarks: true,
+  /** Stronger water env response at tier 4+ (lakeside). */
+  waterReflection: true,
+  /** Rally boards at landmarks + km markers — reads as authored stage. */
+  tracksideSignage: true,
+  /** Darker/larger ground blobs under trees and hero props. */
+  contactShadowBoost: true,
+  /** Subtle UV scroll on lake surfaces (cheap motion read). */
+  waterScroll: true,
+  /** Sprint 27 — billowing rear dirt wake + grit (effects.js). */
+  rearDirtWake: true,
+  /** Stage sky dust band + horizon bounce (sky.js). */
+  envAtmosphere: true,
+  /** Tier 13 IBL — world and car read sunlit materials. */
+  worldEnvIntensity: 0.96,
+  carEnvIntensity: 0.88,
+  /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
+  pbrSkyRim: true,
+  /** Composite highlight shoulder after ACES ( tame spec bloom ). */
+  highlightRolloff: 0.11,
+  pbrSkySigma: 0,
+  /** Normal strength on road/terrain. */
+  normalStrength: 1.22,
+  /** Half-res normals — chase-cam distance; keep Sprint 24 GPU win. */
+  normalMapScale: 0.5,
+  /** Albedo ×4 + procedural roughness maps. */
+  textureScale: 4,
+  roughnessMaps: true,
+  propSegments: 16,
+  rockDetail: 3,
+};
+
+/**
+ * GTA-style world streaming — only draw geometry within a radius of the player.
+ * Load/unload align with fog so slices appear while still haze-hidden, not at
+ * the visible edge. Hysteresis stops boundary flicker.
+ */
+export const STREAM = {
+  /** Load at fog.far × this — geometry must exist before it clears the haze. */
+  loadFogFactor: 1.08,
+  /** Unload beyond fog so slices stay warm until fully fogged out. */
+  unloadFogFactor: 1.16,
+  /** Fallback radii when the scene has no fog (metres). */
+  loadRadius: 900,
+  unloadRadius: 980,
+  /** Heightmap tile edge length (metres). */
+  terrainTileSize: 256,
+  /** 24 = denser heightmap than 18 without the 32-seg fill cost. */
+  terrainTileSegs: 24,
+  backdropSectors: 16,
+  /** Spline chunks kept loaded ahead/behind the car (220 m each). */
+  prefetchChunks: 2,
+  /** Driving seconds to pre-warm streaming along the racing line. */
+  lookaheadSeconds: 3,
+  /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
+  boundsPadding: 96,
+  /** Minimum gap between load and unload when using fixed radii (metres). */
+  hysteresis: 80,
+  /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
+  minLoadRadius: 320,
+};
+
+/** Visual tarmac sits this far above the spline. Physics deck must match. */
+export const ROAD_DECK = 0.06;
 
 export const COLORS = {
   castrolGreen: 0x0a7a3c,
@@ -27,161 +186,1140 @@ export const COLORS = {
   grass: 0x3d6b32,
   sand: 0xc4a56a,
   mud: 0x4a3a28,
-  fogDesert: 0xc9b48a,
-  fogForest: 0x6a8a62,
-  fogMountain: 0x8aa0b4,
+  /** Packed driving ribbon — darker than landscape sand/grass so the line reads. */
+  ribbonSand: 0x8a6238,
+  ribbonGravel: 0x5c4a38,
+  ribbonDirt: 0x4a3018,
+  ribbonTarmac: 0x32363e,
+  ribbonCobble: 0x4e4a44,
+  ribbonMud: 0x2e2218,
+  ribbonGrass: 0x2a481c,
+  kerbCream: 0xf2ead0,
+  kerbRed: 0xd4121a,
+  dunePale: 0xd8c090,
+  fogDesert: 0xc8d8e8,
+  fogForest: 0xb8d0e8,
+  fogMountain: 0xb0cce8,
+  fogLakeside: 0xa8c8dc,
 };
 
 /**
- * Per-surface tire and chassis response.
+ * Per-stage outdoor rig: physically based sky (Rayleigh/Mie), key sun, sky fill.
+ * Sky colors stay atmospheric blue — they do not copy sand/grass/rock.
+ * sunDir is a unit-ish vector (x, y, z) toward the light.
+ */
+export const LIGHTING = {
+  desert: {
+    /**
+     * Sprint 30 cinema Desert — warm sand bounce, clear key sun, soft dust haze.
+     * Tuned for ACES (not arcade Reinhard punch).
+     */
+    skyGradient: [
+      [0.0, "#c4b090"],
+      [0.38, "#d8cdb8"],
+      [0.5, "#b8cce0"],
+      [0.62, "#5a9ed4"],
+      [0.8, "#2e7eb8"],
+      [1.0, "#1e6aa8"],
+    ],
+    skyZenith: 0x1e6aa8,
+    skyHorizon: 0xb8cce0,
+    skyTurbidity: 2.4,
+    skyRayleigh: 1.12,
+    skyMie: 0.0042,
+    skyMieG: 0.78,
+    skyExposure: 0.82,
+    sunSkyBoost: 0.92,
+    sunBloom: 0.58,
+    zenithBoost: 0.28,
+    groundBounceMix: 0.18,
+    cloudCover: 0.36,
+    cloudScale: 1.42,
+    horizonGlow: 0xe0d4c0,
+    horizonStrength: 0.32,
+    dustStrength: 0.22,
+    wind: [1.8, 0, 0.6],
+    fog: 0xc0c8d0,
+    fogNear: 340,
+    fogFar: 1280,
+    hemiSky: 0xa8c8e8,
+    hemiGround: 0xd0b080,
+    hemi: 0.78,
+    sun: 0xfff0d8,
+    sunKelvin: 5780,
+    sunInt: 2.55,
+    sunDir: [0.42, 0.86, 0.28],
+    rimSky: 0xb8d4f0,
+    rimInt: 0.26,
+    fill: 0xa0b8d0,
+    fillInt: 0.38,
+    ambient: 0xb8c4c8,
+    ambientInt: 0.28,
+    exposure: 1.12,
+    gradeWarmth: 0.12,
+    skyBack: 0x2e7eb8,
+    worldEnv: 0.92,
+  },
+  forest: {
+    /**
+     * Sprint 30 cinema Forest — cool canopy bounce, clear key, soft green ground.
+     */
+    skyGradient: [
+      [0.0, "#a8b890"],
+      [0.38, "#c8d8c0"],
+      [0.5, "#a8c8e0"],
+      [0.62, "#4a98d8"],
+      [0.82, "#2878c0"],
+      [1.0, "#1868b0"],
+    ],
+    skyZenith: 0x1868b0,
+    skyHorizon: 0xa8c8e0,
+    skyTurbidity: 2.0,
+    skyRayleigh: 1.15,
+    skyMie: 0.0032,
+    skyMieG: 0.76,
+    skyExposure: 0.84,
+    sunSkyBoost: 0.9,
+    sunBloom: 0.55,
+    zenithBoost: 0.3,
+    groundBounceMix: 0.2,
+    cloudCover: 0.44,
+    cloudScale: 1.48,
+    horizonGlow: 0xc8dcc8,
+    horizonStrength: 0.28,
+    dustStrength: 0.08,
+    wind: [0.4, 0, -0.9],
+    fog: 0xa8bcd0,
+    fogNear: 280,
+    fogFar: 1180,
+    skyBack: 0x2878c0,
+    hemiSky: 0xb0d8f0,
+    hemiGround: 0x5a8848,
+    hemi: 0.82,
+    sun: 0xfff8e8,
+    sunKelvin: 5520,
+    sunInt: 2.35,
+    sunDir: [0.4, 0.88, 0.32],
+    rimSky: 0xc0e0f8,
+    rimInt: 0.22,
+    fill: 0x88b070,
+    fillInt: 0.36,
+    ambient: 0x98b090,
+    ambientInt: 0.3,
+    exposure: 1.14,
+    gradeWarmth: 0.06,
+    worldEnv: 0.9,
+  },
+  mountain: {
+    /**
+     * Sprint 30 cinema Mountain — thin alpine air, hard key, cool rock bounce.
+     */
+    skyGradient: [
+      [0.0, "#a8b8a0"],
+      [0.4, "#c8d8d0"],
+      [0.52, "#98c4e8"],
+      [0.68, "#3a8cd8"],
+      [0.88, "#2070c8"],
+      [1.0, "#1058b0"],
+    ],
+    skyZenith: 0x1058b0,
+    skyHorizon: 0x98c4e8,
+    skyTurbidity: 1.6,
+    skyRayleigh: 1.22,
+    skyMie: 0.0026,
+    skyMieG: 0.74,
+    skyExposure: 0.86,
+    sunSkyBoost: 0.95,
+    sunBloom: 0.52,
+    zenithBoost: 0.34,
+    groundBounceMix: 0.14,
+    cloudCover: 0.32,
+    cloudScale: 1.52,
+    horizonGlow: 0xc0d8e8,
+    horizonStrength: 0.24,
+    dustStrength: 0.05,
+    wind: [2.4, 0, 1.1],
+    fog: 0xa0bcd8,
+    fogNear: 320,
+    fogFar: 1380,
+    skyBack: 0x2070c8,
+    hemiSky: 0xa8d0f0,
+    hemiGround: 0x7a7460,
+    hemi: 0.74,
+    sun: 0xfffaf5,
+    sunKelvin: 6420,
+    sunInt: 2.65,
+    sunDir: [0.48, 0.84, 0.28],
+    rimSky: 0xb0d8f8,
+    rimInt: 0.2,
+    fill: 0x88a878,
+    fillInt: 0.3,
+    ambient: 0x90a8b8,
+    ambientInt: 0.24,
+    exposure: 1.1,
+    gradeWarmth: 0.03,
+    worldEnv: 0.9,
+  },
+  lakeside: {
+    /**
+     * Sprint 30 cinema Lakeside — cool water bounce, soft mist, bright key.
+     */
+    skyGradient: [
+      [0.0, "#90b8a8"],
+      [0.38, "#b8d4d0"],
+      [0.52, "#90c4e0"],
+      [0.7, "#3a94c8"],
+      [0.9, "#2278b8"],
+      [1.0, "#1468a8"],
+    ],
+    skyZenith: 0x1468a8,
+    skyHorizon: 0x90c4e0,
+    skyTurbidity: 2.2,
+    skyRayleigh: 1.25,
+    skyMie: 0.004,
+    skyMieG: 0.76,
+    skyExposure: 0.8,
+    sunSkyBoost: 0.88,
+    sunBloom: 0.5,
+    zenithBoost: 0.26,
+    groundBounceMix: 0.22,
+    cloudCover: 0.38,
+    cloudScale: 1.4,
+    horizonGlow: 0xb8dce8,
+    horizonStrength: 0.34,
+    dustStrength: 0.18,
+    wind: [-0.8, 0, 1.4],
+    fog: 0x98b8c8,
+    fogNear: 240,
+    fogFar: 980,
+    skyBack: 0x2278b8,
+    hemiSky: 0xa0d0e8,
+    hemiGround: 0x487858,
+    hemi: 0.76,
+    sun: 0xfff0e0,
+    sunKelvin: 5980,
+    sunInt: 2.4,
+    sunDir: [0.5, 0.86, 0.2],
+    rimSky: 0xa8d8f0,
+    rimInt: 0.24,
+    fill: 0x80b8d0,
+    fillInt: 0.34,
+    ambient: 0x88a8b8,
+    ambientInt: 0.28,
+    exposure: 1.1,
+    gradeWarmth: 0.05,
+    worldEnv: 0.92,
+  },
+  /**
+   * Title attract — showroom key/fill/rim tuned for lacquer and chrome on the
+   * splash car. Brighter IBL than race so paint reads wet, not flat.
+   */
+  title: {
+    skyTurbidity: 2.8,
+    skyRayleigh: 0.92,
+    skyMie: 0.0038,
+    skyMieG: 0.74,
+    skyExposure: 0.85,
+    cloudCover: 0.06,
+    cloudScale: 1.05,
+    fog: 0x6a98c8,
+    fogNear: 38,
+    fogFar: 92,
+    skyBack: 0x6aa8e0,
+    horizonGlow: 0x98c8f0,
+    horizonStrength: 0.28,
+    dustStrength: 0,
+    hemiSky: 0xd8f0ff,
+    hemiGround: 0xb08858,
+    hemi: 1.15,
+    sun: 0xfffaf2,
+    sunInt: 2.75,
+    sunDir: [0.48, 0.82, 0.32],
+    fill: 0xf0f8ff,
+    fillInt: 1.25,
+    ambient: 0xfff4e8,
+    ambientInt: 0.42,
+    exposure: 1.45,
+    rim: 0xd0e8ff,
+    rimInt: 0.98,
+    kick: 0xfff8e0,
+    kickInt: 0.72,
+    envIntensity: 1.28,
+    bodyEnv: 1.18,
+    chromeEnv: 1.65,
+    glassEnv: 1.0,
+  },
+};
+
+/**
+ * Desert rock tunnel — fill + sconces + headlights when the sun is killed.
+ * Outdoor LIGHTING still owns the key; these values only apply while
+ * tunnelShade() blends toward 1.
+ */
+export const TUNNEL = {
+  /** Ambient floor at full shade (was ~0.08 — pitch black bore). */
+  ambientFloor: 0.58,
+  /** How much outdoor hemi survives at full shade (was 0.15). */
+  hemiRetain: 0.48,
+  /** Fill directional remnant at full shade. */
+  fillRetain: 0.22,
+  /** Overhead spot that follows the car (physical intensity). */
+  caveInt: 48,
+  caveDistance: 52,
+  caveDecay: 1.15,
+  /** Fixed wall PointLights (physical intensity). */
+  wallInt: 72,
+  wallDistance: 68,
+  wallDecay: 0.95,
+  wallColor: 0xffd9a0,
+  /** Fog inside the bore — warm brown, not black. */
+  fog: 0x5a4030,
+  fogNear: 32,
+  fogFar: 320,
+  /** Exposure multiplier at full shade. */
+  exposureBoost: 1.18,
+  /** Lens emissive when headlights are fully on. */
+  headEmissive: 18,
+  /** SpotLight beam intensity per lamp. */
+  headBeam: 520,
+  headBeamDistance: 148,
+  headBeamAngle: Math.PI / 9.2,
+  headBeamPenumbra: 0.55,
+  headBeamDecay: 1.15,
+};
+
+/**
+ * Per-surface tire and chassis response — the headline mechanic.
+ *
+ * AM3 research: "brake on tarmac and you stop; brake on mud and you begin a
+ * power slide." Each surface therefore needs three separable characters, not
+ * one grip number: how far it takes to STOP, how early it BREAKS AWAY, and
+ * how it RECOVERS once it has. The five fields below own those three jobs.
+ *
  * muPeak: peak friction. muSlide: sliding friction (drift).
+ * slipPeak: slip angle (rad) where the tire tips from grip into a holdable
+ *   slide. Small = knife-edge and late (tarmac); large = early and lazy (mud).
+ * brakeHold: 1 = the surface lets a tire sit at peak slip under braking, so
+ *   the stop is short and dead straight. 0 = the wheel locks freely and you
+ *   brake on muSlide instead. This is what makes a tarmac stop feel like a
+ *   wall and a mud stop feel like an invitation.
+ * brakeYaw: fraction of the brake pedal that becomes ROTATION instead of
+ *   deceleration once you are also steering. ~0 on tarmac, near 1 on mud —
+ *   the literal implementation of the research quote above.
+ * slideHold: how long a slide sustains itself with no driver input.
+ *   <1 self-centres (tarmac snaps straight), >1 carries (mud hangs on).
+ * gripSnap: authority of an ACTIVE recovery — countersteer and unwinding.
+ *   High = the car obeys instantly (tarmac). Low = you must be patient (mud).
+ * bumpSteer: how strongly ribbon roughness couples into yaw here.
  * roll: rolling resistance. sink: extra compression feel.
  * bump: high-frequency suspension noise amplitude (meters).
+ * color: HUD / dust / landscape. ribbon: packed driving surface (darker so the line reads).
  */
 export const SURFACES = {
   tarmac: {
     id: "tarmac",
     label: "TARMAC",
-    muPeak: 1.35,
-    muSlide: 1.05,
-    roll: 0.012,
+    muPeak: 1.55,
+    muSlide: 1.18,
+    slipPeak: 0.068,
+    /** Threshold braking holds: shortest stop on the championship, arrow-straight. */
+    brakeHold: 1.0,
+    brakeYaw: 0.06,
+    slideHold: 0.62,
+    gripSnap: 1.65,
+    bumpSteer: 0.4,
+    roll: 0.014,
     sink: 0,
-    bump: 0.004,
-    dust: 0.15,
+    bump: 0.006,
+    dust: 0,
     speedScale: 1.0,
-    driftEase: 0.55,
+    driftEase: 0.78,
+    pacejkaB: 4.2,
+    pacejkaC: 1.34,
+    pacejkaE: 0.07,
     color: COLORS.asphalt,
+    ribbon: COLORS.ribbonTarmac,
   },
   gravel: {
     id: "gravel",
     label: "GRAVEL",
-    muPeak: 0.92,
-    muSlide: 0.62,
-    roll: 0.028,
-    sink: 0.02,
+    muPeak: 1.18,
+    muSlide: 0.72,
+    slipPeak: 0.122,
+    /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
+    brakeHold: 0.52,
+    brakeYaw: 0.58,
+    slideHold: 1.28,
+    gripSnap: 1.28,
+    bumpSteer: 0.85,
+    roll: 0.026,
+    sink: 0.014,
     bump: 0.028,
     dust: 0.85,
-    speedScale: 0.92,
-    driftEase: 1.15,
+    speedScale: 0.94,
+    driftEase: 1.28,
+    pacejkaB: 3.6,
+    pacejkaC: 1.28,
+    pacejkaE: 0.12,
     color: COLORS.gravel,
+    ribbon: COLORS.ribbonGravel,
   },
   dirt: {
     id: "dirt",
     label: "DIRT",
-    muPeak: 0.78,
-    muSlide: 0.5,
-    roll: 0.035,
-    sink: 0.035,
-    bump: 0.04,
+    muPeak: 1.1,
+    muSlide: 0.8,
+    slipPeak: 0.105,
+    brakeHold: 0.48,
+    brakeYaw: 0.52,
+    slideHold: 1.18,
+    gripSnap: 1.28,
+    bumpSteer: 0.95,
+    roll: 0.03,
+    sink: 0.022,
+    bump: 0.036,
     dust: 1.0,
-    speedScale: 0.88,
-    driftEase: 1.25,
+    speedScale: 0.9,
+    driftEase: 1.18,
+    pacejkaB: 3.4,
+    pacejkaC: 1.26,
+    pacejkaE: 0.14,
     color: COLORS.dirt,
+    ribbon: COLORS.ribbonDirt,
   },
   cobble: {
     id: "cobble",
     label: "COBBLE",
-    muPeak: 1.05,
-    muSlide: 0.78,
-    roll: 0.022,
-    sink: 0.01,
-    bump: 0.055,
-    dust: 0.25,
-    speedScale: 0.94,
-    driftEase: 0.8,
+    muPeak: 1.32,
+    muSlide: 1.0,
+    slipPeak: 0.085,
+    /** Almost tarmac stopping power, but the stones steer you while you do it. */
+    brakeHold: 0.88,
+    brakeYaw: 0.18,
+    slideHold: 0.75,
+    gripSnap: 1.4,
+    bumpSteer: 1.05,
+    roll: 0.02,
+    sink: 0.008,
+    bump: 0.048,
+    dust: 0,
+    speedScale: 0.95,
+    driftEase: 0.9,
     color: COLORS.cobble,
+    ribbon: COLORS.ribbonCobble,
   },
   grass: {
     id: "grass",
     label: "GRASS",
-    muPeak: 0.55,
-    muSlide: 0.38,
-    roll: 0.055,
-    sink: 0.05,
-    bump: 0.03,
+    muPeak: 0.92,
+    muSlide: 0.68,
+    slipPeak: 0.12,
+    brakeHold: 0.42,
+    brakeYaw: 0.4,
+    slideHold: 0.98,
+    gripSnap: 1.1,
+    bumpSteer: 1.1,
+    roll: 0.048,
+    sink: 0.038,
+    bump: 0.024,
     dust: 0.35,
-    speedScale: 0.72,
+    speedScale: 0.8,
     driftEase: 1.05,
     color: COLORS.grass,
+    ribbon: COLORS.ribbonGrass,
   },
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.68,
-    muSlide: 0.42,
-    roll: 0.048,
-    sink: 0.06,
+    muPeak: 0.98,
+    muSlide: 0.64,
+    slipPeak: 0.132,
+    brakeHold: 0.42,
+    brakeYaw: 0.68,
+    slideHold: 1.48,
+    gripSnap: 1.22,
+    bumpSteer: 0.8,
+    roll: 0.04,
+    sink: 0.038,
     bump: 0.022,
     dust: 1.15,
-    speedScale: 0.82,
-    driftEase: 1.35,
-    color: COLORS.sand,
+    speedScale: 0.9,
+    driftEase: 1.36,
+    pacejkaB: 3.2,
+    pacejkaC: 1.24,
+    pacejkaE: 0.16,
+    ribbon: COLORS.ribbonSand,
   },
   mud: {
     id: "mud",
     label: "MUD",
-    muPeak: 0.48,
-    muSlide: 0.28,
-    roll: 0.07,
-    sink: 0.08,
-    bump: 0.035,
+    muPeak: 0.84,
+    muSlide: 0.58,
+    slipPeak: 0.138,
+    /** Still the loosest — brake initiates the power slide on exit. */
+    brakeHold: 0.2,
+    brakeYaw: 0.88,
+    slideHold: 1.52,
+    gripSnap: 1.05,
+    bumpSteer: 0.95,
+    roll: 0.06,
+    sink: 0.055,
+    bump: 0.032,
     dust: 0.7,
-    speedScale: 0.65,
-    driftEase: 1.4,
+    speedScale: 0.74,
+    driftEase: 1.38,
+    pacejkaB: 2.9,
+    pacejkaC: 1.22,
+    pacejkaE: 0.18,
     color: COLORS.mud,
+    ribbon: COLORS.ribbonMud,
   },
 };
 
-/** Castrol Celica GT-Four ST205-inspired chassis. */
-export const CELICA = {
-  name: "CELICA GT-FOUR",
-  mass: 1220,
-  yawInertia: 1650,
-  pitchInertia: 720,
-  rollInertia: 480,
+/**
+ * Global driving feel — the exaggeration dials.
+ *
+ * AM3 on purpose: "We didn't want to make it totally realistic because if we
+ * did that, most players would find themselves going totally out of control
+ * around every corner." Everything here trades fidelity for a car that is
+ * lively, catchable, and rewarding at the limit. The causal chain stays
+ * honest; only the gains are theatrical.
+ */
+export const HANDLING = {
+  /** Tire substeps for the player. Four keeps 240 Hz tire relaxation stable. */
+  substeps: 4,
+  /** Opponents run half the tire resolution — the pack is the perf budget. */
+  aiSubsteps: 2,
+  brakeTorqueFront: 3400,
+  brakeTorqueRear: 2300,
+  /**
+   * Rear lock — arcade e-brake must dump rear µ hard so the tail snaps out
+   * into a power slide (initiation), not a gentle scrub.
+   */
+  handbrakeTorque: 6400,
+  /** Slip ratio where longitudinal force peaks. Brake modulation aims here. */
+  peakKappa: 0.11,
+  /**
+   * Countersteer authority. Opposite lock during a slide must feel like a
+   * switch, not a suggestion — this is what turns the slide into a tool.
+   */
+  counterAuthority: 2.85,
+  /**
+   * How hard throttle pushes the slide wider on loose ground (and pulls it
+   * straight on hard ground). Scales with the surface driftEase spread, so
+   * one dial covers "throttle steers you" across all seven surfaces.
+   */
+  throttleSlide: 1.35,
+  /**
+   * Bump + steering-away amplifier. Research: two wheels on a bump plus
+   * steering away from it can end you. Amplify it, do not hide it.
+   */
+  bumpSteerAmplify: 1.25,
+  /**
+   * Ribbon roughness felt as yaw/lateral disturbance, per m/s of speed.
+   * Raise for a rougher, more nervous stage; lower for a rail.
+   */
+  bumpYawGain: 0.02,
+  /**
+   * Grade (rad) below which a stopped car may hold on stiction. Above it,
+   * gravity wins and the car rolls back down the hill.
+   */
+  stictionSlope: 0.05,
+  /**
+   * Base ceiling on lateral velocity so a slide is dramatic but never a spin.
+   * Scaled per surface by slideHold in vehicle.js (SLIDE_CAP_MIN/MAX).
+   */
+  /** Arcade power-slide ceiling — big attitude, long carry, snappy pitch-in. */
+  maxSlideVel: 17.2,
+  maxSlideVelHandbrake: 25.5,
+  /**
+   * Handbrake power-slide knobs (arcade initiation → sustain):
+   * enter = hb fraction to treat as sliding;
+   * bleedMul = lateral slip decay while e-brake held (lower = longer slide);
+   * yawKick = rotation shove when hb + steer (initiation snap);
+   * powerMul = throttle widens the slide while e-brake is held (power oversteer).
+   */
+  handbrakeEnter: 0.035,
+  handbrakeBleedMul: 0.032,
+  handbrakeYawKick: 3.15,
+  handbrakePowerMul: 2.05,
+  /** Power-slide sustain without e-brake (throttle + steer sideways). */
+  driftBleedMul: 0.048,
+  /** Lateral grip scale at full slide angle (lower = slipperier / bigger attitude). */
+  slideGripMul: 0.26,
+  /**
+   * Extra rear µ dump while e-brake is held (0 = none, 1 = almost no rear grip).
+   * This is the mechanical "lock the rears" feel of a rally handbrake turn.
+   */
+  handbrakeRearMu: 0.08,
+  /**
+   * Throttle + steer pitch-in on loose ground (no e-brake). Higher = easier
+   * to light the rear with power alone — classic arcade power slide.
+   */
+  powerSlidePitch: 1.35,
+  /**
+   * Sprint 31 — expert trail-brake rotation. Brake + steer on loose surfaces
+   * transfers weight forward and rotates the nose into the corner.
+   */
+  trailBrakeYaw: 0.44,
+  /**
+   * Sprint 31 — bonus countersteer authority when catching a slide at the limit.
+   * Scales yawFollow when opposite lock is active.
+   */
+  expertCounterMul: 1.18,
+  /**
+   * Sprint 28 — dead-stop launch. Multiplies drive torque at 0 km/h and fades
+   * linearly to 1.0 by launchFadeKmh so corners keep the same mid-speed balance.
+   */
+  launchBoost: 1.38,
+  launchFadeKmh: 78,
+  /**
+   * Player chassis stability — damped road follow instead of raw ribbon chatter.
+   * Opponents keep full chatter (lowDetail path unchanged).
+   */
+  roadChatterScale: 0.04,
+  deckFollowRate: 55,
+  /** Direct deck plant rate (1/s) — replaces spring bobble for the player. */
+  groundPlantRate: 46,
+  groundSpringHz: 28,
+  groundSpringZeta: 1.22,
+  /** Weight-transfer squat smoothing (1/s). Higher = less accel pitch bounce. */
+  squatSmoothRate: 14,
+  /**
+   * Arcade automatic — tuned for fast rally fun, not economy cruising.
+   * Hold gears near redline on throttle; drop early under brake / kick-down.
+   */
+  auto: {
+    /** Fraction of redline for WOT upshift (hold the pull). */
+    upWot: 0.955,
+    /** Light-throttle upshift (fraction of redline). */
+    upCoast: 0.68,
+    /** Kick-down when throttle is pinned and RPM is below this. */
+    kickDownRpm: 4800,
+    /** Brake-downshift floor at light brake (rises with pedal). */
+    brakeDownMin: 5000,
+    /** Brake-downshift floor at full brake / handbrake. */
+    brakeDownMax: 6400,
+    /** Coasting downshift RPM (throttle shut, no brake). */
+    coastDownRpm: 3400,
+    /** Min seconds between shifts (brake path uses the short cool). */
+    coolUp: 0.09,
+    coolDown: 0.055,
+    coolBrake: 0.04,
+  },
+};
+
+/**
+ * Jump model per Yoshio Fujimoto, the Safari rally driver who advised the
+ * Saturn team: lift off just before the crest, brake so the nose drops, land
+ * flat. Flat-out jumping is dangerous.
+ *
+ * The causal chain we implement: lifting unloads the launch (less vertical
+ * throw), braking spins the wheels down and the reaction torque drops the
+ * nose, and a chassis whose pitch matches the descent path lands on all four
+ * wheels with almost no scrub. Nose-high arrivals land tail-first, scrub, and
+ * leave the car unsettled for the next crest.
+ */
+export const JUMP = {
+  /** Seconds of lift + brake before the lip that count as full technique. */
+  techniqueWindow: 0.38,
+  /**
+   * Fraction of launch velocity kept by a perfectly executed lift.
+   * Good technique lands flatter/lower; flat-out throws higher and arrives wrong.
+   */
+  liftLaunchCut: 0.62,
+  /** Flat-out launch bonus (multiplies raw before technique cut). */
+  flatOutLaunchBoost: 1.08,
+  /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
+  liftNoseDrop: 0.2,
+  /**
+   * Apex height multiplier (h ∝ vy²). 0.2 = one-fifth the previous flight —
+   * jumps were ~5× too floaty after the variable-height pass.
+   */
+  launchHeightScale: 0.2,
+  /**
+   * Extra apex cut for AI / lowDetail pack only (h ∝ vy²). 0.2 = one-fifth of
+   * the shared launchHeightScale flight — rivals were still lofting like rockets.
+   */
+  aiLaunchHeightScale: 0.2,
+  /** Ballistic launch ceiling (m/s) after launchHeightScale. */
+  maxLaunchVy: 12,
+  /**
+   * Floor only for real lips — was 1.8 and forced a hop on every crest.
+   * Tiny transitions can leave with near-zero vertical and still glide.
+   */
+  minLaunchVy: 0.08,
+  /** Road-following vertical gain on ramps — speed × sin(pitch) × this. */
+  rampVyScale: 0.62,
+  /** How much stored ramp climb energy joins the ballistic leave (0–1). */
+  throwBlend: 0.42,
+  /**
+   * Suspension stores energy on the ramp; the lip releases it into launch speed.
+   * Scales with approach speed so fast lips pop higher than crawls.
+   */
+  springBurst: 1.8,
+  springCompressRate: 3.8,
+  springReleaseRate: 10,
+  /** Throttle/brake weight transfer into compress while climbing a lip. */
+  springThrottle: 0.48,
+  springBrake: 0.7,
+  springPitch: 3.2,
+  /**
+   * Attitude (rad, + = nose up) the driver commands in mid-air. Holding
+   * throttle keeps the wheels driving and the nose up; braking spins them
+   * down and the reaction torque tips the nose over.
+   */
+  airPitchUp: 0.24,
+  airPitchDown: 0.22,
+  airPitchRate: 4.6,
+  airPitchMax: 0.42,
+  /** In-air pitch inertia — lower = snappier rotation, higher = floaty tumble risk. */
+  airPitchInertia: 1.7,
+  airPitchDamp: 2.35,
+  /**
+   * Nose-high aero lift. Keep modest so flight stays a parabola — large values
+   * flatten the apex into a floaty hang then a late drop (reads as a hop).
+   */
+  aeroFloat: 0.11,
+  /** Pitch/path mismatch (rad) that counts as a fully botched arrival. */
+  mismatchFull: 0.3,
+  /**
+   * Speed kept on a flat landing vs a fully mismatched one.
+   *
+   * THIS IS THE PAIR THAT DECIDES WHETHER TECHNIQUE PAYS. Lifting and braking
+   * into a lip costs real speed on the approach, so a botched arrival has to
+   * cost MORE than that or the taught line is a trap and flat-out wins — which
+   * is the opposite of what the research asks for. Landing tail-first at speed
+   * therefore drags off nearly a fifth of it in one hit, on top of the grip the
+   * unsettled pool takes away afterwards. Widen the gap to make the technique
+   * matter more; narrow it to make crests more forgiving.
+   */
+  flatScrub: 0.998,
+  worstScrub: 0.72,
+  /** Yaw kick (rad/s) a fully botched landing throws at you. */
+  landUpsetYaw: 0.55,
+  /**
+   * "Teetering on the edge of control": each bad landing tops up an unsettled
+   * pool that bleeds grip and adds yaw noise. It decays over this many
+   * seconds, so a JUMP SEQUENCE compounds where a single jump forgives.
+   */
+  balanceDecay: 2.8,
+  /**
+   * Grip lost at a full unsettled pool. Enough to feel, not enough to spin.
+   * This is the other half of the technique payoff and the part that makes a
+   * jump SEQUENCE bite: the corner after a botched crest is where you actually
+   * pay for it, because the pool is still draining when you get there.
+   */
+  balanceGripLoss: 0.2,
+};
+
+/**
+ * Chassis templates — AM3 picked these because they were real WRC cars that
+ * had never raced each other (Celica vs Delta), plus the hidden 2WD Stratos.
+ */
+const CHASSIS = {
+  mass: 1260,
+  yawInertia: 1860,
+  pitchInertia: 780,
+  rollInertia: 520,
   wheelbase: 2.55,
   trackFront: 1.51,
   trackRear: 1.51,
-  cgHeight: 0.48,
+  /** Real-world overall length (m) — GLB fit target; 1 unit = 1 m in track space. */
+  lengthM: 4.37,
+  cgHeight: 0.36,
   wheelRadius: 0.32,
   restLength: 0.34,
   travel: 0.16,
-  spring: 32000,
-  damper: 4200,
-  damperBump: 4800,
-  damperRebound: 3600,
-  antiRollFront: 5200,
-  antiRollRear: 3800,
-  maxSteer: 0.58,
-  steerSpeed: 7.5,
-  peakPowerKw: 186,
+  spring: 36000,
+  damper: 5200,
+  damperBump: 5600,
+  damperRebound: 4400,
+  antiRollFront: 6200,
+  antiRollRear: 4400,
+  maxSteer: 0.48,
+  /** Near-instant lock — arcade turn-in; digital keys snap in vehicle.js. */
+  steerSpeed: 160,
+  steerReturn: 120,
+  /** Milder high-speed mute so the nose still bites above 150 km/h. */
+  steerFalloff: 0.007,
+  yawGain: 1.38,
+  /**
+   * Sprint 28 — Group A launch. peakPowerKw scales the torque map in vehicle.js.
+   * Dead-stop pull uses launchBoost + a fatter low-RPM curve + shorter 1st.
+   */
+  peakPowerKw: 272,
   redline: 7500,
   idleRpm: 950,
-  gears: [0, 3.166, 1.904, 1.258, 0.918, 0.731],
-  finalDrive: 4.285,
+  /**
+   * Index 0 is NEUTRAL (ratio 0), then four forward gears — the Saturn box.
+   * Sprint 28: shorter 1–2 for hard launches; 4th (~0.95) still meets maxSpeed.
+   */
+  gears: [0, 3.55, 2.08, 1.4, 0.95],
+  topGear: 4,
+  finalDrive: 4.35,
   drivetrain: "4wd",
-  torqueSplitFront: 0.42,
-  engineBrake: 0.18,
-  aeroDrag: 0.38,
-  downforce: 0.12,
-  maxSpeedKmh: 212,
+  torqueSplitFront: 0.5,
+  engineBrake: 0.2,
+  /** Sprint 28: less aero wall so top-end keeps pulling after the launch. */
+  aeroDrag: 0.33,
+  downforce: 0.16,
+  /** Soft ceiling (m/s × surface.speedScale). Celica cruises ~250 on tarmac. */
+  maxSpeedKmh: 250,
+  driftMul: 1.0,
 };
+
+export const CARS = {
+  celica: {
+    ...CHASSIS,
+    id: "celica",
+    name: "CELICA GT-FOUR",
+    short: "CELICA",
+    blurb: "4WD  ·  planted Castrol ST205",
+    driftMul: 1.0,
+    engineName: "3S-GTE turbo",
+    turbo: true,
+  },
+  delta: {
+    ...CHASSIS,
+    id: "delta",
+    name: "DELTA HF",
+    short: "DELTA",
+    blurb: "4WD  ·  snappier rotation",
+    lengthM: 3.85,
+    yawInertia: 1680,
+    maxSteer: 0.44,
+    steerSpeed: 170,
+    /** A hair under Celica top — same punch, still catchable in hairpins. */
+    maxSpeedKmh: 246,
+    driftMul: 1.0,
+    engineName: "2.0 16v turbo",
+    turbo: true,
+  },
+  stratos: {
+    ...CHASSIS,
+    id: "stratos",
+    name: "STRATOS HF",
+    short: "STRATOS",
+    blurb: "2WD  ·  faster, looser — King of the Desert",
+    mass: 980,
+    yawInertia: 1380,
+    lengthM: 3.71,
+    wheelbase: 2.18,
+    drivetrain: "2wd",
+    torqueSplitFront: 0,
+    maxSteer: 0.46,
+    steerSpeed: 170,
+    /** Sprint 28: stays the fastest car (~265), still surface-limited. */
+    maxSpeedKmh: 265,
+    peakPowerKw: 288,
+    driftMul: 1.04,
+    /** Starter car — unlocked with Celica / Delta from SELECT CAR. */
+    locked: false,
+    idleRpm: 1100,
+    redline: 7800,
+    /** Taller box than the 4WDs; shorter 1st for launch. */
+    gears: [0, 3.25, 1.95, 1.35, 0.92],
+    engineName: "Dino 2.4 V6",
+    turbo: false,
+  },
+  jaguar: {
+    ...CHASSIS,
+    id: "jaguar",
+    name: "E-TYPE",
+    short: "JAGUAR",
+    blurb: "RWD  ·  classic long-nose balance",
+    mass: 1080,
+    yawInertia: 1520,
+    lengthM: 4.45,
+    wheelbase: 2.44,
+    drivetrain: "2wd",
+    torqueSplitFront: 0,
+    maxSteer: 0.42,
+    steerSpeed: 165,
+    maxSpeedKmh: 252,
+    peakPowerKw: 265,
+    driftMul: 1.02,
+    locked: false,
+    engineName: "4.2 inline-six",
+    turbo: false,
+  },
+  focus: {
+    ...CHASSIS,
+    id: "focus",
+    name: "FOCUS ST",
+    short: "FOCUS",
+    blurb: "FWD  ·  sharp hot-hatch rotation",
+    mass: 1140,
+    yawInertia: 1580,
+    lengthM: 4.36,
+    wheelbase: 2.64,
+    drivetrain: "2wd",
+    torqueSplitFront: 1,
+    maxSteer: 0.45,
+    steerSpeed: 175,
+    maxSpeedKmh: 244,
+    peakPowerKw: 205,
+    driftMul: 1.06,
+    locked: false,
+    engineName: "2.0 turbo",
+    turbo: true,
+  },
+  accord: {
+    ...CHASSIS,
+    id: "accord",
+    name: "ACCORD SPORT",
+    short: "ACCORD",
+    blurb: "FWD  ·  planted sedan pace",
+    mass: 1320,
+    yawInertia: 1720,
+    lengthM: 4.86,
+    wheelbase: 2.83,
+    drivetrain: "2wd",
+    torqueSplitFront: 1,
+    maxSteer: 0.4,
+    steerSpeed: 160,
+    maxSpeedKmh: 238,
+    peakPowerKw: 192,
+    driftMul: 0.98,
+    locked: false,
+    engineName: "2.0T turbo",
+    turbo: true,
+  },
+};
+
+/** Castrol Celica GT-Four ST205-inspired chassis (default player car). */
+export const CELICA = CARS.celica;
 
 export const CAMERA = {
-  chaseDistance: 6.4,
-  chaseHeight: 2.15,
-  lookAhead: 10,
-  stiffness: 8.5,
-  fov: 55,
+  chaseDistance: 7.8,
+  chaseHeight: 2.08,
+  lookAhead: 13,
+  stiffness: 22,
+  fov: 60,
+  /**
+   * Extra FOV at speed — Model 2 “the world rushes in.”
+   * Punch ≈ speed(m/s) × speedFov, capped by maxFovPunch (~13° flat-out).
+   */
+  speedFov: 0.2,
+  maxFovPunch: 13,
+  /** World-up lean from chassis roll (arcade, not sim). */
+  rollFollow: 0.28,
+  /** How hard chase yaw tracks the car — high = no “camera late” lag. */
+  yawStiffness: 32,
+  /**
+   * Soft follow used while the lens is still far from the next view
+   * (C key). Keeps medium ↔ far ↔ POV transitions drifting, not snapping.
+   */
+  viewBlendStiffness: 7.2,
+  /** Extra-soft zoom when sliding into the cockpit seat. */
+  povBlendStiffness: 6.8,
+  /** FOV / near ease during C-key blends (independent of position catch-up). */
+  fovBlendStiffness: 5.5,
+  /** Metres from POV eye before the cabin HUD attaches (avoids mid-zoom pop). */
+  povAttachDist: 2.2,
+  /** Pull back this far before restoring the exterior body when leaving POV. */
+  povDetachDist: 2.4,
+  /** Frames to wait before the first rear-mirror capture after seating POV. */
+  mirrorDeferFrames: 12,
+  /** C cycles POV → medium chase → far. Default race view is medium. */
+  defaultMode: 1,
+  views: [
+    {
+      id: "pov",
+      label: "POV",
+      /** Fallback — per-car rig from celica.getPovRig() overrides these. */
+      eyeX: -0.38,
+      eyeY: 1.08,
+      eyeZ: 0.18,
+      lookY: 0.62,
+      lookZ: 3.8,
+      fov: 84,
+      stiffness: 14,
+      near: 0.07,
+    },
+    {
+      id: "medium",
+      label: "MEDIUM",
+      /** Default race view — slightly elevated so the road stays in frame. */
+      back: 5.05,
+      height: 2.08,
+      lookAhead: 15,
+      lookY: 0.76,
+      fov: 64,
+      /** Less speed squat than far — keeps pavement in frame flat-out. */
+      speedDropMax: 0.32,
+      stiffness: 22,
+      near: 0.18,
+    },
+    {
+      id: "far",
+      label: "FAR",
+      /** Higher / wider for pack readability — leave alone for Sprint 19 speed pass. */
+      back: 13.6,
+      height: 4.05,
+      lookAhead: 19,
+      lookY: 0.62,
+      fov: 54,
+      stiffness: 16,
+      near: 0.28,
+    },
+  ],
 };
 
+/**
+ * Arcade championship, per the research brief: ONE LAP per course, 14 computer
+ * opponents, you start 15th, and the clock is extended at checkpoints. Six
+ * checkpoints are split unevenly across the first three courses (1 / 2 / 3 —
+ * see js/tracks/courses.js). The split follows stage LENGTH, not stage count:
+ * a checkpoint buys back time proportional to how much driving is left, which
+ * lands at roughly one per 35-40 s of lap.
+ * Finishing position ROLLS OVER into the next course. Nothing hard-fails a run:
+ * walls and rivals glance, there is no off-course elimination.
+ * Lakeside unlocks only from 1st after Mountain. Practice is two laps.
+ */
 export const CHAMPIONSHIP = {
-  opponents: 8,
-  startPosition: 9,
-  checkpointBonus: 18,
-  stageTime: {
-    desert: 95,
-    forest: 105,
-    mountain: 115,
+  opponents: 14,
+  /**
+   * A full 14-car pack on every stage, as shipped. Tight stages get a longer
+   * grid pitch instead of fewer cars so the field still thins out into a
+   * believable running order before the first corner.
+   */
+  opponentsByCourse: {
+    desert: 14,
+    forest: 14,
+    mountain: 14,
+    lakeside: 14,
   },
+  startPosition: 15,
+  /** One checkpoint buys back roughly a third of a stage. */
+  checkpointBonus: 25,
+  gridSpacing: 10,
+  gridSpacingByCourse: {
+    forest: 13,
+    mountain: 13,
+    lakeside: 12,
+  },
+  practiceOpponents: 1,
+  practiceLaps: 2,
+  /**
+   * Starting clock per stage, in seconds. DIFFICULTY DIAL: raise to forgive.
+   *
+   * Calibrated against two measured reference points per stage, not guesswork:
+   *
+   *  1. A theoretical optimum from the layout itself (corner-radius-limited
+   *     speed, then a brake pass, then an accel pass, on the same per-surface mu
+   *     the tire model uses): Desert 84 s, Forest 91 s, Mountain 96 s,
+   *     Lakeside 66 s. No human hits this; it is the floor.
+   *  2. Actual driven laps by the AI field in the real physics. Front-runner /
+   *     back-marker: Desert 106/130 s, Forest 105/134 s, Mountain 122/155 s,
+   *     Lakeside 81/105 s.
+   *
+   * Total clock available is stageTime + checkpoints * checkpointBonus, so:
+   * Desert 125 s, Forest 136 s, Mountain 153 s, Lakeside 102 s. The front of the
+   * field clears that with 19-31 s in hand, and the very back of the field does
+   * not clear it at all — driving at back-marker pace should genuinely time out,
+   * which is the point of a rally clock. If the pack could not beat the clock the
+   * championship would make no sense; if everyone could, it would not be a rally.
+   *
+   * STILL NEEDS A HUMAN LAP. A real player sits somewhere between the two
+   * references and nobody has driven these in a browser yet, so treat these as a
+   * safe starting point that errs generous rather than as final balance.
+   */
+  stageTime: {
+    desert: 108,
+    forest: 68,
+    mountain: 86,
+    lakeside: 56,
+  },
+};
+
+/**
+ * Opponent pace and personality.
+ *
+ * Goal from the brief: rivals should read as drivers, not as a train. They get
+ * surface-aware pace, believable slides, occasional small mistakes, and a
+ * rubber band tight enough to stay invisible. They must be beatable, and they
+ * must never punt the player off the road.
+ */
+export const AI = {
+  /**
+   * Sprint 26: pack must outpace a throttle-only player. Floor/ceiling raised so
+   * holding accelerate without steering cannot casually take 1st on every stage.
+   */
+  skillFloor: 0.9,
+  skillCeiling: 1.05,
+  /** Corner-entry braking bias. Higher = more trail-braking, later apex. */
+  trailBrake: 0.55,
+  /** Seconds between a rival's chances to make a small mistake. */
+  mistakeInterval: 8.5,
+  /** Peak size of a mistake: a late brake, a wide line, a scruffy exit. */
+  mistakeSize: 0.22,
+  /**
+   * Catch-up authority, as a fraction of throttle. Still invisible — only when
+   * a rival is behind the player after a mistake.
+   */
+  rubberBand: 0.09,
+  /** Metres of gap at which the rubber band reaches full (still tiny) effect. */
+  rubberBandRange: 200,
+  /** Pro line: tighter apex on tarmac, wider on loose surfaces. */
+  proLineTarmac: 1.18,
+  proLineLoose: 0.82,
+  /** Extra look-ahead for braking points (metres). */
+  proLookNear: 2,
+  proLookFar: 6,
+  /** Extra skill per stage so Forest/Mountain/Lakeside rivals keep pace with the player. */
+  skillByCourse: {
+    desert: 0.02,
+    forest: 0.04,
+    mountain: 0.07,
+    lakeside: 0.1,
+  },
+  /**
+   * Rivals yield harder to the player than to each other. AM3 championship has
+   * no crash-out, so a rival must never be the reason a run ends.
+   */
+  playerRespect: 1.85,
+  /**
+   * Drift discipline. A rival that stays flat on the throttle while sideways
+   * keeps its own slide alive, scrubs all its speed away, and laps at a fraction
+   * of the pace a player manages — it looks less like a driver and more like a
+   * dog chasing its tail. These three make them LIFT when the angle gets away
+   * from them, which is what a real driver does and what makes the save read as
+   * driving rather than luck.
+   *
+   * driftTarget: slide angle (rad) a rival is happy to carry on the throttle.
+   *   About 17°, a usable rally drift, so they still look committed.
+   * driftPanic: extra angle (rad) beyond the target at which they are fully off
+   *   the throttle and just gathering it up.
+   * driftMinThrottle: they never lift ALL the way, so a slide still gets driven
+   *   out rather than dying in the middle of the road.
+   */
+  driftTarget: 0.28,
+  driftPanic: 0.45,
+  driftMinThrottle: 0.22,
+  /**
+   * Corner-speed margin. Sprint 26: rivals lean closer to the limit so a clean
+   * AI lap beats a no-steer throttle hold.
+   */
+  cornerMargin: 0.98,
+};
+
+/** Co-driver look-ahead (Kenneth Ibrahim-style pace notes). Sprint 8: act-on timing. */
+export const PACE = {
+  /** Minimum metres to scan ahead at low speed. */
+  look: 72,
+  /** Cap so hairpins do not call corners half a lap early. */
+  lookMax: 190,
+  /** Seconds of warning at speed — game.js uses max(look, speed * leadSeconds). */
+  leadSeconds: 2.85,
+  /** Seconds between shouted calls. */
+  speakGap: 2.0,
+  /** Minimum metres before the same corner can be called again at speed. */
+  recallMetres: 14,
+  /** Metres of re-call gap added per m/s of road speed. */
+  recallSpeedScale: 0.32,
+  /** Delay before medium/easy calls fire (ms). Hard calls are instant. */
+  speakDelayMs: 28,
+  hardSpeakDelayMs: 0,
 };

@@ -1,0 +1,10 @@
+Lancia Delta HF Integrale Evo 2
+Author: TARANTULA (begemot.988888)
+https://sketchfab.com/3d-models/free-lancia-delta-hf-integrale-evo-2-85614131e0dc4613a948472aaa935fc7
+License: Creative Commons Attribution 4.0 (CC BY 4.0)
+
+Public download (linked from the Sketchfab page):
+https://disk.yandex.ru/d/yle9A7wvWehbjQ
+
+The game ships a compact GLB export of that mesh (albedo only, 512px JPEG)
+as integrale.glb. Credit TARANTULA.

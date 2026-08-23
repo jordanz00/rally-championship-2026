@@ -1,0 +1,8 @@
+Toyota Celica GT4 Rally
+Author: ColdLasagna
+https://sketchfab.com/3d-models/toyota-celica-gt4-rally-6e63b42ef7ab4d8d98b9990b0caad704
+License: Creative Commons Attribution 4.0 (CC BY 4.0)
+
+Sketchfab requires a logged-in account to download. Save the official GLB here as
+gt4.glb, or drop the file on the title screen. The game loads that mesh as the
+player and AI cars.
