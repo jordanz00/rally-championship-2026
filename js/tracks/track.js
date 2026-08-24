@@ -8,11 +8,11 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=122";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=126";
 import {
   shadowGeometry,
   shadowMaterial,
-} from "./trees.js?v=27";
+} from "./trees.js?v=29";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -22,11 +22,11 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=21";
+} from "../gfx/pbr.js?v=22";
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=4";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, FOREST_TREE_KINDS, FOREST_CARD_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=16";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=9";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=5";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, FOREST_TREE_KINDS, FOREST_CARD_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=17";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=10";
 import { findAuthoredNote, authoredToNote } from "./pace-notes.js?v=2";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
@@ -177,8 +177,7 @@ export class Track {
     if (VISUAL.tracksideSignage && (VISUAL.tier || 0) >= 5) {
       this._addTracksideSignage(def);
     }
-
-    report(0.94, "Finishing materials…");
+    this._scrubRoadwayColliders();
     await tick();
     upgradeWorld(this.group);
     upgradeWorldMaterials(this.group);
@@ -199,6 +198,7 @@ export class Track {
     if (VISUAL.tracksideSignage && (VISUAL.tier || 0) >= 5) {
       this._addTracksideSignage(def);
     }
+    this._scrubRoadwayColliders();
     upgradeWorld(this.group);
     upgradeWorldMaterials(this.group);
     armCameraFade(this.group);
@@ -873,7 +873,7 @@ export class Track {
         else if (scenery === "lakeside") h = near.roadY - 0.28;
       } else if (scenery === "mountain") {
         // Hard bed through chase-cam verge — soft banks were still clipping the chassis.
-        const chase = near.roadW * 0.5 + 42;
+        const chase = near.roadW * 0.5 + 48;
         if (near.dist < chase) {
           const bed = near.roadY - 0.78;
           h = Math.min(h, bed + Math.max(0, near.dist - this._trenchWidth(near.roadW)) * 0.015);
@@ -925,6 +925,39 @@ export class Track {
    * @param {string} scenery
    */
   /**
+   * Visit spline segments that can own a world XZ: the local window around the
+   * Euclidean-nearest sample, plus every sample in nearby grid cells so a
+   * hairpin's opposite arm is not invisible to ribbon tests.
+   * @param {number} x
+   * @param {number} z
+   * @param {(i: number) => void} visit
+   */
+  _forNearbySegments(x, z, visit) {
+    const pts = this.points;
+    if (pts.length < 2) return;
+    const hit = this._nearestPointIndex(x, z);
+    const i0 = Math.max(0, hit.i - 14);
+    const i1 = Math.min(pts.length - 2, hit.i + 14);
+    for (let i = i0; i <= i1; i++) visit(i);
+    const grid = this._grid;
+    if (!grid) return;
+    const gx = Math.floor(x / CELL);
+    const gz = Math.floor(z / CELL);
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const bucket = grid.get(cellKey(gx + dx, gz + dz));
+        if (!bucket) continue;
+        for (let k = 0; k < bucket.length; k++) {
+          const i = bucket[k];
+          if (i < 0 || i >= pts.length - 1) continue;
+          if (i >= i0 && i <= i1) continue;
+          visit(i);
+        }
+      }
+    }
+  }
+
+  /**
    * Closest point on the racing ribbon — lateral metres from centreline, not
    * Euclidean distance to a spline sample (hairpins fooled the old test).
    * @param {number} x
@@ -934,7 +967,6 @@ export class Track {
     const pts = this.points;
     if (!pts.length) return { dist: 1e6, roadY: 0, roadW: 14, tunnel: false, side: 0, along: 0 };
 
-    const hit = this._nearestPointIndex(x, z);
     let bestLat = Infinity;
     let bestSide = 0;
     let bestAlong = 0;
@@ -942,9 +974,7 @@ export class Track {
     let bestW = 14;
     let bestTunnel = false;
 
-    const i0 = Math.max(0, hit.i - 2);
-    const i1 = Math.min(pts.length - 2, hit.i + 1);
-    for (let i = i0; i <= i1; i++) {
+    this._forNearbySegments(x, z, (i) => {
       const a = pts[i];
       const b = pts[i + 1];
       const dx = b.x - a.x;
@@ -970,9 +1000,10 @@ export class Track {
         bestW = a.width + (b.width - a.width) * t;
         bestTunnel = !!(a.tunnel || b.tunnel);
       }
-    }
+    });
 
     if (!Number.isFinite(bestLat)) {
+      const hit = this._nearestPointIndex(x, z);
       const p = pts[hit.i];
       const side = (x - p.x) * p.nx + (z - p.z) * p.nz;
       return {
@@ -1066,7 +1097,7 @@ export class Track {
       // Ridges follow the climbing ribbon so hairpins are not a sky-bridge.
       // Trench width must match _addLandPlane clamp so heightmap and mesh agree.
       const trench = Math.max(this._trenchWidth(roadW), roadW * 0.5 + 22);
-      const chaseFlat = roadW * 0.5 + 42;
+      const chaseFlat = roadW * 0.5 + 48;
       const rise = Math.max(40, (this._landCell || 48) * 1.15);
       const bed = roadY - 0.78;
       const washed = flatBed(bed);
@@ -2210,7 +2241,7 @@ export class Track {
           if (pick < 0.48) {
             const s = 0.9 + rng() * 2.1;
             // Keep every boulder off the racing line: radius plus a clear verge.
-            if (off - s * 0.7 > half + ROAD_VERGE + 1.2) {
+            if (off - s * 0.7 > half + ROAD_VERGE + 1.2 && this._driveClear(px, pz, Math.max(2.6, s * 0.7))) {
               rocks.push({ c: chunk, x: px, y: gy + s * 0.28, z: pz, s, rx: rng(), ry: rng() * 6, rz: rng() });
               this._bumpNearRoad(px, pz, Math.max(0.7, s * 0.55));
             } else {
@@ -2543,7 +2574,11 @@ export class Track {
     let w = 0;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
-      if (this._ribbonClear(c.x, c.z, (c.r || 0.5) * 0.85)) list[w++] = c;
+      const r = c.r || 0.5;
+      const road = this._nearestRoad(c.x, c.z);
+      // Drop only colliders whose sphere overlaps painted asphalt. Verge
+      // walls must stay; hairpin-cross solids are rejected at plant time.
+      if (road.dist - r >= road.roadW * 0.5 - 0.4) list[w++] = c;
     }
     list.length = w;
   }
@@ -2580,7 +2615,7 @@ export class Track {
 
     const AUTUMN_KINDS = ["autumn", "autumnGold", "autumn", "autumnGold", "oak"];
     scatter(farTrees, 26, scenery === "forest" ? 145 : scenery === "mountain" ? 70 : 100, (x, y, z, r, c) => {
-      if (!this._ribbonClear(x, z, 2.8)) return;
+      if (!this._driveClear(x, z, 2.8)) return;
       if (scenery === "lakeside") {
         if (y < 0.2) return;
         const road = this._nearestRoad(x, z);
@@ -2611,7 +2646,7 @@ export class Track {
     });
     scatter(farRocks, 16, scenery === "mountain" ? 130 : 110, (x, y, z, r, c) => {
       const s = 1.2 + r() * 3.4;
-      if (!this._ribbonClear(x, z, s * 0.7)) return;
+      if (!this._driveClear(x, z, s * 0.7)) return;
       const road = this._nearestRoad(x, z);
       if (scenery === "forest" || scenery === "mountain") {
         if (road.dist < road.roadW * 0.5 + s * 0.7 + 3.5) return;
@@ -3030,8 +3065,8 @@ export class Track {
       const side = rng() > 0.45 ? 1 : -1;
       const off = p.width * 0.5 + 10 + rng() * 6;
       const hx = p.x + p.nx * side * off;
-      const hz = p.z + p.nz * side * (p.width * 0.5 + 10);
-      if (!this._ribbonClear(hx, hz, 3.5)) continue;
+      const hz = p.z + p.nz * side * off;
+      if (!this._driveClear(hx, hz, 4.2)) continue;
       const hy = this._groundHeight(hx, hz, "mountain");
       const chunk = Math.min(this._chunkCount - 1, Math.max(0, Math.floor(p.dist / CHUNK_LEN)));
       if (houseGeo && rng() > 0.35) {
@@ -3239,7 +3274,7 @@ export class Track {
       this._landmarkFlats.push({
         dist0: -40,
         dist1: this.length + 90,
-        lateral: 38,
+        lateral: 46,
       });
     }
     // Sweep berms sit outside the lane; flatten the corridor so land doesn't
@@ -4110,7 +4145,7 @@ export class Track {
         const off = q.width * 0.5 + 9.2 + Math.abs(k) * 0.14;
         const bx = q.x + q.nx * outside * off;
         const bz = q.z + q.nz * outside * off;
-        if (!this._ribbonClear(bx, bz, 2.4)) continue;
+        if (!this._driveClear(bx, bz, 3.6)) continue;
         const gy = this._groundHeight(bx, bz, "desert");
         berms.push({
           c: chunk,
@@ -4291,7 +4326,7 @@ export class Track {
         const off = q.width * 0.5 + 14.5 + Math.abs(k) * 0.14;
         const bx = q.x + q.nx * outside * off;
         const bz = q.z + q.nz * outside * off;
-        if (!this._ribbonClear(bx, bz, 3.2)) continue;
+        if (!this._driveClear(bx, bz, 3.8)) continue;
         const gy = this._groundHeight(bx, bz, "mountain");
         berms.push({
           c: chunk,
@@ -4306,7 +4341,7 @@ export class Track {
       }
       const sx = p.x + p.nx * outside * (p.width * 0.5 + 13.5);
       const sz = p.z + p.nz * outside * (p.width * 0.5 + 13.5);
-      if (this._ribbonClear(sx, sz, 2.8)) {
+      if (this._driveClear(sx, sz, 3.2)) {
         shards.push({
           c: chunk,
           x: sx,
@@ -4351,7 +4386,7 @@ export class Track {
       const off = p.width * 0.5 + 11.5;
       const bx = p.x + p.nx * outside * off;
       const bz = p.z + p.nz * outside * off;
-      if (!this._ribbonClear(bx, bz, 3.0)) continue;
+      if (!this._driveClear(bx, bz, forest ? 4.0 : 3.4)) continue;
       const gy = this._groundHeight(bx, bz, scenery);
       berms.push({
         c: chunk,
@@ -4393,7 +4428,7 @@ export class Track {
         const off = q.width * 0.5 + 14.8 + Math.abs(k) * 0.12;
         const bx = q.x + q.nx * outside * off;
         const bz = q.z + q.nz * outside * off;
-        if (!this._ribbonClear(bx, bz, 3.4)) continue;
+        if (!this._driveClear(bx, bz, 3.8)) continue;
         const gy = this._groundHeight(bx, bz, "forest");
         banks.push({
           c: chunk,
@@ -4409,7 +4444,7 @@ export class Track {
       const logOff = p.width * 0.5 + 15.5;
       const lx = p.x + p.nx * outside * logOff;
       const lz = p.z + p.nz * outside * logOff;
-      if (!this._ribbonClear(lx, lz, 3.2)) continue;
+      if (!this._driveClear(lx, lz, 3.6)) continue;
       logs.push({
         c: chunk,
         x: lx,
@@ -4437,6 +4472,27 @@ export class Track {
   _ribbonClear(x, z, footprint = 0.6) {
     const road = this._nearestRoad(x, z);
     return road.dist >= road.roadW * 0.5 + ROAD_VERGE + footprint;
+  }
+
+  /**
+   * True when a solid of this radius can sit at (x,z) without overlapping any
+   * nearby ribbon — including a hairpin's opposite arm. Cardinal samples catch
+   * meshes whose AABB is larger than a centre-only test.
+   * @param {number} x
+   * @param {number} z
+   * @param {number} [footprint]
+   */
+  _driveClear(x, z, footprint = 0.6) {
+    if (!this._ribbonClear(x, z, footprint)) return false;
+    if (footprint > 1.15) {
+      const d = footprint * 0.7;
+      const inner = footprint * 0.35;
+      if (!this._ribbonClear(x + d, z, inner)) return false;
+      if (!this._ribbonClear(x - d, z, inner)) return false;
+      if (!this._ribbonClear(x, z + d, inner)) return false;
+      if (!this._ribbonClear(x, z - d, inner)) return false;
+    }
+    return true;
   }
 
   /**
@@ -4517,15 +4573,23 @@ export class Track {
       return n - 1;
     };
     const cols = [];
+    const foot = 2.5;
     for (let i = lo; i <= hi; i++) {
       const p = pts[i];
-      const off = p.width * 0.5 + 18.5;
+      // Sit just past the inner verge. Offset 18.5 + thick ~6 m punched the
+      // opposite carriageway of 15–18 m hairpins (Stage 3 clip-through).
+      const off = p.width * 0.5 + ROAD_VERGE + 3.2;
+      const thick = 3.2 + Math.sin(i * 0.55) * 0.55;
       const fx = p.x + p.nx * inside * off;
       const fz = p.z + p.nz * inside * off;
-      const gy = this._groundHeight(fx, fz, "mountain");
-      const thick = 6.2 + Math.sin(i * 0.55) * 1.6;
       const bx = fx + p.nx * inside * thick;
       const bz = fz + p.nz * inside * thick;
+      const mx = (fx + bx) * 0.5;
+      const mz = (fz + bz) * 0.5;
+      if (!this._driveClear(fx, fz, foot)) continue;
+      if (!this._driveClear(mx, mz, foot)) continue;
+      if (!this._driveClear(bx, bz, foot)) continue;
+      const gy = this._groundHeight(fx, fz, "mountain");
       const colIdx = [];
       for (let r = 0; r <= rows; r++) {
         const t = r / rows;
@@ -4546,8 +4610,9 @@ export class Track {
         const h = gy + t * (24.8 + Math.sin(i * 0.31) * 3.8);
         back.push(vert(bx, h, bz));
       }
-      cols.push({ front: colIdx, back, gy, fx, fz, bx, bz, p, i });
+      cols.push({ front: colIdx, back, gy, fx, fz, bx, bz, mx, mz, p, i });
     }
+    if (cols.length < 2) return;
     for (let c = 0; c < cols.length - 1; c++) {
       const a = cols[c];
       const b = cols[c + 1];
@@ -4586,7 +4651,8 @@ export class Track {
     // Solid face: sample bumps along the cutting so the car cannot drive through.
     for (let k = 0; k < cols.length; k++) {
       const c = cols[k];
-      this._bump(c.fx, c.fz, 2.85);
+      this._bump(c.fx, c.fz, 2.2);
+      this._bump(c.mx, c.mz, 2.0);
     }
 
     const rockMat = new THREE.MeshLambertMaterial({ color: 0x6a6258, flatShading: true });
@@ -4597,23 +4663,30 @@ export class Track {
     for (let k = 0; k < cols.length; k += 2) {
       const c = cols[k];
       const chunk = this._chunkOfDist(c.p.dist);
-      debris.push({
-        c: chunk,
-        x: c.fx + (c.p.nx || 0) * inside * 1.1,
-        y: c.gy + 0.55,
-        z: c.fz,
-        s: 0.7 + (k % 5) * 0.18,
-        rx: k * 0.4,
-        ry: k * 0.7,
-        rz: k * 0.2,
-      });
+      const dx = c.fx + (c.p.nx || 0) * inside * 1.1;
+      const dz = c.fz;
+      if (this._driveClear(dx, dz, 1.4)) {
+        debris.push({
+          c: chunk,
+          x: dx,
+          y: c.gy + 0.55,
+          z: dz,
+          s: 0.7 + (k % 5) * 0.18,
+          rx: k * 0.4,
+          ry: k * 0.7,
+          rz: k * 0.2,
+        });
+      }
       if (k === 0 || k === endK || k === endK - (endK % 2)) {
         const sh = 0.85 + (k % 3) * 0.2;
+        const sx = c.fx + c.p.nx * inside * 2.4;
+        const sz = c.fz + c.p.nz * inside * 2.4;
+        if (!this._driveClear(sx, sz, 1.6)) continue;
         shrubs.push({
           c: chunk,
-          x: c.fx + c.p.nx * inside * 2.4,
+          x: sx,
           y: c.gy,
-          z: c.fz + c.p.nz * inside * 2.4,
+          z: sz,
           s: sh,
           ry: k * 0.9,
         });
@@ -5144,8 +5217,8 @@ export class Track {
       if (obj.isMesh) obj.userData.cameraFade = true;
     });
     this.group.add(g);
-    this._bump(p.x + p.nx * (half + 1.4), p.z + p.nz * (half + 1.4), 1.3);
-    this._bump(p.x - p.nx * (half + 1.4), p.z - p.nz * (half + 1.4), 1.3);
+    this._bump(p.x + p.nx * (half + 2.6), p.z + p.nz * (half + 2.6), 1.1);
+    this._bump(p.x - p.nx * (half + 2.6), p.z - p.nz * (half + 2.6), 1.1);
   }
 
   /**
@@ -5442,7 +5515,7 @@ export class Track {
    */
   _addGantry(p, label) {
     const half = p.width * 0.5;
-    const postX = half + 0.85;
+    const postX = half + 1.8;
     const steel = new THREE.MeshLambertMaterial({ color: 0x3a3a40, flatShading: true });
     const red = new THREE.MeshLambertMaterial({ color: 0xd4121a, flatShading: true });
     const postGeo = new THREE.BoxGeometry(0.38, 5.4, 0.38);
@@ -5635,8 +5708,8 @@ export class Track {
     let segI = Math.max(0, best - 1);
     let segT = 0;
     let segD = Infinity;
-    const s0 = Math.max(0, best - 3);
-    const s1 = Math.min(pts.length - 2, best + 2);
+    const s0 = Math.max(0, best - 12);
+    const s1 = Math.min(pts.length - 2, best + 12);
     for (let i = s0; i <= s1; i++) {
       const a = pts[i];
       const b = pts[i + 1];
@@ -5856,7 +5929,7 @@ export class Track {
   _bumpNearRoad(x, z, r, maxDist = 34) {
     const road = this._nearestRoad(x, z);
     if (road.dist > maxDist) return;
-    if (road.dist < road.roadW * 0.5 + 0.85) return;
+    if (road.dist - r < road.roadW * 0.5 + 1.15) return;
     this._bump(x, z, r);
   }
 

@@ -96,9 +96,28 @@ check(
 );
 
 check(
-  "launch squat readability",
-  /squatMax = 0\.11/.test(vehicle),
-  "squatMax 0.11"
+  "accel squat not driven by _ax",
+  /Accel\/brake used to add a sprung squat/.test(vehicle) &&
+    !/squatTarget = clamp\(-this\._ax/.test(vehicle),
+  "visual pitch must not chase longitudinal accel"
+);
+
+check(
+  "kappa relaxation kills wheel hop",
+  /RELAX_KAPPA/.test(vehicle) && /this\._kappaF/.test(vehicle),
+  "longitudinal slip must lag like slip angle"
+);
+
+check(
+  "smooth traction cut (no bang-bang TC)",
+  /over \* over \* 48/.test(vehicle) && !/\(kappaR - kSoft\) \* 8/.test(vehicle),
+  "TC must not use linear gain 8"
+);
+
+check(
+  "_ax blended once per frame",
+  /axSum \+= next\.axTire/.test(vehicle) && /Blending once/.test(vehicle),
+  "load transfer must not update inside each tire substep"
 );
 
 // Live graph after Sprint 27/28 stack — assert floor versions, not pin exact.

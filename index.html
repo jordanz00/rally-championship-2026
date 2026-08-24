@@ -2,13 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#050705" />
+    <meta name="format-detection" content="telephone=no" />
     <title>Rally Championship 2026</title>
     <meta name="description" content="Arcade browser rally — six cars, four stages, championship mode, power slides, co-driver calls." />
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=22" />
+    <link rel="stylesheet" href="css/game.css?v=23" />
     <!-- Background warm: music + first stage assets while the splash is open -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" />
@@ -96,7 +104,7 @@
             <svg class="sr-emblem-svg" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg" role="img">
               <defs>
                 <path id="sr-arc-top" d="M 52 208 Q 210 78 368 208" fill="none" />
-                <path id="sr-arc-bot" d="M 368 288 Q 210 418 52 288" fill="none" />
+                <path id="sr-arc-bot" d="M 52 288 Q 210 418 368 288" fill="none" />
               </defs>
               <circle class="sr-red-disc" cx="210" cy="232" r="172" />
               <text class="sr-arc-label sr-arc-label-top">
@@ -121,7 +129,7 @@
 
           <div class="sr-push-wrap">
             <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
-            <p class="press sr-input-hint">ENTER · SPACE · CLICK</p>
+            <p class="press sr-input-hint">ENTER · SPACE · TAP</p>
           </div>
 
           <footer class="sr-title-foot">
@@ -179,6 +187,8 @@
           <li>T  AUTO / MANUAL</li>
           <li>C  CAMERA  POV / MEDIUM / FAR  ·  R  RESET  ·  P  PAUSE</li>
           <li>GAMEPAD  STICK + TRIGGERS</li>
+          <li>PHONE  GAS / BRAKE / HB on the right</li>
+          <li>PHONE  STEER pad on the left, or TILT the handset like a wheel</li>
         </ul>
         <p class="hint">AM3: ease the wheel — snapping opposite lock kills speed. Manual: Q while turning drifts (no brake). Auto: trail-brake and steer. Jumps: lift before the crest, then brake in the air to drop the nose. Ride the bank.</p>
         <button data-menu="back">BACK</button>
@@ -234,6 +244,30 @@
         </div>
       </section>
 
+      <div id="touch-hud" hidden>
+        <p id="orient-hint" hidden>Turn the phone sideways</p>
+        <p id="touch-tilt-note" class="touch-tilt-note"></p>
+        <div class="touch-top">
+          <button type="button" class="touch-chip" id="touch-pause" aria-label="Pause">II</button>
+          <div class="touch-modes" role="group" aria-label="Steering mode">
+            <button type="button" class="touch-chip on" id="touch-mode-pad">STEER</button>
+            <button type="button" class="touch-chip" id="touch-mode-tilt">TILT</button>
+          </div>
+          <button type="button" class="touch-chip" id="touch-cam" aria-label="Camera">CAM</button>
+        </div>
+        <div class="touch-steer" id="touch-steer" role="slider" aria-label="Steering" aria-valuemin="-1" aria-valuemax="1">
+          <span class="touch-steer-label">STEER</span>
+          <div class="touch-steer-track">
+            <div class="touch-steer-knob" id="touch-steer-knob"></div>
+          </div>
+        </div>
+        <div class="touch-pedals">
+          <button type="button" class="touch-pedal hb" id="touch-hb">HB</button>
+          <button type="button" class="touch-pedal brake" id="touch-brake">BRAKE</button>
+          <button type="button" class="touch-pedal gas" id="touch-gas">GAS</button>
+        </div>
+      </div>
+
       <section id="screen-paused" class="screen">
         <h2>PAUSED</h2>
         <div class="vol-stack">
@@ -281,6 +315,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=323"></script>
+    <script type="module" src="js/main.js?v=341"></script>
   </body>
 </html>

@@ -45,10 +45,10 @@ export const GFX = {
   shadowEvery: 1,
   reflectEvery: 0,
   cubeSize: 64,
-  /** Rearview RT — wide enough to read, refreshed often enough to feel live. */
-  mirrorW: 512,
-  mirrorH: 160,
-  mirrorEvery: 2,
+  /** Rearview RT — wide enough to read as glass, captured every POV frame. */
+  mirrorW: 640,
+  mirrorH: 200,
+  mirrorEvery: 1,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
   /**
@@ -783,7 +783,7 @@ export const HANDLING = {
   groundPlantRate: 46,
   groundSpringHz: 28,
   groundSpringZeta: 1.22,
-  /** Weight-transfer squat smoothing (1/s). Higher = less accel pitch bounce. */
+  /** Landing-squash follow rate (1/s). Accel/brake no longer pitch the mesh. */
   squatSmoothRate: 14,
   /**
    * Arcade automatic — tuned for fast rally fun, not economy cruising.
@@ -1095,7 +1095,7 @@ export const CAMERA = {
   chaseDistance: 7.8,
   chaseHeight: 2.08,
   lookAhead: 13,
-  stiffness: 22,
+  stiffness: 28,
   fov: 60,
   /**
    * Extra FOV at speed — Model 2 “the world rushes in.”
@@ -1104,24 +1104,26 @@ export const CAMERA = {
   speedFov: 0.2,
   maxFovPunch: 13,
   /** World-up lean from chassis roll (arcade, not sim). */
-  rollFollow: 0.28,
+  rollFollow: 0.22,
   /** How hard chase yaw tracks the car — high = no “camera late” lag. */
-  yawStiffness: 32,
+  yawStiffness: 36,
   /**
-   * Soft follow used while the lens is still far from the next view
-   * (C key). Keeps medium ↔ far ↔ POV transitions drifting, not snapping.
+   * Seconds for a C-key pose ease. The from-pose rides with the car — a world
+   * freeze at 0.3s read as a hang while the stage kept moving.
    */
-  viewBlendStiffness: 7.2,
-  /** Extra-soft zoom when sliding into the cockpit seat. */
-  povBlendStiffness: 6.8,
-  /** FOV / near ease during C-key blends (independent of position catch-up). */
-  fovBlendStiffness: 5.5,
-  /** Metres from POV eye before the cabin HUD attaches (avoids mid-zoom pop). */
-  povAttachDist: 2.2,
+  viewBlendTime: 0.12,
+  /** Chase follow while settled — snappy, no float. */
+  viewBlendStiffness: 26,
+  /** Seat lock once POV blend finishes (hard copy, this is a fallback). */
+  povBlendStiffness: 42,
+  /** FOV / near ease — matches the pose so the lens does not lag the cut. */
+  fovBlendStiffness: 22,
+  /** Metres from POV eye before the cabin attaches. */
+  povAttachDist: 1.35,
   /** Pull back this far before restoring the exterior body when leaving POV. */
-  povDetachDist: 2.4,
+  povDetachDist: 1.6,
   /** Frames to wait before the first rear-mirror capture after seating POV. */
-  mirrorDeferFrames: 12,
+  mirrorDeferFrames: 1,
   /** C cycles POV → medium chase → far. Default race view is medium. */
   defaultMode: 1,
   views: [
@@ -1129,28 +1131,28 @@ export const CAMERA = {
       id: "pov",
       label: "POV",
       /** Fallback — per-car rig from celica.getPovRig() overrides these. */
-      eyeX: -0.38,
-      eyeY: 1.08,
-      eyeZ: 0.18,
-      lookY: 0.62,
-      lookZ: 3.8,
-      fov: 84,
-      stiffness: 14,
-      near: 0.07,
+      eyeX: -0.36,
+      eyeY: 1.12,
+      eyeZ: -0.12,
+      lookY: 1.02,
+      lookZ: 3.4,
+      fov: 70,
+      stiffness: 42,
+      near: 0.05,
     },
     {
       id: "medium",
       label: "MEDIUM",
-      /** Default race view — slightly elevated so the road stays in frame. */
-      back: 5.05,
-      height: 2.08,
-      lookAhead: 15,
-      lookY: 0.76,
-      fov: 64,
-      /** Less speed squat than far — keeps pavement in frame flat-out. */
-      speedDropMax: 0.32,
-      stiffness: 22,
-      near: 0.18,
+      /** Default chase — 50% further back than 3.98 m so the rear bumper stays in frame. */
+      back: 5.97,
+      height: 1.80,
+      lookAhead: 8.2,
+      lookY: 0.5,
+      fov: 62,
+      /** Mild speed squat — keeps pavement in frame without burying the roof. */
+      speedDropMax: 0.16,
+      stiffness: 28,
+      near: 0.22,
     },
     {
       id: "far",
@@ -1161,7 +1163,7 @@ export const CAMERA = {
       lookAhead: 19,
       lookY: 0.62,
       fov: 54,
-      stiffness: 16,
+      stiffness: 18,
       near: 0.28,
     },
   ],

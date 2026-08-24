@@ -8,6 +8,12 @@
  *   updateCockpit() gauge needles.
  */
 
+import * as THREE from "../../vendor/three.module.js";
+
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+
 /**
  * @param {THREE.Object3D} root car root with userData.steerWheel
  * @param {{steer:number, gear:number, dt:number, yawRate?:number, hitWall?:number, slidePct?:number}} state
@@ -52,16 +58,22 @@ export function updateCockpitMotion(root, state) {
   anim.headVel *= 0.88;
   anim.headPitch += anim.headVel * dt;
 
-  if (ud.steerWheel) {
-    ud.steerWheel.rotation.z = anim.wheelZ;
-    ud.steerWheel.position.y = (ud._wheelBaseY ?? ud.steerWheel.position.y) + anim.shiftT * 0.018;
-    if (ud._wheelBaseY == null) ud._wheelBaseY = ud.steerWheel.position.y;
+  const wheel = ud.steerWheel;
+  if (wheel) {
+    if (ud.glbSteerWheel && ud._wheelBaseQuat) {
+      wheel.quaternion.copy(ud._wheelBaseQuat);
+      const ax = ud.steerAxis === "x" ? AXIS_X : ud.steerAxis === "y" ? AXIS_Y : AXIS_Z;
+      wheel.rotateOnAxis(ax, anim.wheelZ);
+    } else {
+      wheel.rotation.z = anim.wheelZ;
+      wheel.position.y = (ud._wheelBaseY ?? wheel.position.y) + anim.shiftT * 0.018;
+      if (ud._wheelBaseY == null) ud._wheelBaseY = wheel.position.y;
+    }
   }
 
   const pov = ud.povRig;
   if (pov && pov.head) {
     pov.head.rotation.x = anim.headPitch * 0.35;
-    pov.head.position.z = (pov._headBaseZ ?? pov.head.position.z) - anim.shiftT * 0.04;
-    if (pov._headBaseZ == null) pov._headBaseZ = pov.head.position.z;
+    pov.head.position.z = pov.eyeZ - anim.shiftT * 0.04;
   }
 }

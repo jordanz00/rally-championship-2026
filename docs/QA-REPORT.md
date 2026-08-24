@@ -1165,3 +1165,94 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 
 **Still human-only:** headed iGPU matrix; staff ghost JSON; mocap BVH; online ghost server; photogrammetry capture.
 
+---
+
+# Camera overhaul — close chase + seated POV + live mirror (23 Aug 2026)
+
+**Player moment:** Default medium chase sits close and low like Sega Rally (car large in the lower third). C cycles POV → medium → far in ~0.3 s with no hang. POV is the driver seat: windshield/roof stripped, cabin + working ST205 cluster, animated wheel, and a rearview that renders the road behind.
+
+| Deliverable | Status |
+|-------------|--------|
+| **Medium chase** `back: 3.98` `height: 1.80` `fov: 62` | **Done** (`config.js` `CAMERA.views`) |
+| **C-key blend** 0.3 s smoothstep, then POV hard-locks to `rig.head` | **Done** (`game.js` `_chaseCam`) |
+| **Seated eye** in front of the seat, looking over the dash/hood; no cabin glass | **Done** (`celica.js` `buildPovRig` / `tagWindshield`) |
+| **Gauges** ~48 mm dials, vmax/redline from `CARS` spec | **Done** |
+| **Rearview** 640×200 RT every POV frame on physical glass | **Done** (`GFX.mirrorEvery: 1`) |
+| `tools/qa-sprint37-camera.mjs` | **PASS** |
+| `tools/qa-sprint19-speed.mjs` | **PASS** (no FOV/speed regression) |
+| `tools/qa-static-audit.mjs` | **PASS** (config unified at `?v=123`) |
+
+**Cache:** `main.js?v=335` · `game.js?v=335` · `config.js?v=125` · `celica.js?v=109` · `ai.js?v=98` · `cockpit-anim.js?v=3`
+
+**Medium chase (23 Aug 2026):** `back` 3.18 → 3.98 (+25%), `height` 1.24 → 1.80 (+45%). Default chase sits further off the bumper and higher so the car is not filling the lower third.
+
+**LHD POV (23 Aug 2026):** Driver eye is clamped to negative X. If the GLB has a named rim (`STEER_HR` / `SteeringWheel`), that mesh is reparented and shown in cockpit view — no second torus. RHD rims are shifted across to the left seat. Cars without a modeled wheel still get the procedural rim.
+
+**Still human-only:** headed C-key cycle on Desert (medium size vs lakeside reference; POV gauges + mirror while turning). LHD Celica: one modeled wheel, no duplicate torus.
+
+---
+
+# Sprint 38 — Environment clip-through (23 Aug 2026)
+
+**Player moment:** The car must not pass through land, cliff, berm, rock, or house polygons on any stage. Stage 3 (Mountain / Tour de Corse) was the worst: the authored hairpin cutting sat 18.5 m inside a 15–18 m radius turn, so the back face occupied the opposite carriageway with no collider.
+
+**CEO:** Ship-blocker. Close it; do not carry a PARTIAL.
+
+| Change | Status |
+|--------|--------|
+| `_nearestRoad` searches local spline **and** nearby grid cells (opposite hairpin arm) | **Done** |
+| Stage 3 cliff sits at `half + ROAD_VERGE + 3.2` with ~3.2 m thickness; columns skipped unless `_driveClear` on face, mid, and back | **Done** |
+| `_driveClear` cardinal samples for large footprints (rocks, berms, village, wild scatter) | **Done** |
+| Colliders whose sphere overlaps painted asphalt are scrubbed; verge walls stay | **Done** |
+| Mountain land trench chase **48 m**; landmark wash lateral **46 m** | **Done** |
+| `tools/qa-env-clip.mjs` | **run this sprint** |
+| `tools/qa-static-audit.mjs` | **run this sprint** |
+| `tools/qa-sprint26-solid.mjs` | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=336`** · `track.js?v=164`
+
+**Still human-only:** one full Mountain lap for residual visual clip at jumps / village cobbles.
+
+---
+
+# Sprint 39 — Launch/brake fore-aft hop (23 Aug 2026)
+
+**Player moment:** On throttle (and on the brakes) the car was nodding rapidly forward and back — a glitchy spring. At rest it was planted. It must look solid under accel and brake.
+
+**Cause:** Bang-bang traction control (linear gain 8) plus algebraic kappa plus per-substep load transfer made a ~240 Hz longitudinal oscillator. A 12 rad/s pitch spring on `_ax` painted that chatter onto the mesh, so the bumper bobbed in the chase camera.
+
+**CEO:** Close it. Do not ship a car that jitters on a straight.
+
+| Change | Status |
+|--------|--------|
+| Visual accel/brake squat removed; mesh pitch is the road plane + one-shot landing squash | **Done** |
+| Kappa uses first-order relaxation (`RELAX_KAPPA = 0.14`) like slip angle | **Done** |
+| TC / brake-hold cuts are quadratic, not linear gain 8 / 9 | **Done** |
+| `_ax` (load transfer) blended once per 60 Hz frame, frozen during tire substeps | **Done** |
+| `tools/qa-sprint28-launch.mjs` contracts for the above | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=339`** · `vehicle.js?v=69` · `ai.js?v=99`
+
+**Still human-only:** 10-second dead-stop launch + a hard brake on tarmac; the hull must not shimmer fore-aft.
+
+---
+
+# Sprint 40 — iPhone Safari play (23 Aug 2026)
+
+**Player moment:** Open the game on an iPhone in Safari, tap through the menus, then drive with on-screen GAS/BRAKE and either a left-hand STEER pad or TILT (phone as a wheel). Pedals stay on the right in both modes.
+
+**CEO:** This is the difference between “desktop only” and a shippable arcade rally in the pocket.
+
+| Change | Status |
+|--------|--------|
+| iOS viewport-fit, web-app meta, 100dvh, safe-area, 48px menu hits | **Done** |
+| Touch overlay: analog steer, GAS, BRAKE, HB, pause, camera | **Done** |
+| TILT mode — `DeviceOrientationEvent.requestPermission` on the TILT tap | **Done** |
+| Renderer no longer floors at 640×360 (broke iPhone width) | **Done** |
+| Phone starts at DPR 0.78 / 2048 shadows | **Done** |
+| `tools/qa-mobile-controls.mjs` | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=341`** · `input.js?v=38` · `touch-controls.js?v=2` · `css/game.css?v=23`
+
+**Still human-only:** iPhone Safari landscape lap; grant motion on TILT; confirm steer direction feels like turning a wheel.
+

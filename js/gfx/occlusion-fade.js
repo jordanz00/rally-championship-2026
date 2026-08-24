@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=122";
+import { VISUAL } from "../config.js?v=126";
 
 const UNIFORMS = {
   uOccludeCam: { value: new THREE.Vector3() },

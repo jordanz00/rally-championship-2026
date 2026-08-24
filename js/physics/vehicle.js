@@ -33,10 +33,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=122";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=43";
+import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=126";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=44";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=32";
-import { JumpModel } from "./jump.js?v=9";
+import { JumpModel } from "./jump.js?v=10";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -51,6 +51,13 @@ const WHEEL_I = 3.6;
 const RHO = 1.225;
 const FRONTAL_A = 1.92;
 const RELAX_LEN = 0.055;
+/**
+ * Longitudinal slip relaxation (m). Kappa used to be algebraic, so wheel
+ * inertia + Pacejka + bang-bang TC formed a 240 Hz hop that shoved the hull
+ * forward and back on throttle. This is the same first-order lag as slip
+ * angle, a bit longer so the oscillator dies without dulling burnout.
+ */
+const RELAX_KAPPA = 0.14;
 /** Drop the chassis this far through the visual tarmac so tires read as planted. */
 const TIRE_PLANT = 0.09;
 /** Hard cap on road-follow pitch (~31°). Weight-transfer squat stays much smaller. */
@@ -360,6 +367,8 @@ export class Vehicle {
     this._bodyPitchRate = 0;
     this._alphaF = 0;
     this._alphaR = 0;
+    this._kappaF = 0;
+    this._kappaR = 0;
     this.omegaF = 0;
     this.omegaR = 0;
     this.drifting = false;
@@ -464,6 +473,8 @@ export class Vehicle {
     this._ay = 0;
     this._alphaF = 0;
     this._alphaR = 0;
+    this._kappaF = 0;
+    this._kappaR = 0;
     this.omegaF = 0;
     this.omegaR = 0;
     this.driftAngle = 0;
@@ -626,13 +637,22 @@ export class Vehicle {
       ctx.axleSplit = this._axleSplit;
       const n = this._substeps;
       const h = dt / n;
+      let axSum = 0;
       for (let i = 0; i < n; i++) {
         const next = this._integrate(h, vx, vy, r, surface, ctx);
         vx = next.vx;
         vy = next.vy;
         r = next.r;
+        axSum += next.axTire;
       }
+      // Load transfer uses last frame's _ax inside each substep. Blending once
+      // here stops the 240 Hz axle-load ↔ tire-force loop that bounced the hull.
+      const axFollow = 1 - Math.exp(-(this.lowDetail ? 14 : 9) * dt);
+      this._ax += (axSum / n - this._ax) * axFollow;
     } else {
+      this._ax *= Math.exp(-6 * dt);
+      this._kappaF *= Math.exp(-8 * dt);
+      this._kappaR *= Math.exp(-8 * dt);
       this.jump.air(dt, this.throttle, this.brake);
       // Carry forward speed — heavy air drag killed the glide and made crests
       // feel like a stall at the apex. Lateral still bleeds so slides settle.
@@ -1098,13 +1118,14 @@ export class Vehicle {
   }
 
   /**
-   * Chassis attitude from the road plane plus a little weight-transfer squat.
+   * Chassis attitude from the road plane.
    *
    * `_slope` is geometric uphill (front higher). `_roadPitch` is the Three.js
    * Rx that plants the mesh on that plane (positive Rx is nose-down, so the
-   * visual sign is flipped). Accel squat is a spring on top of that. In the air
-   * the JumpModel owns attitude, so the visual is just its nose-up angle
-   * negated into Three.js convention.
+   * visual sign is flipped). Accel/brake used to add a sprung squat on `_ax`;
+   * that spring chased tire-force chatter and the car nodded fore-aft. On
+   * ground the mesh now follows the road plus a one-shot landing squash. In
+   * the air the JumpModel owns attitude.
    */
   _updateAttitude(dt) {
     const s = this.spec;
@@ -1112,49 +1133,36 @@ export class Vehicle {
     const kSpringRoll = (trackW * trackW * 0.25) * (s.spring || 32000) * 2;
     const kArb = (s.antiRollFront || 0) + (s.antiRollRear || 0);
     const kRoll = Math.max(12000, kSpringRoll + kArb);
-    const L = Math.max(1.8, s.wheelbase || 2.5);
-    const kPitch = Math.max(20000, (L * L * 0.5) * (s.spring || 32000));
     const h = Math.max(0.12, (s.cgHeight || 0.34) - 0.12);
     const m = s.mass;
     const rollGain = (m * h) / kRoll;
-    const pitchGain = (m * h) / kPitch;
     // Body lean is a hint of weight transfer, not extra wheel camber.
     // Wheels undo this in applyWheelPose about chassis Z, independent of steer.
     const rollMax = 0.07;
-    /** Sprint 28 squat — toned down so hard launches do not bounce the mesh. */
-    const squatMax = 0.085;
 
     let rollTarget = 0;
     let squatTarget = 0;
     if (this.onGround) {
       const ay = Math.abs(this.speed) < 1.2 ? 0 : this._ay;
       rollTarget = clamp(ay * rollGain, -rollMax, rollMax);
-      squatTarget = clamp(-this._ax * pitchGain, -squatMax, squatMax);
       // Landing lock is a short compression pulse so the chassis reads the
       // hit without rewriting jump physics. Capped so it never looks like a bounce.
-      if (this._landLock > 0) squatTarget += this._landLock * 0.22;
-      squatTarget = clamp(squatTarget, -0.12, 0.12);
+      if (this._landLock > 0) squatTarget = clamp(this._landLock * 0.16, 0, 0.07);
     }
 
     if (this.onGround && !this.lowDetail) {
-      const squatRate = HANDLING.squatSmoothRate != null ? HANDLING.squatSmoothRate : 14;
+      const squatRate = HANDLING.squatSmoothRate != null ? HANDLING.squatSmoothRate : 10;
       this._squatSmooth += (squatTarget - this._squatSmooth) * (1 - Math.exp(-squatRate * dt));
-      squatTarget = this._squatSmooth;
-    } else if (!this.onGround) {
+    } else {
       this._squatSmooth *= Math.exp(-8 * dt);
     }
+    // First-order follow — a 12 rad/s pitch spring was the visual hop.
+    this._bodyPitch += (this._squatSmooth - this._bodyPitch) * (1 - Math.exp(-10 * dt));
+    this._bodyPitchRate = 0;
 
     const iRoll = Math.max(280, s.rollInertia || 480);
-    const iPitch = Math.max(400, s.pitchInertia || 720);
     const wnRoll = Math.max(14, Math.sqrt(kRoll / iRoll));
-    const wnPitch = Math.max(12, Math.sqrt(kPitch / iPitch));
     this._springAxis("roll", rollTarget, dt, wnRoll, 1.35);
-
-    const x = this._bodyPitch;
-    const v = this._bodyPitchRate;
-    const acc = (squatTarget - x) * wnPitch * wnPitch - 2 * 2.15 * wnPitch * v;
-    this._bodyPitchRate = v + acc * dt;
-    this._bodyPitch = x + this._bodyPitchRate * dt;
 
     if (this.onGround) {
       const want = this._roadPitch + this._bodyPitch;
@@ -1301,8 +1309,13 @@ export class Vehicle {
     this._alphaR += (alphaRRaw - this._alphaR) * rel;
 
     const kappaDenom = Math.max(2.8, Math.abs(vx));
-    const kappaF = (this.omegaF * R - vx) / kappaDenom;
-    const kappaR = (this.omegaR * R - vx) / kappaDenom;
+    const kappaFRaw = (this.omegaF * R - vx) / kappaDenom;
+    const kappaRRaw = (this.omegaR * R - vx) / kappaDenom;
+    const relK = 1 - Math.exp((-Math.max(8, Math.abs(vx)) * dt) / RELAX_KAPPA);
+    this._kappaF += (kappaFRaw - this._kappaF) * relK;
+    this._kappaR += (kappaRRaw - this._kappaR) * relK;
+    const kappaF = this._kappaF;
+    const kappaR = this._kappaR;
 
     const peakA = surface.slipPeak || 0.14;
     const ease = Math.max(0.85, surface.driftEase || 1);
@@ -1400,13 +1413,20 @@ export class Vehicle {
     let tqF = tqDrive * splitF;
     let tqR = tqDrive * (1 - splitF);
 
-    // Traction: keep slip ratio sticky when planted; dump TC in a drift so
-    // throttle can spin the rears and hold a power slide.
+    // Traction: keep slip sticky when planted; dump TC in a drift so throttle
+    // can spin the rears. Smooth quadratic cut — a linear gain of 8 was a
+    // bang-bang oscillator with Pacejka and shoved the hull fore-aft.
     const kSoft = twoWd ? 0.12 : 0.085;
     const tcMul = slideIntent || hb > hbEnter ? 0.12 : 1;
     if (hb < 0.08) {
-      if (kappaR > kSoft && tqR > 0) tqR *= clamp(1 - (kappaR - kSoft) * 8 * tcMul, 0.18, 1);
-      if (kappaF > kSoft && tqF > 0) tqF *= clamp(1 - (kappaF - kSoft) * 8 * tcMul, 0.18, 1);
+      if (tqR > 0) {
+        const over = Math.max(0, kappaR - kSoft);
+        tqR *= clamp(1 / (1 + over * over * 48 * tcMul), 0.18, 1);
+      }
+      if (tqF > 0) {
+        const over = Math.max(0, kappaF - kSoft);
+        tqF *= clamp(1 / (1 + over * over * 48 * tcMul), 0.18, 1);
+      }
     }
 
     // Braking character per surface. brakeHold is a threshold-braking assist
@@ -1419,8 +1439,14 @@ export class Vehicle {
     const brakeHold = clamp(surface.brakeHold != null ? surface.brakeHold : 0.45, 0, 1);
     if (brakeHold > 0.01 && this.brake > 0.02) {
       const kLock = -HANDLING.peakKappa;
-      if (kappaF < kLock) tqBrakeF *= clamp(1 + (kappaF - kLock) * 9 * brakeHold, 0.06, 1);
-      if (kappaR < kLock) tqBrakeR *= clamp(1 + (kappaR - kLock) * 9 * brakeHold, 0.06, 1);
+      if (kappaF < kLock) {
+        const over = kLock - kappaF;
+        tqBrakeF *= clamp(1 / (1 + over * over * 36 * brakeHold), 0.06, 1);
+      }
+      if (kappaR < kLock) {
+        const over = kLock - kappaR;
+        tqBrakeR *= clamp(1 / (1 + over * over * 36 * brakeHold), 0.06, 1);
+      }
     }
     tqBrakeF *= sign(this.omegaF || vx);
     tqBrakeR =
@@ -1454,7 +1480,7 @@ export class Vehicle {
         rollRes *= k;
       }
     }
-    const axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
+    let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
     vx += axTire * dt;
 
     const speed01 = clamp(Math.abs(vx) / Math.max(8, top), 0, 1);
@@ -1695,13 +1721,14 @@ export class Vehicle {
 
     if (vx > top) vx = lerp(vx, top, 0.08);
     if (vx < -top * 0.28) vx = -top * 0.28;
+    if (vx === 0 && this.throttle < 0.02) axTire = 0;
 
-    // Felt accel for chassis attitude: path curvature, not steer angle.
+    // Lateral felt-g for body roll. Longitudinal _ax is blended once per
+    // frame after all substeps so load transfer cannot chatter at 240 Hz.
     const ayKinematic = vx * r;
-    const axSmooth = this.lowDetail ? 0.42 : 0.24;
-    this._ax += (axTire - this._ax) * axSmooth;
-    this._ay += (ayKinematic - this._ay) * (axSmooth + 0.06);
-    return { vx, vy, r };
+    const aySmooth = this.lowDetail ? 0.48 : 0.3;
+    this._ay += (ayKinematic - this._ay) * aySmooth;
+    return { vx, vy, r, axTire };
   }
 
   /**

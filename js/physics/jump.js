@@ -22,7 +22,7 @@
  * wants Three.js Rx where + = nose down, so Vehicle negates noseUp for display.
  */
 
-import { JUMP } from "../config.js?v=122";
+import { JUMP } from "../config.js?v=126";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));

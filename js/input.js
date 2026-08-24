@@ -1,10 +1,11 @@
 /**
- * Input — keyboard + gamepad.
+ * Input — keyboard + gamepad + phone overlay.
  *
  * WHO THIS IS FOR: anyone wiring controls.
  * WHAT IT DOES: samples WASD/arrows, analog stick, triggers, and handbrake each
  *   frame and publishes a bounded InputState.
  * HOW IT CONNECTS: GameLoop reads InputState; vehicle consumes steer/throttle/brake.
+ *   On phones TouchControls.sample() fills the same axes when no key/pad is live.
  *
  * TRUST NOTHING RULE: every value that reaches the physics step is forced to a
  * finite number and clamped to its documented range before it leaves poll().
@@ -76,6 +77,7 @@ export class Input {
     this._padCamEdge = false;
     this._padUpEdge = false;
     this._padDownEdge = false;
+    this._touch = null;
 
     window.addEventListener("keydown", (e) => this._onKey(e, true));
     window.addEventListener("keyup", (e) => this._onKey(e, false));
@@ -85,6 +87,14 @@ export class Input {
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) this._release();
     });
+  }
+
+  /**
+   * Phone overlay (TouchControls). Optional — desktop never binds one.
+   * @param {{sample: () => object} | null} overlay
+   */
+  bindTouch(overlay) {
+    this._touch = overlay || null;
   }
 
   /** Drop every held key and pending edge. */
@@ -173,6 +183,21 @@ export class Input {
     this.confirm = this._pressed("enter") || this._pressed(" ") || this._pressed("space");
     this.back = this._pressed("escape") || this._pressed("backspace");
     this.reset = this._pressed("r");
+
+    const usingKeys = keyTarget !== 0 || keyGas || keyBrake || keyHand;
+    const usingPad =
+      Math.abs(this._padSteer) > 0.06 || this._padThrottle > 0.04 || this._padBrake > 0.04;
+    const touch = this._touch && typeof this._touch.sample === "function" ? this._touch.sample() : null;
+    if (touch && touch.active && !usingKeys && !usingPad) {
+      this.steer = bounded(touch.steer, -1, 1);
+      this.throttle = bounded(touch.throttle, 0, 1);
+      this.brake = bounded(touch.brake, 0, 1);
+      this.handbrake = bounded(Math.max(this.handbrake, touch.handbrake), 0, 1);
+    }
+    if (touch) {
+      if (touch.pause) this.pause = true;
+      if (touch.camera) this.camera = true;
+    }
 
     this._edge.clear();
   }

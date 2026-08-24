@@ -8,7 +8,7 @@
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio plays the beep.
  */
 
-import { PACE } from "../config.js?v=122";
+import { PACE } from "../config.js?v=126";
 
 const VOL_NAV_KEY = "rally-vol-navigator";
 
