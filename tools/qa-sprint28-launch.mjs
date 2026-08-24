@@ -103,6 +103,26 @@ check(
 );
 
 check(
+  "visual pitch is deadzoned axle follow, not raw slope",
+  /_updateVisPitch/.test(vehicle) &&
+    /VIS_PITCH_DEADZONE/.test(vehicle) &&
+    /want = this\._visPitch/.test(vehicle),
+  "mesh pitch must follow _visPitch, not raw _roadPitch"
+);
+
+check(
+  "chassis long-accel is filtered before vx integrate",
+  /AX_DRIVE_RATE/.test(vehicle) && /this\._axDrive \+= /.test(vehicle),
+  "player vx must not integrate raw Pacejka Fx"
+);
+
+check(
+  "heavier wheel inertia vs launch hop",
+  /const WHEEL_I = 6\.[2-9]/.test(vehicle),
+  "WHEEL_I >= 6.2"
+);
+
+check(
   "kappa relaxation kills wheel hop",
   /RELAX_KAPPA/.test(vehicle) && /this\._kappaF/.test(vehicle),
   "longitudinal slip must lag like slip angle"
@@ -120,24 +140,30 @@ check(
   "load transfer must not update inside each tire substep"
 );
 
+check(
+  "chase cam locks XZ on medium so hull cannot bounce in frame",
+  /mode\.id !== "far"/.test(game) && /this\._camPos\.x = this\._camTarget\.x/.test(game),
+  "medium chase must snap XZ to the live car"
+);
+
 // Live graph after Sprint 27/28 stack — assert floor versions, not pin exact.
 const mainV = index.match(/main\.js\?v=(\d+)/);
 const gameV = main.match(/game\.js\?v=(\d+)/);
 const vehV = game.match(/vehicle\.js\?v=(\d+)/);
 const cfgV = game.match(/config\.js\?v=(\d+)/);
 check(
-  "cache bust main.js?v>=249",
-  mainV && Number(mainV[1]) >= 249,
+  "cache bust main.js?v>=343",
+  mainV && Number(mainV[1]) >= 343,
   mainV ? `got main.js?v=${mainV[1]}` : "missing"
 );
 check(
-  "cache bust game.js?v>=249",
-  gameV && Number(gameV[1]) >= 249,
+  "cache bust game.js?v>=343",
+  gameV && Number(gameV[1]) >= 343,
   gameV ? `got game.js?v=${gameV[1]}` : "missing"
 );
 check(
-  "cache bust vehicle.js?v>=54",
-  vehV && Number(vehV[1]) >= 54,
+  "cache bust vehicle.js?v>=71",
+  vehV && Number(vehV[1]) >= 71,
   vehV ? `got vehicle.js?v=${vehV[1]}` : "missing"
 );
 check(

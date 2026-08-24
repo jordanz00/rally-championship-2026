@@ -39,18 +39,20 @@ check("road skirt suppressed", /inUnderpass.*skirtReach/.test(compact), "tunnel-
 check("land tile underpass clamp", /desert && this\._inUnderpassCorridor/.test(track), "terrain flat");
 check("desert rock bridge", /_addDesertRockBridge/.test(track), "finale arch");
 check("world underpass prism", /_underpassPrisms/.test(track), "XZ prism under arch");
+check("shared portal helper", /_desertBridgePortal/.test(track), "mesh + land use one hole");
+check("underpass floor uses bridge Y", /_underpassFloorY/.test(track), "not nearest-road Y");
 check("bridge portal refuse", /overlapsPortalX && overlapsPortalZ && overlapsPortalY/.test(compact), "no solid in hole");
 check("bridge portal scrub", /_scrubBridgePortalMeshes/.test(track), "drop invading rubble");
 check("drive clear corridors", /_markDriveClearCorridors/.test(track), "forest/mountain land wash");
-check("bridge clearance headroom", /openH = 10\.2/.test(track), "driveable arch height");
-check("bridge portal depth", /clearHalfD = 12/.test(track), "deep enough tunnel");
+check("bridge clearance headroom", /openH: 12\.8/.test(track), "driveable arch height");
+check("bridge portal depth", /clearHalfD: 16/.test(track), "deep enough tunnel");
 check("approach placement", /while \(j > 2 && this\.points\[j\]\.surface === "gravel"\) j -= 1/.test(track), "sand→gravel approach");
-check("overburden beyond exit", /clearHalfD \+ 10\.5/.test(track), "mass outside hole");
+check("overburden beyond exit", /clearHalfD \+ 14/.test(track), "mass outside hole");
 check("desert drift berms", /_addDesertDriftLandmarks/.test(track), "outside berms");
 check("act 6 sweep flag", /radius: 145.*sweep: true/.test(courses.replace(/\s+/g, " ")), "sweeper marked");
-check("cache bust track.js?v=155", /track\.js\?v=155/.test(game), "game → track v=155");
-check("cache bust game.js?v=292", /game\.js\?v=292/.test(main), "main → game v=292");
-check("cache bust index main?v=292", /main\.js\?v=292/.test(index), "index → main v=292");
+check("cache bust track.js?v=168", /track\.js\?v=168/.test(game), "game → track v=168");
+check("cache bust game.js?v=351", /game\.js\?v=351/.test(main), "main → game v=351");
+check("cache bust index main?v=351", /main\.js\?v=351/.test(index), "index → main v=351");
 
 console.log(
   `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Sprint 32 desert finale armed"}`

@@ -1233,7 +1233,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 
 **Cache:** `index.html` / `main.js` / `game.js` **`?v=339`** · `vehicle.js?v=69` · `ai.js?v=99`
 
-**Still human-only:** 10-second dead-stop launch + a hard brake on tarmac; the hull must not shimmer fore-aft.
+**Still human-only (closed Sprint 41):** 10-second dead-stop launch — hull shimmer persisted after this sprint; see Sprint 41.
 
 ---
 
@@ -1255,4 +1255,185 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 **Cache:** `index.html` / `main.js` / `game.js` **`?v=341`** · `input.js?v=38` · `touch-controls.js?v=2` · `css/game.css?v=23`
 
 **Still human-only:** iPhone Safari landscape lap; grant motion on TILT; confirm steer direction feels like turning a wheel.
+
+---
+
+# Sprint 41 — Accel body bounce closeout (24 Aug 2026)
+
+**Player moment:** Floor it from a standstill. The Celica mesh must stay a solid car — no springy fore-aft nod, no bumper shimmer in the chase cam. Standstill was already planted; throttle was still glitchy after Sprint 39.
+
+**Cause:** Sprint 39 removed visual squat but left three amplifiers: (1) raw Pacejka Fx still integrated into `vx` every 240 Hz substep, (2) axle-height noise painted onto mesh pitch around a contact-patch origin, (3) chase cam lagged in XZ so any leftover hop read as the body bouncing in frame.
+
+**CEO:** Close it. A car that jitters on a straight does not ship.
+
+| Change | Status |
+|--------|--------|
+| Player `vx` integrates filtered `_axDrive` (`AX_DRIVE_RATE = 11`) | **Done** |
+| Visual pitch follows deadzoned `_visPitch` (not raw `_roadPitch`) | **Done** |
+| Deck plant target filtered (`DECK_FILT_RATE = 8`) so ribbon noise cannot bob Y | **Done** |
+| `WHEEL_I` 3.6 → 6.4, `RELAX_KAPPA` 0.14 → 0.22 | **Done** |
+| Medium chase locks XZ to the live car | **Done** |
+| `tools/qa-sprint28-launch.mjs` contracts | **run this sprint** |
+| `tools/qa-launch-stable.mjs` live throttle probe | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=343`** · `vehicle.js?v=71` · `ai.js?v=101`
+
+**Still human-only:** one 10-second launch in the headed game to confirm the mesh looks like a rigid body.
+
+---
+
+# Sprint 42 — POV steering wheel column spin (24 Aug 2026)
+
+**Player moment:** C into POV, turn the wheel. The rim must rotate around the steering column like a real car — not tumble on a sideways axis.
+
+**Cause:** `rotateOnAxis` used a **world-AABB** “thinnest” axis. GLB rims are tilted; that axis was car-space, then applied as a **local** axis, so the modeled wheel cartwheeled.
+
+**CEO:** Close it. A broken steering wheel in the seat is not shippable.
+
+| Change | Status |
+|--------|--------|
+| Local-space disc axis + `steer-spin` pivot whose +Z is the column | **Done** |
+| Cockpit anim sets `rotation.z` on that pivot (same as the procedural torus) | **Done** |
+| `tools/qa-pov-steer.mjs` static + title-car live | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=344`** · `celica.js?v=110` · `cockpit-anim.js?v=4` · `ai.js?v=102`
+
+**Still human-only:** one headed POV lock-to-lock to confirm the spokes turn in the wheel plane.
+
+---
+
+# Sprint 43 — POV speedo / tach (24 Aug 2026)
+
+**Player moment:** C into the seat. The two analog dials must read like the chase cluster — 0 at 7:30, clockwise to 4:30, MPH 0–140 and RPM ×1000 to 9 — with needles sitting on 0 at rest and climbing with speed/revs. Switching C must not change the scale.
+
+**Cause:** In-car faces used a different zero (10:30), the 3D needle was a +Y blade (12 o'clock rest), each disc was Y-flipped so numerals were mirrored, the tach spring was underdamped plus idle `performance.now()` jitter, and the speedo was km/h 0–250. Parenting the needle under `scale.x = -1` also hid/reversed the blade.
+
+**CEO:** Close it. A broken cluster in the seat is not shippable.
+
+| Change | Status |
+|--------|--------|
+| Face ticks + needle angle match chase HUD (`GAUGE_START = 0.75π`, sweep 1.5π) | **Done** |
+| Needle along +X; live `rotation.z = -(START + SWEEP * t)` | **Done** |
+| Face-only Y-flip + `scale.x = -1` so numerals read; needle stays unmirrored | **Done** |
+| Speedo MPH 0–140, tach ×1000 to 9, overdamped springs | **Done** |
+| `tools/qa-pov-gauges.mjs` static + title-car live | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=345`** · `celica.js?v=111` · `ai.js?v=103`
+
+**Still human-only:** headed C into POV at rest (needles on 0) then a short pull to confirm both climb clockwise.
+
+---
+
+# Sprint 44 — POV rearview glass (24 Aug 2026)
+
+**Player moment:** C into the seat. The interior rearview must show the road behind you — sky, trees, rivals — not a black rectangle.
+
+**Cause:** Three stacked defects. (1) ACES was baked into a `NoColorSpace` RT, then the canvas encoded it as linear → crushed to black. (2) The live plane sat on the **windshield** side of the frame, so the driver saw dark plastic. (3) GLB meshes named `mirror` were shaded as chrome and left visible, covering the RT.
+
+**CEO:** Close it. A black mirror in the seat is not shippable.
+
+| Change | Status |
+|--------|--------|
+| Capture `NoToneMapping` into an sRGB RT; glass stays `toneMapped: false` | **Done** |
+| Glass on the seat side (`z = -0.01`), `depthTest: false` | **Done** |
+| Hide GLB interior rearview; wing mirrors stay | **Done** |
+| `tools/qa-pov-mirror.mjs` static + live RT luma | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=346`** · `celica.js?v=112` · `ai.js?v=104`
+
+**Still human-only:** headed C into POV on Desert — confirm the glass shows the start grid / road behind, not black.
+
+---
+
+# Sprint 45 — Seamless C-key camera blend (24 Aug 2026)
+
+**Player moment:** Press C. The lens must *move* to the next view (POV / medium / far) in about a fifth of a second — no cut, no hang, no extra load, no hesitation.
+
+**Cause:** A blend timer existed, but C also swapped the cockpit, hid the windshield, toggled the chase HUD, and kicked a full rearview capture on the **same frame**. FOV used the ease value as a follow rate, so it sat still then snapped. `setCockpitView` walked the whole GLB twice.
+
+**CEO:** Close it. Camera swaps are a moment every player hits.
+
+| Change | Status |
+|--------|--------|
+| C only records the from-pose; cockpit attaches mid-blend | **Done** |
+| FOV / near lerp with the pose; 0.22s smoothstep | **Done** |
+| Hide cache, no live GLB traverse; no mirror capture on the C frame | **Done** |
+| Chase cluster fades instead of `display:none` pop | **Done** |
+| `tools/qa-cam-blend.mjs` static + live step probe | **run this sprint** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=347`** · `config.js?v=127` · `celica.js?v=113` · `ai.js?v=105` · `css/game.css?v=24`
+
+**Still human-only:** headed C cycle on Desert (POV → medium → far) while rolling — confirm the lens eases and never hitch-stops.
+
+---
+
+# Sprint 47 — Desert sand-on-road + env clip (24 Aug 2026)
+
+**Player moment:** Stage 1 opening through the gravel corridor and Bowl — the racing line is asphalt, not a dune, and the car does not ghost through sand banks, rocks, or berms.
+
+**Cause:** Desert land had no chase-flatten (Forest/Mountain already did). Dunes rose the instant the ~29 m trench ended, so 10 m land cells interpolated sand onto the ribbon and the inside of radius-36 gravel corners. An 8.2 m dune skirt folded across tight bends. Roadside rocks planted at half+9 m overlapped the chase; Bowl berms at half+9.2 failed `_driveClear` so they were visual-only (or skipped) while leftover rocks had colliders smaller than the mesh.
+
+**CEO:** Ship-blocker on the teaching stage. Close it; do not carry a PARTIAL.
+
+| Change | Status |
+|--------|--------|
+| Full-stage Desert land wash (`lateral: 44`) | **Done** |
+| Chase-flat in `_groundHeight` + `_addLandTile` (half+48, 0.03 bank) | **Done** |
+| In-lane refuse padded a full land cell past the verge | **Done** |
+| Skirt 8.2 m → 2.6 m tuck; outer Y capped below the deck | **Done** |
+| Rocks/cacti/berms/herd plant past the verge; colliders match the mesh | **Done** |
+| `tools/qa-desert-clip.mjs` static + headed corridor probe | **PASS** — in-lane land −0.72 m over 104 stations; verge −0.72 m; 351 colliders off the lane |
+| `tools/qa-env-clip.mjs` Mountain regression | **PASS** — in-lane −0.78 m over 85 stations |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=348`** · `track.js?v=165`
+
+**Still human-only:** 2-minute Desert drive — opening straights, gravel snakes, Bowl — confirm no sand on the painted lane and no chassis through rocks.
+
+---
+
+# Sprint 48 — Desert rock-bridge underpass (24 Aug 2026)
+
+**Player moment:** Late Stage 1 — drive *under* the sandstone arch. The hole is empty. The chassis does not clip the lintel, piers, or a sand slab filling the bottom.
+
+**Cause:** Land under the arch used `_nearestRoad` Y, so the finale hairpin's opposite arm could refill the hole with a car-height dune. Ceiling ribs sat on the portal threshold. Portal scrub needed two AABB corners inside the prism, so a slab whose corners sat outside still filled the drive-through. Chase-cam fade on the lintel also read as the car ghosting through rock.
+
+**CEO:** Close it. The underpass is a moment every Desert lap hits.
+
+| Change | Status |
+|--------|--------|
+| Shared `_desertBridgePortal` (`openH` **12.8**, `clearHalfD` **16**, half+4.8 wide) | **Done** |
+| `_underpassFloorY` uses the bridge sample, not nearest-road | **Done** |
+| Lintel underside 0.55 m above the hole; no ceiling ribs in the prism | **Done** |
+| Conservative AABB portal scrub; rubble only on pier caps | **Done** |
+| `tools/qa-desert-bridge-portal.mjs` + `qa-sprint32-desert-finale.mjs` | **PASS** — openH 12.8, hole 16 m deep, 0 invaders, 0 car-envelope hits, land −0.95 m, car on deck |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=349`** · `track.js?v=166`
+
+**Still human-only:** headed Desert drive through the arch — confirm empty sky/shadow under the lintel, no roof-through-rock.
+
+---
+
+# Sprint 49 — All-stage roadway clear (24 Aug 2026)
+
+**Player moment:** Every stage, including hairpins — the painted lane is asphalt, not a bank, and solid props do not sit in the car's envelope.
+
+**Cause:** `_nearestRoad` only searched ±2 grid cells (64 m). Hairpin opposite arms at 70–90 m were invisible, so land verts and plants used the wrong ribbon. Lakeside catch-fence posts sat at half+0.6 m on the kerb.
+
+**CEO:** Close the PARTIAL. Do not ship a stage whose inside line is a hill.
+
+| Change | Status |
+|--------|--------|
+| Nearby-segment search ±3 cells (96 m); `minOver` / `overlapBed` on every ribbon test | **Done** |
+| `_groundHeight` + `_addLandTile` flatten to any overlapping arm; Desert underpass floor still wins first | **Done** |
+| Lakeside full-stage wash (`lateral: 48`); every biome skirt is a short tuck | **Done** |
+| `_ribbonClear` / `_driveClear` / collider scrub / `_bumpNearRoad` use `minOver` | **Done** |
+| Lakeside barriers past `ROAD_VERGE + 1.4` with `_ribbonClear` | **Done** |
+| `tools/qa-env-clip.mjs` headed desert/forest/mountain/lakeside | **PASS** — in-lane land −0.72 / −0.72 / −0.78 / −0.28 m; 0 colliders on asphalt (284 / 119 / 60 / 49) |
+| `tools/qa-desert-clip.mjs` | **PASS** — in-lane −0.72 m over 104 stations; 284 colliders off the lane |
+| `tools/qa-sprint32-desert-finale.mjs` + `qa-static-audit.mjs` | **PASS** |
+| `tools/qa-desert-bridge-portal.mjs` | **PASS** — 0 invaders, 0 car-envelope hits, land −0.95 m, car on deck |
+
+**Cache:** `index.html` / `main.js` **`?v=351`** · `track.js?v=168`
+
+**Still human-only:** 2-minute drive of a Forest or Mountain hairpin — confirm the inside line is tarmac and the chassis does not sink into a bank.
 

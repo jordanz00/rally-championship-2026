@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=126";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=127";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=22";
 
 const GARAGE = {
@@ -1124,6 +1124,15 @@ function hideHeavyInterior(root) {
     // Keep modeled STEER_HR / SteeringWheel meshes; bindGlbSteeringWheel
     // reparents them for POV. Hiding the parent cockpit still strips seats.
     if (/steer/.test(n) && !/power.?steer|rack|cockpit|interior/.test(n)) return;
+    // Interior rearview glass in the GLB is unlit chrome — it covers the live RT.
+    // Wing / door mirrors stay; the procedural cabin rearview is the POV image.
+    if (/mirror|rearview|rear.?view/.test(n) && !/wing|side|door/.test(n)) {
+      obj.visible = false;
+      obj.userData.interiorKeepHidden = true;
+      obj.userData.interior = true;
+      found = true;
+      return;
+    }
     if (/seat|dashboard|steering.?wheel|interior|cockpit|gauge|cluster|binnacle/.test(n)) {
       obj.visible = false;
       obj.userData.interiorKeepHidden = true;
@@ -3237,10 +3246,13 @@ export function setHeadlights(root, on) {
   }
 }
 
-const GAUGE_START = -2.15;
-const GAUGE_SWEEP = 4.3;
-/** In-car analog dials — real ST205 cluster size (~90 mm). */
-const POV_GAUGE_R = 0.048;
+/** 7:30 rest, 270° clockwise to 4:30 — same canvas radians as js/ui/hud.js. */
+const GAUGE_START = Math.PI * 0.75;
+const GAUGE_SWEEP = Math.PI * 1.5;
+/** In-car analog dials (~110 mm) so the needles read at seated FOV. */
+const POV_GAUGE_R = 0.055;
+const POV_SPEED_MAX_MPH = 140;
+const KMH_TO_MPH = 0.621371;
 /** Three.js layer for camera-locked POV HUD (rendered after post, ungraded). */
 export const POV_HUD_LAYER = 1;
 
@@ -3387,16 +3399,84 @@ function findGlbSteerNode(root) {
 }
 
 /**
- * Thinnest local AABB axis — the steering-column spin for a disc-shaped wheel.
+ * AABB of `obj` in its own local space (not a world-axis box).
+ * World AABB of a tilted rim picks a car-space axis; rotateOnAxis then
+ * tumbles the wheel instead of spinning it like a steering wheel.
  * @param {THREE.Object3D} obj
- * @returns {"x"|"y"|"z"}
+ * @returns {THREE.Box3}
  */
-function thinnestLocalAxis(obj) {
-  const box = new THREE.Box3().setFromObject(obj);
+function localSpaceBox(obj) {
+  obj.updateWorldMatrix(true, true);
+  const box = new THREE.Box3();
+  const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+  const childLocal = new THREE.Matrix4();
+  obj.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const geom = child.geometry;
+    if (!geom.boundingBox) geom.computeBoundingBox();
+    if (!geom.boundingBox) return;
+    const b = geom.boundingBox.clone();
+    childLocal.multiplyMatrices(inv, child.matrixWorld);
+    b.applyMatrix4(childLocal);
+    box.union(b);
+  });
+  return box;
+}
+
+/**
+ * Thinnest local AABB axis — the steering-column spin for a disc-shaped wheel.
+ * Must be measured in the node's local frame, not world AABB.
+ * @param {THREE.Box3} box
+ * @returns {THREE.Vector3}
+ */
+function localDiscAxis(box) {
   const s = box.getSize(new THREE.Vector3());
-  if (s.z <= s.x && s.z <= s.y) return "z";
-  if (s.x <= s.y) return "x";
-  return "y";
+  if (s.z <= s.x && s.z <= s.y) return new THREE.Vector3(0, 0, 1);
+  if (s.x <= s.y) return new THREE.Vector3(1, 0, 0);
+  return new THREE.Vector3(0, 1, 0);
+}
+
+const _steerFwd = new THREE.Vector3(0, 0, 1);
+
+/**
+ * Parent the modeled rim under a spin group whose +Z is the column.
+ * Cockpit anim then sets rotation.z — the same motion as the procedural torus.
+ * @param {THREE.Object3D} root
+ * @param {THREE.Object3D} node
+ */
+function armSteerSpin(root, node) {
+  const box = localSpaceBox(node);
+  if (box.isEmpty()) {
+    root.userData.steerSpin = node;
+    root.userData.steerAxis = "z";
+    return;
+  }
+  const axisLocal = localDiscAxis(box);
+  const axisParent = axisLocal.clone().applyQuaternion(node.quaternion).normalize();
+  // Match the procedural column: +Z of the spin group points into the dash.
+  if (axisParent.z < 0) axisParent.negate();
+
+  const center = box.getCenter(new THREE.Vector3());
+  center.applyQuaternion(node.quaternion).add(node.position);
+
+  node.updateWorldMatrix(true, true);
+  const world = node.matrixWorld.clone();
+
+  const pivot = new THREE.Group();
+  pivot.name = "steer-spin";
+  pivot.userData.glbSteer = true;
+  root.add(pivot);
+  pivot.position.copy(center);
+  pivot.quaternion.setFromUnitVectors(_steerFwd, axisParent);
+  pivot.updateMatrixWorld(true);
+
+  if (node.parent) node.parent.remove(node);
+  pivot.add(node);
+  const local = new THREE.Matrix4().copy(pivot.matrixWorld).invert().multiply(world);
+  local.decompose(node.position, node.quaternion, node.scale);
+
+  root.userData.steerSpin = pivot;
+  root.userData.steerAxis = Math.abs(axisLocal.x) > 0.5 ? "x" : Math.abs(axisLocal.y) > 0.5 ? "y" : "z";
 }
 
 /**
@@ -3433,8 +3513,7 @@ function bindGlbSteeringWheel(root) {
   });
   root.userData.glbSteerWheel = node;
   root.userData.steerWheel = node;
-  root.userData.steerAxis = thinnestLocalAxis(node);
-  root.userData._wheelBaseQuat = node.quaternion.clone();
+  armSteerSpin(root, node);
   return node;
 }
 
@@ -3464,15 +3543,21 @@ function isExteriorMirrorGlass(obj, hull, c) {
  * @param {THREE.Object3D} root
  */
 function buildPovHideCache(root) {
-  if (!root || root.userData._povHide) return;
+  if (!root || root.userData._povHideReady) return;
   /** @type {THREE.Object3D[]} */
-  const list = [];
+  const hide = [];
+  const keepHidden = [];
+  const steer = [];
   root.traverse((obj) => {
-    // Hide glass + roof shell in POV so the lens sits in the cabin.
-    // GLB interior is shown, not hidden — that is the seat the player occupies.
-    if (obj.userData.windshield || obj.userData.povShell) list.push(obj);
+    if (!obj.userData) return;
+    if (obj.userData.windshield || obj.userData.povShell) hide.push(obj);
+    if (obj.userData.interiorKeepHidden) keepHidden.push(obj);
+    if (obj.userData.glbSteer) steer.push(obj);
   });
-  root.userData._povHide = list;
+  root.userData._povHide = hide;
+  root.userData._povKeepHidden = keepHidden;
+  root.userData._povSteer = steer;
+  root.userData._povHideReady = true;
 }
 
 /**
@@ -3682,69 +3767,86 @@ function inCockpitTree(obj) {
   return false;
 }
 
-function gaugeFace(kind, maxVal) {
+/**
+ * Analog face matching the chase HUD: 0 at 7:30, sweep clockwise to 4:30.
+ * @param {"speed"|"rpm"} kind
+ * @param {number} maxVal MPH or RPM×1000
+ * @param {number} [redFrom] redline start on the same scale
+ */
+function gaugeFace(kind, maxVal, redFrom) {
   const c = document.createElement("canvas");
   c.width = 256;
   c.height = 256;
   const g = c.getContext("2d");
+  const cx = 128;
+  const cy = 128;
+  const r = 120;
   const bezel = g.createLinearGradient(0, 0, 256, 256);
-  bezel.addColorStop(0, "#e8e0d0");
-  bezel.addColorStop(0.22, "#7a766c");
-  bezel.addColorStop(0.52, "#2a2a2e");
-  bezel.addColorStop(0.8, "#cac2b4");
-  bezel.addColorStop(1, "#242426");
+  bezel.addColorStop(0, "#ece8de");
+  bezel.addColorStop(0.22, "#9a968c");
+  bezel.addColorStop(0.48, "#3a3936");
+  bezel.addColorStop(0.72, "#cfc9bc");
+  bezel.addColorStop(1, "#1e1e1c");
   g.beginPath();
-  g.arc(128, 128, 124, 0, Math.PI * 2);
+  g.arc(cx, cy, r, 0, Math.PI * 2);
   g.fillStyle = bezel;
   g.fill();
   g.beginPath();
-  g.arc(128, 128, 114, 0, Math.PI * 2);
-  g.fillStyle = "#1a1c22";
+  g.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
+  g.fillStyle = "#0a0a0a";
   g.fill();
-  const face = g.createRadialGradient(108, 84, 16, 128, 128, 108);
-  face.addColorStop(0, "#3a3e48");
-  face.addColorStop(0.45, "#242830");
-  face.addColorStop(1, "#12141a");
+  const face = g.createRadialGradient(cx, cy - r * 0.08, r * 0.05, cx, cy, r * 0.86);
+  face.addColorStop(0, "#1c1e1b");
+  face.addColorStop(0.7, "#101110");
+  face.addColorStop(1, "#080908");
   g.beginPath();
-  g.arc(128, 128, 108, 0, Math.PI * 2);
+  g.arc(cx, cy, r * 0.86, 0, Math.PI * 2);
   g.fillStyle = face;
   g.fill();
-  g.beginPath();
-  g.arc(128, 128, 108, 0, Math.PI * 2);
-  g.strokeStyle = "rgba(255,210,0,0.2)";
-  g.lineWidth = 2;
-  g.stroke();
-  g.fillStyle = "#e8e2d6";
+  const red = redFrom != null && redFrom < maxVal ? redFrom : maxVal * 0.86;
+  if (red < maxVal) {
+    const a0 = GAUGE_START + (red / maxVal) * GAUGE_SWEEP;
+    const a1 = GAUGE_START + GAUGE_SWEEP;
+    g.beginPath();
+    g.arc(cx, cy, r * 0.84, a0, a1);
+    g.arc(cx, cy, r * 0.72, a1, a0, true);
+    g.closePath();
+    g.fillStyle = "rgba(196, 28, 28, 0.55)";
+    g.fill();
+  }
   g.textAlign = "center";
   g.textBaseline = "middle";
-  const ticks = kind === "rpm" ? 8 : 11;
-  for (let i = 0; i <= ticks; i++) {
-    const t = i / ticks;
-    const a = -Math.PI * 0.75 + t * Math.PI * 1.5;
-    const x0 = 128 + Math.cos(a) * 100;
-    const y0 = 128 + Math.sin(a) * 100;
-    const x1 = 128 + Math.cos(a) * 118;
-    const y1 = 128 + Math.sin(a) * 118;
-    g.strokeStyle = kind === "rpm" && t > 0.78 ? "#d4121a" : "#e8e2d6";
-    g.lineWidth = t % 0.2 < 0.01 ? 4 : 2;
+  const major = kind === "rpm" ? 1 : 20;
+  const minor = kind === "rpm" ? 1 : 10;
+  const steps = Math.round(maxVal / minor);
+  for (let i = 0; i <= steps; i++) {
+    const v = i * minor;
+    if (v > maxVal + 0.001) break;
+    const t = v / maxVal;
+    const a = GAUGE_START + t * GAUGE_SWEEP;
+    const isMajor = Math.abs(v / major - Math.round(v / major)) < 0.001;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    g.strokeStyle = v >= red ? "#ff6a62" : "#e8e4d8";
+    g.lineWidth = isMajor ? 3.2 : 1.6;
     g.beginPath();
-    g.moveTo(x0, y0);
-    g.lineTo(x1, y1);
+    g.moveTo(cx + cos * r * (isMajor ? 0.74 : 0.79), cy + sin * r * (isMajor ? 0.74 : 0.79));
+    g.lineTo(cx + cos * r * 0.84, cy + sin * r * 0.84);
     g.stroke();
-    if (i % (kind === "rpm" ? 1 : 2) === 0) {
-      const label = kind === "rpm" ? String((maxVal * t) / 1000) : String(Math.round(maxVal * t));
-      g.font = "bold 18px sans-serif";
-      g.fillStyle = kind === "rpm" && t > 0.78 ? "#d4121a" : "#e8e2d6";
-      g.fillText(label, 128 + Math.cos(a) * 78, 128 + Math.sin(a) * 78);
+    if (isMajor) {
+      g.fillStyle = v >= red ? "#ff8a82" : "#f2eee4";
+      g.font = "bold 22px sans-serif";
+      g.fillText(String(Math.round(v)), cx + cos * r * 0.62, cy + sin * r * 0.62);
     }
   }
-  g.fillStyle = "rgba(255,255,255,0.08)";
-  g.beginPath();
-  g.ellipse(128, 100, 68, 38, 0, Math.PI, Math.PI * 2);
-  g.fill();
-  g.fillStyle = "#f4f0e6";
-  g.font = "bold 16px sans-serif";
-  g.fillText(kind === "rpm" ? "RPM x1000" : "km/h", 128, 162);
+  g.fillStyle = "rgba(232,228,216,0.62)";
+  g.font = "bold 15px sans-serif";
+  g.fillText(kind === "rpm" ? "RPM" : "MPH", cx, cy - r * 0.08);
+  if (kind === "rpm") {
+    g.font = "12px sans-serif";
+    g.fillStyle = "rgba(232,228,216,0.42)";
+    g.fillText("×1000", cx, cy + 8);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
@@ -3766,26 +3868,71 @@ function hudMat(opts) {
   return mat;
 }
 
-function makeNeedle(small) {
-  const r = small ? 0.01 : POV_GAUGE_R;
-  const ny = r * 0.36;
-  const nh = r * 0.82;
-  const nw = r * 0.08;
+/**
+ * Needle along +X so rotation.z=0 is 3 o'clock — the same convention as the
+ * chase HUD canvas (`g.rotate(angle)` then draw toward +X). Three.js Y-up
+ * makes clockwise negative, so the live angle is `-canvasAngle`.
+ */
+function makeNeedle() {
+  const r = POV_GAUGE_R;
+  const blade = r * 0.78;
+  const thick = r * 0.065;
   const pivot = new THREE.Group();
   const needle = new THREE.Mesh(
-    new THREE.BoxGeometry(nw, nh, nw * 0.5),
-    new THREE.MeshBasicMaterial({ color: 0xff2a14, toneMapped: false, fog: false, depthTest: false, side: THREE.DoubleSide })
+    new THREE.BoxGeometry(blade, thick, thick * 0.4),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd200,
+      toneMapped: false,
+      fog: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    })
   );
-  needle.position.y = ny;
-  const hubR = r * 0.12;
+  needle.position.x = blade * 0.38;
+  needle.frustumCulled = false;
+  needle.renderOrder = 9;
+  const hubR = r * 0.11;
   const hub = new THREE.Mesh(
-    new THREE.CylinderGeometry(hubR, hubR, hubR * 0.8, 8),
-    new THREE.MeshBasicMaterial({ color: 0x888890, toneMapped: false, fog: false })
+    new THREE.CylinderGeometry(hubR, hubR, hubR * 0.7, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0x161614,
+      toneMapped: false,
+      fog: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    })
   );
   hub.rotation.x = Math.PI / 2;
+  hub.frustumCulled = false;
+  hub.renderOrder = 10;
   pivot.add(needle, hub);
-  pivot.rotation.z = GAUGE_START;
+  pivot.rotation.z = -GAUGE_START;
   return pivot;
+}
+
+/**
+ * One analog dial facing the driver, unmirrored.
+ * Face only: Y=180 aims the disc at the seat, scale.x undoes the UV mirror.
+ * The needle stays in unmirrored car XY so +X is 3 o'clock and clockwise
+ * is `-canvasAngle` — same as the chase HUD, without a negative-scale parent.
+ * @param {"speed"|"rpm"} kind
+ * @param {number} maxVal
+ * @param {number} [redFrom]
+ */
+function makeDial(kind, maxVal, redFrom) {
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(POV_GAUGE_R, 48),
+    clusterMat({ map: gaugeFace(kind, maxVal, redFrom) })
+  );
+  face.rotation.y = Math.PI;
+  face.scale.x = -1;
+  face.frustumCulled = false;
+  face.renderOrder = 8;
+  const needle = makeNeedle();
+  needle.position.z = -0.004;
+  g.add(face, needle);
+  return { group: g, needle };
 }
 
 /**
@@ -3799,8 +3946,9 @@ function attachCockpit(root) {
   const rig = root.userData.povRig;
   ensurePovHead(root, rig);
   const spec = CARS[root.userData.carId] || CARS.celica;
-  const vmax = Math.round((spec.maxSpeedKmh || 250) / 10) * 10;
-  const rpmMax = Math.ceil((spec.redline || 7500) / 1000) * 1000;
+  /** Match chase AnalogDial max (9) so C-key does not change the tach scale. */
+  const rpmMax = 9;
+  const rpmRed = Math.max(6, (spec.redline || 7500) / 1000);
   const hull = rig.hull || localHull(root);
 
   const cab = new THREE.Group();
@@ -3861,37 +4009,22 @@ function attachCockpit(root) {
 
   const cluster = new THREE.Group();
   cluster.name = "gauge-cluster";
-  const speedTex = gaugeFace("speed", vmax);
-  const rpmTex = gaugeFace("rpm", rpmMax);
-  const speedFace = new THREE.Mesh(
-    new THREE.CircleGeometry(POV_GAUGE_R, 32),
-    clusterMat({ map: speedTex })
-  );
-  speedFace.position.set(POV_GAUGE_R * 1.22, 0, 0);
-  const rpmFace = new THREE.Mesh(
-    new THREE.CircleGeometry(POV_GAUGE_R, 32),
-    clusterMat({ map: rpmTex })
-  );
-  rpmFace.position.set(-POV_GAUGE_R * 1.22, 0, 0);
-  const speedNeedle = makeNeedle();
-  speedNeedle.position.set(0, 0, 0.004);
-  speedFace.add(speedNeedle);
-  const rpmNeedle = makeNeedle();
-  rpmNeedle.position.set(0, 0, 0.004);
-  rpmFace.add(rpmNeedle);
-  cluster.add(speedFace, rpmFace);
+  const speedDial = makeDial("speed", POV_SPEED_MAX_MPH, 120);
+  const rpmDial = makeDial("rpm", rpmMax, rpmRed);
+  // Tach left, speedo right — ST205 / chase HUD layout.
+  rpmDial.group.position.set(-POV_GAUGE_R * 1.28, 0, 0);
+  speedDial.group.position.set(POV_GAUGE_R * 1.28, 0, 0);
+  cluster.add(rpmDial.group, speedDial.group);
   const binnacle = new THREE.Mesh(
-    new THREE.BoxGeometry(POV_GAUGE_R * 5.1, 0.03, 0.09),
+    new THREE.BoxGeometry(POV_GAUGE_R * 5.2, 0.028, 0.08),
     dark
   );
-  binnacle.position.set(0, POV_GAUGE_R * 0.92, 0.02);
+  binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
+  binnacle.userData.cabinFill = true;
   cluster.add(binnacle);
-  // CircleGeometry faces +Z. Rotate Y 180 so the printed faces look at the driver.
-  speedFace.rotation.y = Math.PI;
-  rpmFace.rotation.y = Math.PI;
-  cluster.position.set(rig.eyeX + 0.03, rig.eyeY - 0.22, rig.eyeZ + 0.4);
-  cluster.rotation.set(0.18, 0, 0);
-  cluster.renderOrder = 2;
+  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.16, rig.eyeZ + 0.38);
+  cluster.rotation.set(0.14, 0, 0);
+  cluster.renderOrder = 8;
   cab.add(cluster);
 
   const hasGlbWheel = !!root.userData.glbSteerWheel;
@@ -3912,6 +4045,8 @@ function attachCockpit(root) {
     column.add(wheel);
     cab.add(column);
     root.userData.steerWheel = wheel;
+    root.userData.steerSpin = wheel;
+    root.userData.steerAxis = "z";
   }
 
   const mirror = makeRearviewMirror();
@@ -3922,13 +4057,13 @@ function attachCockpit(root) {
   root.add(cab);
   root.userData.cockpit = cab;
   root.userData.gaugeCluster = cluster;
-  root.userData.speedNeedle = speedNeedle;
-  root.userData.rpmNeedle = rpmNeedle;
+  root.userData.speedNeedle = speedDial.needle;
+  root.userData.rpmNeedle = rpmDial.needle;
   if (!root.userData.steerWheel) root.userData.steerWheel = null;
-  root.userData.gaugeVmax = vmax;
+  root.userData.gaugeVmax = POV_SPEED_MAX_MPH;
   root.userData.gaugeRpmMax = rpmMax;
-  root.userData._spdGauge = { x: GAUGE_START, v: 0 };
-  root.userData._rpmGauge = { x: GAUGE_START, v: 0 };
+  root.userData._spdGauge = { x: -GAUGE_START, v: 0 };
+  root.userData._rpmGauge = { x: -GAUGE_START, v: 0 };
   root.userData.mirror = mirror;
   root.userData.mirrorGlass = mirror.userData.glass;
 }
@@ -3990,22 +4125,31 @@ function makeRearviewMirror() {
     new THREE.BoxGeometry(0.34, 0.1, 0.016),
     cabinMat(0x1a1a20, 0.55, 0.2)
   );
+  frame.frustumCulled = false;
+  // Driver looks +Z at this group. The live image must sit on the seat-facing
+  // side of the frame (negative Z) or the player only sees black plastic.
   const glass = new THREE.Mesh(
     new THREE.PlaneGeometry(0.32, 0.082),
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       toneMapped: false,
       fog: false,
+      depthTest: false,
+      depthWrite: false,
       side: THREE.DoubleSide,
     })
   );
-  glass.position.z = 0.009;
+  glass.position.z = -0.01;
+  glass.scale.x = -1;
+  glass.frustumCulled = false;
+  glass.renderOrder = 12;
   const stem = new THREE.Mesh(
     new THREE.BoxGeometry(0.012, 0.04, 0.012),
     cabinMat(0x121216, 0.6, 0.15)
   );
   stem.position.set(0, 0.048, -0.004);
   g.add(frame, glass, stem);
+  g.frustumCulled = false;
   g.userData.glass = glass;
   return g;
 }
@@ -4020,18 +4164,16 @@ function makeRearviewMirror() {
 export function setCockpitView(root, on, _camera) {
   if (!root) return;
   buildPovHideCache(root);
-  const hide = root.userData._povHide;
+  const hide = root.userData._povHide || [];
   for (let i = 0; i < hide.length; i++) {
     const obj = hide[i];
     if (on) obj.visible = false;
     else obj.visible = !obj.userData.interiorKeepHidden;
   }
-  // GLB cabin shells stay off in every view — they clip the sim lens.
-  // The live cluster, wheel, and hood are the in-car picture.
-  root.traverse((obj) => {
-    if (obj.userData && obj.userData.interiorKeepHidden) obj.visible = false;
-    if (obj.userData && obj.userData.glbSteer) obj.visible = !!on;
-  });
+  const keep = root.userData._povKeepHidden || [];
+  for (let i = 0; i < keep.length; i++) keep[i].visible = false;
+  const steer = root.userData._povSteer || [];
+  for (let i = 0; i < steer.length; i++) steer[i].visible = !!on;
   const glbWheel = root.userData.glbSteerWheel;
   if (glbWheel) glbWheel.visible = !!on;
   const cab = root.userData.cockpit;
@@ -4049,12 +4191,6 @@ export function setCockpitView(root, on, _camera) {
     if (mir.parent && mir.parent !== cab && mir.parent !== root) root.add(mir);
     mir.visible = !!on;
     mir.scale.setScalar(1);
-  }
-  if (on) {
-    root.traverse((obj) => {
-      if (!obj.userData) return;
-      if (obj.userData.windshield || obj.userData.povShell) obj.visible = false;
-    });
   }
 }
 
@@ -4074,8 +4210,9 @@ export function setCockpitMirrorMap(root, texture) {
   mat.color.setHex(0xffffff);
   mat.toneMapped = false;
   mat.fog = false;
+  mat.depthTest = false;
+  mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
-  glass.scale.x = -Math.abs(glass.scale.x || 1);
 }
 
 function springNeedle(state, target, dt, wn, zeta) {
@@ -4094,16 +4231,17 @@ function springNeedle(state, target, dt, wn, zeta) {
 export function updateCockpit(root, state) {
   if (!root || !root.userData.speedNeedle) return;
   const dt = Math.max(0.001, Math.min(0.05, state.dt || 1 / 60));
-  const vmax = root.userData.gaugeVmax || 250;
-  const rpmMax = root.userData.gaugeRpmMax || 8000;
-  const spdT = GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, (state.speedKmh || 0) / vmax));
-  let rpmT = GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1.04, (state.rpm || 0) / rpmMax));
-  if ((state.rpm || 0) < 1400) rpmT += Math.sin(performance.now() * 0.042) * 0.012;
+  const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_MPH;
+  const rpmMax = root.userData.gaugeRpmMax || 8;
+  const mph = Math.max(0, (state.speedKmh || 0) * KMH_TO_MPH);
+  const rpmN = Math.max(0, (state.rpm || 0) / 1000);
+  const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, mph / vmax)));
+  const rpmT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1.04, rpmN / rpmMax)));
   if (root.userData.speedNeedle) {
-    root.userData.speedNeedle.rotation.z = springNeedle(root.userData._spdGauge, spdT, dt, 12, 0.92);
+    root.userData.speedNeedle.rotation.z = springNeedle(root.userData._spdGauge, spdT, dt, 14, 1.12);
   }
   if (root.userData.rpmNeedle) {
-    root.userData.rpmNeedle.rotation.z = springNeedle(root.userData._rpmGauge, rpmT, dt, 34, 0.48);
+    root.userData.rpmNeedle.rotation.z = springNeedle(root.userData._rpmGauge, rpmT, dt, 22, 1.08);
   }
 }
 

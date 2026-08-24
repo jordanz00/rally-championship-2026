@@ -833,7 +833,7 @@ button.ghost {
 }
 
 #cluster {
-  display: none;
+  display: flex;
   position: absolute;
   left: 50%;
   bottom: 14px;
@@ -843,12 +843,17 @@ button.ghost {
   gap: 18px;
   pointer-events: none;
   z-index: 7;
-  opacity: 0.96;
+  opacity: 0;
+  visibility: hidden;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  transition: opacity 0.16s linear, visibility 0s linear 0.16s;
 }
 
 #screen-hud.chase-gauges #cluster {
   display: flex;
+  opacity: 0.96;
+  visibility: visible;
+  transition: opacity 0.16s linear, visibility 0s;
 }
 
 #screen-hud.chase-gauges .hud-bottom {
@@ -972,6 +977,9 @@ button.ghost {
 @media (prefers-reduced-motion: reduce) {
   .cluster-slide {
     animation: none;
+  }
+  #cluster {
+    transition: none;
   }
 }
 

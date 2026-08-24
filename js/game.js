@@ -18,16 +18,16 @@ import {
   TUNNEL,
   GFX,
   VISUAL,
-} from "./config.js?v=126";
+} from "./config.js?v=127";
 import { Input } from "./input.js?v=38";
-import { Vehicle } from "./physics/vehicle.js?v=69";
+import { Vehicle } from "./physics/vehicle.js?v=71";
 import { getSurface } from "./physics/surfaces.js?v=44";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=60";
-import { prepareCelica, loadCelicaFromFile, watchForCelicaFile, isGltfCar, garageLoadSummary, createPlayerCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=109";
-import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=3";
-import { Track } from "./tracks/track.js?v=164";
+import { prepareCelica, loadCelicaFromFile, watchForCelicaFile, isGltfCar, garageLoadSummary, createPlayerCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=113";
+import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
+import { Track } from "./tracks/track.js?v=168";
 import { preparePropKit } from "./tracks/prop-kit.js?v=17";
-import { Opponent } from "./ai.js?v=99";
+import { Opponent } from "./ai.js?v=105";
 import { RallyAudio } from "./audio/engine.js?v=48";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=29";
@@ -136,7 +136,9 @@ export class RallyGame {
     this._camFromPos = new THREE.Vector3();
     this._camFromLook = new THREE.Vector3();
     this._camFromUp = new THREE.Vector3(0, 1, 0);
-    this._camBlendDur = 0.12;
+    this._camBlendDur = 0.22;
+    this._camBlendFromFov = CAMERA.fov || 60;
+    this._camBlendFromNear = 0.2;
     this._mirrorEye = new THREE.Vector3();
     this._mirrorLook = new THREE.Vector3();
     this._blobQuery = {};
@@ -1705,29 +1707,7 @@ export class RallyGame {
         if (this.input.camera) {
           // Attract / garage keep the orbit showroom — never attach POV under the car.
           if (this.state !== "title" && this.state !== "menu") {
-            this.camMode = (this.camMode + 1) % CAMERA.views.length;
-            // Carry the current lens with the car, then ease into the next —
-            // a world-space freeze is what read as hang / lag on C.
-            this._camSnap = false;
-            this._camBlendFrom.copy(this.camera.position);
-            this._camBlendFromLook.copy(this._camLookSmooth);
-            this._camBlendFromUp.copy(this.camera.up);
-            const draw = this.player && this.player._draw;
-            if (draw) {
-              this._camBlendAnchor.set(draw.x, draw.y, draw.z);
-              this._camBlendAnchorYaw = draw.yaw;
-            } else {
-              this._camBlendAnchor.copy(this.camera.position);
-              this._camBlendAnchorYaw = this._camYaw;
-            }
-            this._camBlendDur = CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.12;
-            this._camBlendT = this._camBlendDur;
-            const mode = CAMERA.views[this.camMode];
-            this._mirrorDefer = 0;
-            this._applyCockpitCam();
-            if (this.state === "race" || this.state === "countdown") {
-              this.hud.flashMessage(mode.label);
-            }
+            this._cycleCamera();
           }
         }
         if (this.input.transToggle && this.player) {
@@ -1904,7 +1884,7 @@ export class RallyGame {
       // Keep the grid planted — do not let chase cam drift in from the last stage.
       if (this._gridCamHold > 0) {
         this._gridCamHold -= dt;
-        this._camSnap = true;
+        if (this._camBlendT <= 0) this._camSnap = true;
       }
       this._syncPackMeshes();
       this._chaseCam(dt);
@@ -2272,6 +2252,47 @@ export class RallyGame {
     this.playerMesh.updateMatrixWorld(true);
   }
 
+  /**
+   * Cycle POV → medium → far. Pose eases on the next chase tick — this frame
+   * only records the from-pose so C never hitch-renders a mirror or GLB swap.
+   */
+  _cycleCamera() {
+    this.camMode = (this.camMode + 1) % CAMERA.views.length;
+    this._startCamBlend();
+    const mode = CAMERA.views[this.camMode];
+    if (this.state === "race" || this.state === "countdown") {
+      this.hud.flashMessage(mode.label);
+    }
+  }
+
+  /**
+   * Capture the live lens as the blend origin. The from-pose rides with the car
+   * via `_carryBlendPoint` so a 0.22s ease cannot freeze in world space.
+   */
+  _startCamBlend() {
+    this._camSnap = false;
+    this._camBlendFrom.copy(this.camera.position);
+    if (this._camLookSmooth.lengthSq() > 0.01) this._camBlendFromLook.copy(this._camLookSmooth);
+    else {
+      this.camera.getWorldDirection(this._eyeLocal);
+      this._camBlendFromLook.copy(this.camera.position).addScaledVector(this._eyeLocal, 8);
+    }
+    this._camBlendFromUp.copy(this.camera.up);
+    this._camBlendFromFov = this._camFovSmooth;
+    this._camBlendFromNear = this._camNearSmooth;
+    const draw = this.player && this.player._draw;
+    if (draw) {
+      this._camBlendAnchor.set(draw.x, draw.y, draw.z);
+      this._camBlendAnchorYaw = draw.yaw;
+    } else {
+      this._camBlendAnchor.copy(this.camera.position);
+      this._camBlendAnchorYaw = this._camYaw;
+    }
+    const dur = CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.22;
+    this._camBlendDur = dur;
+    this._camBlendT = dur;
+  }
+
   _applyCockpitCam() {
     if (!this.playerMesh) return;
     // Title / SELECT MODE / garage always use the free orbit camera.
@@ -2283,7 +2304,6 @@ export class RallyGame {
       return;
     }
     const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
-    // Swap cabin + chase cluster on the C press — waiting for distance was a hitch.
     this.hud.setChaseGauges(!pov);
     this._gaugeHoldPov = false;
     if (pov) {
@@ -2573,7 +2593,16 @@ export class RallyGame {
       this._camSnap = false;
       const stiff = mode.stiffness || CAMERA.viewBlendStiffness || 26;
       const follow = 1 - Math.exp(-stiff * dt);
-      this._camPos.lerp(this._camTarget, follow);
+      // Medium/POV-adjacent chase locks XZ to the live car so residual launch
+      // hop cannot read as the body bouncing fore-aft in frame. Far view keeps
+      // the slower cinematic follow.
+      if (mode.id !== "far") {
+        this._camPos.x = this._camTarget.x;
+        this._camPos.z = this._camTarget.z;
+        this._camPos.y += (this._camTarget.y - this._camPos.y) * follow;
+      } else {
+        this._camPos.lerp(this._camTarget, follow);
+      }
       this._camLookSmooth.lerp(this._camLook, follow);
       this.camera.up.lerp(this._camUp, follow).normalize();
     }
@@ -2599,11 +2628,15 @@ export class RallyGame {
     );
     const wantFov = (rig && wantPov ? rig.fov : mode.fov) + punch + this._camFovKick * (wantPov ? 0.55 : 1);
     const wantNear = (rig && wantPov ? rig.near : mode.near) || 0.2;
-    // FOV eases on its own clock so arriving at the seat does not snap the lens.
-    const fovStiff = CAMERA.fovBlendStiffness != null ? CAMERA.fovBlendStiffness : 22;
-    const fovFollow = blending ? ease : 1 - Math.exp(-fovStiff * dt);
-    this._camFovSmooth += (wantFov - this._camFovSmooth) * fovFollow;
-    this._camNearSmooth += (wantNear - this._camNearSmooth) * fovFollow;
+    if (blending) {
+      this._camFovSmooth = this._camBlendFromFov + (wantFov - this._camBlendFromFov) * ease;
+      this._camNearSmooth = this._camBlendFromNear + (wantNear - this._camBlendFromNear) * ease;
+    } else {
+      const fovStiff = CAMERA.fovBlendStiffness != null ? CAMERA.fovBlendStiffness : 18;
+      const fovFollow = 1 - Math.exp(-fovStiff * dt);
+      this._camFovSmooth += (wantFov - this._camFovSmooth) * fovFollow;
+      this._camNearSmooth += (wantNear - this._camNearSmooth) * fovFollow;
+    }
     if (
       Math.abs(this.camera.fov - this._camFovSmooth) > 0.02 ||
       Math.abs(this.camera.near - this._camNearSmooth) > 0.002 ||
@@ -2615,22 +2648,35 @@ export class RallyGame {
       this._camProjDirty = false;
     }
 
-    if (wantPov && mesh && !this._cockpitLive) {
-      setCockpitView(mesh, true, this.camera);
-      this._cockpitLive = true;
-      this._povHudFade = 1;
-      if (this._mirrorRT) {
-        setCockpitMirrorMap(mesh, this._mirrorRT.texture);
-        this._mirrorTick = 0;
+    const attachDist = CAMERA.povAttachDist != null ? CAMERA.povAttachDist : 1.35;
+    const detachDist = CAMERA.povDetachDist != null ? CAMERA.povDetachDist : 1.6;
+    if (mesh) {
+      if (wantPov) {
+        const seatIn = !blending || ease >= 0.58 || dist < attachDist;
+        if (seatIn && !this._cockpitLive) {
+          setCockpitView(mesh, true, this.camera);
+          this._cockpitLive = true;
+          this._povHudFade = 1;
+          this._mirrorDefer = Math.max(this._mirrorDefer || 0, 1);
+          if (this._mirrorRT) {
+            setCockpitMirrorMap(mesh, this._mirrorRT.texture);
+            this._mirrorTick = 0;
+          }
+        }
+      } else if (this._cockpitLive) {
+        const seatOut = !blending || ease >= 0.42 || dist > detachDist;
+        if (seatOut) {
+          setCockpitView(mesh, false, this.camera);
+          this._cockpitLive = false;
+          this._povHudFade = 0;
+        }
       }
-    } else if (!wantPov && this._cockpitLive && mesh) {
-      setCockpitView(mesh, false, this.camera);
-      this._cockpitLive = false;
-      this._povHudFade = 0;
+      updatePovHudFade(mesh, this._cockpitLive ? 1 : 0);
     }
-
-    if (mesh) updatePovHudFade(mesh, wantPov ? 1 : 0);
-    this.hud.setChaseGauges(!wantPov);
+    let showChase = !wantPov;
+    if (blending && wantPov) showChase = ease < 0.48;
+    if (blending && !wantPov) showChase = ease > 0.32;
+    this.hud.setChaseGauges(showChase);
     this._gaugeHoldPov = false;
   }
 
@@ -2916,10 +2962,12 @@ export class RallyGame {
       depthBuffer: true,
       stencilBuffer: false,
     });
-    // Intermediate map — no sRGB tag (avoids double convert + black glass).
-    this._mirrorRT.texture.colorSpace = THREE.NoColorSpace;
+    // sRGB RT + no tone map on capture: MeshBasic glass (toneMapped false)
+    // then round-trips correctly. Baking ACES into an untagged map was
+    // gamma-crushed to black when the canvas encoded it a second time.
+    this._mirrorRT.texture.colorSpace = THREE.SRGBColorSpace;
     this._mirrorRT.texture.generateMipmaps = false;
-    this._mirrorCam = new THREE.PerspectiveCamera(48, mw / mh, 0.2, 520);
+    this._mirrorCam = new THREE.PerspectiveCamera(52, mw / mh, 0.15, 620);
   }
 
   _syncMirrorCam() {
@@ -2946,7 +2994,8 @@ export class RallyGame {
 
   _renderMirror() {
     const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
-    if (!pov || !this._mirrorRT || !this.playerMesh) return;
+    if (!pov || !this._cockpitLive || this._camBlendT > 0.04) return;
+    if (!this._mirrorRT || !this.playerMesh) return;
     if (this._mirrorDefer > 0) {
       this._mirrorDefer -= 1;
       return;
@@ -2971,11 +3020,11 @@ export class RallyGame {
 
       const shadows = this.renderer.shadowMap.enabled;
       this.renderer.shadowMap.enabled = false;
-      // ACES once into the RT; glass is MeshBasic + toneMapped false so it is not mapped twice.
-      this.renderer.toneMapping = prevTone;
+      this.renderer.toneMapping = THREE.NoToneMapping;
       this.renderer.autoClear = true;
       const bg = this.scene.background;
       if (bg && bg.isColor) this.renderer.setClearColor(bg, 1);
+      else this.renderer.setClearColor(0x6aa0d4, 1);
       this.renderer.setRenderTarget(this._mirrorRT);
       this.renderer.clear();
       this.renderer.render(this.scene, this._mirrorCam);

@@ -1108,16 +1108,16 @@ export const CAMERA = {
   /** How hard chase yaw tracks the car — high = no “camera late” lag. */
   yawStiffness: 36,
   /**
-   * Seconds for a C-key pose ease. The from-pose rides with the car — a world
-   * freeze at 0.3s read as a hang while the stage kept moving.
+   * Seconds for a C-key pose ease. Short enough to feel instant, long enough
+   * to read as a move instead of a cut. From-pose rides with the car.
    */
-  viewBlendTime: 0.12,
+  viewBlendTime: 0.22,
   /** Chase follow while settled — snappy, no float. */
   viewBlendStiffness: 26,
   /** Seat lock once POV blend finishes (hard copy, this is a fallback). */
   povBlendStiffness: 42,
-  /** FOV / near ease — matches the pose so the lens does not lag the cut. */
-  fovBlendStiffness: 22,
+  /** FOV / near ease while settled. During a C-key blend they track the pose. */
+  fovBlendStiffness: 18,
   /** Metres from POV eye before the cabin attaches. */
   povAttachDist: 1.35,
   /** Pull back this far before restoring the exterior body when leaving POV. */

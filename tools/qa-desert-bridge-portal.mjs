@@ -27,35 +27,42 @@ async function main() {
   const browser = await launchChrome({ headless: true });
   const { cdp } = browser;
   await preparePage(cdp);
-  await goto(cdp, `${server.origin}/index.html?v=292`);
-  await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "boot" });
-  await pressKey(cdp, "Enter");
-  await waitFor(cdp, `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-menu"?1:null;`, { timeout: 8000, label: "menu" });
-  await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
-  await waitFor(cdp, `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-cars"?1:null;`, { timeout: 8000, label: "cars" });
-  await waitFor(cdp, `const b=document.querySelector("[data-car='celica']"); return b&&!b.disabled?1:null;`, { timeout: 20000, label: "celica" });
-  await clickSelector(cdp, "[data-car='celica']", "CELICA");
-  await waitFor(cdp, `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-courses"?1:null;`, { timeout: 20000, label: "courses" });
-  await evaluate(cdp, `
-    const g = window.game;
-    if (!g) return 0;
-    g._preloadToken = null;
-    if (g._preloadedTrack) {
-      try { g._preloadedTrack.dispose(); } catch (e) {}
-      g._preloadedTrack = null;
-      g._preloadedCourse = null;
-    }
-    return 1;
-  `);
-  await clickSelector(cdp, "[data-course='desert']", "DESERT");
-  await waitFor(
-    cdp,
-    `const g=window.game; return g&&(g.state==="countdown"||g.state==="race")&&g.track?1:null;`,
-    { timeout: 240000, label: "desert loaded" }
-  );
-  await sleep(400);
+  try {
+    await goto(cdp, `${server.origin}/index.html`);
+    await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "boot" });
+    await pressKey(cdp, "Enter");
+    await waitFor(
+      cdp,
+      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-menu"?1:null;`,
+      { timeout: 8000, label: "menu" }
+    );
+    await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
+    await waitFor(
+      cdp,
+      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-cars"?1:null;`,
+      { timeout: 12000, label: "cars" }
+    );
+    await waitFor(
+      cdp,
+      `const b=document.querySelector("[data-car='celica']"); return b&&!b.disabled?1:null;`,
+      { timeout: 20000, label: "celica" }
+    );
+    await clickSelector(cdp, "[data-car='celica']", "CELICA");
+    await waitFor(
+      cdp,
+      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-courses"?1:null;`,
+      { timeout: 25000, label: "courses" }
+    );
+    await clickSelector(cdp, "[data-course='desert']", "DESERT");
+    await waitFor(
+      cdp,
+      `return window.game && (window.game.state === "countdown" || window.game.state === "race")
+         ? window.game.courseId : null;`,
+      { timeout: 120000, label: "desert boot" }
+    );
+    await sleep(400);
 
-  const snap = await evaluate(cdp, `
+    const snap = await evaluate(cdp, `
     const g = window.game;
     const t = g && g.track;
     if (!t || !t.group) return { err: "no track" };
@@ -131,12 +138,38 @@ async function main() {
       carOk = carY > p.y - 0.5 && carY < p.y + 3.5;
     }
 
+    // Car-sized envelope through the hole — no authored block may contain it.
+    const clipHits = [];
+    if (p) {
+      const half = p.width * 0.5;
+      for (const zOff of [-clearHalfD * 0.65, -clearHalfD * 0.3, 0, clearHalfD * 0.3, clearHalfD * 0.65]) {
+        for (const lat of [0, half * 0.35, -half * 0.35]) {
+          for (const yOff of [0.55, 1.35, 2.15]) {
+            for (const child of bridge.children) {
+              if (!child.isMesh) continue;
+              const hx = Math.abs(child.scale.x) * 0.5;
+              const hy = Math.abs(child.scale.y) * 0.5;
+              const hz = Math.abs(child.scale.z) * 0.5;
+              if (
+                Math.abs(lat - child.position.x) <= hx &&
+                Math.abs(yOff - child.position.y) <= hy &&
+                Math.abs(zOff - child.position.z) <= hz
+              ) {
+                clipHits.push({ yOff, zOff, lat, y: child.position.y });
+              }
+            }
+          }
+        }
+      }
+    }
+
     return {
       openH,
       clearHalfW,
       clearHalfD,
       meshCount: bridge.children.filter((c) => c.isMesh).length,
       invaders,
+      clipHits,
       landSamples,
       carY,
       carOk,
@@ -147,23 +180,27 @@ async function main() {
 
   console.log(JSON.stringify(snap, null, 2));
   assert(snap && !snap.err, snap && snap.err ? snap.err : "probe failed");
-  assert(snap.openH >= 9.5, `openH too low: ${snap.openH}`);
-  assert(snap.clearHalfD >= 10, `clearHalfD too shallow: ${snap.clearHalfD}`);
+  assert(snap.openH >= 12.5, `openH too low: ${snap.openH}`);
+  assert(snap.clearHalfD >= 15, `clearHalfD too shallow: ${snap.clearHalfD}`);
   assert(!snap.invaders.length, `meshes invade portal: ${JSON.stringify(snap.invaders)}`);
+  assert(!snap.clipHits.length, `car envelope hits rock: ${JSON.stringify(snap.clipHits)}`);
   assert(snap.landSamples && snap.landSamples.length, "no land samples");
   for (const s of snap.landSamples) {
-    assert(s.delta < 1.5, `dune wall under arch: delta=${s.delta} at zOff=${s.zOff}`);
-    assert(s.delta > -3.5, `land collapsed under arch: delta=${s.delta}`);
+    assert(s.delta < 0.2, `dune wall under arch: delta=${s.delta} at zOff=${s.zOff}`);
+    assert(s.delta > -2.5, `land collapsed under arch: delta=${s.delta}`);
   }
   assert(snap.carOk, `car not driveable under arch (y=${snap.carY})`);
   assert(snap.underpass, "bridge sample missing underpass flag");
 
   console.log("PASS  Desert rock bridge portal is open");
-  await browser.close();
-  server.close();
+    await browser.close();
+    server.close();
+  } catch (err) {
+    console.error("FAIL", err.message || err);
+    await browser.close();
+    server.close();
+    process.exit(1);
+  }
 }
 
-main().catch((e) => {
-  console.error("FAIL", e.message || e);
-  process.exit(1);
-});
+main();

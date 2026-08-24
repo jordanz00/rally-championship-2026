@@ -33,7 +33,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=126";
+import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=127";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=44";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=32";
 import { JumpModel } from "./jump.js?v=10";
@@ -47,7 +47,12 @@ const G = 9.81;
 /** Hard integrator ceiling. Real yaw is capped per-speed inside _integrate. */
 const MAX_YAW_RATE = 2.35;
 const MAX_YAW_HANDBRAKE = 3.45;
-const WHEEL_I = 3.6;
+/**
+ * Wheel rotational inertia (kg·m²). Light wheels + Pacejka + launch torque
+ * formed a longitudinal hop that the hull still showed after visual squat
+ * was removed. Heavier hubs kill the oscillator without dulling burnout.
+ */
+const WHEEL_I = 6.4;
 const RHO = 1.225;
 const FRONTAL_A = 1.92;
 const RELAX_LEN = 0.055;
@@ -57,7 +62,7 @@ const RELAX_LEN = 0.055;
  * forward and back on throttle. This is the same first-order lag as slip
  * angle, a bit longer so the oscillator dies without dulling burnout.
  */
-const RELAX_KAPPA = 0.14;
+const RELAX_KAPPA = 0.22;
 /** Drop the chassis this far through the visual tarmac so tires read as planted. */
 const TIRE_PLANT = 0.09;
 /** Hard cap on road-follow pitch (~31°). Weight-transfer squat stays much smaller. */
@@ -67,6 +72,17 @@ const ROAD_PITCH_MAX = 0.55;
  * a noisy Track.query spike is a 10° twitch in one step and is what we cut.
  */
 const SLOPE_SLEW = 3.5;
+/**
+ * Visual road-pitch follow (1/s) and deadzone (rad). Physics `_slope` stays
+ * on SLOPE_SLEW so gravity still bites hills; the mesh ignores sub-degree
+ * axle chatter that reads as a springy body on throttle.
+ */
+const VIS_PITCH_RATE = 5;
+const VIS_PITCH_DEADZONE = 0.018;
+/** Player chassis long-accel filter (1/s). Applied force, not load-transfer `_ax`. */
+const AX_DRIVE_RATE = 11;
+/** Player deck-height target filter (1/s). Ribbon noise must not bob the hull. */
+const DECK_FILT_RATE = 8;
 /**
  * Baseline rate (1/s) at which lateral velocity bleeds away with no input.
  * Divided by the surface slideHold, so this sets the overall "how long does a
@@ -360,9 +376,12 @@ export class Vehicle {
     this._rearSlide = false;
     this._frontSlide = false;
     this._ax = 0;
+    this._axDrive = 0;
     this._ay = 0;
     this._slope = 0;
     this._roadPitch = 0;
+    this._visPitch = 0;
+    this._deckFilt = null;
     this._bodyPitch = 0;
     this._bodyPitchRate = 0;
     this._alphaF = 0;
@@ -457,9 +476,11 @@ export class Vehicle {
     const spawnGrade = clamp(spawnRoad.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX);
     this._slope = spawnGrade;
     this._roadPitch = -spawnGrade;
+    this._visPitch = -spawnGrade;
+    this._deckFilt = spawnRoad.midH - TIRE_PLANT;
     this._bodyPitch = 0;
     this._bodyPitchRate = 0;
-    this.pitch = this._roadPitch;
+    this.pitch = this._visPitch;
     this.pitchRate = 0;
     this.position.y = spawnRoad.midH - TIRE_PLANT;
     track.query(this.position.x, this.position.z, this._q, this.progress);
@@ -470,6 +491,7 @@ export class Vehicle {
     this._rearSlide = false;
     this._frontSlide = false;
     this._ax = 0;
+    this._axDrive = 0;
     this._ay = 0;
     this._alphaF = 0;
     this._alphaR = 0;
@@ -651,6 +673,7 @@ export class Vehicle {
       this._ax += (axSum / n - this._ax) * axFollow;
     } else {
       this._ax *= Math.exp(-6 * dt);
+      this._axDrive *= Math.exp(-8 * dt);
       this._kappaF *= Math.exp(-8 * dt);
       this._kappaR *= Math.exp(-8 * dt);
       this.jump.air(dt, this.throttle, this.brake);
@@ -717,6 +740,7 @@ export class Vehicle {
       this._slope = slew(this._slope, grade2, SLOPE_SLEW * dt);
       this._roadPitch = -this._slope;
     }
+    this._updateVisPitch(dt, axles, pit);
     this._stepAir(dt, deck, q2, axles, pit, track);
     // Felt blend (front/rear mix) already owns surfaceId. Overwriting it with
     // the centre-line ribbon made HUD / dust / tire beds lag or lie at every
@@ -876,7 +900,14 @@ export class Vehicle {
         chatter =
           roadChatter(q2.dist || 0, q2.lateral || 0, this._feltBump || 0) * bumpScale;
       }
-      const wantY = deck + chatter;
+      let plantDeck = deck;
+      if (!this.lowDetail) {
+        if (this._deckFilt == null) this._deckFilt = deck;
+        const deckRate = onJumpApproach ? 32 : DECK_FILT_RATE;
+        this._deckFilt += (deck - this._deckFilt) * (1 - Math.exp(-deckRate * dt));
+        plantDeck = this._deckFilt;
+      }
+      const wantY = plantDeck + chatter;
       if (this.lowDetail) {
         const dyNeed = wantY - prevY;
         const maxStep = (onJumpApproach ? 32 : 14) * dt;
@@ -938,7 +969,10 @@ export class Vehicle {
       this._airTime = 0;
       this._climbVel = 0;
       this._groundVy = 0;
-      if (!this.lowDetail) this._deckSmoothY = landY;
+      if (!this.lowDetail) {
+        this._deckSmoothY = landY;
+        this._deckFilt = landY;
+      }
       this._rampThrow = 0;
       this._rampGrade = 0;
       this._suspCompress = clamp(this._suspCompress * 0.35 + impact * 0.04, 0, 0.65);
@@ -1118,14 +1152,36 @@ export class Vehicle {
   }
 
   /**
+   * Visual pitch is a slow, deadzoned follow of the axle plane.
+   *
+   * Physics `_slope` already slews for gravity. Painting that same noisy
+   * axle delta onto the GLB made the body nod on throttle even after squat
+   * was removed — the origin sits on the contact patch, so a 1° twitch is
+   * centimetres of bumper motion.
+   *
+   * @param {number} dt
+   * @param {ReturnType<Vehicle['_fillAxles']>} axles
+   * @param {boolean} pit
+   */
+  _updateVisPitch(dt, axles, pit) {
+    if (!this.onGround || pit) {
+      this._visPitch = this._roadPitch;
+      return;
+    }
+    let visGrade = clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX);
+    if (Math.abs(visGrade) < VIS_PITCH_DEADZONE) visGrade = 0;
+    const rate = this.lowDetail ? 14 : VIS_PITCH_RATE;
+    this._visPitch += (-visGrade - this._visPitch) * (1 - Math.exp(-rate * dt));
+  }
+
+  /**
    * Chassis attitude from the road plane.
    *
-   * `_slope` is geometric uphill (front higher). `_roadPitch` is the Three.js
-   * Rx that plants the mesh on that plane (positive Rx is nose-down, so the
-   * visual sign is flipped). Accel/brake used to add a sprung squat on `_ax`;
-   * that spring chased tire-force chatter and the car nodded fore-aft. On
-   * ground the mesh now follows the road plus a one-shot landing squash. In
-   * the air the JumpModel owns attitude.
+   * `_slope` is geometric uphill (front higher). `_visPitch` is the Three.js
+   * Rx that plants the mesh (positive Rx is nose-down). Accel/brake used to add a sprung squat
+   * on `_ax`; that spring chased tire-force chatter and the car nodded fore-aft.
+   * On ground the mesh follows a deadzoned, slow road plane plus a one-shot
+   * landing squash. In the air the JumpModel owns attitude.
    */
   _updateAttitude(dt) {
     const s = this.spec;
@@ -1165,11 +1221,9 @@ export class Vehicle {
     this._springAxis("roll", rollTarget, dt, wnRoll, 1.35);
 
     if (this.onGround) {
-      const want = this._roadPitch + this._bodyPitch;
-      const maxStep = SLOPE_SLEW * dt;
-      const clamped = this.pitch + clamp(want - this.pitch, -maxStep, maxStep);
-      const k = 1 - Math.exp(-11 * dt);
-      this.pitch += (clamped - this.pitch) * k;
+      const want = this._visPitch + this._bodyPitch;
+      const k = 1 - Math.exp(-8 * dt);
+      this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {
       // Three.js Rx: + = nose down, JumpModel is + = nose up. Show the attitude
@@ -1481,7 +1535,12 @@ export class Vehicle {
       }
     }
     let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
-    vx += axTire * dt;
+    let axApplied = axTire;
+    if (!this.lowDetail) {
+      this._axDrive += (axTire - this._axDrive) * (1 - Math.exp(-AX_DRIVE_RATE * dt));
+      axApplied = this._axDrive;
+    }
+    vx += axApplied * dt;
 
     const speed01 = clamp(Math.abs(vx) / Math.max(8, top), 0, 1);
     const hbSlide = hb > hbEnter || this._shiftKick > 0.12;
@@ -1713,6 +1772,7 @@ export class Vehicle {
       vx = 0;
       vy = 0;
       r *= 0.45;
+      this._axDrive = 0;
       if (hb > 0.5) {
         this.omegaF *= 0.7;
         this.omegaR *= 0.12;
@@ -1721,14 +1781,17 @@ export class Vehicle {
 
     if (vx > top) vx = lerp(vx, top, 0.08);
     if (vx < -top * 0.28) vx = -top * 0.28;
-    if (vx === 0 && this.throttle < 0.02) axTire = 0;
+    if (vx === 0 && this.throttle < 0.02) {
+      axTire = 0;
+      this._axDrive = 0;
+    }
 
     // Lateral felt-g for body roll. Longitudinal _ax is blended once per
     // frame after all substeps so load transfer cannot chatter at 240 Hz.
     const ayKinematic = vx * r;
     const aySmooth = this.lowDetail ? 0.48 : 0.3;
     this._ay += (ayKinematic - this._ay) * aySmooth;
-    return { vx, vy, r, axTire };
+    return { vx, vy, r, axTire: this.lowDetail ? axTire : this._axDrive };
   }
 
   /**

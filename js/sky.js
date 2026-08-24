@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=126";
+import { VISUAL } from "./config.js?v=127";
 
 const VERT = /* glsl */ `
 varying vec3 vDir;

@@ -36,9 +36,16 @@ check(
 );
 
 check(
-  "C-key pose blend is short (no hang)",
-  /viewBlendTime:\s*0\.1/.test(config) && /_carryBlendPoint/.test(game) && /_camBlendFrom\.copy/.test(game),
-  "viewBlendTime ~0.12s and from-pose must ride with the car"
+  "C-key pose blend is a short ease, not a cut",
+  /viewBlendTime:\s*0\.22/.test(config) && /_startCamBlend/.test(game) && /_carryBlendPoint/.test(game),
+  "viewBlendTime ~0.22s and from-pose must ride with the car"
+);
+
+check(
+  "C press does not swap the cockpit on the same frame",
+  /this\._cycleCamera\(\)/.test(game) &&
+    !/this\._applyCockpitCam\(\);\s*\n\s*if \(this\.state === "race"/.test(game),
+  "setCockpitView / mirror capture must wait for the blend, not the C key"
 );
 
 check(
@@ -67,14 +74,14 @@ check(
 );
 
 check(
-  "gauges sized like a real cluster, keyed to the car",
-  /POV_GAUGE_R = 0\.04/.test(car) && /gaugeVmax/.test(car) && /maxSpeedKmh/.test(car),
-  "dial radius ~48 mm and vmax from CARS spec"
+  "gauges sized like a real cluster, MPH like chase HUD",
+  /POV_GAUGE_R = 0\.055/.test(car) && /POV_SPEED_MAX_MPH = 140/.test(car) && /gaugeVmax/.test(car),
+  "dial radius ~55 mm and vmax 140 MPH"
 );
 
 check(
   "GLB cabin shell stays hidden so POV can look out over the hood",
-  /interiorKeepHidden\) obj\.visible = false/.test(car) &&
+  /_povKeepHidden/.test(car) &&
     /userData\.windshield \|\| obj\.userData\.povShell/.test(car),
   "hide cache is glass/roof only; heavy interior must not unhide into the lens"
 );
@@ -88,9 +95,9 @@ check(
 
 check(
   "cache bust on the camera module graph",
-  /config\.js\?v=125/.test(game) && /celica\.js\?v=109/.test(game) && /game\.js\?v=335/.test(read("js/main.js")) &&
-    /cockpit-anim\.js\?v=3/.test(game),
-  "game.js must import bumped config + celica + cockpit-anim; main must import bumped game"
+  /celica\.js\?v=11[1-9]/.test(game) && /game\.js\?v=34[5-9]/.test(read("js/main.js")) &&
+    /cockpit-anim\.js\?v=[4-9]/.test(game),
+  "game.js must import bumped celica; main must import bumped game"
 );
 
 check(
@@ -103,7 +110,7 @@ check(
   "modeled steering wheel is used; no extra torus when the GLB has one",
   /function findGlbSteerNode/.test(car) && /function bindGlbSteeringWheel/.test(car) &&
     /if \(!hasGlbWheel\)/.test(car) && /TorusGeometry/.test(car) &&
-    /userData\.glbSteer/.test(car) && /steerAxis/.test(read("js/cars/cockpit-anim.js")),
+    /userData\.glbSteer/.test(car) && /steerSpin/.test(read("js/cars/cockpit-anim.js")),
   "bind the GLB rim, skip the procedural torus, animate the same node"
 );
 

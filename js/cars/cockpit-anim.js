@@ -8,12 +8,6 @@
  *   updateCockpit() gauge needles.
  */
 
-import * as THREE from "../../vendor/three.module.js";
-
-const AXIS_X = new THREE.Vector3(1, 0, 0);
-const AXIS_Y = new THREE.Vector3(0, 1, 0);
-const AXIS_Z = new THREE.Vector3(0, 0, 1);
-
 /**
  * @param {THREE.Object3D} root car root with userData.steerWheel
  * @param {{steer:number, gear:number, dt:number, yawRate?:number, hitWall?:number, slidePct?:number}} state
@@ -58,14 +52,12 @@ export function updateCockpitMotion(root, state) {
   anim.headVel *= 0.88;
   anim.headPitch += anim.headVel * dt;
 
-  const wheel = ud.steerWheel;
+  const wheel = ud.steerSpin || ud.steerWheel;
   if (wheel) {
-    if (ud.glbSteerWheel && ud._wheelBaseQuat) {
-      wheel.quaternion.copy(ud._wheelBaseQuat);
-      const ax = ud.steerAxis === "x" ? AXIS_X : ud.steerAxis === "y" ? AXIS_Y : AXIS_Z;
-      wheel.rotateOnAxis(ax, anim.wheelZ);
-    } else {
-      wheel.rotation.z = anim.wheelZ;
+    // Spin group +Z is the steering column (GLB pivot or procedural torus).
+    // Never rotateOnAxis with a world-AABB axis — that tumbled the modeled rim.
+    wheel.rotation.z = anim.wheelZ;
+    if (!ud.glbSteerWheel) {
       wheel.position.y = (ud._wheelBaseY ?? wheel.position.y) + anim.shiftT * 0.018;
       if (ud._wheelBaseY == null) ud._wheelBaseY = wheel.position.y;
     }
