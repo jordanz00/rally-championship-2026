@@ -12,18 +12,13 @@
     <meta name="theme-color" content="#050705" />
     <meta name="format-detection" content="telephone=no" />
     <title>Rally Championship 2026</title>
-    <meta name="description" content="Arcade browser rally — six cars, four stages, championship mode, power slides, co-driver calls." />
+    <meta name="description" content="Arcade browser rally — Celica, Delta, Stratos, four stages, championship mode, power slides, co-driver calls." />
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=24" />
-    <!-- Background warm: music + first stage assets while the splash is open -->
+    <link rel="stylesheet" href="css/game.css?v=26" />
+    <!-- Splash: title bed only. Stage music waits until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
-    <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" />
-    <link rel="prefetch" href="assets/music/forest.mp3?v=4" as="audio" />
-    <link rel="prefetch" href="assets/music/mountain.mp3?v=4" as="audio" />
-    <link rel="prefetch" href="assets/music/lakeside.mp3?v=4" as="audio" />
-    <link rel="prefetch" href="assets/music/result.mp3?v=4" as="audio" />
     <script>
       window.__rallyLeftTitle = false;
       function rallyShow(id) {
@@ -92,12 +87,22 @@
           if (!window.game) report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct within 8s.");
         }, 8000);
       })();
+
+      // Boot reveal: first paint is black, then the title fades up. Game.js
+      // owns later screen-to-screen fades; this only covers the HTML→splash beat.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          var c = document.getElementById("fx-curtain");
+          if (c && !window.__rallyLeftTitle) c.classList.remove("is-on");
+        });
+      });
     </script>
   </head>
   <body>
     <div id="crt">
       <div id="game-view"></div>
       <div class="scanlines"></div>
+      <div id="fx-curtain" class="fx-curtain is-on" aria-hidden="true"></div>
 
       <section id="screen-title" class="screen active">
           <div class="sr-emblem" aria-hidden="true">
@@ -157,13 +162,10 @@
 
       <section id="screen-cars" class="screen">
         <h2>SELECT CAR</h2>
-        <p class="hint">Rally GLBs from assets/ — T toggles AT/MT</p>
-        <button data-car="celica">CELICA GT-FOUR  ·  4WD</button>
-        <button data-car="delta">DELTA HF  ·  4WD</button>
-        <button data-car="stratos">STRATOS HF  ·  2WD</button>
-        <button data-car="jaguar">E-TYPE  ·  RWD</button>
-        <button data-car="focus">FOCUS ST  ·  FWD</button>
-        <button data-car="accord">ACCORD SPORT  ·  FWD</button>
+        <p class="hint">Group A rally cars — SPACE handbrake slide · T AT/MT</p>
+        <button data-car="celica">CELICA GT-FOUR  ·  4WD PLANTED</button>
+        <button data-car="delta">DELTA HF  ·  4WD SNAPPY</button>
+        <button data-car="stratos">STRATOS HF  ·  RWD SLIDE</button>
         <button data-menu="back" class="ghost">BACK</button>
       </section>
 
@@ -315,6 +317,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=351"></script>
+    <script type="module" src="js/main.js?v=403"></script>
   </body>
 </html>

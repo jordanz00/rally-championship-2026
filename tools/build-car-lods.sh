@@ -37,9 +37,6 @@ CARS=(
   "celica|gt4.glb|0.16"
   "delta|integrale.glb|0.22"
   "stratos|stratos.glb|0.55"
-  "jaguar|etype.glb|0.2"
-  "focus|focus.glb|0.18"
-  "accord|accord.glb|0.32"
 )
 
 for entry in "${CARS[@]}"; do

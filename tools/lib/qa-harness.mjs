@@ -259,8 +259,9 @@ async function connectCdp(url) {
      * @param {string} method e.g. "Runtime.evaluate"
      * @param {object} [params]
      */
-    send(method, params = {}) {
+    send(method, params = {}, opts = {}) {
       const id = nextId++;
+      const timeoutMs = opts.timeoutMs ?? 180000;
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
         ws.send(JSON.stringify({ id, method, params }));
@@ -269,8 +270,11 @@ async function connectCdp(url) {
         // thread for a long time. A short timeout here would report a harness
         // failure for what is really a page-side stall.
         setTimeout(() => {
-          if (pending.has(id)) { pending.delete(id); reject(new Error(`CDP timeout after 180s: ${method}`)); }
-        }, 180000);
+          if (pending.has(id)) {
+            pending.delete(id);
+            reject(new Error(`CDP timeout after ${Math.round(timeoutMs / 1000)}s: ${method}`));
+          }
+        }, timeoutMs);
       });
     },
     /**
@@ -371,13 +375,17 @@ export async function goto(cdp, url) {
  * @param {string} expression
  * @returns {Promise<any>}
  */
-export async function evaluate(cdp, expression) {
-  const res = await cdp.send("Runtime.evaluate", {
-    expression: `(() => { ${expression} })()`,
-    returnByValue: true,
-    awaitPromise: true,
-    userGesture: true,
-  });
+export async function evaluate(cdp, expression, opts = {}) {
+  const res = await cdp.send(
+    "Runtime.evaluate",
+    {
+      expression: `(() => { ${expression} })()`,
+      returnByValue: true,
+      awaitPromise: true,
+      userGesture: true,
+    },
+    { timeoutMs: opts.timeoutMs }
+  );
   if (res.exceptionDetails) {
     const d = res.exceptionDetails;
     throw new Error(`page threw: ${d.exception?.description || d.text}`);
@@ -397,7 +405,8 @@ export async function waitFor(cdp, expression, opts = {}) {
   const deadline = Date.now() + timeout;
   let last;
   while (Date.now() < deadline) {
-    last = await evaluate(cdp, expression);
+    const remain = Math.max(5000, deadline - Date.now() + 2000);
+    last = await evaluate(cdp, expression, { timeoutMs: remain });
     if (last) return last;
     await sleep(interval);
   }
@@ -516,8 +525,16 @@ export async function waitForResponsiveMainThread(cdp, maxLagMs = 400, timeout =
  * @param {{send:Function}} cdp
  * @returns {Promise<{via:"trusted-mouse"|"in-page", lag:number}>}
  */
-export async function clickResilient(cdp, selector, label = selector) {
-  const hit = await hitTest(cdp, selector);
+export async function clickResilient(cdp, selector, label = selector, settleMs = 15000) {
+  // A saturated boot main thread can answer `evaluate` before style/layout has
+  // flushed, so the control measures 0×0 for a moment. That is a perf symptom,
+  // not a broken button — poll until it is genuinely reachable.
+  const deadline = Date.now() + settleMs;
+  let hit = await hitTest(cdp, selector);
+  while (!hit.ok && Date.now() < deadline) {
+    await sleep(250);
+    hit = await hitTest(cdp, selector);
+  }
   if (!hit.ok) {
     throw new Error(`"${label}" is not clickable: ${hit.reason}` + (hit.blocker ? ` — covered by ${hit.blocker}` : ""));
   }

@@ -28,7 +28,7 @@
  * backwards and the co-driver reads every corner the wrong way.
  */
 
-import { COLORS } from "../config.js?v=127";
+import { COLORS } from "../config.js?v=137";
 
 export const COURSES = {
   /**

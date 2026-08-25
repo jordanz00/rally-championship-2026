@@ -48,15 +48,11 @@ check(
 );
 
 check(
-  "C cycles through _cycleCamera / _startCamBlend",
-  /function _cycleCamera|_cycleCamera\(\)/.test(game) && /_startCamBlend\(\)/.test(game),
-  "must not inline a cockpit swap on the C press"
-);
-
-check(
-  "C press does not call setCockpitView",
-  !/this\._applyCockpitCam\(\);\s*\n\s*if \(this\.state === "race"/.test(game),
-  "cockpit swap on the key frame was the hitch"
+  "C records blend origin; cabin seats mid-blend",
+  /_startCamBlend\(\)/.test(game) &&
+    /seatIn/.test(game) &&
+    !/if \(mode && mode\.id === "pov"\) this\._applyCockpitCam\(\)/.test(game),
+  "pose eases; cabin must not hitch-compile on the C press"
 );
 
 check(
@@ -66,9 +62,32 @@ check(
 );
 
 check(
-  "mirror does not extra-render on the C frame",
-  /!this\._cockpitLive \|\| this\._camBlendT > 0\.04/.test(game),
-  "a full scene capture on C is a hitch"
+  "rearview is a tiny short-range RT that is never disposed on C",
+  /GFX\.mirrorW/.test(game) &&
+    /this\._mirrorCam/.test(game) &&
+    /_ensureMirrorRT/.test(game) &&
+    /Never dispose this on a C-key/.test(game),
+  "mirror must stay cheap so it can run live without hitching"
+);
+
+check(
+  "every C-key mode switch starts a pose blend",
+  /this\.camMode = \(this\.camMode \+ 1\) % CAMERA\.views\.length/.test(game) &&
+    /_startCamBlend\(\)/.test(game) &&
+    /_cycleCamera\(/.test(game),
+  "POV / medium / far must all ease — no hard cut path"
+);
+
+check(
+  "blend uses smootherstep so the ends do not snap",
+  /blendU \* 6 - 15/.test(game),
+  "quintic smootherstep on pose / FOV / near"
+);
+
+check(
+  "cabin + mirror compile during load",
+  /_warmPov\(\)/.test(game) && /this\.renderer\.compile\(this\.scene, this\._mirrorCam\)/.test(game),
+  "first C must not hitch-compile shaders"
 );
 
 check(
@@ -83,7 +102,7 @@ const gameV = main.match(/game\.js\?v=(\d+)/);
 const mainV = index.match(/main\.js\?v=(\d+)/);
 check(
   "cache bust main↔game",
-  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 347,
+  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 378,
   `game=${gameV && gameV[1]} main=${mainV && mainV[1]}`
 );
 

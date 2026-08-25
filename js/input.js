@@ -199,6 +199,15 @@ export class Input {
       if (touch.camera) this.camera = true;
     }
 
+    // Headless QA hold — applied last so a real key/pad still wins if present.
+    const qa = this._qaHold;
+    if (qa && typeof qa === "object") {
+      if (qa.throttle != null) this.throttle = bounded(qa.throttle, 0, 1);
+      if (qa.steer != null) this.steer = bounded(qa.steer, -1, 1);
+      if (qa.brake != null) this.brake = bounded(qa.brake, 0, 1);
+      if (qa.handbrake != null) this.handbrake = bounded(qa.handbrake, 0, 1);
+    }
+
     this._edge.clear();
   }
 

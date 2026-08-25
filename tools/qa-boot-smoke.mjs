@@ -167,7 +167,7 @@ async function main() {
     await step("no unexpected full-screen opaque overlay", async () => {
       const overlays = await findOpaqueOverlays(cdp);
       // #screen-title legitimately covers the viewport while on the splash.
-      const unexpected = overlays.filter((o) => o.id !== "screen-title" && o.id !== "crt" && o.id !== "game-view");
+      const unexpected = overlays.filter((o) => o.id !== "screen-title" && o.id !== "crt" && o.id !== "game-view" && o.id !== "fx-curtain");
       assert(
         unexpected.length === 0,
         `element(s) fully cover the viewport opaquely: ${unexpected.map((o) => `${o.tag}#${o.id || "?"}.${o.cls} z=${o.zIndex} bg=${o.background}`).join("; ")}`

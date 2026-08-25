@@ -22,19 +22,22 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=71";
-import { getSurface } from "./physics/surfaces.js?v=44";
-import { AI, CARS } from "./config.js?v=127";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=113";
+import { Vehicle } from "./physics/vehicle.js?v=84";
+import { getSurface } from "./physics/surfaces.js?v=46";
+import { AI, CARS } from "./config.js?v=137";
+import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=119";
 
 const G = 9.81;
 
 /**
- * Lateral slots in meters (track +X / right). Spread wide enough that the pack
- * does not grind down one groove, and prime-ish in count so a 14-car field does
- * not pair up neatly.
+ * Lateral slots in metres (track +X / right). Tight enough that a slide still
+ * lands on asphalt — ±2.8 m plus an apex used to pin rivals on the painted edge.
  */
-const LANES = [-2.55, 0.35, 2.45, -1.35, 1.55, -2.85, 2.05, -0.55, 2.75, -1.95, 0.95, -2.25, 1.85, 0.15];
+const LANES = [-1.15, 0.2, 1.05, -0.55, 0.7, -1.28, 0.95, -0.25, 1.22, -0.88, 0.42, -1.02, 0.82, 0.08];
+/** Chassis-to-edge keep-out (m). Car half-width ~1.0 plus a slide buffer. */
+const LINE_EDGE = 2.2;
+/** Peak apex offset as a fraction of the on-road half-width. */
+const LINE_APEX_FRAC = 0.58;
 
 /**
  * Deterministic per-rival noise. Same rival and same sample index always gives
@@ -85,6 +88,56 @@ class Wander {
     const t = this.phase * this.phase * (3 - 2 * this.phase);
     return this.a + (this.b - this.a) * t;
   }
+}
+
+/**
+ * On-road half-width the chassis origin may use. Shrinks with speed so a
+ * committed slide still ends on tarmac.
+ * @param {number} width ribbon width (m)
+ * @param {number} spd m/s
+ */
+function safeHalfWidth(width, spd) {
+  const w = Math.max(6, width || 10);
+  const pad = LINE_EDGE + Math.min(1.55, Math.max(0, spd) * 0.034);
+  return Math.max(0.5, w * 0.5 - pad);
+}
+
+/**
+ * Out-in-out lateral on the ribbon. Positive = right of centre.
+ * A left turn (positive heading delta) apexes left (negative lat).
+ *
+ * @param {number} lane preferred slot
+ * @param {number} d1 heading change into the near horizon
+ * @param {number} d2 heading change near→far
+ * @param {number} curve |d1| + 0.7|d2|
+ * @param {number} lineScale tarmac vs loose
+ * @param {number} lineNoise wander (m)
+ * @param {number} width ribbon width
+ * @param {number} spd m/s
+ * @param {boolean} onTarmac
+ */
+function racingLat(lane, d1, d2, curve, lineScale, lineNoise, width, spd, onTarmac) {
+  const half = safeHalfWidth(width, spd);
+  const laneCap = Math.min(half * 0.68, 1.28);
+  let lat = clamp(lane, -laneCap, laneCap);
+  const turn = Math.sign(d1 !== 0 ? d1 : d2);
+  if (turn !== 0 && curve > 0.07) {
+    const kIn = Math.abs(d1);
+    const kOut = Math.abs(d2);
+    const apex = Math.min(
+      half * LINE_APEX_FRAC,
+      (onTarmac ? 0.52 : 0.36) + curve * 1.05 * lineScale
+    );
+    const inMix = clamp((kIn - 0.06) / 0.5, 0, 1);
+    const unwinding = kOut < kIn * 0.7 && kIn > 0.1;
+    if (unwinding) lat += turn * apex * 0.3;
+    else {
+      lat += turn * (1 - inMix) * apex * 0.48;
+      lat -= turn * inMix * apex;
+    }
+  }
+  lat += lineNoise;
+  return clamp(lat, -half, half);
 }
 
 /**
@@ -221,16 +274,20 @@ export class Opponent {
     const lineErr = this._lineWander.step(dt, 0.24);
     const mistakeScale = this.index === 0 ? 0.62 : 1 - this.skill * 0.22;
 
-    // Racing line: pro apex on tarmac, use width on loose surfaces.
-    const half = Math.max(1.05, q.width * 0.5 - 1.6);
-    const apexCap = near.landmark ? 2.4 : onTarmac ? 1.45 : 1.05;
-    const turnSign = Math.sign(d1 || d2) || 1;
-    const apex = -turnSign * Math.min(apexCap, curve * 3.4 * lineScale);
-    const entryWide = onTarmac ? 0 : turnSign * 0.42 * (1 - this.skill * 0.35);
-    const lineLat = clamp(
-      this.lane + apex + entryWide + lineErr * AI.mistakeSize * 2.2 * mistakeScale,
-      -half,
-      half
+    // Racing line: out-in-out inside a speed-aware envelope so a slide still
+    // lands on asphalt. Old math pinned ±2.8 m lanes plus a 1.4 m apex to the
+    // painted edge, then traffic shoved them the rest of the way off.
+    const half = safeHalfWidth(q.width, spd);
+    const lineLat = racingLat(
+      this.lane,
+      d1,
+      d2,
+      curve,
+      lineScale,
+      lineErr * (AI.mistakeSize || 0.22) * 0.85 * mistakeScale,
+      q.width,
+      spd,
+      onTarmac
     );
 
     // Grip where they will be BRAKING, not where they are now.
@@ -244,23 +301,24 @@ export class Opponent {
       this._avoid = this._passSide * 1.15;
       v._aiPassT -= dt;
     }
-    const lat = clamp(lineLat + this._avoid * 1.55 + this._passSide * 0.85, -half, half);
+    const dodge = clamp(this._avoid * 1.05 + this._passSide * 0.55, -half * 0.48, half * 0.48);
+    const lat = clamp(lineLat + dodge, -half, half);
     v._aiLat = q.lateral;
 
     // Steering: aim at a point on the chosen line, blended with the local
     // heading so hairpins are followed rather than cut.
-    const look = 10 + Math.min(16, spd * 0.32);
+    const look = 12 + Math.min(22, spd * 0.4) + curve * 8;
     const target = track.sample(Math.min(end, v.progress + look), this._target);
     const tx = target.x + target.nx * lat;
     const tz = target.z + target.nz * lat;
     let err = wrapHeading(Math.atan2(tx - v.position.x, tz - v.position.z) - v.yaw);
-    const headingWeight = onTarmac ? 0.36 : 0.28;
-    err = err * (1 - headingWeight) + wrapHeading(here.heading - v.yaw) * headingWeight;
-    // Getting back on the road has to be urgent. A weak correction here left
-    // rivals grinding along the embankment for the rest of the lap, because the
-    // countersteer they were feeding in to hold the slide cancelled it out.
     const off = Math.abs(q.lateral) - q.width * 0.5;
-    if (off > 0.15) err += (q.lateral > 0 ? -1 : 1) * Math.min(1.2, 0.12 + off * 0.9);
+    const headingWeight = off > 0 ? 0.58 : onTarmac ? 0.36 : 0.28;
+    err = err * (1 - headingWeight) + wrapHeading(here.heading - v.yaw) * headingWeight;
+    // Pull to centre before the edge, then hard once a wheel is in the dirt.
+    if (off > -0.55) {
+      err += (q.lateral > 0 ? -1 : 1) * Math.min(1.35, 0.14 + Math.max(0, off + 0.55) * 0.95);
+    }
 
     // Pace: how fast the surface ahead says this corner can be taken.
     const topSpd = (v.spec.maxSpeedKmh / 3.6) * Math.max(0.7, surfNear.speedScale);
@@ -269,11 +327,12 @@ export class Opponent {
     // A late-braking mistake shows up as believing the corner is faster than it
     // is; they then have to slide the difference out at the exit.
     const optimism = 1 + brakeErr * AI.mistakeSize * 0.5;
+    const tightMul = clamp(1.06 - Math.abs(d1) * 0.48 - Math.abs(d2) * 0.2, 0.7, 1);
     const vLimit = Math.min(
-      vNear * optimism * AI.cornerMargin,
+      vNear * optimism * (AI.cornerMargin || 0.98),
       vFar * 1.12 * optimism,
       topSpd
-    );
+    ) * tightMul;
 
     let throttle;
     let brake = 0;
@@ -309,7 +368,7 @@ export class Opponent {
 
     // Hairpin flick, for the rivals whose style it is.
     const tight = Math.abs(d1) > 0.9 && lookNear < 30;
-    if (this.flicks && tight && spd > 8 && spd < 20) hb = 0.22;
+    if (this.flicks && tight && spd > 8 && spd < 20 && off < -0.7) hb = 0.22;
 
     throttle *= traffic.lift;
     brake = Math.max(brake, traffic.brake);
@@ -370,6 +429,14 @@ export class Opponent {
     if (slideOver > 0) {
       const ease = clamp(1 - slideOver / Math.max(0.05, AI.driftPanic), AI.driftMinThrottle, 1);
       throttle *= ease;
+    }
+
+    // Off the ribbon: lift and gather. Flooring it in the dirt is how they
+    // stayed in the trees after a wide exit.
+    if (off > 0.05) {
+      throttle = Math.min(throttle, 0.2);
+      brake = Math.max(brake, Math.min(0.4, 0.1 + off * 0.16));
+      hb = 0;
     }
 
     v.step(

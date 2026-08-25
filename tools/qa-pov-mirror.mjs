@@ -40,9 +40,9 @@ const main = read("js/main.js");
 const index = read("index.html");
 
 check(
-  "glass sits on the driver side of the frame",
-  /glass\.position\.z = -0\.01/.test(car) && !/glass\.position\.z = 0\.009/.test(car),
-  "PlaneGeometry must face the seat, not the windshield"
+  "glass sits on the driver-facing side of the rim",
+  /glass\.position\.z = 0\.01/.test(car) && !/glass\.position\.z = -0\.01/.test(car),
+  "after lookAt, +Z faces the seat — glass must sit on +Z, not behind the rim"
 );
 
 check(
@@ -53,11 +53,45 @@ check(
 );
 
 check(
-  "capture is sRGB without ACES crush",
-  /_mirrorRT\.texture\.colorSpace = THREE\.SRGBColorSpace/.test(game) &&
+  "capture is linear so MeshBasicMaterial does not read black",
+  /_mirrorRT\.texture\.colorSpace = THREE\.LinearSRGBColorSpace/.test(game) &&
     /toneMapping = THREE\.NoToneMapping/.test(game) &&
-    !/NoColorSpace/.test(game.slice(game.indexOf("_initMirror"))),
-  "SRGB RT + NoToneMapping on the rear camera"
+    /outputColorSpace = THREE\.LinearSRGBColorSpace/.test(game) &&
+    /mirrorCamZ/.test(car),
+  "Linear RT + NoToneMapping; capture camera behind the bumper"
+);
+
+check(
+  "rearview RT is allocated, asserted, and rebuilt on context loss",
+  /_ensureMirrorRT\(\)/.test(game) &&
+    /_bindMirrorContext\(\)/.test(game) &&
+    /webglcontextrestored/.test(game) &&
+    /_mirrorHasImage/.test(game),
+  "missing/zero RT must recreate; context restore must rebind the glass"
+);
+
+check(
+  "mirror RT is a cheap fixed size (256–384 long edge), not the main canvas",
+  /mirrorW:\s*384/.test(read("js/config.js")) &&
+    /mirrorH:\s*120/.test(read("js/config.js")) &&
+    /Math\.min\(384/.test(game),
+  "long edge 384, height 120"
+);
+
+check(
+  "scene is drawn into the RT after the pack is painted solid",
+  /_paintBlockingPack\(0\)/.test(game) &&
+    /_renderMirror\(\)/.test(game) &&
+    game.indexOf("_paintBlockingPack(0)") < game.indexOf("this._renderMirror()") &&
+    game.indexOf("this._renderMirror()") < game.indexOf("_paintBlockingPack(1)"),
+  "solid pack → capture → ghost leftover"
+);
+
+check(
+  "empty RT always captures; last frame may defer",
+  /_mirrorDefer > 0 && this\._mirrorHasImage/.test(game) &&
+    /this\._mirrorHasImage = true/.test(game),
+  "never skip forever / never sit on a null map"
 );
 
 check(
@@ -71,13 +105,13 @@ const celicaV = game.match(/celica\.js\?v=(\d+)/);
 const gameV = main.match(/game\.js\?v=(\d+)/);
 const mainV = index.match(/main\.js\?v=(\d+)/);
 check(
-  "cache bust celica.js?v>=112",
-  celicaV && Number(celicaV[1]) >= 112,
+  "cache bust celica.js?v>=118",
+  celicaV && Number(celicaV[1]) >= 118,
   celicaV ? `got ${celicaV[1]}` : "missing"
 );
 check(
   "cache bust main↔game",
-  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 346,
+  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 378,
   `game=${gameV && gameV[1]} main=${mainV && mainV[1]}`
 );
 
@@ -95,16 +129,28 @@ async function live() {
     await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "game" });
     await waitFor(
       cdp,
-      `const m = window.game && window.game.playerMesh; return m && m.userData && m.userData.mirrorGlass ? 1 : null;`,
-      { timeout: 45000, label: "player car with rearview glass" }
+      `
+        const g = window.game;
+        if (!g) return null;
+        if (g.playerMesh && g.playerMesh.userData && g.playerMesh.userData.mirrorGlass) return 1;
+        try {
+          if (typeof g._promotePlayerCar === "function") g._promotePlayerCar();
+          else if (typeof g._swapPlayerCar === "function") g._swapPlayerCar(g.carId || "celica");
+        } catch (err) { /* GLB not ready yet */ }
+        return g.playerMesh && g.playerMesh.userData && g.playerMesh.userData.mirrorGlass ? 1 : null;
+      `,
+      { timeout: 60000, label: "hero car with rearview glass" }
     );
     const sample = await evaluate(cdp, `
       const g = window.game;
+      g.state = "countdown";
       g.camMode = 0;
       g._mirrorDefer = 0;
       g._povHudFade = 1;
+      g._cockpitLive = true;
       g._applyCockpitCam();
-      if (typeof g._renderMirror === "function") g._renderMirror();
+      if (typeof g._ensureMirrorRT === "function") g._ensureMirrorRT();
+      if (typeof g._captureMirror === "function") g._captureMirror(true);
       const mesh = g.playerMesh;
       const glass = mesh.userData.mirrorGlass;
       const mat = glass && glass.material;
@@ -126,6 +172,7 @@ async function live() {
         }
         if (samples) mean /= samples;
       }
+      const canvas = g.renderer && g.renderer.domElement;
       return {
         hasGlass: !!glass,
         hasMap: !!(map && map.isTexture),
@@ -133,8 +180,13 @@ async function live() {
         depthTest: mat ? mat.depthTest : null,
         toneMapped: mat ? mat.toneMapped : null,
         glassZ: glass ? glass.position.z : null,
-        scaleX: glass ? glass.scale.x : null,
+        rotY: glass ? glass.rotation.y : null,
         colorSpace: rt && rt.texture ? rt.texture.colorSpace : null,
+        rtW: rt ? rt.width : 0,
+        rtH: rt ? rt.height : 0,
+        canvasW: canvas ? canvas.width : 0,
+        canvasH: canvas ? canvas.height : 0,
+        hasImage: !!g._mirrorHasImage,
         mean,
         maxc,
         mirrorVisible: !!(mesh.userData.mirror && mesh.userData.mirror.visible),
@@ -147,13 +199,28 @@ async function live() {
     );
     check(
       "live glass faces the seat and ignores depth",
-      sample && sample.glassZ < 0 && sample.depthTest === false && sample.toneMapped === false && sample.scaleX < 0,
-      sample ? `z=${sample.glassZ} depthTest=${sample.depthTest} scaleX=${sample.scaleX}` : "no sample"
+      sample && sample.glassZ > 0 && sample.depthTest === false && sample.toneMapped === false,
+      sample ? `z=${sample.glassZ} depthTest=${sample.depthTest} rotY=${sample.rotY}` : "no sample"
     );
     check(
       "live RT is not a black rectangle",
       sample && sample.mean > 18 && sample.maxc > 40,
       sample ? `mean=${sample.mean && sample.mean.toFixed(1)} max=${sample.maxc && sample.maxc.toFixed(1)}` : "no sample"
+    );
+    check(
+      "live RT exists at lower-than-canvas resolution",
+      sample &&
+        sample.rtW >= 256 &&
+        sample.rtW <= 384 &&
+        sample.rtH >= 80 &&
+        sample.rtH <= 128 &&
+        sample.canvasW > sample.rtW,
+      sample ? `rt=${sample.rtW}x${sample.rtH} canvas=${sample.canvasW}x${sample.canvasH}` : "no sample"
+    );
+    check(
+      "live capture marked the RT as having an image",
+      sample && sample.hasImage,
+      sample ? `hasImage=${sample.hasImage}` : "no sample"
     );
   } finally {
     await browser.close();

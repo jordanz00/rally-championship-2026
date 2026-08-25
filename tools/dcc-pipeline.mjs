@@ -25,7 +25,7 @@ function check(name, ok, detail = "") {
 
 console.log("DCC ASSET PIPELINE  ·  Sprint 35\n");
 
-const cars = ["celica", "delta", "stratos", "jaguar", "focus", "accord"];
+const cars = ["celica", "delta", "stratos"];
 for (const id of cars) {
   const dir = path.join(ASSETS, id);
   check(`${id} folder`, fs.existsSync(dir), dir);

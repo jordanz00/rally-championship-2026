@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts } from "./prop-kit.js?v=17";
+import { propCharacterParts } from "./prop-kit.js?v=18";
 
 /** Authored biped spectators — assets/props/character-*.glb */
 export const CROWD_CHARACTER_KINDS = Object.freeze([

@@ -25,12 +25,14 @@ function check(name, ok, detail = "") {
 console.log("SPRINT 34 PRELOAD\n");
 
 check(
-  "background warm kicks immediately",
+  "splash defers heavy warm until PRESS START",
   /_startBackgroundWarm\(/.test(game) &&
-    /requestAnimationFrame\(\(\) => \{\s*requestAnimationFrame\(kick\)/.test(game)
+    /PRESS START/.test(game) &&
+    /_leaveTitle/.test(game) &&
+    /preparePropKit\(\)/.test(game)
 );
 check(
-  "title queues full championship cup",
+  "leave title queues championship cup (Desert first)",
   /for \(const id of COURSE_ORDER\)/.test(game) && /_scheduleTrackPreload\(id\)/.test(game)
 );
 check(
@@ -47,8 +49,11 @@ check(
   /_awaitTrackPreload\(/.test(game) && /Finishing background stage/.test(game)
 );
 check(
-  "instant race skips loading screen when hot",
-  /_isTrackReady\(courseId\)/.test(game) && /if \(!instant\)/.test(game)
+  "hot cache still GPU-settles before countdown",
+  /_settleRacePresent/.test(game) &&
+    /Warming shaders/.test(game) &&
+    /showLoadingScreen/.test(game) &&
+    /Lighting stage/.test(game)
 );
 check(
   "HTTP music prefetch on title",
@@ -78,7 +83,7 @@ const { gameV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache-bust chain", cacheOk, `v=${gameV}`);
 check(
   "music prefetch present",
-  /prefetch[^>]+desert\.mp3/.test(index) && /mountain\.mp3/.test(index)
+  /prefetch[^>]+desert\.mp3/.test(index)
 );
 
 console.log(failed ? `\nFAIL  ·  ${failed} check(s)` : "\nPASS  ·  all checks");

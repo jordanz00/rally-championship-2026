@@ -1,13 +1,14 @@
 /**
- * Authored pace-note library — WRC-style calls per championship stage.
+ * Authored pace-note library — historical WRC-style list per stage.
  *
- * WHO THIS IS FOR: co-driver + Track.noteAt merge (Sprint 36).
- * WHAT IT DOES: distance-triggered calls that override procedural curvature
- *   heuristics when a authored note is inside the look-ahead window.
- * HOW IT CONNECTS: track.js noteAt() consults findAuthoredNote() first.
+ * WHO THIS IS FOR: Sprint 36 archive + optional tooling.
+ * WHAT IT DOES: distance-triggered calls used to override curvature heuristics.
+ * HOW IT CONNECTS: Sprint 67 stopped using this at runtime. Track.noteAt()
+ *   reads geometry via pace-call.mjs (turns + jumps only). Distances here
+ *   drifted from courses.js and must not drive the navigator.
  *
- * DISTANCES: calibrated to current courses.js piece sums (Aug 2026). Re-run
- *   `node tools/dcc-pipeline.mjs --pace-audit` after layout edits.
+ * DISTANCES: calibrated to a prior courses.js piece sum. Re-run
+ *   `node tools/dcc-pipeline.mjs --pace-audit` before ever wiring this back.
  */
 
 /**

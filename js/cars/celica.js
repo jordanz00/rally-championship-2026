@@ -12,14 +12,15 @@
  *   it (clearcoat paint, glass, chrome). Falls back to a lofted mesh if the
  *   file is missing. AI rivals use a shared generic coupe so a 15-car pack
  *   stays cheap.
- * HOW IT CONNECTS: game.js calls prepareCelica() then createPlayerCar(id).
+ * HOW IT CONNECTS: game.js calls prepareTitleCar() for the splash spin
+ * (rival LOD), then prepareCelica() / createPlayerCar(id) for the race.
  */
 
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=127";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=22";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=137";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=23";
 
 const GARAGE = {
   celica: {
@@ -57,28 +58,6 @@ const GARAGE = {
      * Drop a higher-detail GLB over this path to upgrade the hero shell.
      */
     placeholderGlb: false,
-  },
-  jaguar: {
-    id: "jaguar",
-    urls: ["assets/jaguar/etype.glb"],
-    rivalUrls: ["assets/jaguar/rival.glb"],
-    idbKey: "jaguar",
-    name: "jaguar-etype",
-    // etype.glb nose is already +Z after fitToRallyCar — Math.PI drove it backwards.
-  },
-  focus: {
-    id: "focus",
-    urls: ["assets/focus/focus.glb"],
-    rivalUrls: ["assets/focus/rival.glb"],
-    idbKey: "focus",
-    name: "focus-st",
-  },
-  accord: {
-    id: "accord",
-    urls: ["assets/accord/accord.glb"],
-    rivalUrls: ["assets/accord/rival.glb"],
-    idbKey: "accord",
-    name: "accord-sport",
   },
 };
 
@@ -187,6 +166,38 @@ export function aiTintForIndex(index) {
  */
 export async function prepareCelica() {
   await Promise.all(GARAGE_CAR_IDS.map(prepareCar));
+}
+
+/**
+ * Splash attract mesh — rival LOD only (Celica rival.glb is ~3 MB vs 7 MB hero).
+ * Resolves as soon as that chassis can be cloned; does not wait on the garage.
+ * @param {string} [id]
+ * @returns {Promise<void>}
+ */
+export async function prepareTitleCar(id = "celica") {
+  const chassis = GARAGE[id] ? id : "celica";
+  if (rivalTemplates[chassis] || templates[chassis]) return;
+  if (await tryRivalGltf(chassis)) return;
+  if (await tryLocalGltf(chassis)) return;
+  await tryCachedGltf(chassis);
+}
+
+/**
+ * @param {string} [id]
+ * @returns {boolean}
+ */
+export function isTitleCarReady(id) {
+  const chassis = GARAGE[id] ? id : "celica";
+  return !!(rivalTemplates[chassis] || templates[chassis]);
+}
+
+/**
+ * Load the hero GLB for one chassis (cockpit + race mesh).
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function prepareHeroCar(id) {
+  await prepareCar(GARAGE[id] ? id : "celica");
 }
 
 /**
@@ -341,6 +352,38 @@ export function createPlayerCar(carId = "celica") {
   if (!root.userData.povRig) root.userData.povRig = buildPovRig(root);
   setCockpitView(root, false);
   return root;
+}
+
+/**
+ * Orbit-cam attract car: rival LOD with original livery, no cockpit or beams.
+ * @param {string} [carId]
+ * @returns {THREE.Group}
+ */
+export function createTitleCar(carId = "celica") {
+  const chassis = GARAGE[carId] ? carId : "celica";
+  const template =
+    rivalTemplates[chassis] ||
+    templates[chassis] ||
+    rivalTemplates.celica ||
+    templates.celica;
+  if (!template) {
+    throw new Error(`[garage] ${chassis}: no LOD or hero GLB for title car`);
+  }
+  const clone = template.clone(true);
+  clone.traverse((obj) => {
+    if (obj.isMesh && obj.material) {
+      obj.material = Array.isArray(obj.material)
+        ? obj.material.map((m) => m.clone())
+        : obj.material.clone();
+    }
+  });
+  rebindClonedWheels(clone);
+  clone.userData.wheels = findWheels(clone);
+  clone.userData.body = clone;
+  clone.userData.carId = chassis;
+  clone.userData.titleLod = true;
+  enableCarShadows(clone);
+  return clone;
 }
 
 /**
@@ -1011,15 +1054,21 @@ async function loadLegacyCelica() {
   });
 }
 
+/** Studio helpers that must not drive car length or yaw. */
+function isFitHelperMesh(obj) {
+  const n = `${obj.name || ""} ${obj.parent && obj.parent.name ? obj.parent.name : ""}`.toLowerCase();
+  return /helper|gizmo|camera|backdrop|studio|ground.?plane|shadow.?catch|grid/.test(n);
+}
+
 /**
- * Axis-aligned span of `root` along a world axis after current transforms.
+ * Axis-aligned span of visible bodywork along a world axis.
  * @param {THREE.Object3D} root
  * @param {"x"|"y"|"z"} axis
  * @returns {number}
  */
 function axisSpan(root, axis) {
   root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(root);
+  const box = visibleMeshBounds(root);
   if (axis === "x") return Math.max(box.max.x - box.min.x, 0.001);
   if (axis === "y") return Math.max(box.max.y - box.min.y, 0.001);
   return Math.max(box.max.z - box.min.z, 0.001);
@@ -1036,6 +1085,7 @@ function visibleMeshBounds(root) {
   root.traverse((obj) => {
     if (!obj.isMesh || !obj.visible || !obj.geometry) return;
     if (obj.userData && (obj.userData.interior || obj.userData.brake || obj.userData.head)) return;
+    if (isFitHelperMesh(obj)) return;
     const b = new THREE.Box3().setFromObject(obj);
     if (!has) {
       box.copy(b);
@@ -1051,8 +1101,10 @@ function visibleMeshBounds(root) {
 /**
  * Fit a GLB into rally-car space: +Z forward, tyres on y=0, length in metres.
  *
- * Orient first, measure length along +Z, then uniform scale so hero and rival
- * LODs land on the same real-world length from config `lengthM`.
+ * Orient first, measure length along +Z, then uniform-scale the INNER scene
+ * (not the wrapper). Player cockpit, lamps, and POV are parented to the
+ * wrapper in metres — scaling the root made the Focus ST (authored ~11 m)
+ * shrink those to 39%. Hero and rival LODs still land on config `lengthM`.
  *
  * @param {THREE.Object3D} root
  * @param {{length?:number, yaw?:number}} [spec]
@@ -1066,7 +1118,7 @@ function fitToRallyCar(root, spec = {}) {
   inner.position.set(0, 0, 0);
   root.updateMatrixWorld(true);
 
-  const box0 = new THREE.Box3().setFromObject(root);
+  const box0 = visibleMeshBounds(root);
   const size0 = box0.getSize(new THREE.Vector3());
   if (size0.y === Math.max(size0.x, size0.y, size0.z) && size0.y > size0.x * 1.15) {
     inner.rotation.x += -Math.PI / 2;
@@ -1081,7 +1133,8 @@ function fitToRallyCar(root, spec = {}) {
 
   root.updateMatrixWorld(true);
   const len = axisSpan(root, "z");
-  root.scale.setScalar(targetLen / len);
+  if (inner === root) root.scale.setScalar(targetLen / len);
+  else inner.scale.multiplyScalar(targetLen / len);
   root.userData.visualLengthM = targetLen;
 
   root.updateMatrixWorld(true);
@@ -3616,12 +3669,17 @@ function buildPovRig(root) {
   let hoodY = ground + Math.min(0.92, spanY * 0.48);
   if (marks.hoodY != null) hoodY = marks.hoodY;
   const lookX = eyeX * 0.12;
-  const lookY = THREE.MathUtils.clamp(hoodY + 0.1, ground + 0.7, eyeY - 0.16);
+  const lookY = THREE.MathUtils.clamp(hoodY + 0.04, ground + 0.68, eyeY - 0.18);
   const lookZ = hull.maxZ + 2.4;
   const mirrorEyeX = eyeX * 0.12;
   const mirrorEyeY = THREE.MathUtils.clamp(eyeY + 0.11, eyeY + 0.08, roof - 0.1);
   const mirrorEyeZ = eyeZ + 0.34;
-  const mirrorLookZ = hull.minZ - Math.max(4, spanZ * 0.7);
+  // Capture from just behind the bumper looking aft — not from the interior
+  // glass, which only sees cabin void / clipped near-plane (black rectangle).
+  const mirrorCamX = 0;
+  const mirrorCamY = THREE.MathUtils.clamp(roof - 0.06, eyeY + 0.04, roof + 0.04);
+  const mirrorCamZ = hull.minZ - 0.9;
+  const mirrorLookZ = hull.minZ - Math.max(14, spanZ * 2.2);
   return {
     eyeX,
     eyeY,
@@ -3632,15 +3690,18 @@ function buildPovRig(root) {
     mirrorEyeX,
     mirrorEyeY,
     mirrorEyeZ,
-    mirrorLookX: mirrorEyeX,
-    mirrorLookY: mirrorEyeY - 0.04,
+    mirrorCamX,
+    mirrorCamY,
+    mirrorCamZ,
+    mirrorLookX: 0,
+    mirrorLookY: THREE.MathUtils.clamp(ground + 0.85, ground + 0.45, roof - 0.2),
     mirrorLookZ,
     spanX,
     spanY,
     spanZ,
     hull,
-    fov: 72,
-    near: 0.04,
+    fov: 76,
+    near: 0.05,
   };
 }
 
@@ -3673,14 +3734,31 @@ function tagPovShell(root) {
       obj.userData.povShell = true;
       return;
     }
+    if (
+      /a.?pillar|apillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage|header.?rail/.test(
+        n
+      ) &&
+      !/wheel|tire|tyre|seat|steer/.test(n)
+    ) {
+      obj.userData.povShell = true;
+      return;
+    }
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(c);
     box.getSize(s);
     root.worldToLocal(c);
+    const spanX = hull.maxX - hull.minX;
     const high = c.y > hull.minY + spanY * 0.72;
     const midCabin = c.z > hull.minZ + spanZ * 0.22 && c.z < hull.maxZ - spanZ * 0.08;
     const wide = s.x > spanY * 0.55 && s.z > spanZ * 0.35;
     if (high && midCabin && wide) obj.userData.povShell = true;
+    // Tall thin posts at the windshield corners — A-pillars that fill the lens.
+    const tall = s.y > 0.32;
+    const thin = Math.min(s.x, s.z) < 0.16 && Math.max(s.x, s.z) < 0.38;
+    const outboard = Math.abs(c.x) > spanX * 0.28;
+    const windshieldBand = c.z > hull.minZ + spanZ * 0.38 && c.z < hull.maxZ - spanZ * 0.04;
+    const midHigh = c.y > hull.minY + spanY * 0.42 && c.y < hull.maxY - spanY * 0.04;
+    if (tall && thin && outboard && windshieldBand && midHigh) obj.userData.povShell = true;
   });
 }
 
@@ -3911,10 +3989,10 @@ function makeNeedle() {
 }
 
 /**
- * One analog dial facing the driver, unmirrored.
- * Face only: Y=180 aims the disc at the seat, scale.x undoes the UV mirror.
- * The needle stays in unmirrored car XY so +X is 3 o'clock and clockwise
- * is `-canvasAngle` — same as the chase HUD, without a negative-scale parent.
+ * One analog dial facing the driver.
+ * The cluster lookAt's the seat, so group +Z points at the eye. CircleGeometry
+ * already faces +Z — no Y=180, no negative scale (those show the blank back).
+ * Needles stay in group XY: +X is 3 o'clock, clockwise is `-canvasAngle`.
  * @param {"speed"|"rpm"} kind
  * @param {number} maxVal
  * @param {number} [redFrom]
@@ -3925,19 +4003,17 @@ function makeDial(kind, maxVal, redFrom) {
     new THREE.CircleGeometry(POV_GAUGE_R, 48),
     clusterMat({ map: gaugeFace(kind, maxVal, redFrom) })
   );
-  face.rotation.y = Math.PI;
-  face.scale.x = -1;
   face.frustumCulled = false;
   face.renderOrder = 8;
   const needle = makeNeedle();
-  needle.position.z = -0.004;
+  needle.position.z = 0.004;
   g.add(face, needle);
   return { group: g, needle };
 }
 
 /**
  * In-car cabin parented to the chassis (+Z forward, LHD). Gauges, wheel, seats,
- * A-pillars, and a live rearview sit in the driver seat — not a camera HUD.
+ * and a live rearview sit in the driver seat — no A-pillar bars in the lens.
  * @param {THREE.Object3D} root
  */
 function attachCockpit(root) {
@@ -3956,33 +4032,39 @@ function attachCockpit(root) {
   cab.userData.povHud = true;
   cab.visible = false;
 
-  const plastic = cabinMat(0x1a1c22, 0.82, 0.04);
-  const vinyl = cabinMat(0x14161c, 0.9, 0.02);
+  const plastic = cabinMat(0x1a1c22, 0.82, 0.04, 0x2a2218);
+  const vinyl = cabinMat(0x14161c, 0.9, 0.02, 0x14110e);
   const carpet = cabinMat(0x2a241c, 0.95, 0);
-  const leather = cabinMat(0x1c1814, 0.88, 0.02);
-  const dark = cabinMat(0x0c0c10, 0.7, 0.08);
+  const leather = cabinMat(0x1c1814, 0.88, 0.02, 0x1a120c);
+  const dark = cabinMat(0x0c0c10, 0.7, 0.08, 0x181410);
 
   const cabinW = Math.min(1.38, Math.max(1.12, hull.maxX - hull.minX - 0.22));
   const floorY = hull.minY + 0.28;
-  const dashZ = rig.eyeZ + 0.52;
-  const dashY = rig.eyeY - 0.28;
+  const dashZ = rig.eyeZ + 0.48;
+  const dashY = rig.eyeY - 0.26;
 
   const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.04, 1.35), carpet);
   floor.position.set(0, floorY, rig.eyeZ + 0.1);
   floor.userData.cabinFill = true;
   cab.add(floor);
 
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.16, 0.28), plastic);
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.2, 0.32), plastic);
   dash.position.set(0, dashY, dashZ);
   dash.userData.cabinFill = true;
   cab.add(dash);
   const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.05, 0.12), dark);
-  cowl.position.set(rig.eyeX * 0.15, dashY + 0.08, dashZ + 0.04);
+  cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.04);
   cowl.userData.cabinFill = true;
   cab.add(cowl);
+  // Instrument hood — a real cowl over the cluster so the seat reads as a cabin.
+  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.44, 0.045, 0.18), dark);
+  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.16, dashZ - 0.04);
+  binnacleHood.rotation.x = -0.38;
+  binnacleHood.userData.cabinFill = true;
+  cab.add(binnacleHood);
 
-  const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 1.05), vinyl);
-  doorL.position.set(-cabinW * 0.48, floorY + 0.28, rig.eyeZ + 0.12);
+  const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.54, 1.08), vinyl);
+  doorL.position.set(-cabinW * 0.48, floorY + 0.34, rig.eyeZ + 0.12);
   doorL.userData.cabinFill = true;
   const doorR = doorL.clone();
   doorR.position.x = cabinW * 0.48;
@@ -3992,20 +4074,6 @@ function attachCockpit(root) {
   const passSeat = makeSeat(-rig.eyeX * 0.85, floorY + 0.22, rig.eyeZ - 0.28, leather);
   passSeat.userData.cabinFill = true;
   cab.add(passSeat);
-
-  const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.07), dark);
-  pillarL.position.set(-cabinW * 0.42, rig.eyeY - 0.02, dashZ + 0.12);
-  pillarL.rotation.z = 0.14;
-  pillarL.userData.cabinFill = true;
-  const pillarR = pillarL.clone();
-  pillarR.position.x = cabinW * 0.42;
-  pillarR.rotation.z = -0.14;
-  cab.add(pillarL, pillarR);
-
-  const header = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.03, 0.06), dark);
-  header.position.set(0.02, rig.mirrorEyeY + 0.03, rig.mirrorEyeZ - 0.02);
-  header.userData.cabinFill = true;
-  cab.add(header);
 
   const cluster = new THREE.Group();
   cluster.name = "gauge-cluster";
@@ -4022,8 +4090,9 @@ function attachCockpit(root) {
   binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
   binnacle.userData.cabinFill = true;
   cluster.add(binnacle);
-  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.16, rig.eyeZ + 0.38);
-  cluster.rotation.set(0.14, 0, 0);
+  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.16, rig.eyeZ + 0.42);
+  // Face the seated eye so the printed discs are not edge-on or windshield-facing.
+  cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cluster.renderOrder = 8;
   cab.add(cluster);
 
@@ -4051,7 +4120,7 @@ function attachCockpit(root) {
 
   const mirror = makeRearviewMirror();
   mirror.position.set(rig.mirrorEyeX, rig.mirrorEyeY, rig.mirrorEyeZ);
-  mirror.rotation.set(0.12, 0, 0);
+  mirror.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cab.add(mirror);
 
   root.add(cab);
@@ -4083,12 +4152,14 @@ function ensurePovHead(root, rig) {
   rig.lookNode.position.set(rig.lookX - rig.eyeX, rig.lookY - rig.eyeY, rig.lookZ - rig.eyeZ);
 }
 
-function cabinMat(color, roughness, metalness) {
+function cabinMat(color, roughness, metalness, emissive) {
   return new THREE.MeshStandardMaterial({
     color,
     roughness: roughness != null ? roughness : 0.8,
     metalness: metalness != null ? metalness : 0.04,
-    envMapIntensity: 0.45,
+    envMapIntensity: 0.62,
+    emissive: emissive != null ? emissive : 0x000000,
+    emissiveIntensity: emissive != null ? 0.14 : 0,
   });
 }
 
@@ -4121,15 +4192,23 @@ function makeSeat(x, y, z, mat) {
 function makeRearviewMirror() {
   const g = new THREE.Group();
   g.name = "rearview";
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.1, 0.016),
-    cabinMat(0x1a1a20, 0.55, 0.2)
-  );
-  frame.frustumCulled = false;
-  // Driver looks +Z at this group. The live image must sit on the seat-facing
-  // side of the frame (negative Z) or the player only sees black plastic.
+  const plastic = cabinMat(0x1a1a20, 0.55, 0.2);
+  const gw = 0.32;
+  const gh = 0.082;
+  const rim = 0.01;
+  const depth = 0.012;
+  const top = new THREE.Mesh(new THREE.BoxGeometry(gw + rim * 2, rim, depth), plastic);
+  top.position.set(0, gh * 0.5 + rim * 0.5, 0);
+  const bot = new THREE.Mesh(new THREE.BoxGeometry(gw + rim * 2, rim, depth), plastic);
+  bot.position.set(0, -gh * 0.5 - rim * 0.5, 0);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(rim, gh, depth), plastic);
+  left.position.set(-gw * 0.5 - rim * 0.5, 0, 0);
+  const right = left.clone();
+  right.position.x = gw * 0.5 + rim * 0.5;
+  // Group lookAt points +Z at the seat. PlaneGeometry already faces +Z —
+  // sit the glass slightly toward the driver so the rim cannot cover it.
   const glass = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.32, 0.082),
+    new THREE.PlaneGeometry(gw, gh),
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       toneMapped: false,
@@ -4139,16 +4218,15 @@ function makeRearviewMirror() {
       side: THREE.DoubleSide,
     })
   );
-  glass.position.z = -0.01;
-  glass.scale.x = -1;
+  glass.position.z = 0.01;
   glass.frustumCulled = false;
   glass.renderOrder = 12;
   const stem = new THREE.Mesh(
-    new THREE.BoxGeometry(0.012, 0.04, 0.012),
+    new THREE.BoxGeometry(0.012, 0.028, 0.012),
     cabinMat(0x121216, 0.6, 0.15)
   );
-  stem.position.set(0, 0.048, -0.004);
-  g.add(frame, glass, stem);
+  stem.position.set(0, gh * 0.5 + rim + 0.014, 0);
+  g.add(top, bot, left, right, glass, stem);
   g.frustumCulled = false;
   g.userData.glass = glass;
   return g;
@@ -4163,33 +4241,36 @@ function makeRearviewMirror() {
  */
 export function setCockpitView(root, on, _camera) {
   if (!root) return;
+  const want = !!on;
+  if (root.userData._cockpitOn === want) return;
+  root.userData._cockpitOn = want;
   buildPovHideCache(root);
   const hide = root.userData._povHide || [];
   for (let i = 0; i < hide.length; i++) {
     const obj = hide[i];
-    if (on) obj.visible = false;
+    if (want) obj.visible = false;
     else obj.visible = !obj.userData.interiorKeepHidden;
   }
   const keep = root.userData._povKeepHidden || [];
   for (let i = 0; i < keep.length; i++) keep[i].visible = false;
   const steer = root.userData._povSteer || [];
-  for (let i = 0; i < steer.length; i++) steer[i].visible = !!on;
+  for (let i = 0; i < steer.length; i++) steer[i].visible = want;
   const glbWheel = root.userData.glbSteerWheel;
-  if (glbWheel) glbWheel.visible = !!on;
+  if (glbWheel) glbWheel.visible = want;
   const cab = root.userData.cockpit;
   if (cab) {
     if (cab.parent !== root) root.add(cab);
-    cab.visible = !!on;
+    cab.visible = want;
     cab.traverse((obj) => {
       if (obj.userData && obj.userData.cabinFill) {
-        obj.visible = !!on;
+        obj.visible = want;
       }
     });
   }
   const mir = root.userData.mirror;
   if (mir) {
     if (mir.parent && mir.parent !== cab && mir.parent !== root) root.add(mir);
-    mir.visible = !!on;
+    mir.visible = want;
     mir.scale.setScalar(1);
   }
 }
@@ -4210,9 +4291,13 @@ export function setCockpitMirrorMap(root, texture) {
   mat.color.setHex(0xffffff);
   mat.toneMapped = false;
   mat.fog = false;
+  mat.transparent = false;
+  mat.opacity = 1;
   mat.depthTest = false;
   mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
+  texture.colorSpace = THREE.LinearSRGBColorSpace;
+  texture.needsUpdate = false;
 }
 
 function springNeedle(state, target, dt, wn, zeta) {

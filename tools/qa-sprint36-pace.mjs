@@ -18,7 +18,7 @@ const cockpit = fs.readFileSync(path.join(ROOT, "js/cars/cockpit-anim.js"), "utf
 
 console.log("SPRINT 36 PACE + COCKPIT\n");
 check("authored pace library", /AUTHORED_PACE/.test(pace) && /desert:/.test(pace));
-check("track merges authored", /findAuthoredNote/.test(track));
+check("geometry picker, not authored override", /pickPaceNote/.test(track) && !/findAuthoredNote/.test(track));
 check("cockpit motion module", /updateCockpitMotion/.test(cockpit));
 check("game calls cockpit motion", /updateCockpitMotion/.test(game));
 check("4 courses in library", (pace.match(/desert:|forest:|mountain:|lakeside:/g) || []).length >= 4);

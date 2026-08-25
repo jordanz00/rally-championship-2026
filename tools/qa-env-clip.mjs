@@ -41,7 +41,7 @@ console.log("static");
 
 check(
   "hairpin nearest-road searches nearby grid cells",
-  /_forNearbySegments\s*\(/.test(trackSrc) && /dx = -3/.test(trackSrc),
+  /_forNearbySegments\s*\(/.test(trackSrc) && /dx = -5/.test(trackSrc),
   "_nearestRoad must see the opposite hairpin arm"
 );
 check(
@@ -97,9 +97,15 @@ check(
   "11–12 m skirts folded onto hairpins"
 );
 check(
-  "land caps to any overlapping ribbon",
-  /overlapBed/.test(trackSrc) && /minOver/.test(trackSrc),
-  "hairpin opposite arm must flatten and refuse props"
+  "land verts that can own a triangle over asphalt stay a floor",
+  /minOver < \(this\._landCell \|\| 12\) \* 1\.25/.test(trackSrc) &&
+    /const drop = mountain \? 1\.2/.test(trackSrc),
+  "final sink under any nearby ribbon"
+);
+check(
+  "prop strip is past a GLB rock radius",
+  /ROAD_VERGE = 8\.2/.test(trackSrc) && /FOREST_TREE_CLEAR = 8\.6/.test(trackSrc),
+  "canopy / boulder bounds must not sit on the painted lane"
 );
 check(
   "lakeside full-stage land wash",

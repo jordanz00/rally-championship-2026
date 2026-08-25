@@ -12,7 +12,7 @@
  * See assets/sfx/ATTRIBUTION.txt for licenses.
  */
 
-import { loadSample } from "./bank.js?v=1";
+import { loadSample } from "./bank.js?v=2";
 
 /** How the two recorded beds mix for each driving surface. */
 const MIX = {
@@ -88,9 +88,9 @@ export class SkidVoice {
     const dust = s.surfaceDust != null ? s.surfaceDust : 0.25;
     const rumble = 1 + dust * 0.5 + (s.bump || 0) * 2.4 + (s.shock || 0) * 0.7;
     const road = live && speed > 4 ? clamp((speed - 3) / 28, 0, 1) : 0;
-    const yawAmt = yaw > 0.17 ? clamp((yaw - 0.17) / 0.28, 0, 1) : 0;
-    const slipAmt = slip > 0.22 ? clamp((slip - 0.22) / 0.45, 0, 1) : 0;
-    const spdAmt = speed > 11 ? clamp((speed - 9) / 24, 0.25, 1) : 0;
+    const yawAmt = yaw > 0.09 ? clamp((yaw - 0.09) / 0.22, 0, 1) : 0;
+    const slipAmt = slip > 0.16 ? clamp((slip - 0.16) / 0.4, 0, 1) : 0;
+    const spdAmt = speed > 8 ? clamp((speed - 6) / 22, 0.28, 1) : 0;
     const skid = live ? yawAmt * Math.max(slipAmt, 0.35 * yawAmt) * spdAmt : 0;
 
     const a = this._mix.asphalt;

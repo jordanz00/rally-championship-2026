@@ -17,7 +17,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=127";
+import { VISUAL } from "../config.js?v=137";
 
 /** @type {THREE.BufferGeometry|null} */
 let CROWN_GEO = null;
@@ -45,10 +45,20 @@ const FOLIAGE_SEG_SIDE = VISUAL.realisticArcade ? 10 : 7;
 const TRUNK_SEG = VISUAL.realisticArcade ? 8 : 6;
 
 /**
- * Three vertical cards at 120° — enough volume for close passes without the
- * fourth plane most billboard forests pay for.
- * @returns {THREE.BufferGeometry}
+ * Card-paint kind for a GLB tree id — far LOD uses the painted 3-plane crown
+ * instead of the authored trunk+canopy meshes.
+ * @param {string} glbKind
+ * @returns {"pine"|"cedar"|"oak"|"autumn"|"autumnGold"|"acacia"}
  */
+export function treeCardKind(glbKind) {
+  const n = String(glbKind || "");
+  if (/acacia|palm/i.test(n)) return "acacia";
+  if (/gold|e$|tree_default/i.test(n)) return "autumnGold";
+  if (/oak|autumn|detailed|tree_c|tree_f/i.test(n)) return "oak";
+  if (/cedar|fir|tree_b|tree_e|pineDefaultB/i.test(n)) return "cedar";
+  return "pine";
+}
+
 export function crownGeometry() {
   if (CROWN_GEO) return CROWN_GEO;
   const planes = [];

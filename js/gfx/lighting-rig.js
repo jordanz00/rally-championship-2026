@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=127";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=137";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).

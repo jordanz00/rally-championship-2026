@@ -77,17 +77,49 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
-  background: #fff;
+  background:
+    radial-gradient(ellipse 58% 52% at 50% 42%, rgba(8, 10, 8, 0.18) 0%, rgba(5, 7, 5, 0.08) 46%, rgba(5, 7, 5, 0.62) 100%);
   overflow: hidden;
 }
 
 #crt:has(#screen-title.active) {
-  background: #fff;
+  background: #050705;
 }
 
 #crt:has(#screen-title.active) #game-view {
-  visibility: hidden;
+  visibility: visible;
   opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#crt.showroom-live #game-view,
+#crt:not(:has(#screen-title.active)) #game-view {
+  opacity: 1;
+}
+
+/* Full-viewport black fader — boot reveal + every screen change. */
+.fx-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fx-curtain.is-on {
+  opacity: 1;
+  transition-duration: 0.32s;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-curtain,
+  .fx-curtain.is-on,
+  #crt:has(#screen-title.active) #game-view {
+    transition: none;
+  }
 }
 
 /* —— Classic arcade title (Rally Championship 2026 emblem) —— */
@@ -97,7 +129,7 @@ body {
   aspect-ratio: 1;
   margin-top: -6vh;
   flex-shrink: 0;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.12));
+  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.55));
 }
 
 .sr-emblem-svg {
@@ -287,8 +319,8 @@ body {
   margin: 0;
   font-size: 11px;
   letter-spacing: 0.2em;
-  color: rgba(0, 0, 0, 0.42);
-  text-shadow: none;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 0 #000;
   animation: none;
 }
 
@@ -388,7 +420,7 @@ body {
 
 #boot-error {
   position: absolute;
-  z-index: 20;
+  z-index: 50;
   left: 16px;
   right: 16px;
   bottom: 16px;
@@ -457,10 +489,11 @@ body {
 
 .load-bar-fill {
   height: 100%;
-  width: 0%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
   background: linear-gradient(90deg, var(--green), #6ecf4a 45%, var(--yellow) 100%);
-  /* Keep the fill tight to the % number — long ease made the label lie. */
-  transition: width 0.06s linear;
   box-shadow: 0 0 12px rgba(255, 210, 0, 0.35);
 }
 
@@ -668,6 +701,17 @@ button.ghost {
 #screen-controls li {
   letter-spacing: 0.12em;
   font-size: 15px;
+}
+
+#screen-cars .hint {
+  max-width: 46ch;
+  margin: 0 0 18px;
+  color: #9fdfb0;
+}
+
+#screen-cars button[data-car] {
+  min-height: 52px;
+  letter-spacing: 0.16em;
 }
 
 .hud {

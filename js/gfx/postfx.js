@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=127";
+import { VISUAL } from "../config.js?v=137";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -83,7 +83,7 @@ void main() {
     color *= 1.0 / (1.0 + peak * highlightRolloff);
   }
   float d = distance(vUv, vec2(0.5));
-  float vig = smoothstep(0.58, 1.08, d * vignette + d);
+  float vig = smoothstep(0.45, 1.05, d) * vignette;
   color *= 1.0 - vig * 0.48;
   if (grain > 0.001) {
     float n = hash(vUv * vec2(1280.0, 720.0) + time);

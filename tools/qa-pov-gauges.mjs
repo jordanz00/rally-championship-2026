@@ -67,12 +67,19 @@ check(
 );
 
 check(
-  "face flip is on the disc only (no mirrored needle parent)",
-  /face\.rotation\.y = Math\.PI/.test(car) &&
-    /face\.scale\.x = -1/.test(car) &&
-    !/g\.rotation\.y = Math\.PI/.test(car) &&
+  "cluster lookAt the seat so discs face the driver",
+  /cluster\.lookAt\(rig\.eyeX/.test(car) &&
+    !/face\.rotation\.y = Math\.PI/.test(car) &&
+    !/face\.scale\.x = -1/.test(car) &&
     !/g\.scale\.x = -1/.test(car),
-  "negative scale on the needle group hides/reverses the blade"
+  "lookAt the eye; no Y=180 / negative scale (those show the blank back)"
+);
+
+check(
+  "A-pillars are not in the cockpit cabin",
+  !/pillarL/.test(car.slice(car.indexOf("function attachCockpit"))) &&
+    !/BoxGeometry\(0\.05, 0\.55, 0\.07\)/.test(car),
+  "procedural windshield-frame arms must not sit in the POV lens"
 );
 
 check(

@@ -46,7 +46,8 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache bust chain", cacheOk, `main v=${mainV} game v=${gameV}`);
 check("title emblem 2026", /sr-year">2026/.test(index), "arcade title year");
 check("no Sega on title", !/SEGA|SATURN/.test(index.replace(/ATTRIBUTION/gi, "")), "brand stripped");
-check("six-car garage UI", (index.match(/data-car="/g) || []).length >= 6, "select car buttons");
+check("three-car rally garage UI", (index.match(/data-car="/g) || []).length === 3, "Celica / Delta / Stratos");
+check("road cars retired", !/data-car="jaguar"/.test(index) && !/data-car="focus"/.test(index) && !/data-car="accord"/.test(index), "no E-Type / ST / Accord");
 check("codriver boundary", /boundaryHit/.test(read("js/audio/codriver.js")), "Whoa callouts");
 check("Sprint 33 SLIDE HUD", /cluster-slide/.test(index) && /slideBadge/.test(read("js/ui/hud.js")), "drift readout");
 

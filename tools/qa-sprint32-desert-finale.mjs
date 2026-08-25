@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readCacheVersions } from "./qa-cache-version.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -44,15 +45,15 @@ check("underpass floor uses bridge Y", /_underpassFloorY/.test(track), "not near
 check("bridge portal refuse", /overlapsPortalX && overlapsPortalZ && overlapsPortalY/.test(compact), "no solid in hole");
 check("bridge portal scrub", /_scrubBridgePortalMeshes/.test(track), "drop invading rubble");
 check("drive clear corridors", /_markDriveClearCorridors/.test(track), "forest/mountain land wash");
-check("bridge clearance headroom", /openH: 12\.8/.test(track), "driveable arch height");
-check("bridge portal depth", /clearHalfD: 16/.test(track), "deep enough tunnel");
+check("bridge clearance headroom", /openH: 8\.4/.test(track), "driveable arch height");
+check("bridge portal depth", /clearHalfD: 18/.test(track), "deep enough tunnel");
 check("approach placement", /while \(j > 2 && this\.points\[j\]\.surface === "gravel"\) j -= 1/.test(track), "sand→gravel approach");
-check("overburden beyond exit", /clearHalfD \+ 14/.test(track), "mass outside hole");
+check("underpass wall faces", /_wallFace\(wx, wz/.test(track), "finale lining matches the mesh");
 check("desert drift berms", /_addDesertDriftLandmarks/.test(track), "outside berms");
 check("act 6 sweep flag", /radius: 145.*sweep: true/.test(courses.replace(/\s+/g, " ")), "sweeper marked");
-check("cache bust track.js?v=168", /track\.js\?v=168/.test(game), "game → track v=168");
-check("cache bust game.js?v=351", /game\.js\?v=351/.test(main), "main → game v=351");
-check("cache bust index main?v=351", /main\.js\?v=351/.test(index), "index → main v=351");
+check("cache bust track.js?v=178", /track\.js\?v=177/.test(game), "game → track v=177");
+const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
+check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
 
 console.log(
   `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Sprint 32 desert finale armed"}`

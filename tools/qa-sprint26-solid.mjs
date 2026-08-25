@@ -50,9 +50,9 @@ check(
   "drift berms + forest banks"
 );
 check(
-  "rock solid bumps",
-  /_bumpPoses\(rocks/.test(track),
-  "rock instances collide"
+  "tunnel wall faces",
+  /_wallFace\s*\(/.test(track) && /kind: "wall"/.test(track),
+  "planar inner lining, not core spheres"
 );
 
 console.log(

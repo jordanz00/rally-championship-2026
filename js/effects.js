@@ -14,8 +14,8 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=44";
-import { VISUAL } from "./config.js?v=127";
+import { getSurface } from "./physics/surfaces.js?v=46";
+import { VISUAL } from "./config.js?v=137";
 
 /**
  * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
@@ -170,10 +170,10 @@ export class Dust {
 
     const speedK = clamp01((speed - 2.0) / 32);
     const slipK = clamp01(slip * 0.95 + (vehicle.drifting ? 0.55 : 0) + drift * 1.05);
-    const focus = vehicle.ai ? 0.78 : 1.55;
+    const focus = vehicle.ai ? 0.78 : 2.15;
     const envBoost = 0.85 + this._dustStrength * 0.9;
     const perSec =
-      profile.rate * (0.22 + speedK * 0.9 + slipK * 1.95) * (surf.dust || 1) * focus * envBoost;
+      profile.rate * (0.22 + speedK * 0.9 + slipK * 2.35) * (surf.dust || 1) * focus * envBoost;
 
     const budget = (this._carry.get(vehicle) || 0) + perSec * dt;
     const cap = vehicle.ai ? 22 : 48;

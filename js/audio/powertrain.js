@@ -10,7 +10,7 @@
  * See assets/sfx/ATTRIBUTION.txt for licenses.
  */
 
-import { loadSample, playHit } from "./bank.js?v=1";
+import { loadSample, playHit } from "./bank.js?v=2";
 
 /** Unique recorded beds per featured engine. */
 export const POWERTRAINS = {

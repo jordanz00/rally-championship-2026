@@ -87,15 +87,21 @@ check(
 );
 
 check(
-  "cache chain main→game 341",
-  /game\.js\?v=341/.test(main) && /main\.js\?v=341/.test(index),
+  "phone starts on low quality tier",
+  /startTier: isPhonePlay\(\) \? "low"/.test(game),
+  "opening on high then dumping mid-corner is a hitch, not a scaler"
+);
+
+check(
+  "cache chain main→game",
+  /game\.js\?v=\d+/.test(main) && /main\.js\?v=\d+/.test(index) && (main.match(/game\.js\?v=(\d+)/) || [])[1] === (index.match(/main\.js\?v=(\d+)/) || [])[1],
   "stale Safari cache would hide the overlay"
 );
 
 check(
   "input.js cache bump",
-  /input\.js\?v=38/.test(game),
-  "game must import input.js?v=38"
+  /input\.js\?v=39/.test(game),
+  "game must import the QA-hold input module"
 );
 
 if (fail) {

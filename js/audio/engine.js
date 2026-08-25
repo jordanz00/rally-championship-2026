@@ -11,16 +11,30 @@
  */
 
 import { CdSoundtrack } from "./soundtrack.js?v=132";
-import { PowertrainVoice } from "./powertrain.js?v=24";
-import { SkidVoice } from "./skid.js?v=4";
-import { loadSample, playHit } from "./bank.js?v=1";
+import { PowertrainVoice } from "./powertrain.js?v=25";
+import { SkidVoice } from "./skid.js?v=6";
+import { loadSample, playHit, playClip } from "./bank.js?v=2";
 import { CrowdVoice } from "./crowd.js?v=4";
 import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
 
 /** Default SFX bus level (slider at 100%). */
 const SFX_GAIN = 0.58;
+/** Navigator VO sits off the SFX compressor so calls stay intelligible. */
+const NAV_GAIN = 0.82;
 const VOL_MUSIC_KEY = "rally-vol-music";
 const VOL_SFX_KEY = "rally-vol-sfx";
+const VOL_NAV_KEY = "rally-vol-navigator";
+const NAV_CLIPS = [
+  "easy-left",
+  "easy-right",
+  "medium-left",
+  "medium-right",
+  "hard-left",
+  "hard-right",
+  "hairpin-left",
+  "hairpin-right",
+  "jump",
+];
 
 /**
  * True in Cursor / VS Code Simple Browser (and `?mute=1`).
@@ -64,6 +78,7 @@ export class RallyAudio {
     this._screen = "title";
     this.musicVol = loadVol(VOL_MUSIC_KEY, 1);
     this.sfxVol = loadVol(VOL_SFX_KEY, 1);
+    this.navVol = loadVol(VOL_NAV_KEY, 1);
     // Old loadVol treated missing localStorage as 0 and the pause slider
     // then wrote that mute. A stored 0 is almost never a deliberate mute
     // from a first-run session — restore so the new discs are audible.
@@ -72,6 +87,7 @@ export class RallyAudio {
     if (this._workMute) {
       this.musicVol = 0;
       this.sfxVol = 0;
+      this.navVol = 0;
     } else {
       this._bindFirstGesture();
     }
@@ -87,6 +103,10 @@ export class RallyAudio {
     this._raceLoopsMuted = false;
     /** @type {Record<string, AudioBuffer|null>} */
     this._hits = {};
+    /** @type {Record<string, AudioBuffer|null>} */
+    this._navClips = {};
+    /** @type {AudioBufferSourceNode|null} */
+    this._navSrc = null;
     /** @type {CrowdVoice|null} */
     this.crowd = null;
   }
@@ -165,8 +185,13 @@ export class RallyAudio {
     this.skid.boot();
     this.crowd = new CrowdVoice(ctx, sfxMerge);
     this.crowd.boot();
+    const nav = ctx.createGain();
+    nav.gain.value = NAV_GAIN * this.navVol;
+    nav.connect(ctx.destination);
+    this._navGain = nav;
     this._initWind();
     this._bootHits();
+    this._bootNavClips();
     this._hits.noise = makeNoiseBuffer(ctx, 0.18);
     this._hits.thump = makeNoiseBuffer(ctx, 0.28, 0.55);
     // Distinct procedural landing bodies so soft hops, hard packs, and
@@ -269,6 +294,37 @@ export class RallyAudio {
     });
   }
 
+  _bootNavClips() {
+    for (const key of NAV_CLIPS) {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3`).then((buf) => {
+        this._navClips[key] = buf;
+      });
+    }
+  }
+
+  /**
+   * Play a recorded co-driver line. Stops the previous call so they never stack.
+   * @param {string} key
+   * @returns {boolean}
+   */
+  paceCall(key) {
+    if (!this.ready || this._workMute || this.navVol <= 0.001) return false;
+    if (!Object.prototype.hasOwnProperty.call(this._navClips, key)) return false;
+    const buf = this._navClips[key];
+    if (!buf || !this._navGain) return true;
+    this._kickContext();
+    if (this._navSrc) {
+      try {
+        this._navSrc.stop();
+      } catch {
+        /* already ended */
+      }
+      this._navSrc = null;
+    }
+    this._navSrc = playClip(this.ctx, this._navGain, buf, { gain: 1 });
+    return !!this._navSrc;
+  }
+
   /**
    * Bind the player car's real engine layout (turbo I4 vs NA V6).
    * @param {string} id
@@ -298,6 +354,22 @@ export class RallyAudio {
     if (this.ready && this.master && this.ctx) {
       this.master.gain.setTargetAtTime(
         SFX_GAIN * this.sfxVol,
+        this.ctx.currentTime,
+        0.04
+      );
+    }
+  }
+
+  /**
+   * Pause-menu NAVIGATOR slider. Recorded VO, not the SFX compressor.
+   * @param {number} v
+   */
+  setNavVolume(v) {
+    this.navVol = clamp01(v);
+    if (!this._workMute) saveVol(VOL_NAV_KEY, this.navVol);
+    if (this.ready && this._navGain && this.ctx) {
+      this._navGain.gain.setTargetAtTime(
+        NAV_GAIN * this.navVol,
         this.ctx.currentTime,
         0.04
       );

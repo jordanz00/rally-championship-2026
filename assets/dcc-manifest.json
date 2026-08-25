@@ -22,27 +22,6 @@
         "stratos-lowpoly-backup.glb",
         "stratos.glb"
       ]
-    },
-    {
-      "id": "jaguar",
-      "glbs": [
-        "etype.glb",
-        "rival.glb"
-      ]
-    },
-    {
-      "id": "focus",
-      "glbs": [
-        "focus.glb",
-        "rival.glb"
-      ]
-    },
-    {
-      "id": "accord",
-      "glbs": [
-        "accord.glb",
-        "rival.glb"
-      ]
     }
   ],
   "damageVariants": "runtime shader tiers 0-3 (author damaged.glb per car for mesh swap)"

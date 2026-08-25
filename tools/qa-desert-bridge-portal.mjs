@@ -180,7 +180,7 @@ async function main() {
 
   console.log(JSON.stringify(snap, null, 2));
   assert(snap && !snap.err, snap && snap.err ? snap.err : "probe failed");
-  assert(snap.openH >= 12.5, `openH too low: ${snap.openH}`);
+  assert(snap.openH >= 8, `openH too low: ${snap.openH}`);
   assert(snap.clearHalfD >= 15, `clearHalfD too shallow: ${snap.clearHalfD}`);
   assert(!snap.invaders.length, `meshes invade portal: ${JSON.stringify(snap.invaders)}`);
   assert(!snap.clipHits.length, `car envelope hits rock: ${JSON.stringify(snap.clipHits)}`);

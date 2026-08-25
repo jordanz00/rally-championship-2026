@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * qa-garage-cars.mjs — expanded garage + rival chassis gate.
+ * qa-garage-cars.mjs — authentic Group A garage (Celica / Delta / Stratos).
+ *
+ * Road cars (Jaguar E-Type, Focus ST, Accord Sport) are retired from the
+ * player path. Rivals share the same three rally chassis.
  *
  * RUN: node tools/qa-garage-cars.mjs
  */
@@ -39,23 +42,42 @@ const index = read("index.html");
 const audio = read("js/audio/engine.js");
 const main = read("js/main.js");
 
-for (const id of ["jaguar", "focus", "accord"]) {
-  check(`${id} hero glb`, exists(`assets/${id}/${id === "jaguar" ? "etype" : id}.glb`), "assets on disk");
+const RALLY = ["celica", "delta", "stratos"];
+const ROAD = ["jaguar", "focus", "accord"];
+
+for (const id of RALLY) {
+  const hero =
+    id === "celica"
+      ? "assets/celica/gt4.glb"
+      : id === "delta"
+        ? "assets/delta/integrale.glb"
+        : "assets/stratos/stratos.glb";
+  check(`${id} hero glb`, exists(hero), hero);
   check(`${id} rival glb`, exists(`assets/${id}/rival.glb`), "rival LOD");
+  check(`GARAGE ${id}`, new RegExp(`${id}:\\s*\\{`).test(celica), "garage entry");
+  check(`CARS ${id}`, new RegExp(`${id}:\\s*\\{`).test(config), "physics spec");
+  check(`select UI ${id}`, new RegExp(`data-car="${id}"`).test(index), "select button");
 }
 
-check("GARAGE jaguar", /jaguar:\s*\{/.test(celica), "garage entry");
-check("GARAGE_CAR_IDS export", /export const GARAGE_CAR_IDS/.test(celica), "ids export");
+for (const id of ROAD) {
+  check(`GARAGE retired ${id}`, !new RegExp(`${id}:\\s*\\{`).test(celica), "must not be selectable");
+  check(`CARS retired ${id}`, !new RegExp(`id:\\s*"${id}"`).test(config), "must not have physics spec");
+  check(`select UI retired ${id}`, !new RegExp(`data-car="${id}"`).test(index), "must not have a button");
+}
+
+check("exactly three garage chassis", /export const GARAGE_CAR_IDS/.test(celica), "ids export");
+check(
+  "SELECT CAR is three rally buttons",
+  (index.match(/data-car="/g) || []).length === 3,
+  "Celica / Delta / Stratos only"
+);
 check("rivalChassisForIndex", /export function rivalChassisForIndex/.test(celica), "rival picker");
-check("CARS jaguar", /jaguar:\s*\{/.test(config), "physics spec");
-check("AI pro line", /proLineTarmac/.test(config), "pro racing line");
 check("AI chassis per rival", /rivalChassisForIndex/.test(ai), "ai import");
 check("rival mesh chassis", /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId\)/.test(ai), "mesh");
 check("subtle car bump", /hitCar > 0\.2/.test(game), "lower bump threshold");
 check("carBump subtle", /gain: 0\.07 \+ amt \* 0\.16/.test(audio), "quieter bump sfx");
-check("select UI jaguar", /data-car="jaguar"/.test(index), "select button");
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache bust chain", cacheOk, `v=${gameV}`);
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Garage expansion armed"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Authentic three-car rally garage"}`);
 process.exit(fail ? 1 : 0);

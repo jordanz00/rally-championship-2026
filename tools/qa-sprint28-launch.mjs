@@ -113,7 +113,15 @@ check(
 check(
   "chassis long-accel is filtered before vx integrate",
   /AX_DRIVE_RATE/.test(vehicle) && /this\._axDrive \+= /.test(vehicle),
-  "player vx must not integrate raw Pacejka Fx"
+  "vx must not integrate raw Pacejka Fx"
+);
+
+check(
+  "AI pack shares planted hull (no lowDetail hop)",
+  !/lowDetail \? 14 : VIS_PITCH_RATE/.test(vehicle) &&
+    !/if \(!this\.lowDetail\) \{\s*this\._axDrive \+=/.test(vehicle) &&
+    /Direct deck plant for player AND pack/.test(vehicle),
+  "rivals must use vis-pitch, axDrive, and deck plant"
 );
 
 check(

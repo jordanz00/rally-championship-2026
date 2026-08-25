@@ -41,7 +41,7 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  /track\.js\?v=168/.test(gameSrc),
+  /track\.js\?v=176/.test(gameSrc),
   "stale browser cache would keep the old dune mesh"
 );
 check(

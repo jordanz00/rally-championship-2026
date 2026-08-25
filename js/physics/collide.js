@@ -12,8 +12,8 @@
  *
  * DESIGN RULE (docs/AM3-RESEARCH.md §2): championship mode has no crash-out and
  * no off-course penalty. Everything in this file is therefore a redirect or a
- * cost, never a stop and never an elimination. A rival must not be the reason a
- * run ends, so in player-vs-rival contact the player keeps most of their line.
+ * cost, never a stop and never an elimination. A rival must not shove the
+ * player off their line — they bump, then slide around you.
  */
 
 const HALF_LENGTH = 2.05;
@@ -32,13 +32,26 @@ const AI_PASS_LATERAL = 0.55;
 /** Minimum along-track speed (m/s) restored on the trailing AI after a rub. */
 const AI_PASS_MIN_SPD = 9;
 /**
- * How much of a shared push the PLAYER absorbs when a rival hits them. Well
- * under half, so being leaned on costs you a tenth of a second of line and not
- * a stage. The rival takes the rest.
+ * Player-vs-rival: the player keeps the line. Inverse-mass share used to be
+ * 0.42, which still handed ~30% of every shove (and FRICTION*4 dragged you
+ * sideways). Rivals now eat the overlap and step around.
  */
-const PLAYER_ANCHOR = 0.42;
+const PLAYER_ANCHOR = 0.12;
+/** Metres of player depenetration per resolve — a bump, not a shove. */
+const PLAYER_PUSH_CAP = 0.028;
+const PLAYER_SEPARATE = 0.18;
+/** Rival eats almost all remaining overlap so they leave the player's box. */
+const PLAYER_RIVAL_SEPARATE = 0.9;
+/** Max player Δv from the normal impulse (m/s). */
+const PLAYER_BUMP_VEL = 2.2;
+/** Fraction of tangent drag that may reach the player. */
+const PLAYER_SLIDE_SHARE = 0.12;
+const PLAYER_TANGENT_GRIP = 0.04;
+/** Rival steps this far (m) around the player instead of staying glued. */
+const PLAYER_RIVAL_SIDESTEP = 0.4;
+const PLAYER_RESTITUTION = 0.02;
 /** Ceiling on the yaw disturbance a rival may hand the player, rad/s. */
-const PLAYER_YAW_CAP = 0.22;
+const PLAYER_YAW_CAP = 0.09;
 
 /**
  * Off-road bands past the painted edge (metres).
@@ -86,13 +99,13 @@ function resolvePair(a, b) {
   if (!hit) return;
 
   const aiPack = !!(a.ai && b.ai);
+  if (!aiPack && (a.ai || b.ai)) {
+    resolvePlayerRival(a, b, hit, dx, dz);
+    return;
+  }
+
   let invA = 1 / (a.spec.mass || 1200);
   let invB = 1 / (b.spec.mass || 1200);
-  // Mixed contact: anchor the player so a rival cannot shove a run off the road.
-  if (!aiPack) {
-    if (!a.ai && b.ai) invA *= PLAYER_ANCHOR;
-    else if (a.ai && !b.ai) invB *= PLAYER_ANCHOR;
-  }
   const tot = invA + invB;
   const nx = hit.nx;
   const nz = hit.nz;
@@ -166,6 +179,88 @@ function resolvePair(a, b) {
   b.yawRate = (b.yawRate || 0) + (b.ai ? glancing : clampYaw(glancing));
 }
 
+/**
+ * Player vs AI: the player keeps almost all of their pose and speed. The rival
+ * takes the overlap, a closing-speed bounce, and a sidestep so they do not
+ * stay glued and shove again next frame.
+ *
+ * @param {*} a
+ * @param {*} b
+ * @param {{overlap:number,nx:number,nz:number}} hit
+ * @param {number} dx
+ * @param {number} dz
+ */
+function resolvePlayerRival(a, b, hit, dx, dz) {
+  const player = a.ai ? b : a;
+  const rival = a.ai ? a : b;
+  let nx = hit.nx;
+  let nz = hit.nz;
+  const toRx = rival.position.x - player.position.x;
+  const toRz = rival.position.z - player.position.z;
+  if (toRx * nx + toRz * nz < 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+
+  const overlap = hit.overlap;
+  const playerPush = Math.min(overlap * PLAYER_SEPARATE, PLAYER_PUSH_CAP);
+  const rivalPush = Math.max(overlap * PLAYER_RIVAL_SEPARATE, overlap - playerPush);
+  player.position.x -= nx * playerPush;
+  player.position.z -= nz * playerPush;
+  rival.position.x += nx * rivalPush;
+  rival.position.z += nz * rivalPush;
+
+  const invP = (1 / (player.spec.mass || 1200)) * PLAYER_ANCHOR;
+  const invR = 1 / (rival.spec.mass || 1200);
+  const tot = invP + invR;
+  const rvx = rival.velocity.x - player.velocity.x;
+  const rvz = rival.velocity.z - player.velocity.z;
+  const relN = rvx * nx + rvz * nz;
+  if (relN < 0) {
+    const jn = (-(1 + PLAYER_RESTITUTION) * relN) / tot;
+    let pdvx = jn * nx * invP;
+    let pdvz = jn * nz * invP;
+    const pdv = Math.hypot(pdvx, pdvz);
+    if (pdv > PLAYER_BUMP_VEL) {
+      const s = PLAYER_BUMP_VEL / pdv;
+      pdvx *= s;
+      pdvz *= s;
+    }
+    player.velocity.x -= pdvx;
+    player.velocity.z -= pdvz;
+    rival.velocity.x += jn * nx * invR;
+    rival.velocity.z += jn * nz * invR;
+    player.hitCar = Math.max(player.hitCar || 0, Math.abs(relN) * 0.45 + overlap);
+  }
+
+  const tx = -nz;
+  const tz = nx;
+  const relT = rvx * tx + rvz * tz;
+  const jt = clamp(-relT / tot, -PLAYER_TANGENT_GRIP, PLAYER_TANGENT_GRIP);
+  player.velocity.x -= jt * tx * invP * PLAYER_SLIDE_SHARE;
+  player.velocity.z -= jt * tz * invP * PLAYER_SLIDE_SHARE;
+  rival.velocity.x += jt * tx * invR;
+  rival.velocity.z += jt * tz * invR;
+
+  const prx = Math.cos(player.yaw);
+  const prz = -Math.sin(player.yaw);
+  let side = Math.sign(toRx * prx + toRz * prz);
+  if (!side) side = 1;
+  rival.position.x += prx * side * PLAYER_RIVAL_SIDESTEP;
+  rival.position.z += prz * side * PLAYER_RIVAL_SIDESTEP;
+  const rfx = Math.sin(rival.yaw);
+  const rfz = Math.cos(rival.yaw);
+  const rAlong = Math.max(8, rival.velocity.x * rfx + rival.velocity.z * rfz);
+  rival.velocity.x = rfx * rAlong + prx * side * 1.4;
+  rival.velocity.z = rfz * rAlong + prz * side * 1.4;
+  rival._aiPassSide = side;
+  rival._aiPassT = 0.7;
+
+  const glancing = (dx * -Math.cos(player.yaw) + dz * Math.sin(player.yaw)) * YAW_NUDGE;
+  player.yawRate = (player.yawRate || 0) - clampYaw(glancing * 0.45);
+  rival.yawRate = (rival.yawRate || 0) * 0.88;
+}
+
 /** Limit a yaw disturbance handed to the player. */
 function clampYaw(v) {
   return clamp(v, -PLAYER_YAW_CAP, PLAYER_YAW_CAP);
@@ -230,25 +325,88 @@ function projectBox(v, axis) {
 }
 
 /**
+ * Kill speed into a hit normal, keep some along-track roll. Shared by sphere
+ * rocks and planar tunnel walls.
+ * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yawRate?:number, hitWall?:number, ai?:boolean}} v
+ * @param {number} nx
+ * @param {number} nz
+ * @param {number} overlap
+ * @param {number} pass
+ * @param {number} fx
+ * @param {number} fz
+ * @param {number} fast
+ */
+function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast) {
+  // Full separation — opaque environment must not be penetrable.
+  const push = overlap * (pass === 0 ? 1.05 : 1.01);
+  v.position.x += nx * push;
+  v.position.z += nz * push;
+  const vn = v.velocity.x * nx + v.velocity.z * nz;
+  if (vn < 0) {
+    v.velocity.x -= vn * nx;
+    v.velocity.z -= vn * nz;
+    const scrub = v.ai ? (pass === 0 ? 0.05 : 0.02) : pass === 0 ? 0.08 : 0.04;
+    v.velocity.x *= 1 - scrub;
+    v.velocity.z *= 1 - scrub;
+    const along = v.velocity.x * fx + v.velocity.z * fz;
+    const spd = Math.hypot(v.velocity.x, v.velocity.z);
+    const keep = Math.max(along, spd * (v.ai ? 0.62 : 0.55), v.ai ? 6 : 4);
+    const blend = v.ai ? 0.72 : 0.38;
+    v.velocity.x = v.velocity.x * (1 - blend) + fx * keep * blend;
+    v.velocity.z = v.velocity.z * (1 - blend) + fz * keep * blend;
+    v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.65 + push * 0.45);
+    if (v.ai && keep < 7) {
+      v.velocity.x += fx * 4.5;
+      v.velocity.z += fz * 4.5;
+    }
+  }
+  if (v.yawRate != null) {
+    const past = nx * fz - nz * fx;
+    v.yawRate += past * 0.04 * fast;
+  }
+}
+
+/**
  * Glance off trees, rocks, houses — never embed through opaque solids.
+ * Tunnel / underpass sides are planar slabs (`kind: "wall"`) so the hit
+ * matches the visible inner face instead of a sphere sitting in the rock.
  *
  * Sprint 26c: full depenetration (was 0.55× and let cars tunnel through rock /
  * berms at speed). Still AM3-friendly: kill inward speed, scrub a little, roll
  * past — no crash-out, no wall-skating lock.
  *
  * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, speed:number, yawRate?:number, hitWall?:number}} v
- * @param {{colliders: Array<{x:number,z:number,r:number}>}} track
+ * @param {{colliders: Array<{x:number,z:number,r?:number,kind?:string,nx?:number,nz?:number,tx?:number,tz?:number,halfLen?:number}>}} track
  */
 export function glanceObstacles(v, track) {
   const list = track.colliders;
   if (!list || !list.length) return;
   const fx = Math.sin(v.yaw);
   const fz = Math.cos(v.yaw);
+  const rx = fz;
+  const rz = -fx;
   const fast = 1 / (1 + Math.max(0, v.speed || 0) * 0.045);
   // Two passes so a fast frame that sinks deep still ends outside the solid.
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
+      if (c.kind === "wall") {
+        const nx = c.nx;
+        const nz = c.nz;
+        const dx = v.position.x - c.x;
+        const dz = v.position.z - c.z;
+        const along = dx * c.tx + dz * c.tz;
+        if (along > c.halfLen + HALF_LENGTH || along < -c.halfLen - HALF_LENGTH) continue;
+        // Car OBB extent along the wall normal — body side, not the enclosing
+        // circle, so a parallel scrape meets the visible lining.
+        const ext =
+          HALF_LENGTH * Math.abs(fx * nx + fz * nz) + HALF_WIDTH * Math.abs(rx * nx + rz * nz);
+        const dist = dx * nx + dz * nz;
+        const overlap = ext - dist;
+        if (overlap <= 0) continue;
+        applyGlance(v, nx, nz, overlap, pass, fx, fz, fast);
+        continue;
+      }
       const dx = v.position.x - c.x;
       const dz = v.position.z - c.z;
       const d = Math.hypot(dx, dz) || 0.0001;
@@ -257,34 +415,7 @@ export function glanceObstacles(v, track) {
       if (overlap <= 0) continue;
       const nx = dx / d;
       const nz = dz / d;
-      // Full separation — opaque environment must not be penetrable.
-      const push = overlap * (pass === 0 ? 1.05 : 1.01);
-      v.position.x += nx * push;
-      v.position.z += nz * push;
-      const vn = v.velocity.x * nx + v.velocity.z * nz;
-      if (vn < 0) {
-        v.velocity.x -= vn * nx;
-        v.velocity.z -= vn * nz;
-        // Soft speed scrub on impact — feel the hit without a hard stop.
-        const scrub = v.ai ? (pass === 0 ? 0.05 : 0.02) : pass === 0 ? 0.08 : 0.04;
-        v.velocity.x *= 1 - scrub;
-        v.velocity.z *= 1 - scrub;
-        const along = v.velocity.x * fx + v.velocity.z * fz;
-        const spd = Math.hypot(v.velocity.x, v.velocity.z);
-        const keep = Math.max(along, spd * (v.ai ? 0.62 : 0.55), v.ai ? 6 : 4);
-        const blend = v.ai ? 0.72 : 0.38;
-        v.velocity.x = v.velocity.x * (1 - blend) + fx * keep * blend;
-        v.velocity.z = v.velocity.z * (1 - blend) + fz * keep * blend;
-        v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.65 + push * 0.45);
-        if (v.ai && keep < 7) {
-          v.velocity.x += fx * 4.5;
-          v.velocity.z += fz * 4.5;
-        }
-      }
-      if (v.yawRate != null) {
-        const past = nx * fz - nz * fx;
-        v.yawRate += past * 0.04 * fast;
-      }
+      applyGlance(v, nx, nz, overlap, pass, fx, fz, fast);
     }
   }
 }
@@ -324,20 +455,36 @@ export function bounceOffRoad(v, q, track = null) {
   const hz = Math.cos(q.heading);
 
   // Extreme: place back on the centre line. AI gets a strong pull instead of a
-  // teleport so packs do not pop.
+  // teleport so packs do not pop. Never plant onto a different loop of the
+  // stage (query snaps at self-crossings) or 8 m of Y (Mountain stacked hairpin).
   if (over > resetAt) {
     if (isPlayer && track && typeof track.sample === "function") {
-      const line = track.sample(q.dist != null ? q.dist : 0);
-      v.position.x = line.x;
-      v.position.z = line.z;
-      v.yaw = line.heading;
-      v.yawRate = 0;
-      const spd = Math.hypot(v.velocity.x, v.velocity.z);
-      const out = Math.max(7, Math.min(14, spd * 0.5));
-      v.velocity.x = Math.sin(v.yaw) * out;
-      v.velocity.z = Math.cos(v.yaw) * out;
-      v._rearSlide = false;
-      return true;
+      const along = Number.isFinite(v.progress) ? v.progress : q.dist || 0;
+      const qDist = q.dist;
+      let dAlong = Number.isFinite(qDist) ? Math.abs(qDist - along) : 0;
+      const span = track.length || 0;
+      if (span > 80 && dAlong > span * 0.5) dAlong = span - dAlong;
+      const air =
+        q.jumpKind === "gap" || q.jumpKind === "crest" || q.jumpKind === "ramp";
+      if (!air && dAlong <= 18 && Number.isFinite(along)) {
+        const line = track.sample(along);
+        const dy = Math.abs((line.y || 0) - (v.position.y || 0));
+        if (dy < 2.6 && Number.isFinite(line.x) && Number.isFinite(line.z)) {
+          v.position.x = line.x;
+          v.position.y = (line.y || 0) + 0.046;
+          v.position.z = line.z;
+          v.yaw = line.heading;
+          v.yawRate = 0;
+          v.velY = 0;
+          v.onGround = true;
+          const spd = Math.hypot(v.velocity.x, v.velocity.z);
+          const out = Math.max(7, Math.min(14, spd * 0.5));
+          v.velocity.x = Math.sin(v.yaw) * out;
+          v.velocity.z = Math.cos(v.yaw) * out;
+          v._rearSlide = false;
+          return true;
+        }
+      }
     }
     // AI / no sample: haul hard toward the ribbon without a wall scrub.
     v.position.x += nx * inward * Math.min(over - recover, 6) * 0.35;

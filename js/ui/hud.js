@@ -542,10 +542,138 @@ function isDebugHud() {
   return false;
 }
 
-export function showScreen(id) {
+function prefersReducedMotion() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  } catch {
+    return false;
+  }
+}
+
+function applyScreen(id) {
   document.querySelectorAll(".screen").forEach((el) => {
     el.classList.toggle("active", el.id === id);
   });
+}
+
+function curtainEl() {
+  return document.getElementById("fx-curtain");
+}
+
+function waitMs(ms) {
+  if (!(ms > 0)) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Serialise fades so title → menu → load never overlap. */
+let curtainQueue = Promise.resolve();
+
+const FADE_OUT_MS = 320;
+const FADE_IN_MS = 480;
+
+/**
+ * Swap menus through black. `instant: true` skips the curtain (pause resume).
+ * @param {string} id
+ * @param {{ instant?: boolean, outMs?: number, inMs?: number }} [opts]
+ * @returns {Promise<void>}
+ */
+export function showScreen(id, opts = {}) {
+  const current = document.querySelector(".screen.active");
+  if (current && current.id === id) return Promise.resolve();
+  const instant = opts.instant === true || prefersReducedMotion();
+  if (instant) {
+    const curtain = curtainEl();
+    if (curtain) curtain.classList.remove("is-on");
+    applyScreen(id);
+    return Promise.resolve();
+  }
+  const outMs = opts.outMs != null ? opts.outMs : FADE_OUT_MS;
+  const inMs = opts.inMs != null ? opts.inMs : FADE_IN_MS;
+  curtainQueue = curtainQueue.then(() => fadeThroughBlack(id, outMs, inMs));
+  return curtainQueue;
+}
+
+/**
+ * @param {string} id
+ * @param {number} outMs
+ * @param {number} inMs
+ */
+async function fadeThroughBlack(id, outMs, inMs) {
+  const el = curtainEl();
+  if (!el) {
+    applyScreen(id);
+    return;
+  }
+  el.classList.add("is-on");
+  applyScreen(id);
+  await waitMs(outMs);
+  el.classList.remove("is-on");
+  await waitMs(inMs);
+}
+
+const loadUi = {
+  target: 0,
+  shown: 0,
+  status: "",
+  raf: 0,
+  lastTs: 0,
+  stallMs: 0,
+};
+
+function paintLoadBar(shown, status) {
+  const pct = shown >= 0.999 ? 100 : Math.min(99, Math.round(shown * 100));
+  const bar = document.getElementById("load-bar-fill");
+  const barWrap = document.getElementById("load-bar");
+  const pctEl = document.getElementById("load-pct");
+  const statusEl = document.getElementById("load-status");
+  if (bar) bar.style.transform = `scaleX(${Math.max(0, Math.min(1, shown))})`;
+  if (barWrap) barWrap.setAttribute("aria-valuenow", String(pct));
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  if (status && statusEl) statusEl.textContent = status;
+}
+
+function tickLoadBar(ts) {
+  const dt = loadUi.lastTs ? Math.min(0.05, (ts - loadUi.lastTs) / 1000) : 0.016;
+  loadUi.lastTs = ts;
+  const tgt = loadUi.target;
+  const gap = tgt - loadUi.shown;
+  if (gap > 0.0008) {
+    const rate = gap > 0.12 ? 4.2 : gap > 0.04 ? 2.6 : 1.55;
+    loadUi.shown += gap * (1 - Math.exp(-rate * dt));
+    loadUi.stallMs = 0;
+  } else {
+    loadUi.stallMs += dt * 1000;
+    // Main-thread stalls (terrain rows, GLB parse) used to freeze one %.
+    // Trickle toward a soft cap just ahead of the last real report.
+    if (tgt < 0.992 && loadUi.stallMs > 80) {
+      const cap = Math.min(0.987, tgt + 0.055);
+      if (loadUi.shown < cap) {
+        const remain = cap - loadUi.shown;
+        const tricklePerSec = 0.022 + remain * 0.28;
+        loadUi.shown = Math.min(cap, loadUi.shown + tricklePerSec * dt);
+      }
+    }
+  }
+  if (tgt >= 0.999) {
+    loadUi.shown += (1 - loadUi.shown) * (1 - Math.exp(-7.5 * dt));
+    if (loadUi.shown > 0.995) loadUi.shown = 1;
+  }
+  paintLoadBar(loadUi.shown, loadUi.status);
+  const loading = document.getElementById("screen-loading");
+  const active = !!(loading && loading.classList.contains("active"));
+  const done = loadUi.shown >= 0.999 && tgt >= 0.999;
+  if (!active || done) {
+    loadUi.raf = 0;
+    if (done) paintLoadBar(1, loadUi.status);
+    return;
+  }
+  loadUi.raf = requestAnimationFrame(tickLoadBar);
+}
+
+function armLoadBar() {
+  if (loadUi.raf) return;
+  loadUi.lastTs = 0;
+  loadUi.raf = requestAnimationFrame(tickLoadBar);
 }
 
 /**
@@ -554,35 +682,31 @@ export function showScreen(id) {
  */
 export function setLoadingProgress(frac, status) {
   const p = Math.max(0, Math.min(1, Number(frac) || 0));
-  // Never let the bar jump backwards — reports can arrive out of phase weight order.
-  if (p < (setLoadingProgress._last || 0) && p < 0.999) {
-    if (status) {
-      const statusEl = document.getElementById("load-status");
-      if (statusEl) statusEl.textContent = status;
-    }
+  // Never let the real target jump backwards — reports can arrive out of phase.
+  if (p < loadUi.target && p < 0.999) {
+    if (status) loadUi.status = status;
     return;
   }
+  loadUi.target = p;
+  if (status) loadUi.status = status;
   setLoadingProgress._last = p;
-  const pct = p >= 0.999 ? 100 : Math.min(99, Math.floor(p * 100 + 1e-6));
-  const bar = document.getElementById("load-bar-fill");
-  const barWrap = document.getElementById("load-bar");
-  const pctEl = document.getElementById("load-pct");
-  const statusEl = document.getElementById("load-status");
-  if (bar) bar.style.width = `${pct}%`;
-  if (barWrap) barWrap.setAttribute("aria-valuenow", String(pct));
-  if (pctEl) pctEl.textContent = `${pct}%`;
-  if (status && statusEl) statusEl.textContent = status;
+  armLoadBar();
 }
 
 /** Reset monotonic high-water when a new load starts. */
 export function showLoadingScreen(opts = {}) {
-  showScreen("screen-loading");
+  loadUi.target = 0;
+  loadUi.shown = 0;
+  loadUi.stallMs = 0;
+  loadUi.status = opts.status || "Preparing course…";
   setLoadingProgress._last = 0;
   const title = document.getElementById("load-stage");
   const sub = document.getElementById("load-sub");
   const status = document.getElementById("load-status");
   if (title) title.textContent = opts.title || "LOADING STAGE";
   if (sub) sub.textContent = opts.subtitle || "";
-  if (status) status.textContent = opts.status || "Preparing course…";
-  setLoadingProgress(0, opts.status || "Preparing course…");
+  if (status) status.textContent = loadUi.status;
+  paintLoadBar(0, loadUi.status);
+  armLoadBar();
+  return showScreen("screen-loading");
 }

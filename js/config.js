@@ -4,6 +4,9 @@
  * WHO THIS IS FOR: anyone tweaking feel, Saturn look, or car performance.
  * WHAT IT DOES: one place for physics, surfaces, render, and championship rules.
  * HOW IT CONNECTS: imported by vehicle, tracks, renderer, HUD, and the game loop.
+ *
+ * GTA IV rival (Sprint 75c): HANDLING/CHASSIS/SURFACES encode Rockstar's
+ * readable-mass formula, not a handling.dat clone. Sources in HANDLING.
  */
 
 export const FIXED_DT = 1 / 60;
@@ -27,9 +30,11 @@ export const GFX = {
   /** Race — photoreal at 60 Hz: prefer frame time over pixel density. */
   maxPixelRatio: 1.5,
   maxPixels: 2800000,
-  /** Title splash — one car, no pack; afford sharper pixels and IBL. */
-  titleMaxPixelRatio: 2,
-  titleMaxPixels: 4200000,
+  /** Title / SELECT MODE showroom — cheap framebuffer so splash paints fast. */
+  titleMaxPixelRatio: 0.68,
+  titleMaxPixels: 720000,
+  /** Title sun atlas — 512 is enough for one LOD car on a pad. */
+  titleShadowMap: 512,
   /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
   targetFps: 60,
   lockRenderFps: true,
@@ -45,9 +50,12 @@ export const GFX = {
   shadowEvery: 1,
   reflectEvery: 0,
   cubeSize: 64,
-  /** Rearview RT — wide enough to read as glass, captured every POV frame. */
-  mirrorW: 640,
-  mirrorH: 200,
+  /**
+   * Rearview RT — 384 on the long edge (readable cabin glass, ~1/4 of a
+   * 1600-wide framebuffer). Full-res was a hitch; postage-stamp is unreadable.
+   */
+  mirrorW: 384,
+  mirrorH: 120,
   mirrorEvery: 1,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
@@ -87,10 +95,10 @@ export const VISUAL = {
   postFx: true,
   bloomStrength: 0.15,
   bloomThreshold: 0.76,
-  vignette: 0.34,
-  gradeContrast: 1.14,
-  gradeSaturation: 1.06,
-  gradeWarmth: 0.09,
+  vignette: 0.08,
+  gradeContrast: 0.96,
+  gradeSaturation: 1.04,
+  gradeWarmth: 0.08,
   /** Fine film grain — cinema read; adaptive low still zeros this. */
   sharpen: 0,
   fxaa: false,
@@ -121,12 +129,12 @@ export const VISUAL = {
   /** Stage sky dust band + horizon bounce (sky.js). */
   envAtmosphere: true,
   /** Tier 13 IBL — world and car read sunlit materials. */
-  worldEnvIntensity: 0.96,
-  carEnvIntensity: 0.88,
+  worldEnvIntensity: 1.18,
+  carEnvIntensity: 1.12,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
-  highlightRolloff: 0.11,
+  highlightRolloff: 0.24,
   pbrSkySigma: 0,
   /** Normal strength on road/terrain. */
   normalStrength: 1.22,
@@ -167,6 +175,15 @@ export const STREAM = {
   hysteresis: 80,
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
   minLoadRadius: 320,
+  /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
+  countdownLoadRadius: 720,
+  /**
+   * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
+   * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
+   * stops the swap strobing on a 220 m slice boundary.
+   */
+  lodNear: 108,
+  lodHysteresis: 22,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */
@@ -228,7 +245,7 @@ export const LIGHTING = {
     skyRayleigh: 1.12,
     skyMie: 0.0042,
     skyMieG: 0.78,
-    skyExposure: 0.82,
+    skyExposure: 1.04,
     sunSkyBoost: 0.92,
     sunBloom: 0.58,
     zenithBoost: 0.28,
@@ -244,21 +261,21 @@ export const LIGHTING = {
     fogFar: 1280,
     hemiSky: 0xa8c8e8,
     hemiGround: 0xd0b080,
-    hemi: 0.78,
+    hemi: 1.22,
     sun: 0xfff0d8,
     sunKelvin: 5780,
-    sunInt: 2.55,
+    sunInt: 2.05,
     sunDir: [0.42, 0.86, 0.28],
     rimSky: 0xb8d4f0,
-    rimInt: 0.26,
+    rimInt: 0.38,
     fill: 0xa0b8d0,
-    fillInt: 0.38,
+    fillInt: 0.82,
     ambient: 0xb8c4c8,
-    ambientInt: 0.28,
-    exposure: 1.12,
+    ambientInt: 0.64,
+    exposure: 1.4,
     gradeWarmth: 0.12,
     skyBack: 0x2e7eb8,
-    worldEnv: 0.92,
+    worldEnv: 1.16,
   },
   forest: {
     /**
@@ -278,7 +295,7 @@ export const LIGHTING = {
     skyRayleigh: 1.15,
     skyMie: 0.0032,
     skyMieG: 0.76,
-    skyExposure: 0.84,
+    skyExposure: 1.06,
     sunSkyBoost: 0.9,
     sunBloom: 0.55,
     zenithBoost: 0.3,
@@ -295,20 +312,20 @@ export const LIGHTING = {
     skyBack: 0x2878c0,
     hemiSky: 0xb0d8f0,
     hemiGround: 0x5a8848,
-    hemi: 0.82,
+    hemi: 1.24,
     sun: 0xfff8e8,
     sunKelvin: 5520,
-    sunInt: 2.35,
+    sunInt: 1.98,
     sunDir: [0.4, 0.88, 0.32],
     rimSky: 0xc0e0f8,
-    rimInt: 0.22,
+    rimInt: 0.34,
     fill: 0x88b070,
-    fillInt: 0.36,
+    fillInt: 0.78,
     ambient: 0x98b090,
-    ambientInt: 0.3,
-    exposure: 1.14,
+    ambientInt: 0.64,
+    exposure: 1.42,
     gradeWarmth: 0.06,
-    worldEnv: 0.9,
+    worldEnv: 1.14,
   },
   mountain: {
     /**
@@ -328,7 +345,7 @@ export const LIGHTING = {
     skyRayleigh: 1.22,
     skyMie: 0.0026,
     skyMieG: 0.74,
-    skyExposure: 0.86,
+    skyExposure: 1.08,
     sunSkyBoost: 0.95,
     sunBloom: 0.52,
     zenithBoost: 0.34,
@@ -345,20 +362,20 @@ export const LIGHTING = {
     skyBack: 0x2070c8,
     hemiSky: 0xa8d0f0,
     hemiGround: 0x7a7460,
-    hemi: 0.74,
+    hemi: 1.2,
     sun: 0xfffaf5,
     sunKelvin: 6420,
-    sunInt: 2.65,
+    sunInt: 2.05,
     sunDir: [0.48, 0.84, 0.28],
     rimSky: 0xb0d8f8,
-    rimInt: 0.2,
+    rimInt: 0.34,
     fill: 0x88a878,
-    fillInt: 0.3,
+    fillInt: 0.78,
     ambient: 0x90a8b8,
-    ambientInt: 0.24,
-    exposure: 1.1,
+    ambientInt: 0.62,
+    exposure: 1.42,
     gradeWarmth: 0.03,
-    worldEnv: 0.9,
+    worldEnv: 1.14,
   },
   lakeside: {
     /**
@@ -378,7 +395,7 @@ export const LIGHTING = {
     skyRayleigh: 1.25,
     skyMie: 0.004,
     skyMieG: 0.76,
-    skyExposure: 0.8,
+    skyExposure: 1.04,
     sunSkyBoost: 0.88,
     sunBloom: 0.5,
     zenithBoost: 0.26,
@@ -395,20 +412,20 @@ export const LIGHTING = {
     skyBack: 0x2278b8,
     hemiSky: 0xa0d0e8,
     hemiGround: 0x487858,
-    hemi: 0.76,
+    hemi: 1.22,
     sun: 0xfff0e0,
     sunKelvin: 5980,
-    sunInt: 2.4,
+    sunInt: 2.0,
     sunDir: [0.5, 0.86, 0.2],
     rimSky: 0xa8d8f0,
-    rimInt: 0.24,
+    rimInt: 0.36,
     fill: 0x80b8d0,
-    fillInt: 0.34,
+    fillInt: 0.8,
     ambient: 0x88a8b8,
-    ambientInt: 0.28,
-    exposure: 1.1,
+    ambientInt: 0.64,
+    exposure: 1.42,
     gradeWarmth: 0.05,
-    worldEnv: 0.92,
+    worldEnv: 1.16,
   },
   /**
    * Title attract — showroom key/fill/rim tuned for lacquer and chrome on the
@@ -419,7 +436,7 @@ export const LIGHTING = {
     skyRayleigh: 0.92,
     skyMie: 0.0038,
     skyMieG: 0.74,
-    skyExposure: 0.85,
+    skyExposure: 1.08,
     cloudCover: 0.06,
     cloudScale: 1.05,
     fog: 0x6a98c8,
@@ -431,22 +448,22 @@ export const LIGHTING = {
     dustStrength: 0,
     hemiSky: 0xd8f0ff,
     hemiGround: 0xb08858,
-    hemi: 1.15,
+    hemi: 1.48,
     sun: 0xfffaf2,
-    sunInt: 2.75,
+    sunInt: 2.12,
     sunDir: [0.48, 0.82, 0.32],
     fill: 0xf0f8ff,
-    fillInt: 1.25,
+    fillInt: 1.68,
     ambient: 0xfff4e8,
-    ambientInt: 0.42,
-    exposure: 1.45,
+    ambientInt: 0.74,
+    exposure: 1.74,
     rim: 0xd0e8ff,
-    rimInt: 0.98,
+    rimInt: 1.12,
     kick: 0xfff8e0,
     kickInt: 0.72,
-    envIntensity: 1.28,
-    bodyEnv: 1.18,
-    chromeEnv: 1.65,
+    envIntensity: 1.4,
+    bodyEnv: 1.28,
+    chromeEnv: 1.72,
     glassEnv: 1.0,
   },
 };
@@ -458,11 +475,11 @@ export const LIGHTING = {
  */
 export const TUNNEL = {
   /** Ambient floor at full shade (was ~0.08 — pitch black bore). */
-  ambientFloor: 0.58,
+  ambientFloor: 0.82,
   /** How much outdoor hemi survives at full shade (was 0.15). */
-  hemiRetain: 0.48,
+  hemiRetain: 0.72,
   /** Fill directional remnant at full shade. */
-  fillRetain: 0.22,
+  fillRetain: 0.48,
   /** Overhead spot that follows the car (physical intensity). */
   caveInt: 48,
   caveDistance: 52,
@@ -520,20 +537,25 @@ export const SURFACES = {
     id: "tarmac",
     label: "TARMAC",
     muPeak: 1.55,
-    muSlide: 1.18,
+    /**
+     * IV tarmac still slides (Traxion / GTA Wiki drifting: IV is looser than V).
+     * Peak 1.55 / slide 1.02 = CurveMax–CurveMin gap. Not ice — brakeHold 1.0
+     * still stops you dead-straight (AM3: "brake on tarmac and you stop").
+     */
+    muSlide: 1.02,
     slipPeak: 0.068,
     /** Threshold braking holds: shortest stop on the championship, arrow-straight. */
     brakeHold: 1.0,
-    brakeYaw: 0.06,
-    slideHold: 0.62,
-    gripSnap: 1.65,
+    brakeYaw: 0.08,
+    slideHold: 0.82,
+    gripSnap: 1.58,
     bumpSteer: 0.4,
     roll: 0.014,
     sink: 0,
-    bump: 0.006,
+    bump: 0.01,
     dust: 0,
     speedScale: 1.0,
-    driftEase: 0.78,
+    driftEase: 0.88,
     pacejkaB: 4.2,
     pacejkaC: 1.34,
     pacejkaE: 0.07,
@@ -547,17 +569,17 @@ export const SURFACES = {
     muSlide: 0.72,
     slipPeak: 0.122,
     /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
-    brakeHold: 0.52,
-    brakeYaw: 0.58,
-    slideHold: 1.28,
-    gripSnap: 1.28,
+    brakeHold: 0.48,
+    brakeYaw: 0.72,
+    slideHold: 1.42,
+    gripSnap: 1.18,
     bumpSteer: 0.85,
     roll: 0.026,
     sink: 0.014,
-    bump: 0.028,
+    bump: 0.038,
     dust: 0.85,
     speedScale: 0.94,
-    driftEase: 1.28,
+    driftEase: 1.42,
     pacejkaB: 3.6,
     pacejkaC: 1.28,
     pacejkaE: 0.12,
@@ -570,17 +592,17 @@ export const SURFACES = {
     muPeak: 1.1,
     muSlide: 0.8,
     slipPeak: 0.105,
-    brakeHold: 0.48,
-    brakeYaw: 0.52,
-    slideHold: 1.18,
-    gripSnap: 1.28,
+    brakeHold: 0.42,
+    brakeYaw: 0.66,
+    slideHold: 1.36,
+    gripSnap: 1.16,
     bumpSteer: 0.95,
     roll: 0.03,
     sink: 0.022,
-    bump: 0.036,
+    bump: 0.044,
     dust: 1.0,
     speedScale: 0.9,
-    driftEase: 1.18,
+    driftEase: 1.34,
     pacejkaB: 3.4,
     pacejkaC: 1.26,
     pacejkaE: 0.14,
@@ -591,7 +613,7 @@ export const SURFACES = {
     id: "cobble",
     label: "COBBLE",
     muPeak: 1.32,
-    muSlide: 1.0,
+    muSlide: 0.92,
     slipPeak: 0.085,
     /** Almost tarmac stopping power, but the stones steer you while you do it. */
     brakeHold: 0.88,
@@ -634,17 +656,17 @@ export const SURFACES = {
     muPeak: 0.98,
     muSlide: 0.64,
     slipPeak: 0.132,
-    brakeHold: 0.42,
-    brakeYaw: 0.68,
-    slideHold: 1.48,
-    gripSnap: 1.22,
+    brakeHold: 0.38,
+    brakeYaw: 0.82,
+    slideHold: 1.68,
+    gripSnap: 1.12,
     bumpSteer: 0.8,
     roll: 0.04,
     sink: 0.038,
     bump: 0.022,
     dust: 1.15,
     speedScale: 0.9,
-    driftEase: 1.36,
+    driftEase: 1.52,
     pacejkaB: 3.2,
     pacejkaC: 1.24,
     pacejkaE: 0.16,
@@ -657,17 +679,17 @@ export const SURFACES = {
     muSlide: 0.58,
     slipPeak: 0.138,
     /** Still the loosest — brake initiates the power slide on exit. */
-    brakeHold: 0.2,
-    brakeYaw: 0.88,
-    slideHold: 1.52,
-    gripSnap: 1.05,
+    brakeHold: 0.16,
+    brakeYaw: 0.94,
+    slideHold: 1.78,
+    gripSnap: 0.98,
     bumpSteer: 0.95,
     roll: 0.06,
     sink: 0.055,
     bump: 0.032,
     dust: 0.7,
     speedScale: 0.74,
-    driftEase: 1.38,
+    driftEase: 1.58,
     pacejkaB: 2.9,
     pacejkaC: 1.22,
     pacejkaE: 0.18,
@@ -681,9 +703,25 @@ export const SURFACES = {
  *
  * AM3 on purpose: "We didn't want to make it totally realistic because if we
  * did that, most players would find themselves going totally out of control
- * around every corner." Everything here trades fidelity for a car that is
- * lively, catchable, and rewarding at the limit. The causal chain stays
- * honest; only the gains are theatrical.
+ * around every corner." Sprint 73 added GTA IV weight; Sprint 75c adds the
+ * IV *fun formula* — exaggerate readable physics, do not clone handling.dat.
+ *
+ * Sources (IV, not V):
+ * - GTAMods handling.dat: m_fTractionCurveMax/Min, m_fTractionBias,
+ *   m_nDriveBias, m_fDriveInertia, m_fHandBrakeForce
+ *   https://gtamods.com/wiki/Handling.dat
+ * - Grand Theft Wiki Handling.cfg/GTAIV: IV is algorithms + multipliers, not
+ *   a full sim; CurveMax = peak; CurveMin = sliding floor; traction bias
+ *   front/rear sets over/understeer personality
+ *   https://www.grandtheftwiki.com/Handling.cfg/GTAIV
+ * - Traxion: exaggerated body roll, class personality (Comet ≠ Blista),
+ *   IV less forgiving than V, load the suspension before the corner
+ *   https://traxion.gg/how-grand-theft-auto-iv-broke-the-open-world-mould-for-vehicle-physics/
+ * - The Drive / Clarity Potion: V added grip and muted weight; IV is looser,
+ *   more roll, delayed yaw ("drunk car" = high yaw inertia + delayed Mz)
+ * - GTA Wiki Drifting: IV is the closest the series got to a holdable drift
+ *
+ * Rival bar, not parity. Arcade rally chassis. IV not V.
  */
 export const HANDLING = {
   /** Tire substeps for the player. Four keeps 240 Hz tire relaxation stable. */
@@ -703,23 +741,23 @@ export const HANDLING = {
    * Countersteer authority. Opposite lock during a slide must feel like a
    * switch, not a suggestion — this is what turns the slide into a tool.
    */
-  counterAuthority: 2.85,
+  counterAuthority: 2.55,
   /**
    * How hard throttle pushes the slide wider on loose ground (and pulls it
    * straight on hard ground). Scales with the surface driftEase spread, so
    * one dial covers "throttle steers you" across all seven surfaces.
    */
-  throttleSlide: 1.35,
+  throttleSlide: 1.62,
   /**
    * Bump + steering-away amplifier. Research: two wheels on a bump plus
    * steering away from it can end you. Amplify it, do not hide it.
    */
-  bumpSteerAmplify: 1.25,
+  bumpSteerAmplify: 1.4,
   /**
    * Ribbon roughness felt as yaw/lateral disturbance, per m/s of speed.
    * Raise for a rougher, more nervous stage; lower for a rail.
    */
-  bumpYawGain: 0.02,
+  bumpYawGain: 0.028,
   /**
    * Grade (rad) below which a stopped car may hold on stiction. Above it,
    * gravity wins and the car rolls back down the hill.
@@ -730,8 +768,8 @@ export const HANDLING = {
    * Scaled per surface by slideHold in vehicle.js (SLIDE_CAP_MIN/MAX).
    */
   /** Arcade power-slide ceiling — big attitude, long carry, snappy pitch-in. */
-  maxSlideVel: 17.2,
-  maxSlideVelHandbrake: 25.5,
+  maxSlideVel: 20.4,
+  maxSlideVelHandbrake: 29.5,
   /**
    * Handbrake power-slide knobs (arcade initiation → sustain):
    * enter = hb fraction to treat as sliding;
@@ -739,14 +777,14 @@ export const HANDLING = {
    * yawKick = rotation shove when hb + steer (initiation snap);
    * powerMul = throttle widens the slide while e-brake is held (power oversteer).
    */
-  handbrakeEnter: 0.035,
-  handbrakeBleedMul: 0.032,
-  handbrakeYawKick: 3.15,
-  handbrakePowerMul: 2.05,
+  handbrakeEnter: 0.028,
+  handbrakeBleedMul: 0.024,
+  handbrakeYawKick: 3.72,
+  handbrakePowerMul: 2.48,
   /** Power-slide sustain without e-brake (throttle + steer sideways). */
-  driftBleedMul: 0.048,
+  driftBleedMul: 0.034,
   /** Lateral grip scale at full slide angle (lower = slipperier / bigger attitude). */
-  slideGripMul: 0.26,
+  slideGripMul: 0.20,
   /**
    * Extra rear µ dump while e-brake is held (0 = none, 1 = almost no rear grip).
    * This is the mechanical "lock the rears" feel of a rally handbrake turn.
@@ -756,17 +794,56 @@ export const HANDLING = {
    * Throttle + steer pitch-in on loose ground (no e-brake). Higher = easier
    * to light the rear with power alone — classic arcade power slide.
    */
-  powerSlidePitch: 1.35,
+  powerSlidePitch: 1.82,
   /**
    * Sprint 31 — expert trail-brake rotation. Brake + steer on loose surfaces
    * transfers weight forward and rotates the nose into the corner.
    */
-  trailBrakeYaw: 0.44,
+  trailBrakeYaw: 0.58,
   /**
    * Sprint 31 — bonus countersteer authority when catching a slide at the limit.
    * Scales yawFollow when opposite lock is active.
    */
-  expertCounterMul: 1.18,
+  expertCounterMul: 1.28,
+  /**
+   * GTA IV weight (Sprint 73 + 75c). Brake unloads the rear → oversteer;
+   * throttle unloads the front → push. Same inputs, different car at speed.
+   */
+  weightTransferMul: 2.28,
+  /** Bicycle understeer gradient. Higher = high-speed push, still tight in hairpins. */
+  speedUndersteer: 0.00275,
+  /** Lift-off oversteer mid-corner (GTA IV signature — close throttle, the tail comes). */
+  liftOffYaw: 0.62,
+  /** Extra yaw past the grip cap that still arrives (mushy breakaway, not a rail). */
+  limitMush: 0.52,
+  /** Visible chassis lean from lateral g — Traxion: IV exaggerates body roll. */
+  bodyRollMul: 2.15,
+  bodyRollMax: 0.155,
+  /** Pitch from filtered long accel (rad per m/s²). Brake dive / throttle squat. */
+  brakeDive: 0.0064,
+  accelSquat: 0.0042,
+  /**
+   * RAGE / GTA IV yaw from tire forces (SAE bicycle Mz), not kinematic rWant.
+   * Hairpins stay on the arcade bicycle; speed blends in tire-moment mass.
+   */
+  tireYawBlend: 0.62,
+  /**
+   * GTA analog: fTractionCurveMin / fTractionCurveMax gap
+   * (handling.dat Wc- / Wc+). Scales muSlide so once you break away you
+   * STAY sliding until you catch it. <1 = IV looser; 1 = V glued.
+   */
+  tractionMinMul: 0.86,
+  /**
+   * GTA analog: fLowSpeedTractionLossMult (handling.meta name; IV got the
+   * same wheelspin from a low CurveMin). Small — hairpins must stay snappy.
+   */
+  lowSpeedTractionLoss: 0.18,
+  /**
+   * GTA analog: m_fDriveInertia (Ti). Physical scale: 1 = stock wheel I,
+   * >1 heavier hubs / slower spin-up. IV's dat encodes the inverse
+   * (1.0 = lightest); we do not copy that encoding.
+   */
+  driveInertia: 1.08,
   /**
    * Sprint 28 — dead-stop launch. Multiplies drive torque at 0 km/h and fades
    * linearly to 1.0 by launchFadeKmh so corners keep the same mid-speed balance.
@@ -774,8 +851,8 @@ export const HANDLING = {
   launchBoost: 1.38,
   launchFadeKmh: 78,
   /**
-   * Player chassis stability — damped road follow instead of raw ribbon chatter.
-   * Opponents keep full chatter (lowDetail path unchanged).
+   * Chassis stability — follow the axle-plane deck, filter only ribbon noise.
+   * Player and AI share the planted hull; rivals still use cheap road probes.
    */
   roadChatterScale: 0.04,
   deckFollowRate: 55,
@@ -833,10 +910,10 @@ export const JUMP = {
   /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
   liftNoseDrop: 0.2,
   /**
-   * Apex height multiplier (h ∝ vy²). 0.2 = one-fifth the previous flight —
-   * jumps were ~5× too floaty after the variable-height pass.
+   * Apex height multiplier (h ∝ vy²). Sprint 73: a bit more hang so a lip
+   * reads as a throw, not a skip — still far under the old floaty 1.0.
    */
-  launchHeightScale: 0.2,
+  launchHeightScale: 0.28,
   /**
    * Extra apex cut for AI / lowDetail pack only (h ∝ vy²). 0.2 = one-fifth of
    * the shared launchHeightScale flight — rivals were still lofting like rockets.
@@ -857,7 +934,7 @@ export const JUMP = {
    * Suspension stores energy on the ramp; the lip releases it into launch speed.
    * Scales with approach speed so fast lips pop higher than crawls.
    */
-  springBurst: 1.8,
+  springBurst: 2.55,
   springCompressRate: 3.8,
   springReleaseRate: 10,
   /** Throttle/brake weight transfer into compress while climbing a lip. */
@@ -911,6 +988,16 @@ export const JUMP = {
    * pay for it, because the pool is still draining when you get there.
    */
   balanceGripLoss: 0.2,
+  /**
+   * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
+   * Variation is state at the lip — speed, attitude, compress, line — never RNG.
+   */
+  lipGrain: 0.045,
+  inheritPitch: 0.55,
+  airRollMax: 0.2,
+  airRollDamp: 1.85,
+  landBounce: 0.16,
+  landBounceImpact: 6.2,
 };
 
 /**
@@ -919,15 +1006,15 @@ export const JUMP = {
  */
 const CHASSIS = {
   mass: 1260,
-  yawInertia: 1860,
-  pitchInertia: 780,
-  rollInertia: 520,
+  yawInertia: 2480,
+  pitchInertia: 860,
+  rollInertia: 640,
   wheelbase: 2.55,
   trackFront: 1.51,
   trackRear: 1.51,
   /** Real-world overall length (m) — GLB fit target; 1 unit = 1 m in track space. */
   lengthM: 4.37,
-  cgHeight: 0.36,
+  cgHeight: 0.41,
   wheelRadius: 0.32,
   restLength: 0.34,
   travel: 0.16,
@@ -938,12 +1025,17 @@ const CHASSIS = {
   antiRollFront: 6200,
   antiRollRear: 4400,
   maxSteer: 0.48,
-  /** Near-instant lock — arcade turn-in; digital keys snap in vehicle.js. */
-  steerSpeed: 160,
-  steerReturn: 120,
-  /** Milder high-speed mute so the nose still bites above 150 km/h. */
-  steerFalloff: 0.007,
-  yawGain: 1.38,
+  /** Weighted rack — still quick in hairpins, heavy at speed (GTA IV). */
+  steerSpeed: 88,
+  steerReturn: 102,
+  /** High-speed mute — the nose pushes above 150 km/h instead of snapping. */
+  steerFalloff: 0.014,
+  yawGain: 1.18,
+  /**
+   * GTA analog: m_fTractionBias (Wh). 0.5 = equal axles. Lower = more rear
+   * grip = planted Sultan 4WD. Higher = more front grip = Comet oversteer.
+   */
+  tractionBiasFront: 0.46,
   /**
    * Sprint 28 — Group A launch. peakPowerKw scales the torque map in vehicle.js.
    * Dead-stop pull uses launchBoost + a fatter low-RPM curve + shorter 1st.
@@ -960,7 +1052,7 @@ const CHASSIS = {
   finalDrive: 4.35,
   drivetrain: "4wd",
   torqueSplitFront: 0.5,
-  engineBrake: 0.2,
+  engineBrake: 0.34,
   /** Sprint 28: less aero wall so top-end keeps pulling after the launch. */
   aeroDrag: 0.33,
   downforce: 0.16,
@@ -975,7 +1067,7 @@ export const CARS = {
     id: "celica",
     name: "CELICA GT-FOUR",
     short: "CELICA",
-    blurb: "4WD  ·  planted Castrol ST205",
+    blurb: "4WD  ·  planted power-slide — learn the stage",
     driftMul: 1.0,
     engineName: "3S-GTE turbo",
     turbo: true,
@@ -985,14 +1077,17 @@ export const CARS = {
     id: "delta",
     name: "DELTA HF",
     short: "DELTA",
-    blurb: "4WD  ·  snappier rotation",
+    blurb: "4WD  ·  snappy Integrale — rotate and go",
     lengthM: 3.85,
-    yawInertia: 1680,
-    maxSteer: 0.44,
-    steerSpeed: 170,
+    yawInertia: 1780,
+    maxSteer: 0.46,
+    steerSpeed: 112,
+    steerReturn: 94,
+    yawGain: 1.28,
+    tractionBiasFront: 0.50,
     /** A hair under Celica top — same punch, still catchable in hairpins. */
     maxSpeedKmh: 246,
-    driftMul: 1.0,
+    driftMul: 1.08,
     engineName: "2.0 16v turbo",
     turbo: true,
   },
@@ -1001,19 +1096,24 @@ export const CARS = {
     id: "stratos",
     name: "STRATOS HF",
     short: "STRATOS",
-    blurb: "2WD  ·  faster, looser — King of the Desert",
+    blurb: "RWD  ·  fastest, loosest — hold it with throttle",
     mass: 980,
-    yawInertia: 1380,
+    yawInertia: 1420,
     lengthM: 3.71,
     wheelbase: 2.18,
     drivetrain: "2wd",
     torqueSplitFront: 0,
-    maxSteer: 0.46,
-    steerSpeed: 170,
+    maxSteer: 0.48,
+    steerSpeed: 122,
+    steerReturn: 90,
+    steerFalloff: 0.009,
+    yawGain: 1.32,
+    tractionBiasFront: 0.56,
+    driveInertia: 0.92,
     /** Sprint 28: stays the fastest car (~265), still surface-limited. */
     maxSpeedKmh: 265,
     peakPowerKw: 288,
-    driftMul: 1.04,
+    driftMul: 1.16,
     /** Starter car — unlocked with Celica / Delta from SELECT CAR. */
     locked: false,
     idleRpm: 1100,
@@ -1022,69 +1122,6 @@ export const CARS = {
     gears: [0, 3.25, 1.95, 1.35, 0.92],
     engineName: "Dino 2.4 V6",
     turbo: false,
-  },
-  jaguar: {
-    ...CHASSIS,
-    id: "jaguar",
-    name: "E-TYPE",
-    short: "JAGUAR",
-    blurb: "RWD  ·  classic long-nose balance",
-    mass: 1080,
-    yawInertia: 1520,
-    lengthM: 4.45,
-    wheelbase: 2.44,
-    drivetrain: "2wd",
-    torqueSplitFront: 0,
-    maxSteer: 0.42,
-    steerSpeed: 165,
-    maxSpeedKmh: 252,
-    peakPowerKw: 265,
-    driftMul: 1.02,
-    locked: false,
-    engineName: "4.2 inline-six",
-    turbo: false,
-  },
-  focus: {
-    ...CHASSIS,
-    id: "focus",
-    name: "FOCUS ST",
-    short: "FOCUS",
-    blurb: "FWD  ·  sharp hot-hatch rotation",
-    mass: 1140,
-    yawInertia: 1580,
-    lengthM: 4.36,
-    wheelbase: 2.64,
-    drivetrain: "2wd",
-    torqueSplitFront: 1,
-    maxSteer: 0.45,
-    steerSpeed: 175,
-    maxSpeedKmh: 244,
-    peakPowerKw: 205,
-    driftMul: 1.06,
-    locked: false,
-    engineName: "2.0 turbo",
-    turbo: true,
-  },
-  accord: {
-    ...CHASSIS,
-    id: "accord",
-    name: "ACCORD SPORT",
-    short: "ACCORD",
-    blurb: "FWD  ·  planted sedan pace",
-    mass: 1320,
-    yawInertia: 1720,
-    lengthM: 4.86,
-    wheelbase: 2.83,
-    drivetrain: "2wd",
-    torqueSplitFront: 1,
-    maxSteer: 0.4,
-    steerSpeed: 160,
-    maxSpeedKmh: 238,
-    peakPowerKw: 192,
-    driftMul: 0.98,
-    locked: false,
-    engineName: "2.0T turbo",
-    turbo: true,
   },
 };
 
@@ -1098,15 +1135,22 @@ export const CAMERA = {
   stiffness: 28,
   fov: 60,
   /**
-   * Extra FOV at speed — Model 2 “the world rushes in.”
-   * Punch ≈ speed(m/s) × speedFov, capped by maxFovPunch (~13° flat-out).
+   * Extra FOV at speed — Model 2 “the world rushes in,” IV chase-cam mass UI.
+   * Punch ≈ speed(m/s) × speedFov, capped by maxFovPunch (~18° flat-out).
    */
-  speedFov: 0.2,
-  maxFovPunch: 13,
-  /** World-up lean from chassis roll (arcade, not sim). */
-  rollFollow: 0.22,
+  speedFov: 0.30,
+  maxFovPunch: 18,
+  /** World-up lean from chassis roll (IV chase leans with the car). */
+  rollFollow: 0.48,
   /** How hard chase yaw tracks the car — high = no “camera late” lag. */
   yawStiffness: 36,
+  /**
+   * Chase look blends toward velocity in a slide so the road you are sliding
+   * toward stays in frame while the car sits at an angle (arcade poster).
+   */
+  slideLook: 0.62,
+  /** Metres of camera offset to the outside of a power slide. */
+  slideCamOut: 0.95,
   /**
    * Seconds for a C-key pose ease. Short enough to feel instant, long enough
    * to read as a move instead of a cut. From-pose rides with the car.
@@ -1122,7 +1166,10 @@ export const CAMERA = {
   povAttachDist: 1.35,
   /** Pull back this far before restoring the exterior body when leaving POV. */
   povDetachDist: 1.6,
-  /** Frames to wait before the first rear-mirror capture after seating POV. */
+  /**
+   * Extra frames the rearview may reuse its last image after seating.
+   * Never used when the RT is empty — that path captures immediately.
+   */
   mirrorDeferFrames: 1,
   /** C cycles POV → medium chase → far. Default race view is medium. */
   defaultMode: 1,
@@ -1136,7 +1183,7 @@ export const CAMERA = {
       eyeZ: -0.12,
       lookY: 1.02,
       lookZ: 3.4,
-      fov: 70,
+      fov: 76,
       stiffness: 42,
       near: 0.05,
     },
@@ -1151,7 +1198,7 @@ export const CAMERA = {
       fov: 62,
       /** Mild speed squat — keeps pavement in frame without burying the roof. */
       speedDropMax: 0.16,
-      stiffness: 28,
+      stiffness: 24,
       near: 0.22,
     },
     {

@@ -101,3 +101,32 @@ export function playHit(ctx, dest, buf, opt = {}) {
   src.start(when);
   src.stop(when + dur + 0.04);
 }
+
+/**
+ * Play a recorded line in full. playHit dumps gain over `dur` and chops VO.
+ * @param {AudioContext} ctx
+ * @param {AudioNode} dest
+ * @param {AudioBuffer|null} buf
+ * @param {{gain?:number, when?:number}} [opt]
+ * @returns {AudioBufferSourceNode|null}
+ */
+export function playClip(ctx, dest, buf, opt = {}) {
+  if (!buf) return null;
+  const when = opt.when || ctx.currentTime;
+  const peak = Math.max(0.001, opt.gain || 1);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const g = ctx.createGain();
+  const fadeIn = 0.008;
+  const fadeOut = Math.min(0.05, buf.duration * 0.1);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(peak, when + fadeIn);
+  const hold = Math.max(fadeIn, buf.duration - fadeOut);
+  g.gain.setValueAtTime(peak, when + hold);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + buf.duration);
+  src.connect(g);
+  g.connect(dest);
+  src.start(when);
+  src.stop(when + buf.duration + 0.03);
+  return src;
+}
