@@ -38,7 +38,12 @@ check("_keepOnRibbon rejects a spline snap", /_keepOnRibbon\(/.test(vehicle) && 
 check("NaN / warp restores last good pose", /_restoreGoodPose\(/.test(vehicle) && /_stashGoodPose\(/.test(vehicle));
 check("gap takeoff does not require enteringGap edge", /takeoff = \(pit \|\| kind === "gap"\)/.test(vehicle));
 check("no grounded sit-in-the-hole return", !/Do not plant on the visual hole/.test(vehicle));
-check("grounded clamp plants wheels on the deck", /onGround && !pit && !airKind/.test(vehicle));
+check(
+  "grounded clamp keeps wheels on the deck (no ramp/crest skip)",
+  /GROUND_HOVER_MAX/.test(vehicle) &&
+    /onGround && !pit && this\.position\.y > floor/.test(vehicle) &&
+    !/onGround && !pit && !airKind/.test(vehicle)
+);
 check(
   "off-road reset plants Y on the ribbon",
   /v\.position\.y = \(line\.y \|\| 0\) \+ 0\.046/.test(collide) && /v\.onGround = true/.test(collide)

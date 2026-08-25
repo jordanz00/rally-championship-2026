@@ -52,7 +52,7 @@ check("weightTransferMul", num(config, "weightTransferMul") >= 1.9, `= ${num(con
 check("speedUndersteer", /speedUndersteer:\s*0\.00\d+/.test(config));
 check("liftOffYaw", /liftOffYaw:\s*0\.\d+/.test(config));
 check("limitMush", /limitMush:\s*0\.\d+/.test(config));
-check("bodyRollMax", num(config, "bodyRollMax") >= 0.12, `= ${num(config, "bodyRollMax")}`);
+check("bodyRollMax", num(config, "bodyRollMax") >= 0.1 && num(config, "bodyRollMax") <= 0.13, `= ${num(config, "bodyRollMax")}`);
 check("brakeDive + accelSquat", /brakeDive:\s*0\.00\d+/.test(config) && /accelSquat:\s*0\.00\d+/.test(config));
 check("weighted rack (no digital snap)", /Weighted rack/.test(vehicle) && !/steerIn\) >= 0\.92/.test(vehicle));
 check("softLimit helper", /function softLimit/.test(vehicle));
@@ -62,7 +62,7 @@ check("mushy yaw cap", /softLimit\(rWant/.test(vehicle));
 check("speed-mass yawFollow", /speedMass/.test(vehicle));
 check("brake-dive from filtered _ax", /brakeDive/.test(vehicle) && /accelSquat/.test(vehicle));
 check("body roll from HANDLING", /bodyRollMax/.test(vehicle) && /bodyRollMul/.test(vehicle));
-check("camera roll follow", num(config, "rollFollow") >= 0.38, `= ${num(config, "rollFollow")}`);
+check("camera roll follow (hint, not swing)", num(config, "rollFollow") >= 0.18 && num(config, "rollFollow") <= 0.28, `= ${num(config, "rollFollow")}`);
 check(
   "camera speed FOV punch",
   num(config, "speedFov") >= 0.26 && num(config, "maxFovPunch") >= 16,

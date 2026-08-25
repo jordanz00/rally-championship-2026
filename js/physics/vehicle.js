@@ -44,7 +44,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=137";
+import { CELICA, ROAD_DECK, HANDLING, JUMP } from "../config.js?v=138";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=46";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=37";
 import { JumpModel } from "./jump.js?v=13";
@@ -80,6 +80,11 @@ const RELAX_KAPPA = 0.22;
  * the sidewalls. A centimetre is enough to kill z-fight without a sink.
  */
 const TIRE_PLANT = 0.014;
+/**
+ * Grounded contact may chatter a few centimetres but must never hover
+ * above the painted deck after a jump (filter lag used to leave a gap).
+ */
+const GROUND_HOVER_MAX = 0.05;
 /** Hard cap on road-follow pitch (~31°). Weight-transfer squat stays much smaller. */
 const ROAD_PITCH_MAX = 0.55;
 /**
@@ -931,22 +936,27 @@ export class Vehicle {
     if (this.onGround) {
       const prevY = this.position.y;
 
-      // Still over THIS jump's visual pit after a land — sit on the pad, never
-      // the hole, and do not relaunch.
-      if (pit && (samePit || this._landLock > 0)) {
+      // Hold only on THIS jump's pit. `_landLock` used to block the next lip
+      // (Desert jump 2 → 3): the car stayed glued under the rising ramp.
+      const holdThisPit =
+        pit &&
+        (samePit ||
+          (this._landLock > 0 &&
+            this._landPadArmed &&
+            q2.dist < this._landPadEndDist + 4));
+      if (holdThisPit) {
         this.velY = 0;
         this._climbVel *= Math.exp(-8 * dt);
         this._airTime = 0;
         const hold = this._landPadArmed ? this._landPadY : deck;
         this.position.y = Number.isFinite(hold) ? hold : prevY;
-        this._snapPitchToRoad();
+        this._snapPitchToRoad(axles);
         return;
       }
 
-      // Any grounded frame in the hole is a takeoff. Missing the crest→gap
-      // edge used to leave the car planted on the pit mesh, then a later
-      // spline snap teleported them across the stage.
-      const takeoff = (pit || kind === "gap") && this._landLock <= 0 && !q2.tunnel;
+      // Any grounded frame in a NEW hole is a takeoff. Do not wait out a
+      // previous landing's lock — that planted the car under jump 3's deck.
+      const takeoff = (pit || kind === "gap") && !q2.tunnel;
 
       if (takeoff) {
         this.onGround = false;
@@ -1025,7 +1035,18 @@ export class Vehicle {
       this._climbVel = this._groundVy;
       this._deckSmoothY = wantY;
       this._airTime = 0;
-      if (this.position.y < deck) this.position.y = deck;
+      // Contact patch on the painted deck. The filter used to lag a rising
+      // land ramp and leave the tires in the asphalt or hovering above it.
+      if (this._landLock > 0 || onJumpApproach) {
+        this.position.y = deck;
+        this._deckFilt = deck;
+        this._deckSmoothY = deck;
+        if (this._landLock > 0) this._snapPitchToRoad(axles);
+      } else if (this.position.y < deck) {
+        this.position.y = deck;
+      } else if (this.position.y > deck + GROUND_HOVER_MAX) {
+        this.position.y = deck + GROUND_HOVER_MAX;
+      }
       return;
     }
 
@@ -1037,15 +1058,34 @@ export class Vehicle {
 
     // Far-pad height is the floor over the hole. Never the pit mesh (deck).
     const floorY = this._roadFloorY(deck, pit);
+    const solidDeck = !pit && kind !== "gap";
     if (this.position.y < floorY) {
       this.position.y = floorY;
       if (this.velY < 0) {
         if (this._padHitVy == null) this._padHitVy = this.velY;
         this.velY = 0;
       }
+      // Jump 2 hang time can arrive under jump 3's rising ramp. Hovering here
+      // with onGround=false made the car unmovable inside the asphalt.
+      if (solidDeck) {
+        this.onGround = true;
+        this._airTime = 0;
+        this._climbVel = 0;
+        this._groundVy = 0;
+        this._deckSmoothY = floorY;
+        this._deckFilt = floorY;
+        this._landLock = 0.12;
+        this._landPadArmed = false;
+        this._landPadY = 0;
+        this._snapPitchToRoad(axles);
+        return;
+      }
     }
 
-    const overPad = !pit && kind !== "crest" && kind !== "gap" && kind !== "ramp";
+    // Land on any solid deck once we have left this jump's lip. Excluding
+    // ramp/crest used to let a long throw tunnel the next jump's roadway.
+    const sameTakeoff = this._landPadArmed && q2.dist < this._landPadDist + 10;
+    const overPad = solidDeck && !sameTakeoff;
     const atPad = this.position.y <= floorY + 0.08;
     const ready = this.velY <= 0.2;
     const hitting = overPad && atPad && ready && this._airTime > 0.08;
@@ -1076,7 +1116,7 @@ export class Vehicle {
         this.onGround = true;
         this._airTime = 0;
         this._landLock = 0.18 + impact * 0.016;
-        this._snapPitchToRoad();
+        this._snapPitchToRoad(axles);
       }
     }
   }
@@ -1151,8 +1191,12 @@ export class Vehicle {
     }
     if (!Number.isFinite(floor)) return;
     if (this.position.y < floor) this.position.y = floor;
-    const airKind = kind === "ramp" || kind === "crest" || kind === "gap";
-    if (this.onGround && !pit && !airKind) this.position.y = floor;
+    // Grounded on real tarmac/ramp/land: never hover more than chatter.
+    // Ramp/crest used to skip the pin, so a post-jump plant sank or floated.
+    void kind;
+    if (this.onGround && !pit && this.position.y > floor + GROUND_HOVER_MAX) {
+      this.position.y = floor + GROUND_HOVER_MAX;
+    }
   }
 
   /**
@@ -1315,18 +1359,26 @@ export class Vehicle {
       this._restoreGoodPose(track);
       return;
     }
-    const floor = this._q && Number.isFinite(this._q.height) ? this._q.height : null;
-    if (this.onGround && floor != null && this.position.y < floor - 1.35) {
+    const q = this._q;
+    let floor = q && Number.isFinite(q.height) ? q.height : null;
+    let pitKind = !!(q && q.jumpKind === "gap");
+    if (track && typeof track.sample === "function" && Number.isFinite(this.progress)) {
+      const line = track.sample(this.progress, this._sample);
+      if (line && Number.isFinite(line.y)) {
+        floor = line.y + ROAD_DECK;
+        pitKind = line.jumpKind === "gap";
+      }
+    }
+    // Contact patch under a solid deck is always a bury — 1.35 m used to leave
+    // the car sitting inside jump 3's ramp after a jump-2 throw.
+    if (floor != null && !pitKind && this.position.y < floor - 0.22) {
       this._noteGlitch("buried", { y: this.position.y, floor, prevY });
-      this.position.y = floor;
+      this.position.y = floor - TIRE_PLANT;
       this.velY = 0;
       this.onGround = true;
     }
-    if (
-      this.onGround &&
-      Number.isFinite(prevY) &&
-      Math.abs(this.position.y - prevY) > 3.2
-    ) {
+    // Only a sudden DROP is a warp. Lifting onto the next ramp is the recovery.
+    if (this.onGround && Number.isFinite(prevY) && this.position.y < prevY - 3.2) {
       this._noteGlitch("y-warp", { y: this.position.y, prevY });
       this.position.y = prevY;
       this.velY = 0;
@@ -1334,10 +1386,18 @@ export class Vehicle {
   }
 
   /**
-   * Origin is the contact patch, so leftover air pitch buries a bumper.
-   * Snap onto the axle plane the instant the pad is under us.
+   * Origin is the contact patch, so leftover air pitch buries a bumper
+   * or lifts the tires. Snap onto the axle plane the instant the pad is under us.
+   * @param {ReturnType<Vehicle['_axleRoad']>} [axles]
    */
-  _snapPitchToRoad() {
+  _snapPitchToRoad(axles) {
+    const grade =
+      axles && Number.isFinite(axles.pitch)
+        ? clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX)
+        : this._slope;
+    this._slope = grade;
+    this._roadPitch = -grade;
+    this._visPitch = -grade;
     this.pitch = this._visPitch;
     this.pitchRate = 0;
     this._bodyPitch = 0;

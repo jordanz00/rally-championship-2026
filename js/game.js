@@ -19,9 +19,9 @@ import {
   GFX,
   VISUAL,
   STREAM,
-} from "./config.js?v=137";
+} from "./config.js?v=138";
 import { Input } from "./input.js?v=39";
-import { Vehicle } from "./physics/vehicle.js?v=84";
+import { Vehicle } from "./physics/vehicle.js?v=86";
 import { getSurface } from "./physics/surfaces.js?v=46";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=61";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=119";
@@ -29,7 +29,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=180";
 import { preparePropKit } from "./tracks/prop-kit.js?v=18";
 import { Opponent } from "./ai.js?v=112";
-import { RallyAudio } from "./audio/engine.js?v=50";
+import { RallyAudio } from "./audio/engine.js?v=51";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=31";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=27";
@@ -127,6 +127,8 @@ export class RallyGame {
     this.countdown = 0;
     this._gridCamHold = 0;
     this._countShown = "";
+    /** True until the HUD is up — do not tick 3-2-1 under the load fade. */
+    this._countHold = false;
     this._mat = new THREE.Matrix4();
     this._camPos = new THREE.Vector3();
     this._camLook = new THREE.Vector3();
@@ -1884,7 +1886,8 @@ export class RallyGame {
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
     this.state = "countdown";
-    this.countdown = 3.2;
+    this.countdown = 3;
+    this._countHold = true;
     this.raceTime = 0;
     this._physAccum = 0;
     this.nextCp = 0;
@@ -1905,7 +1908,10 @@ export class RallyGame {
     this.audio.restoreRaceLoops();
     this.audio.setCar(this.carId);
     await showScreen("screen-hud");
-    this.hud.flashMessage("READY");
+    this._countHold = false;
+    this._countShown = "3";
+    this.hud.flashMessage("3");
+    this.audio.countBeep(3);
     if (this.mode === "championship" && this.champOrder.length) {
       const nextId = this._nextChampCourseId();
       if (nextId) {
@@ -2175,18 +2181,26 @@ export class RallyGame {
     }
 
     if (this.state === "countdown") {
-      this.countdown -= dt;
-      const n = Math.ceil(this.countdown);
-      if (n >= 1 && n <= 3 && String(n) !== this._countShown) {
-        this._countShown = String(n);
-        this.hud.flashMessage(String(n));
-        this.audio.countBeep(n);
-      }
-      if (this.countdown <= 0) {
-        this.state = "race";
-        this.hud.flashMessage("GO!");
-        this.audio.countGo();
-        this._camSnap = true;
+      // Hold the clock until HUD is up. QA skip sets countdown=0 — still GO.
+      if (!(this._countHold && this.countdown > 0)) {
+        const before = this.countdown;
+        this.countdown -= dt;
+        if (before > 2 && this.countdown <= 2 && this._countShown !== "2") {
+          this._countShown = "2";
+          this.hud.flashMessage("2");
+          this.audio.countBeep(2);
+        }
+        if (before > 1 && this.countdown <= 1 && this._countShown !== "1") {
+          this._countShown = "1";
+          this.hud.flashMessage("1");
+          this.audio.countBeep(1);
+        }
+        if (this.countdown <= 0) {
+          this.state = "race";
+          this.hud.flashMessage("GO!");
+          this.audio.countGo();
+          this._camSnap = true;
+        }
       }
       const idle = this.player.spec.idleRpm;
       const blip = this.countdown > 0.35 && this.countdown < 2.9 ? 0.1 + 0.07 * Math.sin(this.countdown * 9) : 0.04;
@@ -2713,7 +2727,7 @@ export class RallyGame {
     }
     const drift = Math.abs(p.driftAngle || 0);
     if (drift > 0.08 && p.speed > 6) {
-      const latKick = Math.sign(p.driftAngle) * Math.min(0.22, drift * 0.34 + p.slidePct() * 0.1);
+      const latKick = Math.sign(p.driftAngle) * Math.min(0.09, drift * 0.14 + p.slidePct() * 0.04);
       this._camKickLat += (latKick - this._camKickLat) * (1 - Math.exp(-10 * dt));
       if (p.drifting) this._camFovKick = Math.max(this._camFovKick, Math.min(3.6, drift * 2.6));
     } else {
@@ -2903,8 +2917,8 @@ export class RallyGame {
       const out =
         sliding && p.driftAngle
           ? Math.sign(p.driftAngle) *
-            Math.min(1.3, drift * 1.75) *
-            (CAMERA.slideCamOut != null ? CAMERA.slideCamOut : 0.95)
+            Math.min(0.55, drift * 0.85) *
+            (CAMERA.slideCamOut != null ? CAMERA.slideCamOut : 0.42)
           : 0;
       this._camTarget.set(
         px - sinY * mode.back + rx * out,

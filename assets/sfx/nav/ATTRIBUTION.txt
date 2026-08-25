@@ -2,5 +2,7 @@ Navigator clips — SentientMattress, “Rally Co-Driver Pacenote Cues”
 Freesound 833028, CC BY 4.0
 https://freesound.org/people/SentientMattress/sounds/833028/
 
-Sliced to first utterance (turns + jump only). Not TTS.
-Do not feed this voice into a generative model (author request).
+Sliced to first utterance (turns + jump + start-grid 3 / 2 / 1 / GO). Not TTS.
+Countdown slices: 2.18s / 3.28s / 4.32s / 5.40s of the source (the pack's
+5-4-3-2-1-GO; HUD uses the last four). Do not feed this voice into a
+generative model (author request).

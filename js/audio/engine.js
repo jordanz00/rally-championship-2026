@@ -34,6 +34,10 @@ const NAV_CLIPS = [
   "hairpin-left",
   "hairpin-right",
   "jump",
+  "count-3",
+  "count-2",
+  "count-1",
+  "count-go",
 ];
 
 /**
@@ -107,6 +111,8 @@ export class RallyAudio {
     this._navClips = {};
     /** @type {AudioBufferSourceNode|null} */
     this._navSrc = null;
+    /** Start-grid 3-2-1-GO — separate so a late pace decode cannot cut GO. */
+    this._countSrc = null;
     /** @type {CrowdVoice|null} */
     this.crowd = null;
   }
@@ -501,27 +507,54 @@ export class RallyAudio {
   }
 
   /**
-   * Saturn-style 3-2-1 beeps. Higher pitch as GO approaches.
+   * Recorded co-driver 3 / 2 / 1, locked to the HUD number. Quiet beep under
+   * the line so a late decode still reads as a start light.
    * @param {number} n
    */
   countBeep(n) {
     if (!this.ready) return;
+    const key = n >= 3 ? "count-3" : n === 2 ? "count-2" : "count-1";
+    this._playCountVo(key);
     const rate = n >= 3 ? 0.82 : n === 2 ? 1 : 1.18;
     playHit(this.ctx, this._sfxIn, this._hits.checkpoint, {
-      gain: 0.36,
+      gain: 0.14,
       rate,
-      dur: 0.22,
+      dur: 0.16,
     });
   }
 
-  /** GO sting after the countdown. */
+  /** Recorded "GO" on the same tick the HUD flips to GO! */
   countGo() {
     if (!this.ready) return;
+    this._playCountVo("count-go");
     playHit(this.ctx, this._sfxIn, this._hits.checkpoint, {
-      gain: 0.52,
+      gain: 0.22,
       rate: 1.42,
-      dur: 0.4,
+      dur: 0.28,
     });
+  }
+
+  /**
+   * Start-grid VO on the navigator bus (same voice as pace notes). If that
+   * slider is down, fall through to SFX so 3-2-1-GO still fires.
+   * @param {string} key
+   */
+  _playCountVo(key) {
+    const buf = this._navClips[key];
+    if (!buf) return;
+    this._kickContext();
+    const navUp = this.navVol > 0.04 && this._navGain;
+    const dest = navUp ? this._navGain : this._sfxIn;
+    if (!dest) return;
+    if (this._countSrc) {
+      try {
+        this._countSrc.stop();
+      } catch {
+        /* already ended */
+      }
+      this._countSrc = null;
+    }
+    this._countSrc = playClip(this.ctx, dest, buf, { gain: navUp ? 1 : 0.9 });
   }
 
   /**

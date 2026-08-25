@@ -816,9 +816,9 @@ export const HANDLING = {
   liftOffYaw: 0.62,
   /** Extra yaw past the grip cap that still arrives (mushy breakaway, not a rail). */
   limitMush: 0.52,
-  /** Visible chassis lean from lateral g — Traxion: IV exaggerates body roll. */
-  bodyRollMul: 2.15,
-  bodyRollMax: 0.155,
+  /** Visible chassis lean from lateral g — a hint of weight, not a cabinet tip. */
+  bodyRollMul: 1.82,
+  bodyRollMax: 0.118,
   /** Pitch from filtered long accel (rad per m/s²). Brake dive / throttle squat. */
   brakeDive: 0.0064,
   accelSquat: 0.0042,
@@ -1140,8 +1140,8 @@ export const CAMERA = {
    */
   speedFov: 0.30,
   maxFovPunch: 18,
-  /** World-up lean from chassis roll (IV chase leans with the car). */
-  rollFollow: 0.48,
+  /** World-up lean from chassis roll — a hint, not a horizon swing. */
+  rollFollow: 0.22,
   /** How hard chase yaw tracks the car — high = no “camera late” lag. */
   yawStiffness: 36,
   /**
@@ -1150,7 +1150,7 @@ export const CAMERA = {
    */
   slideLook: 0.62,
   /** Metres of camera offset to the outside of a power slide. */
-  slideCamOut: 0.95,
+  slideCamOut: 0.42,
   /**
    * Seconds for a C-key pose ease. Short enough to feel instant, long enough
    * to read as a move instead of a cut. From-pose rides with the car.
@@ -1198,7 +1198,7 @@ export const CAMERA = {
       fov: 62,
       /** Mild speed squat — keeps pavement in frame without burying the roof. */
       speedDropMax: 0.16,
-      stiffness: 24,
+      stiffness: 28,
       near: 0.22,
     },
     {

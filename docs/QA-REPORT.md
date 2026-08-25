@@ -2196,3 +2196,99 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 **Proof:** `node tools/qa-sprint77-boot.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-static-audit.mjs`
 
 **Still human-only:** cold load → watch the bar tick; PRESS START → SELECT MODE fade; start Desert and confirm countdown fades up from black.
+
+---
+
+# Sprint 78 — Calmer chase, slightly less body roll (25 Aug 2026)
+
+**Player moment:** Drive a Desert hairpin. The car still has GTA IV weight. The horizon no longer banks hard, and the chase does not swing wide on a slide. Body lean is still there, just quieter.
+
+**Cause:** Chase `rollFollow` 0.48 plus a 1.3 m slide offset and a 0.22 m kick made the lens swing. Chassis `bodyRollMax` 0.155 stacked on top of that.
+
+**Fix:** Camera lean is a hint (`rollFollow` 0.22). Slide offset and lateral kick are about half. Medium chase stiffness back to 28. Body roll 0.118 / 1.82 — still heavier than the old 4° rail, not a cabinet tip. Handling physics unchanged.
+
+| Change | Status |
+|--------|--------|
+| `CAMERA.rollFollow` 0.48 → 0.22 | **Done** |
+| `slideCamOut` 0.95 → 0.42; kick 0.22 → 0.09 | **Done** |
+| Medium chase stiffness 24 → 28 | **Done** |
+| `bodyRollMax` 0.155 → 0.118 | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=405`** · `config.js?v=138`
+
+**Proof:** `node tools/qa-sprint73-gta-phys.mjs` · `node tools/qa-sprint75-gta-rival.mjs` · `node tools/qa-static-audit.mjs`
+
+**Still human-only:** 2-minute Desert drive — corner camera stays planted; car still leans a little.
+
+---
+
+# Sprint 79 — Jump 3 never clips through the roadway (25 Aug 2026)
+
+**Player moment:** Stage 1 Desert, third jump (Safari throw — second of the close pair). A flat-out throw off jump 2 can hang long enough to meet jump 3's rising ramp. The car lands ON that ramp and keeps driving. It does not freeze inside or under the asphalt.
+
+**Cause:** Air collision treated only the far pad as a floor. Ramp and crest were excluded from `overPad`, so a descending throw that arrived *under* the next lip was clamped to the deck with `onGround = false`. No tires, no throttle, unmovable. `_landLock` from jump 2 also blocked takeoff in a new pit. `_guardDrive` y-warp undid upward recoveries because it treated any 3.2 m Y change as illegal.
+
+**Fix:** Solid decks (ramp / crest / land / road) plant the car and set `onGround`. A previous landing lock cannot glue the next hole. Buried restore fires at 22 cm under a solid deck. Y-warp only catches a drop, never a lift onto the next lip.
+
+| Change | Status |
+|--------|--------|
+| Air under a solid deck plants onGround | **Done** |
+| `holdThisPit` — lock is per-jump, not global | **Done** |
+| Buried snap at 0.22 m under solid ribbon | **Done** |
+| Y-warp is downward-only | **Done** |
+| Headed probe: jump 2 @ 32 m/s must not tunnel jump 3 | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=405`** · `vehicle.js?v=85`
+
+**Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** take Desert jump 2 flat-out and confirm jump 3's ramp is a floor, then land the Safari throw on the sand.
+
+---
+
+# Sprint 80 — Wheels stay on the roadway after jumps (25 Aug 2026)
+
+**Player moment:** After any jump, the car does not clip through the road, and the tires sit on the tarmac — no hover gap, no buried patch.
+
+**Cause:** Grounded Y was only lifted if it went *under* the deck. After a throw, `_deckFilt` lagged a rising land ramp so the contact patch floated or sank. Ramp/crest skipped the grounded pin, and landing pitch copied leftover air slope instead of the axle plane.
+
+**Fix:** Land-lock and ramp/crest/land pin Y to the axle deck. Ordinary road never goes under the deck or more than 5 cm above it. Landing snaps pitch onto the axle plane.
+
+| Change | Status |
+|--------|--------|
+| Land-lock / jump approach plant Y = deck | **Done** |
+| Grounded hover cap 5 cm (`GROUND_HOVER_MAX`) | **Done** |
+| `_snapPitchToRoad(axles)` on land | **Done** |
+| Headed probe: post-land ΔY in [-3 cm, +8 cm] | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=407`** · `vehicle.js?v=86`
+
+**Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint63-plant.mjs` · `node tools/qa-sprint75-glitch.mjs --static` · `node tools/qa-sprint72-road-lock.mjs`
+
+**Still human-only:** Desert jump 2 into jump 3 — tires on the ramp, then on the sand, no clip-through.
+
+---
+
+# Sprint 81 — Recorded 3-2-1-GO on the start lights (25 Aug 2026)
+
+**Player moment:** The stage HUD counts **3**, **2**, **1**, **GO!** and the co-driver says those words on the same ticks — not a beep standing in for a voice, and not TTS.
+
+**Cause:** `countBeep` / `countGo` pitched a checkpoint sample. The SentientMattress pack already had a countdown at 0:00 (5-4-3-2-1-GO) that Sprint 67 never sliced. The clock also ran during the HUD fade, so the first number could fire off-screen.
+
+**Fix:** Slice `count-3/2/1/go.mp3` from Freesound 833028. Play them on the navigator bus when the HUD flashes each number. Hold the 3-second clock until `#screen-hud` is up, then fire **3** immediately.
+
+| Change | Status |
+|--------|--------|
+| `assets/sfx/nav/count-{3,2,1,go}.mp3` | **Done** |
+| `countBeep` / `countGo` play recorded VO | **Done** |
+| HUD 3 at screen-up; 2 / 1 / GO on remaining-time ticks | **Done** |
+| Countdown hold until HUD (`_countHold`) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=407`** · `engine.js?v=51`
+
+**Proof:** `node tools/qa-sprint81-countdown-vo.mjs`
+
+**Still human-only:** start Desert and confirm the voice hits with the numbers. Navigator slider at 0 should still play GO on SFX.
+
+---
+

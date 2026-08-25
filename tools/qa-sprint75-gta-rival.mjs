@@ -62,7 +62,7 @@ check("IV sources cited in HANDLING", /gtamods\.com\/wiki\/Handling\.dat/.test(c
 check("IV not V (looser, not glued)", /IV not V/.test(config) || /IV not V/.test(vehicle));
 check("engineBrake >= 0.3", num(config, "engineBrake") >= 0.3, `= ${num(config, "engineBrake")}`);
 check("Celica steerReturn >= 100", num(config, "steerReturn") >= 100, `= ${num(config, "steerReturn")}`);
-check("CAMERA rollFollow >= 0.45", num(config, "rollFollow") >= 0.45, `= ${num(config, "rollFollow")}`);
+check("CAMERA rollFollow is a hint (not a swing)", num(config, "rollFollow") >= 0.18 && num(config, "rollFollow") <= 0.28, `= ${num(config, "rollFollow")}`);
 check("CAMERA speedFov >= 0.28", num(config, "speedFov") >= 0.28, `= ${num(config, "speedFov")}`);
 check("TIRE_PLANT unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("no Math.random() in vehicle.js", !/Math\.random\s*\(/.test(vehicle));

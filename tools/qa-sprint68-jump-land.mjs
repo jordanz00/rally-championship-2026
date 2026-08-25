@@ -115,14 +115,26 @@ check(
 );
 check("samePit uses scanned land dist, not a 36 m window", /_landPadEndDist/.test(vehicle) && !/< 36/.test(vehicle));
 check("_scanLandPad returns { y, end } so a Y=0 pad still arms", /return \{ y, dist: foundAt, end: foundAt \}/.test(vehicle));
-check("air pitch snaps onto the axle plane on the pad", /_snapPitchToRoad\(\)/.test(vehicle));
+check("air pitch snaps onto the axle plane on the pad", /_snapPitchToRoad\(axles\)/.test(vehicle));
+check("next lip is not blocked by the previous land lock", /holdThisPit/.test(vehicle));
+check("air under a solid deck plants onGround", /solidDeck/.test(vehicle) && /sameTakeoff/.test(vehicle));
+check("grounded hover cap is 5 cm", /const GROUND_HOVER_MAX\s*=\s*0\.05/.test(vehicle));
+check(
+  "land lock and ramps pin the contact patch to the axle deck",
+  /this\._landLock > 0 \|\| onJumpApproach/.test(vehicle) &&
+    /this\.position\.y = deck/.test(vehicle)
+);
+check(
+  "clamp never lets grounded tires hover past GROUND_HOVER_MAX",
+  /GROUND_HOVER_MAX/.test(vehicle) && /onGround && !pit && this\.position\.y > floor/.test(vehicle)
+);
 check(
   "landing squat does not bury the contact patch",
   /squatTarget = 0/.test(vehicle) && !/_bodyPitch - impact \* 0\.014/.test(vehicle)
 );
 check("TIRE_PLANT plant is unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("game + AI import vehicle.js", /vehicle\.js\?v=\d+/.test(game) && /vehicle\.js\?v=\d+/.test(ai));
-check("cache-bust chain", cacheOk && Number(gameV) >= 379, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 407, `main=${mainV} game=${gameV}`);
 
 if (fail) {
   console.log(`\nFAIL  ·  ${fail} static check(s)`);
@@ -212,7 +224,10 @@ async function mainHeaded() {
         let landed = false;
         let landDist = 0;
         let minDelta = 99;
+        let maxDelta = -99;
         let maxBury = 0;
+        let maxUnder = 0;
+        let stuckUnder = false;
         let samples = 0;
         let worst = null;
         for (let s = 0; s < 780; s++) {
@@ -227,7 +242,14 @@ async function mainHeaded() {
           }
           const linePlant = line.y + 0.06 - TIRE;
           const delta = v.position.y - linePlant;
-          if (landed && line.jumpKind !== "gap" && v.progress < gap.dist + 90) {
+          const deck = line.y + 0.06;
+          const solid = !pit && line.jumpKind !== "gap";
+          if (solid && v.position.y < deck - 0.25) {
+            const under = deck - v.position.y;
+            if (under > maxUnder) maxUnder = under;
+            if (!v.onGround && v.speed < 1.2) stuckUnder = true;
+          }
+          if (landed && v.onGround && line.jumpKind !== "gap" && v.progress < gap.dist + 90) {
             if (delta < minDelta) {
               minDelta = delta;
               worst = {
@@ -242,6 +264,7 @@ async function mainHeaded() {
                 padY: v._landPadY,
               };
             }
+            if (delta > maxDelta) maxDelta = delta;
             const wb = (v.spec && v.spec.wheelbase) || 2.55;
             const bury = Math.abs(Math.sin(v.pitch - (v._visPitch || 0))) * wb * 0.5;
             if (bury > maxBury) maxBury = bury;
@@ -256,12 +279,60 @@ async function mainHeaded() {
           landed: landed,
           air: wasAir,
           minDelta: Math.round(minDelta * 1000) / 1000,
+          maxDelta: Math.round(maxDelta * 1000) / 1000,
           maxBury: Math.round(maxBury * 1000) / 1000,
+          maxUnder: Math.round(maxUnder * 1000) / 1000,
+          stuckUnder: stuckUnder,
           samples: samples,
           worst: worst,
         });
       }
-      return { jumps: jumps.length, results: results };`
+      let carry = { ran: false };
+      if (jumps.length >= 3) {
+        const gap2 = jumps[1];
+        const gap3 = jumps[2];
+        let ramp2 = Math.max(4, gap2.dist - 10);
+        for (let i = gap2.i; i >= 0; i--) {
+          const k = track.points[i].jumpKind || "";
+          if (k === "ramp") ramp2 = track.points[i].dist;
+          else if (k !== "crest" && k !== "ramp" && k !== "gap") break;
+        }
+        v.spawn(track, Math.max(4, ramp2 - 4), 0);
+        const spd = 32;
+        v.velocity.set(Math.sin(v.yaw) * spd, 0, Math.cos(v.yaw) * spd);
+        v.gear = 4;
+        let maxUnder = 0;
+        let stuckUnder = false;
+        let movable = false;
+        let reached = false;
+        for (let s = 0; s < 1400; s++) {
+          v.step(dt, input, track);
+          const line = track.sample(v.progress);
+          const pit = line.jumpKind === "gap";
+          if (!pit && line.jumpKind !== "gap" && v.position.y < line.y + 0.06 - 0.25) {
+            const under = line.y + 0.06 - v.position.y;
+            if (under > maxUnder) maxUnder = under;
+            if (!v.onGround && v.speed < 1.2) stuckUnder = true;
+          }
+          if (v.onGround && v.speed > 6) movable = true;
+          if (v.progress > gap3.dist + 20) {
+            reached = true;
+            break;
+          }
+        }
+        carry = {
+          ran: true,
+          reached: reached,
+          maxUnder: Math.round(maxUnder * 1000) / 1000,
+          stuckUnder: stuckUnder,
+          movable: movable,
+          y: Math.round(v.position.y * 1000) / 1000,
+          progress: Math.round(v.progress),
+          onGround: !!v.onGround,
+          speed: Math.round(v.speed * 10) / 10,
+        };
+      }
+      return { jumps: jumps.length, results: results, carry: carry };`
     );
 
     if (!probe || probe.err) {
@@ -290,13 +361,29 @@ async function mainHeaded() {
           `min ΔY ${row.minDelta} m${row.worst ? ` worst=${JSON.stringify(row.worst)}` : ""}`
         );
         check(
+          `jump ${row.n} wheels stay on the roadway (no hover)`,
+          row.maxDelta <= 0.08,
+          `max ΔY ${row.maxDelta} m`
+        );
+        check(
           `jump ${row.n} pitch does not bury an axle`,
           row.maxBury <= 0.06,
           `max axle bury ${row.maxBury} m`
         );
+        check(
+          `jump ${row.n} never sits under a solid deck`,
+          (row.maxUnder || 0) <= 0.22 && !row.stuckUnder,
+          `max under ${row.maxUnder || 0} m stuck=${!!row.stuckUnder}`
+        );
       }
       const third = rows.find((r) => r.n === 3);
       check("jump 3 (Safari throw) was probed", !!third, third ? `ΔY ${third.minDelta}` : "missing");
+      const carry = probe.carry || {};
+      check(
+        "jump 2 throw cannot tunnel jump 3's ramp",
+        !!(carry.ran && carry.reached && (carry.maxUnder || 0) <= 0.22 && !carry.stuckUnder && carry.movable),
+        JSON.stringify(carry)
+      );
     }
   } finally {
     await browser.close();

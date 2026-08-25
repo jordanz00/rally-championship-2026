@@ -128,9 +128,9 @@ function staticGates() {
   check("qaSnapshot on the game", /qaSnapshot\(/.test(game));
   check("phone starts on low tier", /startTier: isPhonePlay\(\) \? "low"/.test(game));
   check("createPerfTier accepts startTier", /opts\.startTier/.test(perf));
-  check("game + AI import vehicle.js?v=84", /vehicle\.js\?v=84/.test(game) && /vehicle\.js\?v=84/.test(ai));
+  check("game + AI import vehicle.js?v=86", /vehicle\.js\?v=86/.test(game) && /vehicle\.js\?v=86/.test(ai));
   check("game imports track.js?v=180", /track\.js\?v=180/.test(game));
-  check("cache-bust chain", cacheOk && Number(gameV) >= 400, `main=${mainV} game=${gameV}`);
+  check("cache-bust chain", cacheOk && Number(gameV) >= 407, `main=${mainV} game=${gameV}`);
 }
 
 async function driveCourse(cdp, course, first) {

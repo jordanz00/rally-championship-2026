@@ -19,7 +19,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=137";
+import { VISUAL } from "./config.js?v=138";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
