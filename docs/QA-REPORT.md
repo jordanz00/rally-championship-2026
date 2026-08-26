@@ -2438,3 +2438,26 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 ---
 
+## Sprint 88 — Car pick never hangs the tab (26 Aug 2026)
+
+**Player moment:** Championship → pick a car. The loading screen appears immediately and the percent moves. The tab does not freeze with only title music playing.
+
+**Cause:** Car click called `_scheduleTrackPreload` and `_beginRace` together, then `yieldFrame()` resolved via `queueMicrotask`. Terrain/road work stayed on the click turn. Chrome never painted `#screen-loading`. Audio kept playing on its own thread.
+
+**Fix:** Macrotask yields only (`requestAnimationFrame` + `setTimeout(0)`). Instant loading screen. Paint two frames, then garage / SFX / one `Track.create`. Championship pick no longer starts a parallel preload.
+
+| Change | Status |
+|--------|--------|
+| `yieldFrame` has no `queueMicrotask` | **Done** |
+| `showLoadingScreen` is `instant: true` | **Done** |
+| `_beginRace` yields before SFX / `_startRace` | **Done** |
+| Championship car pick is one `_beginRace` | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=425`** · `track.js?v=185` · `hud.js?v=29`
+
+**Proof:** `node tools/qa-sprint88-car-pick.mjs` · `node tools/qa-sprint77-boot.mjs` · `node tools/qa-boot-smoke.mjs`
+
+**Still human-only:** Championship → Celica. Loading bar must appear at once; countdown follows.
+
+---
+

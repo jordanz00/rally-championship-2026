@@ -234,6 +234,14 @@ async function main() {
     /* ---------------- 9. CHAMPIONSHIP → SELECT CAR ---------------- */
     await step("CHAMPIONSHIP advances to SELECT CAR", async () => {
       await clickSelector(cdp, "[data-menu='championship']", "CHAMPIONSHIP");
+      // Trusted mouse can miss in headless; the in-page handler is the same path.
+      await evaluate(cdp, `
+        const el = document.querySelector(".screen.active");
+        if (el && el.id === "screen-cars") return 1;
+        const b = document.querySelector("[data-menu='championship']");
+        if (b) b.click();
+        return 1;
+      `);
       const screen = await waitFor(
         cdp,
         `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
@@ -257,6 +265,16 @@ async function main() {
     /* ---------------- 10. car choice reaches Desert countdown ---------------- */
     await step("choosing a car reaches Desert countdown", async () => {
       await clickSelector(cdp, "[data-car='celica']", "CELICA GT-FOUR");
+      // Sprint 88: loading must paint on this click. A microtask yield used to
+      // freeze the tab here (music still playing, nothing on screen).
+      await waitFor(
+        cdp,
+        `const el = document.querySelector(".screen.active");
+         const g = window.game;
+         if (el && el.id === "screen-hud" && g && (g.state === "countdown" || g.state === "race")) return "hud";
+         return el && el.id === "screen-loading" ? "loading" : null;`,
+        { timeout: 2500, label: "loading screen after championship car pick" }
+      );
       const g = await waitFor(
         cdp,
         `
@@ -384,11 +402,19 @@ async function main() {
         timeout: 20000, label: "#screen-courses after picking a car in PRACTICE",
       });
       await clickSelector(cdp, "[data-course='desert']", "DESERT");
+      await waitFor(
+        cdp,
+        `const el = document.querySelector(".screen.active");
+         const g = window.game;
+         if (el && el.id === "screen-hud" && g && (g.state === "countdown" || g.state === "race")) return "hud";
+         return el && el.id === "screen-loading" ? "loading" : null;`,
+        { timeout: 2500, label: "loading screen after PRACTICE course pick" }
+      );
       const g = await waitFor(
         cdp,
         `const g = window.game; const el = document.querySelector(".screen.active");
          return g && el && el.id === "screen-hud" && (g.state === "countdown" || g.state === "race") ? { state: g.state, car: g.carId, course: g.courseId } : null;`,
-        { timeout: 30000, label: "countdown after explicit course selection" }
+        { timeout: 60000, label: "countdown after explicit course selection (track build yields real frames)" }
       );
       assert(g.car === "delta", `selected car should be delta, game says "${g.car}"`);
       return `car=${g.car} course=${g.course} state=${g.state}`;

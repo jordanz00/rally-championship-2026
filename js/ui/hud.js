@@ -708,5 +708,5 @@ export function showLoadingScreen(opts = {}) {
   if (status) status.textContent = loadUi.status;
   paintLoadBar(0, loadUi.status);
   armLoadBar();
-  return showScreen("screen-loading");
+  return showScreen("screen-loading", { instant: true });
 }

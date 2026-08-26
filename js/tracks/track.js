@@ -35,7 +35,12 @@ import { pickPaceNote } from "./pace-call.mjs?v=1";
 
 const STEP = 3.2;
 
-/** Yield a frame even if headless Chrome pauses rAF while the canvas is not painting. */
+/**
+ * Yield so the loading screen can paint and Chrome stays responsive.
+ * Never use queueMicrotask — that keeps Track.create on the click turn and
+ * the tab freezes while music keeps playing. setTimeout(0) still completes
+ * headless QA when rAF is paused because the canvas is not painting.
+ */
 function yieldFrame() {
   return new Promise((resolve) => {
     let done = false;
@@ -44,9 +49,8 @@ function yieldFrame() {
       done = true;
       resolve();
     };
-    queueMicrotask(fire);
-    setTimeout(fire, 0);
     requestAnimationFrame(fire);
+    setTimeout(fire, 0);
   });
 }
 

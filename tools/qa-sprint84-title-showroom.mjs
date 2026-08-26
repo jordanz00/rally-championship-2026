@@ -68,7 +68,12 @@ check("IBL bakes after first present", /_bakeSkyEnv\("title"\)/.test(game) && /_
 check("title overlay is a vignette, not a dark slab", /rgba\(0, 0, 0, 0\.22\)/.test(css) && !/rgba\(5, 7, 5, 0\.62\)/.test(css));
 check("css cache-bust", /game\.css\?v=29/.test(index));
 check("celica.js cache-bust", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 121);
-check("cache-bust chain", cacheOk && Number(gameV) >= 423, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 425, `main=${mainV} game=${gameV}`);
+check("yieldFrame never uses queueMicrotask", !/queueMicrotask\(fire\)/.test(game));
+check(
+  "championship car pick does not double-start Track.create",
+  !/this\._scheduleTrackPreload\(next\);\s*this\._beginRace\(next\)/.test(game)
+);
 check("sphere dune blobs are gone", !/for \(let i = 0; i < 18; i\+\+\)/.test(game) && /loadTitleRocks/.test(game) && /rock_largeA/.test(game));
 check("PRESS START does not rebuild the showroom", /_idleWarmAfterTitle/.test(game) && /instant: true/.test(game));
 check("car and course menus swap instantly", /showScreen\("screen-courses", \{ instant: true \}/.test(game) && /showScreen\("screen-cars", \{ instant: true \}/.test(game));

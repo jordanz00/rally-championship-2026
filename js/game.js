@@ -26,13 +26,13 @@ import { getSurface } from "./physics/surfaces.js?v=46";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=61";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=121";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=184";
+import { Track } from "./tracks/track.js?v=185";
 import { preparePropKit, loadTitleRocks } from "./tracks/prop-kit.js?v=19";
 import { Opponent } from "./ai.js?v=114";
 import { RallyAudio } from "./audio/engine.js?v=53";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=31";
-import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=28";
+import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=29";
 import { Dust, TireMarks } from "./effects.js?v=54";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=37";
 import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=23";
@@ -56,7 +56,12 @@ import { shadowGeometry, carShadowMaterial } from "./tracks/trees.js?v=31";
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
 
-/** Yield even if headless Chrome pauses rAF and throttles timers. */
+/**
+ * Yield so the loading screen can paint and Chrome stays responsive.
+ * Never use queueMicrotask — that keeps race start on the click turn and
+ * the tab freezes while music keeps playing. setTimeout(0) still completes
+ * headless QA when rAF is paused because the canvas is not painting.
+ */
 function yieldFrame() {
   return new Promise((resolve) => {
     let done = false;
@@ -65,9 +70,8 @@ function yieldFrame() {
       done = true;
       resolve();
     };
-    queueMicrotask(fire);
-    setTimeout(fire, 0);
     requestAnimationFrame(fire);
+    setTimeout(fire, 0);
   });
 }
 /**
@@ -232,7 +236,7 @@ export class RallyGame {
     };
 
     this._bindVolume();
-    showScreen(this.state === "menu" ? "screen-menu" : "screen-title");
+    showScreen(this.state === "menu" ? "screen-menu" : "screen-title", { instant: true });
     this.renderer = null;
     this.scene = null;
     this.player = null;
@@ -1182,12 +1186,12 @@ export class RallyGame {
     this.player = new Vehicle(CARS[id]);
     this.audio.setCar(id);
 
-    // SELECT COURSE / championship start must happen on this click. The old
-    // path waited two rAFs plus a 7 MB hero clone, so PRACTICE boot-smoke
-    // timed out on #screen-courses whenever that hitch ran long.
+    // Championship starts the race from this click. Do not also
+    // `_scheduleTrackPreload` here — that used to start a second Track.create
+    // on the same turn and freeze the tab. `_beginRace` joins any idle warm
+    // or builds once.
     if (this.mode === "championship") {
       const next = this.champOrder[this.stageIndex] || this.champOrder[0];
-      this._scheduleTrackPreload(next);
       this._beginRace(next);
       return;
     }
@@ -1968,13 +1972,6 @@ export class RallyGame {
    */
   async _beginRace(courseId) {
     this._pauseGarageWatch();
-    this._warmGarage();
-    try {
-      if (this.audio && this.audio._bootSfxGraph) this.audio._bootSfxGraph();
-      if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
-    } catch {
-      /* music already running */
-    }
     this.state = "loading";
     this._loadGen += 1;
     const gen = this._loadGen;
@@ -1996,6 +1993,17 @@ export class RallyGame {
           : "Preparing course…",
     });
     if (instant) setLoadingProgress(0.9, "Lighting stage…");
+    // Two real frames so #screen-loading paints before garage / SFX / Track.create.
+    await yieldFrame();
+    await yieldFrame();
+    if (gen !== this._loadGen) return;
+    this._warmGarage();
+    try {
+      if (this.audio && this.audio._bootSfxGraph) this.audio._bootSfxGraph();
+      if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
+    } catch {
+      /* music already running */
+    }
     this._startRace(courseId, gen).catch((err) => {
       if (gen !== this._loadGen) return;
       console.error(err);

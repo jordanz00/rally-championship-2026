@@ -53,7 +53,7 @@ check("loading fill is transform-driven", /transform:\s*scaleX\(0\)/.test(css));
 check("race start awaits the loading fade", /showLoadingScreen/.test(game) && /await showScreen\("screen-hud"\)/.test(game));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 423 && /hud\.js\?v=28/.test(game),
+  cacheOk && Number(gameV) >= 425 && /hud\.js\?v=29/.test(game),
   `main=${mainV} game=${gameV}`
 );
 check("css cache-bust", /game\.css\?v=29/.test(index));
