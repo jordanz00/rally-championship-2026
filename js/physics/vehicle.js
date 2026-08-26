@@ -85,6 +85,18 @@ const TIRE_PLANT = 0.014;
  * above the painted deck after a jump (filter lag used to leave a gap).
  */
 const GROUND_HOVER_MAX = 0.05;
+/**
+ * Metres a tire may sit into a solid deck before we lift. Anything more is a
+ * clip-through — jump landings used to bury the rear by half a metre.
+ */
+const AXLE_SINK_MAX = 0.018;
+/**
+ * Extra Three.js pitch (rad) allowed on top of the axle plane once landed.
+ * Air leftover is 0.42 rad; even 0.08 rad puts the bumper through the ribbon.
+ */
+const LAND_PITCH_SLACK = 0.022;
+/** Along-track metres after takeoff where the lip we just left is not a floor. */
+const TAKEOFF_IGNORE_M = 12;
 /** Hard cap on road-follow pitch (~31°). Weight-transfer squat stays much smaller. */
 const ROAD_PITCH_MAX = 0.55;
 /**
@@ -467,6 +479,7 @@ export class Vehicle {
     this._q = {};
     this._qFront = {};
     this._qRear = {};
+    this._qSolid = {};
     this._sFront = {};
     this._sRear = {};
     this._sample = {};
@@ -474,8 +487,8 @@ export class Vehicle {
     this._ribbonR = {};
     this._felt = {};
     /** Normalised axle probes — both the full and cheap paths fill these. */
-    this._axFront = { height: 0, surface: "dirt", from: "dirt", to: "dirt", mix: 0, gap: false };
-    this._axRear = { height: 0, surface: "dirt", from: "dirt", to: "dirt", mix: 0, gap: false };
+    this._axFront = { height: 0, surface: "dirt", from: "dirt", to: "dirt", mix: 0, gap: false, kind: "" };
+    this._axRear = { height: 0, surface: "dirt", from: "dirt", to: "dirt", mix: 0, gap: false, kind: "" };
     this._axles = {
       L: 0,
       front: this._axFront,
@@ -655,11 +668,10 @@ export class Vehicle {
   /**
    * One fixed physics step.
    *
-   * ROAD PROBE BUDGET: exactly three Track.query calls per step for the player
-   * (front axle, rear axle, chassis centre) and one plus two cheap samples for
-   * an opponent. The pre-integration slope and bump phase read the probe cached
-   * at the END of the previous step, which is at most one step stale — a
-   * centimetre of height on a ramp, and free.
+   * ROAD PROBE BUDGET: three Track.query calls per step for the player
+   * (front axle, rear axle, chassis centre). While a jump pad is live we
+   * re-probe once after progress updates so a gap→land tick cannot leave
+   * the chassis under the landing ribbon.
    *
    * @param {number} dt
    * @param {{steer:number,throttle:number,brake:number,handbrake:number,shiftUp:boolean,shiftDown:boolean}} input
@@ -787,9 +799,13 @@ export class Vehicle {
     const prevY = this.position.y;
 
     let q2 = track.query(this.position.x, this.position.z, this._q, this.progress);
+    q2 = this._preferSolidRoad(track, q2);
     q2 = this._keepOnRibbon(track, q2, dt);
-    const axles = this._axleRoad(track, q2.height);
-    const pit = axles.bothGap || q2.jumpKind === "gap";
+    const axles = this._axleRoad(track, q2.height, q2.dist);
+    const axleOnLand =
+      (axles.front && axles.front.kind === "land") ||
+      (axles.rear && axles.rear.kind === "land");
+    const pit = !axleOnLand && (axles.bothGap || q2.jumpKind === "gap");
     const deck = this._roadDeckY(axles);
 
     const jk = q2.jumpKind || "";
@@ -827,6 +843,9 @@ export class Vehicle {
     }
 
     this._updateAttitude(dt);
+    // Attitude runs after air/land and can reintroduce leftover air pitch.
+    // Pin wheels + body onto any solid roadway so a landing cannot tunnel.
+    this._keepChassisOnRoad(axles, pit);
 
     this.wheelSpin[0] += this.omegaF * dt;
     this.wheelSpin[1] += this.omegaF * dt;
@@ -844,6 +863,23 @@ export class Vehicle {
     this.progress = q2.dist;
     this.lapDist = q2.dist;
     this._guardDrive(track, prevProgress, prevY, dt);
+    // Progress can step from gap → land in one tick. Re-probe so a pad-Y plant
+    // is lifted onto the real landing ribbon before the frame is drawn.
+    if (this._landLock > 0 || this._jumpPhase || this._landPadArmed) {
+      const q3 = this._preferSolidRoad(
+        track,
+        track.query(this.position.x, this.position.z, this._q, this.progress)
+      );
+      const ax3 = this._axleRoad(track, q3.height, q3.dist);
+      const axleOnLand3 =
+        (ax3.front && ax3.front.kind === "land") ||
+        (ax3.rear && ax3.rear.kind === "land");
+      const pit3 = !axleOnLand3 && (ax3.bothGap || q3.jumpKind === "gap");
+      this._keepChassisOnRoad(ax3, pit3);
+      this._clampToRoadDeck(this._roadDeckY(ax3), pit3, q3.jumpKind || "");
+    } else {
+      this._keepChassisOnRoad(this._axles, pit);
+    }
     this._stashGoodPose();
   }
 
@@ -903,11 +939,21 @@ export class Vehicle {
     else if (kind === "ramp") this._jumpPhase = "ramp";
     else if (!inAirZone) this._jumpPhase = "";
 
-    if (this.onGround && !inAirZone && this._landPadArmed) {
+    // Stay armed on the landing strip — disarming on `land` then bouncing
+    // back into the hole left `_roadFloorY` with no pad and the car fell
+    // through the roadway (Desert jump 3 / Mountain jump).
+    if (this.onGround && !inAirZone && kind !== "land" && this._landPadArmed) {
       this._landPadArmed = false;
       this._landPadY = 0;
       this._landPadDist = 0;
       this._landPadEndDist = 0;
+    }
+    // In a hole with no pad (ramp plant from the previous jump disarmed it)
+    // scan the far deck so flight cannot drop under the next roadway.
+    // Only while airborne — arming on a grounded entry made samePit true
+    // and glued the car to the pad so it never took off.
+    if (!this.onGround && pit && !this._landPadArmed) {
+      this._armLandPad(track, q2.dist, this.position.y, true);
     }
     // Same visual pit we just flew — ends at the scanned land, not a 36 m guess.
     const samePit =
@@ -944,7 +990,7 @@ export class Vehicle {
           (this._landLock > 0 &&
             this._landPadArmed &&
             q2.dist < this._landPadEndDist + 4));
-      if (holdThisPit) {
+      if (holdThisPit && !(axles.front && axles.front.kind === "land") && !(axles.rear && axles.rear.kind === "land")) {
         this.velY = 0;
         this._climbVel *= Math.exp(-8 * dt);
         this._airTime = 0;
@@ -956,7 +1002,10 @@ export class Vehicle {
 
       // Any grounded frame in a NEW hole is a takeoff. Do not wait out a
       // previous landing's lock — that planted the car under jump 3's deck.
-      const takeoff = (pit || kind === "gap") && !q2.tunnel;
+      const axleOnLand =
+        (axles.front && axles.front.kind === "land") ||
+        (axles.rear && axles.rear.kind === "land");
+      const takeoff = (pit || kind === "gap") && !q2.tunnel && !axleOnLand;
 
       if (takeoff) {
         this.onGround = false;
@@ -987,11 +1036,7 @@ export class Vehicle {
         this._rampThrow = 0;
         this._suspCompress = 0;
         this._padHitVy = null;
-        const pad = this._scanLandPad(track, q2.dist, prevY);
-        this._landPadY = pad.y;
-        this._landPadDist = q2.dist;
-        this._landPadEndDist = pad.end;
-        this._landPadArmed = true;
+        this._armLandPad(track, q2.dist, prevY, true);
         this.position.y = prevY + this.velY * dt;
         return;
       }
@@ -1047,6 +1092,10 @@ export class Vehicle {
       } else if (this.position.y > deck + GROUND_HOVER_MAX) {
         this.position.y = deck + GROUND_HOVER_MAX;
       }
+      // Ordinary road after a jump (Desert tunnel climb) must sit on THIS
+      // frame's deck, not a stale pad / filter Y from the hole behind.
+      this.position.y = deck + chatter;
+      this._deckFilt = deck;
       return;
     }
 
@@ -1056,9 +1105,15 @@ export class Vehicle {
     this.velY = Math.max(this.velY, -36);
     this.position.y += this.velY * dt;
 
-    // Far-pad height is the floor over the hole. Never the pit mesh (deck).
-    const floorY = this._roadFloorY(deck, pit);
-    const solidDeck = !pit && kind !== "gap";
+    // Far-pad height is the floor over the hole. Solid axles (ramp / land)
+    // are also a floor — a centre query still labelled "gap" used to let
+    // the car tunnel the next lip.
+    const floorY = this._roadFloorY(deck, pit, axles);
+    const sameTakeoff = this._landPadArmed && q2.dist < this._landPadDist + TAKEOFF_IGNORE_M;
+    const axleSolid =
+      !sameTakeoff &&
+      ((axles.front && !axles.front.gap) || (axles.rear && !axles.rear.gap));
+    const solidDeck = (!pit && kind !== "gap" && !sameTakeoff) || axleSolid;
     if (this.position.y < floorY) {
       this.position.y = floorY;
       if (this.velY < 0) {
@@ -1074,9 +1129,8 @@ export class Vehicle {
         this._groundVy = 0;
         this._deckSmoothY = floorY;
         this._deckFilt = floorY;
-        this._landLock = 0.12;
-        this._landPadArmed = false;
-        this._landPadY = 0;
+        this._landLock = 0.18;
+        this._armLandPad(track, q2.dist, floorY);
         this._snapPitchToRoad(axles);
         return;
       }
@@ -1084,11 +1138,10 @@ export class Vehicle {
 
     // Land on any solid deck once we have left this jump's lip. Excluding
     // ramp/crest used to let a long throw tunnel the next jump's roadway.
-    const sameTakeoff = this._landPadArmed && q2.dist < this._landPadDist + 10;
     const overPad = solidDeck && !sameTakeoff;
     const atPad = this.position.y <= floorY + 0.08;
     const ready = this.velY <= 0.2;
-    const hitting = overPad && atPad && ready && this._airTime > 0.08;
+    const hitting = overPad && atPad && ready && this._airTime > 0.04;
     if (hitting) {
       const fallSpeed = this._padHitVy != null ? this._padHitVy : this.velY;
       const impact = Math.max(0, -fallSpeed);
@@ -1104,19 +1157,22 @@ export class Vehicle {
       this.lastImpact = impact;
       this._padHitVy = null;
       this._touchDown(fallSpeed, impact, axles);
+      this._armLandPad(track, q2.dist, floorY);
       const bounce = this._jumpBounce || 0;
-      if (bounce > 0.85 && impact > 5.2 && this._landLock <= 0) {
-        this.velY = bounce;
+      // A bounce that keeps leftover air pitch puts the rear through the
+      // pad. Snap first; only hop if we are still clearly above the deck.
+      this._snapPitchToRoad(axles);
+      if (bounce > 1.15 && impact > 6.4 && this._landLock <= 0) {
+        this.velY = Math.min(bounce, 1.15);
         this.onGround = false;
         this._airTime = 0.05;
-        this._landLock = 0.07;
-        this.position.y = floorY + 0.012;
+        this._landLock = 0.1;
+        this.position.y = floorY + 0.02;
       } else {
         this.velY = 0;
         this.onGround = true;
         this._airTime = 0;
-        this._landLock = 0.18 + impact * 0.016;
-        this._snapPitchToRoad(axles);
+        this._landLock = 0.22 + impact * 0.016;
       }
     }
   }
@@ -1167,13 +1223,44 @@ export class Vehicle {
   }
 
   /**
-   * Solid roadway Y. The visual pit mesh is not a floor.
+   * Solid roadway Y. The visual pit mesh is not a floor. A solid axle
+   * (ramp / crest / land / ordinary road) is — otherwise a centre query
+   * still labelled "gap" lets the chassis tunnel the next lip.
    * @param {number} deck
    * @param {boolean} pit
+   * @param {ReturnType<Vehicle['_axleRoad']>} [axles]
    */
-  _roadFloorY(deck, pit) {
-    if (pit) return this._landPadArmed ? this._landPadY : this.position.y;
-    return deck;
+  _roadFloorY(deck, pit, axles) {
+    const sameTakeoff =
+      !this.onGround &&
+      this._landPadArmed &&
+      this.progress < this._landPadDist + TAKEOFF_IGNORE_M;
+    let floor = -Infinity;
+    if (!sameTakeoff && axles) {
+      if (axles.front && !axles.front.gap && Number.isFinite(axles.front.height)) {
+        floor = Math.max(floor, axles.front.height - TIRE_PLANT);
+      }
+      if (axles.rear && !axles.rear.gap && Number.isFinite(axles.rear.height)) {
+        floor = Math.max(floor, axles.rear.height - TIRE_PLANT);
+      }
+    }
+    if (!pit && Number.isFinite(deck)) floor = Math.max(floor, deck);
+    if (pit && this._landPadArmed && Number.isFinite(this._landPadY)) {
+      floor = Math.max(floor, this._landPadY);
+    }
+    const qKind = this._q && this._q.jumpKind;
+    const mesh =
+      this._q && Number.isFinite(this._q.height) && qKind !== "gap"
+        ? this._q.height - TIRE_PLANT
+        : null;
+    if (Number.isFinite(mesh)) {
+      floor = floor === -Infinity ? mesh : Math.max(floor, mesh);
+    }
+    if (floor === -Infinity) {
+      if (Number.isFinite(deck)) return deck;
+      return 0;
+    }
+    return floor;
   }
 
   /**
@@ -1184,7 +1271,7 @@ export class Vehicle {
    * @param {string} [kind]
    */
   _clampToRoadDeck(deck, pit, kind = "") {
-    const floor = this._roadFloorY(deck, pit);
+    const floor = this._roadFloorY(deck, pit, this._axles);
     if (!Number.isFinite(this.position.y) && Number.isFinite(floor)) {
       this.position.y = floor;
       return;
@@ -1213,9 +1300,12 @@ export class Vehicle {
 
   /**
    * Remember a legal on-ribbon pose so a bad query cannot warp the car.
+   * Never stash a pose already under the mesh — restoring it is the gray void.
    */
   _stashGoodPose() {
     if (!this._isFinitePose() || !Number.isFinite(this.progress)) return;
+    const mesh = this._q && Number.isFinite(this._q.height) ? this._q.height : null;
+    if (mesh != null && this.position.y < mesh - 0.55) return;
     this._goodX = this.position.x;
     this._goodY = this.position.y;
     this._goodZ = this.position.z;
@@ -1226,7 +1316,8 @@ export class Vehicle {
   }
 
   /**
-   * Put the car back on the last good ribbon pose.
+   * Put the car back on the last good ribbon pose, then plant Y on the deck
+   * so a stored underground pose cannot respawn under the stage.
    * @param {import('../tracks/track.js').Track} track
    */
   _restoreGoodPose(track) {
@@ -1245,6 +1336,54 @@ export class Vehicle {
     this.velY = 0;
     this.yawRate = 0;
     this.onGround = true;
+    this._plantOnRibbon(track);
+  }
+
+  /**
+   * Snap the contact patch onto the racing-line deck (or the far jump pad)
+   * and give enough forward speed to keep racing.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {{preferPad?:boolean}} [extra]
+   */
+  _plantOnRibbon(track, extra = {}) {
+    if (!track || typeof track.sample !== "function") return;
+    const line = track.sample(this.progress || 0, this._sample);
+    if (!line || !Number.isFinite(line.y)) return;
+    let y = line.y + ROAD_DECK - TIRE_PLANT;
+    const q =
+      typeof track.query === "function"
+        ? this._preferSolidRoad(
+            track,
+            track.query(this.position.x, this.position.z, this._q, this.progress)
+          )
+        : null;
+    if (q && Number.isFinite(q.height) && q.jumpKind !== "gap") {
+      y = Math.max(y, q.height - TIRE_PLANT);
+      if (Number.isFinite(q.dist)) {
+        this.progress = q.dist;
+        this.lapDist = q.dist;
+      }
+    }
+    const inPit = (q && q.jumpKind === "gap") || line.jumpKind === "gap" || extra.preferPad;
+    if (inPit) {
+      const pad = this._landPadArmed && Number.isFinite(this._landPadY)
+        ? this._landPadY
+        : this._scanLandPad(track, this.progress || 0, y).y;
+      if (Number.isFinite(pad)) y = Math.max(y, pad);
+    }
+    this.position.y = y;
+    this.velY = 0;
+    this.onGround = true;
+    this._airTime = 0;
+    this._landLock = Math.max(this._landLock || 0, 0.2);
+    this._snapPitchToRoad(this._axles);
+    const spd = Math.hypot(this.velocity.x, this.velocity.z);
+    if (spd < 10) {
+      const n = 14;
+      this.velocity.x = Math.sin(this.yaw) * n;
+      this.velocity.z = Math.cos(this.yaw) * n;
+      this.speed = n;
+    }
   }
 
   /**
@@ -1260,7 +1399,9 @@ export class Vehicle {
     const along = this._alongDelta(prev, q && q.dist, len);
     // One physics step travels speed*dt. A 32 m floor let a hairpin opposite
     // arm steal the lock (~18–30 m along) and bounceOffRoad planted there.
-    const maxStep = Math.max(10, (this.speed || 0) * dt * 3 + 6);
+    // Jump gaps are longer than that (Desert Safari throw ≈ 30 m of pit mesh)
+    // — treating land as a teleport stuffed every car back into the hole.
+    const maxStep = this._ribbonStepMax(dt);
     const snapped =
       !q ||
       !Number.isFinite(q.dist) ||
@@ -1269,10 +1410,59 @@ export class Vehicle {
     if (!snapped) return q;
     this._noteGlitch("spline-snap", { prev, dist: q && q.dist, along, maxStep });
     this._restoreGoodPose(track);
-    const again = track.query(this.position.x, this.position.z, this._q, this.progress);
+    const again = this._preferSolidRoad(
+      track,
+      track.query(this.position.x, this.position.z, this._q, this.progress)
+    );
     const againAlong = this._alongDelta(this.progress, again && again.dist, len);
     if (againAlong <= maxStep) return again;
     return this._pinQuery(track, again);
+  }
+
+  /**
+   * Along-track metres one step may advance. Jumps must be able to leave the
+   * pit for the far pad in a single query snap.
+   * @param {number} dt
+   */
+  _ribbonStepMax(dt) {
+    const base = Math.max(10, (this.speed || 0) * dt * 3 + 6);
+    if (!this.onGround || this._landPadArmed || this._jumpPhase || this._landLock > 0) {
+      return base + 42;
+    }
+    return base;
+  }
+
+  /**
+   * If the centre query is still the visual pit but XZ is already on land /
+   * ordinary road, take the solid ribbon. All cars share this path.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {object} q
+   */
+  _preferSolidRoad(track, q) {
+    if (!q || !track || typeof track.query !== "function") return q;
+    if (q.jumpKind !== "gap") return q;
+    const hint =
+      this._landPadArmed && this._landPadEndDist > (q.dist || 0) + 2
+        ? this._landPadEndDist
+        : (this.progress || 0) + 28;
+    const alt = track.query(this.position.x, this.position.z, this._qSolid, hint);
+    if (!alt || alt.jumpKind === "gap" || !Number.isFinite(alt.dist)) return q;
+    const gapLine = track.sample(q.dist, this._sample);
+    const solidLine = track.sample(alt.dist, this._sFront);
+    if (!gapLine || !solidLine) return q;
+    const dGap = Math.hypot(this.position.x - gapLine.x, this.position.z - gapLine.z);
+    const dSolid = Math.hypot(this.position.x - solidLine.x, this.position.z - solidLine.z);
+    if (dSolid + 1.2 < dGap) {
+      // Caller passed this._q; keep that bag as the live query so floor / HUD
+      // / axles do not keep reading the pit we just rejected.
+      if (q !== alt) {
+        const keys = Object.keys(alt);
+        for (let i = 0; i < keys.length; i++) q[keys[i]] = alt[keys[i]];
+        return q;
+      }
+      return alt;
+    }
+    return q;
   }
 
   /**
@@ -1353,7 +1543,7 @@ export class Vehicle {
     }
     const len = track && track.length ? track.length : 0;
     const along = this._alongDelta(prevProgress, this.progress, len);
-    const maxAlong = Math.max(10, (this.speed || 0) * dt * 3 + 6);
+    const maxAlong = this._ribbonStepMax(dt);
     if (along > maxAlong) {
       this._noteGlitch("teleport", { along, maxAlong, prev: prevProgress, dist: this.progress });
       this._restoreGoodPose(track);
@@ -1371,11 +1561,32 @@ export class Vehicle {
     }
     // Contact patch under a solid deck is always a bury — 1.35 m used to leave
     // the car sitting inside jump 3's ramp after a jump-2 throw.
-    if (floor != null && !pitKind && this.position.y < floor - 0.22) {
+    if (floor != null && !pitKind && this.position.y < floor - 0.06) {
       this._noteGlitch("buried", { y: this.position.y, floor, prevY });
-      this.position.y = floor - TIRE_PLANT;
-      this.velY = 0;
-      this.onGround = true;
+      this._plantOnRibbon(track);
+      return;
+    }
+    if (
+      pitKind &&
+      this._landPadArmed &&
+      Number.isFinite(this._landPadY) &&
+      this.position.y < this._landPadY - 0.08
+    ) {
+      this._noteGlitch("buried-pad", { y: this.position.y, pad: this._landPadY });
+      this._plantOnRibbon(track, { preferPad: true });
+      return;
+    }
+    // Through the painted mesh into the gray void — even if query still
+    // says "gap". The screenshot of the empty desert was this.
+    if (floor != null && this.position.y < floor - 1.15) {
+      this._noteGlitch("void", { y: this.position.y, floor, pitKind: pitKind ? 1 : 0 });
+      this._plantOnRibbon(track, { preferPad: !!pitKind });
+      return;
+    }
+    if (!this.onGround && this._airTime > 3.6) {
+      this._noteGlitch("long-air", { air: this._airTime, y: this.position.y });
+      this._plantOnRibbon(track, { preferPad: true });
+      return;
     }
     // Only a sudden DROP is a warp. Lifting onto the next ramp is the recovery.
     if (this.onGround && Number.isFinite(prevY) && this.position.y < prevY - 3.2) {
@@ -1415,23 +1626,133 @@ export class Vehicle {
   _scanLandPad(track, dist, fallback) {
     const miss = { y: fallback, dist: dist + 16, end: dist + 40 };
     if (!track) return miss;
-    const scanEnd = Math.min(track.length - 1, dist + 120);
+    const scanEnd = Math.min(track.length - 1, dist + 140);
     let y = null;
     let foundAt = dist + 16;
-    for (let d = dist + 3; d < scanEnd; d += 2) {
+    let endAt = foundAt;
+    let sawLand = false;
+    for (let d = dist + 2; d < scanEnd; d += 2) {
       const p = track.sample(d, this._sample);
       const kind = p.jumpKind || "";
       const air = kind === "gap" || kind === "crest" || kind === "ramp";
-      if (air) {
-        if (y != null) break;
+      if (y == null) {
+        if (air) continue;
+        y = p.y + ROAD_DECK - TIRE_PLANT;
+        foundAt = d;
+        endAt = d;
+        sawLand = kind === "land";
         continue;
       }
-      y = p.y + ROAD_DECK - TIRE_PLANT;
-      foundAt = d;
-      break;
+      if (air) break;
+      // The pad is the land strip, not the next 140 m of stage. Hinting axles
+      // at the tunnel climb (Desert jump 3) planted every car 7 m in the air.
+      if (sawLand && kind !== "land") {
+        endAt = d;
+        break;
+      }
+      if (d > foundAt + 42) break;
+      endAt = d;
+      if (kind === "land") sawLand = true;
     }
     if (y == null) return miss;
-    return { y, dist: foundAt, end: foundAt };
+    return { y, dist: foundAt, end: endAt };
+  }
+
+  /**
+   * Keep a far-pad floor armed so the next hole cannot drop the car under
+   * the roadway. `asTakeoff` stamps the lip dist used to ignore that lip
+   * as a floor for a few metres of air — never stamp it on a landing or
+   * the next 12 m of roadway would skip the pitch pin.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {number} dist
+   * @param {number} fallback
+   * @param {boolean} [asTakeoff]
+   */
+  _armLandPad(track, dist, fallback, asTakeoff = false) {
+    const pad = this._scanLandPad(track, dist, fallback);
+    this._landPadY = pad.y;
+    this._landPadEndDist = pad.end;
+    this._landPadArmed = true;
+    if (asTakeoff) this._landPadDist = dist;
+  }
+
+  /**
+   * Origin is the contact patch: leftover air pitch buries a bumper or a
+   * wheel through the ribbon. After every attitude solve, lift the chassis
+   * so both solid axles stay on their deck, and flatten pitch when grounded.
+   * @param {ReturnType<Vehicle['_axleRoad']>} axles
+   * @param {boolean} pit
+   */
+  _keepChassisOnRoad(axles, pit) {
+    if (!axles) return;
+    const sameTakeoff =
+      !this.onGround &&
+      this._landPadArmed &&
+      this.progress < this._landPadDist + TAKEOFF_IGNORE_M;
+    const frontSolid = !!(axles.front && !axles.front.gap);
+    const rearSolid = !!(axles.rear && !axles.rear.gap);
+    const anySolid = (!pit && !sameTakeoff) || ((frontSolid || rearSolid) && !sameTakeoff);
+
+    if (this.onGround && anySolid) {
+      const grade = Number.isFinite(axles.pitch)
+        ? clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX)
+        : 0;
+      const roadPitch = -grade;
+      const slack = this._landLock > 0 ? 0.01 : LAND_PITCH_SLACK;
+      this.pitch = clamp(this.pitch, roadPitch - slack, roadPitch + slack);
+      this._visPitch = roadPitch;
+      this._bodyPitch = clamp(this._bodyPitch, -slack, slack);
+      this._squatSmooth = clamp(this._squatSmooth || 0, -slack, slack);
+      this.pitchRate = 0;
+    }
+
+    const L = Math.max(1.6, axles.L || this.spec.wheelbase || 2.55);
+    const half = L * 0.5;
+    const sinP = Math.sin(this.pitch);
+    const frontOff = -half * sinP;
+    const rearOff = half * sinP;
+
+    let lift = 0;
+    const needLift = (solid, height, off) => {
+      if (!solid || !Number.isFinite(height)) return;
+      const need = height - TIRE_PLANT - off - AXLE_SINK_MAX;
+      const extra = need - this.position.y;
+      if (extra > lift) lift = extra;
+    };
+    if (!sameTakeoff || this.onGround) {
+      needLift(frontSolid, axles.front && axles.front.height, frontOff);
+      needLift(rearSolid, axles.rear && axles.rear.height, rearOff);
+    }
+    if (!pit && Number.isFinite(axles.midH)) {
+      const extra = axles.midH - TIRE_PLANT - AXLE_SINK_MAX - this.position.y;
+      if (extra > lift) lift = extra;
+    }
+    if (pit && this._landPadArmed && Number.isFinite(this._landPadY)) {
+      const extra = this._landPadY - this.position.y;
+      if (extra > lift) lift = extra;
+    }
+    if (lift > 0.0005) {
+      this.position.y += lift;
+      if (this.velY < 0) this.velY = 0;
+      if (!this.onGround && anySolid && lift > 0.008) {
+        this.onGround = true;
+        this._airTime = 0;
+        this._landLock = Math.max(this._landLock || 0, 0.16);
+        this._snapPitchToRoad(axles);
+        const deck = this._roadDeckY(axles);
+        if (Number.isFinite(deck) && this.position.y < deck) this.position.y = deck;
+      }
+    }
+    if (this.onGround && !pit && Number.isFinite(axles.midH)) {
+      const deck = axles.midH - TIRE_PLANT;
+      if (this.position.y < deck) this.position.y = deck;
+      // Only pull down when both axles agree this is real tarmac — a gap
+      // sample leaking through as midH used to shove every car into the road.
+      const bothSolid = frontSolid && rearSolid;
+      if (bothSolid && this.position.y > deck + GROUND_HOVER_MAX) {
+        this.position.y = deck + GROUND_HOVER_MAX;
+      }
+    }
   }
 
   /**
@@ -1445,24 +1766,26 @@ export class Vehicle {
    *
    * @param {import('../tracks/track.js').Track} track
    * @param {number} [groundY] optional centre-line height under the car (AI)
+   * @param {number} [hintDist] along-track hint — land dist after a jump, not a stale pit
    */
-  _axleRoad(track, groundY) {
+  _axleRoad(track, groundY, hintDist) {
     const L = Math.max(1.6, this.spec.wheelbase || 2.5);
     const half = L * 0.5;
-    if (this.lowDetail) return this._axleRoadCheap(track, L, half, groundY);
+    const hint = Number.isFinite(hintDist) ? hintDist : this.progress;
+    if (this.lowDetail) return this._axleRoadCheap(track, L, half, groundY, hint);
     const sinY = Math.sin(this.yaw);
     const cosY = Math.cos(this.yaw);
     const f = track.query(
       this.position.x + sinY * half,
       this.position.z + cosY * half,
       this._qFront,
-      this.progress
+      hint
     );
     const r = track.query(
       this.position.x - sinY * half,
       this.position.z - cosY * half,
       this._qRear,
-      this.progress
+      hint
     );
     copyProbe(this._axFront, f.height, f.surface, f.surfFrom, f.surfTo, f.surfMix, f.jumpKind);
     copyProbe(this._axRear, r.height, r.surface, r.surfFrom, r.surfTo, r.surfMix, r.jumpKind);
@@ -1483,11 +1806,13 @@ export class Vehicle {
    * @param {number} L wheelbase
    * @param {number} half half wheelbase
    * @param {number} [groundY]
+   * @param {number} [hintDist]
    */
-  _axleRoadCheap(track, L, half, groundY) {
+  _axleRoadCheap(track, L, half, groundY, hintDist) {
     const len = track.length || 1;
-    const df = clamp(this.progress + half, 0, len - 1);
-    const dr = clamp(this.progress - half, 0, len - 1);
+    const mid = Number.isFinite(hintDist) ? hintDist : this.progress;
+    const df = clamp(mid + half, 0, len - 1);
+    const dr = clamp(mid - half, 0, len - 1);
     const f = track.sample(df, this._sFront);
     const r = track.sample(dr, this._sRear);
     const sampleMid = 0.5 * (f.y + r.y) + ROAD_DECK;
@@ -1521,6 +1846,18 @@ export class Vehicle {
     } else {
       pitch = Math.atan2(front.height - rear.height, L);
       midH = 0.5 * (front.height + rear.height);
+    }
+    const center = this._q && Number.isFinite(this._q.height) ? this._q.height : null;
+    if (
+      this._q &&
+      this._q.jumpKind !== "gap" &&
+      Number.isFinite(center) &&
+      Number.isFinite(midH) &&
+      Math.abs(midH - center) > 2.2
+    ) {
+      midH = center;
+      front.height = center;
+      rear.height = center;
     }
     const ax = this._axles;
     ax.L = L;
@@ -1609,7 +1946,7 @@ export class Vehicle {
 
     if (this.onGround || this._padHitVy != null) {
       const want = this._visPitch + this._bodyPitch;
-      const k = 1 - Math.exp(-24 * dt);
+      const k = this._landLock > 0 ? 1 : 1 - Math.exp(-24 * dt);
       this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {
@@ -2407,4 +2744,5 @@ function copyProbe(out, height, surface, from, to, mix, jumpKind) {
   out.to = to || out.surface;
   out.mix = mix || 0;
   out.gap = jumpKind === "gap";
+  out.kind = jumpKind || "";
 }

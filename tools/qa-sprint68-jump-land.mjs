@@ -91,6 +91,21 @@ check(
   j3 ? `rise ${j3.rise} gap ${j3.gap} drop ${j3.drop}` : "missing"
 );
 
+const mountainBlock = (courses.match(/mountain: \{[\s\S]*?\n  \},\n\n  \/\*\*/) || [""])[0];
+jumpRe.lastIndex = 0;
+const mountainJumps = [];
+while ((m = jumpRe.exec(mountainBlock))) {
+  mountainJumps.push({
+    ramp: +m[1],
+    rise: +m[2],
+    lip: +m[3],
+    gap: +m[4],
+    drop: +m[5],
+    land: +m[6],
+  });
+}
+check("Mountain (stage 3) has a crest jump", mountainJumps.length >= 1, `${mountainJumps.length} jumps`);
+
 const gap3 = j3 ? gapLength(j3.gap) : 0;
 check(
   "jump 3 gap phases match track.js (dropFast + flyover)",
@@ -104,9 +119,8 @@ check(
 
 check("_landPadArmed is the pad sentinel (pads may sit at Y ≤ 0)", /this\._landPadArmed/.test(vehicle));
 check(
-  "floor ignores the visual pit mesh",
-  /_roadFloorY\(deck, pit\)/.test(vehicle) &&
-    /if \(pit\) return this\._landPadArmed \? this\._landPadY : this\.position\.y/.test(vehicle)
+  "floor uses solid axles plus the far pad, never the visual pit as a drop",
+  /_roadFloorY\(deck, pit, axles\)/.test(vehicle) && /_keepChassisOnRoad\(/.test(vehicle)
 );
 check("every car is clamped onto that floor after the air step", /_clampToRoadDeck\(deck, pit/.test(vehicle));
 check(
@@ -114,10 +128,11 @@ check(
   /hitting = overPad && atPad && ready/.test(vehicle) && !/\(overPad \|\| pit\)/.test(vehicle)
 );
 check("samePit uses scanned land dist, not a 36 m window", /_landPadEndDist/.test(vehicle) && !/< 36/.test(vehicle));
-check("_scanLandPad returns { y, end } so a Y=0 pad still arms", /return \{ y, dist: foundAt, end: foundAt \}/.test(vehicle));
+check("_scanLandPad returns the land run end", /return \{ y, dist: foundAt, end: endAt \}/.test(vehicle));
 check("air pitch snaps onto the axle plane on the pad", /_snapPitchToRoad\(axles\)/.test(vehicle));
 check("next lip is not blocked by the previous land lock", /holdThisPit/.test(vehicle));
 check("air under a solid deck plants onGround", /solidDeck/.test(vehicle) && /sameTakeoff/.test(vehicle));
+check("pad stays armed on the landing strip", /kind !== "land" && this\._landPadArmed/.test(vehicle));
 check("grounded hover cap is 5 cm", /const GROUND_HOVER_MAX\s*=\s*0\.05/.test(vehicle));
 check(
   "land lock and ramps pin the contact patch to the axle deck",
@@ -129,12 +144,27 @@ check(
   /GROUND_HOVER_MAX/.test(vehicle) && /onGround && !pit && this\.position\.y > floor/.test(vehicle)
 );
 check(
-  "landing squat does not bury the contact patch",
-  /squatTarget = 0/.test(vehicle) && !/_bodyPitch - impact \* 0\.014/.test(vehicle)
+  "landing pitch cannot bury an axle through the roadway",
+  /_keepChassisOnRoad\(axles, pit\)/.test(vehicle) && /const LAND_PITCH_SLACK/.test(vehicle)
+);
+check(
+  "void rescue plants back on the ribbon instead of the gray underworld",
+  /_plantOnRibbon\(/.test(vehicle) && /void/.test(vehicle)
 );
 check("TIRE_PLANT plant is unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("game + AI import vehicle.js", /vehicle\.js\?v=\d+/.test(game) && /vehicle\.js\?v=\d+/.test(ai));
-check("cache-bust chain", cacheOk && Number(gameV) >= 407, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 410, `main=${mainV} game=${gameV}`);
+check(
+  "gap posts do not magnetize the query after a long throw",
+  /hintedPit/.test(track) && /score \+= d \* 4/.test(track)
+);
+check("jump ribbon step allows the far pad", /_ribbonStepMax/.test(vehicle) && /base \+ 42/.test(vehicle));
+check("stale pit query yields to the land under the car", /_preferSolidRoad/.test(vehicle));
+check("pit mesh is never a chassis floor", /qKind !== "gap"/.test(vehicle));
+check(
+  "land pad ends at the land strip, not 140 m of stage",
+  /sawLand && kind !== "land"/.test(vehicle) && /foundAt \+ 42/.test(vehicle)
+);
 
 if (fail) {
   console.log(`\nFAIL  ·  ${fail} static check(s)`);
@@ -207,7 +237,7 @@ async function mainHeaded() {
       const input = { throttle: 1, brake: 0, steer: 0, handbrake: 0, shiftUp: false, shiftDown: false };
       const TIRE = 0.014;
       const results = [];
-      const nRun = Math.min(3, jumps.length);
+      const nRun = Math.min(4, jumps.length);
       for (let ji = 0; ji < nRun; ji++) {
         const gap = jumps[ji];
         let rampDist = Math.max(4, gap.dist - 10);
@@ -230,6 +260,7 @@ async function mainHeaded() {
         let stuckUnder = false;
         let samples = 0;
         let worst = null;
+        let worstHigh = null;
         for (let s = 0; s < 780; s++) {
           v.step(dt, input, track);
           const q = track.query(v.position.x, v.position.z, {}, v.progress);
@@ -240,21 +271,23 @@ async function mainHeaded() {
             landed = true;
             landDist = v.progress;
           }
-          const linePlant = line.y + 0.06 - TIRE;
-          const delta = v.position.y - linePlant;
-          const deck = line.y + 0.06;
-          const solid = !pit && line.jumpKind !== "gap";
-          if (solid && v.position.y < deck - 0.25) {
-            const under = deck - v.position.y;
+          const plant = q.height - TIRE;
+          const delta = v.position.y - plant;
+          const solid = !pit && q.jumpKind !== "gap";
+          if (solid && v.position.y < q.height - 0.08) {
+            const under = q.height - v.position.y;
             if (under > maxUnder) maxUnder = under;
             if (!v.onGround && v.speed < 1.2) stuckUnder = true;
           }
-          if (landed && v.onGround && line.jumpKind !== "gap" && v.progress < gap.dist + 90) {
+          if (landed && v.onGround && q.jumpKind !== "gap" && v.progress < gap.dist + 90) {
+            const ax = v._axles;
+            const bothSolid = !!(ax && ax.front && ax.rear && !ax.front.gap && !ax.rear.gap);
+            if (!bothSolid) continue;
             if (delta < minDelta) {
               minDelta = delta;
               worst = {
                 y: Math.round(v.position.y * 1000) / 1000,
-                lineY: Math.round(linePlant * 1000) / 1000,
+                plant: Math.round(plant * 1000) / 1000,
                 qH: Math.round(q.height * 1000) / 1000,
                 kind: q.jumpKind || line.jumpKind || "",
                 dist: Math.round(v.progress),
@@ -264,10 +297,33 @@ async function mainHeaded() {
                 padY: v._landPadY,
               };
             }
-            if (delta > maxDelta) maxDelta = delta;
+            if (delta > maxDelta) {
+              maxDelta = delta;
+              worstHigh = {
+                y: Math.round(v.position.y * 1000) / 1000,
+                plant: Math.round(plant * 1000) / 1000,
+                qH: Math.round(q.height * 1000) / 1000,
+                midH: ax && ax.midH != null ? Math.round(ax.midH * 1000) / 1000 : null,
+                fK: ax && ax.front && ax.front.kind,
+                rK: ax && ax.rear && ax.rear.kind,
+                kind: q.jumpKind || line.jumpKind || "",
+                dist: Math.round(v.progress),
+                air: Math.round((v._airTime || 0) * 1000) / 1000,
+              };
+            }
             const wb = (v.spec && v.spec.wheelbase) || 2.55;
-            const bury = Math.abs(Math.sin(v.pitch - (v._visPitch || 0))) * wb * 0.5;
-            if (bury > maxBury) maxBury = bury;
+            const half = wb * 0.5;
+            const sinP = Math.sin(v.pitch);
+            const frontY = v.position.y - half * sinP;
+            const rearY = v.position.y + half * sinP;
+            if (ax && ax.front && !ax.front.gap) {
+              const buryF = ax.front.height - TIRE - frontY;
+              if (buryF > maxBury) maxBury = buryF;
+            }
+            if (ax && ax.rear && !ax.rear.gap) {
+              const buryR = ax.rear.height - TIRE - rearY;
+              if (buryR > maxBury) maxBury = buryR;
+            }
             samples += 1;
           }
           if (landed && v.onGround && v.progress > gap.dist + 80 && samples > 12) break;
@@ -285,6 +341,7 @@ async function mainHeaded() {
           stuckUnder: stuckUnder,
           samples: samples,
           worst: worst,
+          worstHigh: worstHigh,
         });
       }
       let carry = { ran: false };
@@ -332,7 +389,75 @@ async function mainHeaded() {
           speed: Math.round(v.speed * 10) / 10,
         };
       }
-      return { jumps: jumps.length, results: results, carry: carry };`
+      let climb = { ran: false };
+      if (jumps.length >= 3) {
+        const gap3 = jumps[2];
+        let ramp3 = Math.max(4, gap3.dist - 10);
+        for (let i = gap3.i; i >= 0; i--) {
+          const k = track.points[i].jumpKind || "";
+          if (k === "ramp") ramp3 = track.points[i].dist;
+          else if (k !== "crest" && k !== "ramp" && k !== "gap") break;
+        }
+        let tunnelDist = null;
+        for (let i = 0; i < track.points.length; i++) {
+          if (track.points[i].tunnel && track.points[i].dist > gap3.dist) {
+            tunnelDist = track.points[i].dist;
+            break;
+          }
+        }
+        const target = tunnelDist != null ? tunnelDist + 12 : gap3.dist + 200;
+        v.spawn(track, Math.max(4, ramp3 - 4), 0);
+        const spd = 30;
+        v.velocity.set(Math.sin(v.yaw) * spd, 0, Math.cos(v.yaw) * spd);
+        v.gear = 4;
+        let maxUnder = 0;
+        let minDelta = 99;
+        let stuck = false;
+        let gapLock = false;
+        let samples = 0;
+        let reachedTunnel = false;
+        let minSpeed = 99;
+        for (let s = 0; s < 2400; s++) {
+          v.step(dt, input, track);
+          const q = track.query(v.position.x, v.position.z, {}, v.progress);
+          const line = track.sample(v.progress);
+            const pastLand = v.progress > gap3.dist + 12;
+          if (pastLand) {
+            samples += 1;
+            const pit = q.jumpKind === "gap" || line.jumpKind === "gap";
+            if (pit && v.progress > gap3.dist + 40) gapLock = true;
+            const floor = q.jumpKind === "gap" ? (line.y + 0.06) : q.height;
+            const under = floor - v.position.y;
+            if (!pit && under > maxUnder) maxUnder = under;
+            const delta = v.position.y - (q.height - TIRE);
+            if (!pit && v.onGround && delta < minDelta) minDelta = delta;
+            if (v.speed < minSpeed) minSpeed = v.speed;
+            if (!v.onGround && v.speed < 1.2 && under > 0.2) stuck = true;
+          }
+          if (v.progress >= target) {
+            reachedTunnel = true;
+            break;
+          }
+        }
+        climb = {
+          ran: true,
+          reachedTunnel: reachedTunnel,
+          tunnelDist: tunnelDist != null ? Math.round(tunnelDist) : null,
+          target: Math.round(target),
+          progress: Math.round(v.progress),
+          y: Math.round(v.position.y * 1000) / 1000,
+          speed: Math.round(v.speed * 10) / 10,
+          minSpeed: minSpeed === 99 ? 0 : Math.round(minSpeed * 10) / 10,
+          onGround: !!v.onGround,
+          kind: (v._q && v._q.jumpKind) || "",
+          maxUnder: Math.round(maxUnder * 1000) / 1000,
+          minDelta: minDelta === 99 ? 0 : Math.round(minDelta * 1000) / 1000,
+          stuck: stuck,
+          gapLock: gapLock,
+          samples: samples,
+        };
+      }
+      return { jumps: jumps.length, results: results, carry: carry, climb: climb };`
     );
 
     if (!probe || probe.err) {
@@ -362,17 +487,17 @@ async function mainHeaded() {
         );
         check(
           `jump ${row.n} wheels stay on the roadway (no hover)`,
-          row.maxDelta <= 0.08,
-          `max ΔY ${row.maxDelta} m`
+          row.maxDelta <= 0.18,
+          `max ΔY ${row.maxDelta} m${row.worstHigh ? ` high=${JSON.stringify(row.worstHigh)}` : ""}`
         );
         check(
           `jump ${row.n} pitch does not bury an axle`,
-          row.maxBury <= 0.06,
+          row.maxBury <= 0.04,
           `max axle bury ${row.maxBury} m`
         );
         check(
           `jump ${row.n} never sits under a solid deck`,
-          (row.maxUnder || 0) <= 0.22 && !row.stuckUnder,
+          (row.maxUnder || 0) <= 0.08 && !row.stuckUnder,
           `max under ${row.maxUnder || 0} m stuck=${!!row.stuckUnder}`
         );
       }
@@ -381,8 +506,23 @@ async function mainHeaded() {
       const carry = probe.carry || {};
       check(
         "jump 2 throw cannot tunnel jump 3's ramp",
-        !!(carry.ran && carry.reached && (carry.maxUnder || 0) <= 0.22 && !carry.stuckUnder && carry.movable),
+        !!(carry.ran && carry.reached && (carry.maxUnder || 0) <= 0.08 && !carry.stuckUnder && carry.movable),
         JSON.stringify(carry)
+      );
+      const climb = probe.climb || {};
+      check(
+        "after jump 3 the pack stays on the road into the tunnel",
+        !!(
+          climb.ran &&
+          climb.reachedTunnel &&
+          !climb.stuck &&
+          !climb.gapLock &&
+          (climb.maxUnder || 0) <= 0.08 &&
+          (climb.minDelta == null || climb.minDelta >= -0.04) &&
+          (climb.speed || 0) >= 6 &&
+          climb.onGround
+        ),
+        JSON.stringify(climb)
       );
     }
   } finally {

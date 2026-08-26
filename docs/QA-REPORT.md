@@ -2292,3 +2292,56 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 ---
 
+# Sprint 82 — Jump landings never clip through the roadway (26 Aug 2026)
+
+**Player moment:** After any jump — Desert's Safari throw (jump 3), Mountain's crest, Forest, Lakeside — the car lands ON the asphalt. Tires and body stay on the deck. The rear does not punch through the ribbon. The car does not fall under the stage and freeze.
+
+**Cause:** Three stacked holes. (1) A plant on the next ramp disarmed the land pad, so the following hole had no floor and the chassis dropped through the roadway. (2) Origin is the contact patch; leftover air pitch (~0.42 rad) rotated the rear through the pad until a 24/s blend caught up. (3) Air collision used only the centre-line query. If that sample was still labelled `gap` while an axle was on ramp/land, the car tunneled the solid mesh.
+
+**Fix:** Keep the pad armed across the landing strip and re-scan if a hole has no pad. Solid axles are a floor. After attitude, `_keepChassisOnRoad` clamps pitch to the axle plane and lifts any wheel that would sit through the deck. Buried restore is 6 cm, not 22 cm, and always sets `onGround` so the player can keep racing.
+
+| Change | Status |
+|--------|--------|
+| Pad stays armed on `land`; hole without a pad re-scans | **Done** |
+| `_roadFloorY` uses solid axles + far pad | **Done** |
+| `_keepChassisOnRoad` pins pitch + axle Y after attitude | **Done** |
+| Land bounce snaps pitch; no bury-through hop | **Done** |
+| Buried snap at 6 cm under solid ribbon | **Done** |
+| Void rescue `_plantOnRibbon` if the car drops under the mesh | **Done** |
+| Chase camera never follows the car under the stage | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=409`** · `vehicle.js?v=88`
+
+**Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Desert jump 2 into jump 3, then Mountain's crest — rear stays on the tarmac, no fall-through. If you were on github.io, that build does not include this fix until it is pushed.
+
+---
+
+# Sprint 83 — Stage 1 after jump 3: every car stays on the roadway (26 Aug 2026)
+
+**Player moment:** Desert Safari throw (jump 3), then the checkpoint climb into the tunnel. Player and the whole AI pack stay ON the painted road. Wheels are not buried in the asphalt. Nobody falls under the stage or freezes at 0 speed in the hole.
+
+**Cause:** Jump 3's pit mesh is ~30 m. Two systems then buried the whole pack: (1) `Track._nearestIndex` scored `xz² + along² × 2.4`, so a stale gap post beat the land under the car. (2) `_scanLandPad` kept walking 140 m of ordinary road, so axle probes hinted at the tunnel climb (~7 m higher) and `_keepChassisOnRoad` planted every car into — or above — the wrong deck. The 5 cm hover cap then pulled Y onto that sample: wheels gone, bumper in the tarmac, speed 0.
+
+**Fix:** Pit posts are not a magnet. If a centre query is still the pit, take the solid ribbon under the car. Jump steps may advance ~40 m so land is not a "teleport." The land pad ends when `jumpKind` leaves `"land"`. Chassis floor ignores pit mesh. Grounded Y snaps to this frame's deck. Axles that disagree with the centre by > 2.2 m (another loop) are discarded.
+
+| Change | Status |
+|--------|--------|
+| `_nearestIndex` pit window + gap XZ penalty | **Done** |
+| `_preferSolidRoad` for player and AI | **Done** |
+| `_ribbonStepMax` +42 m while jumping | **Done** |
+| `_scanLandPad` stops at the land strip | **Done** |
+| `_roadFloorY` ignores `jumpKind === "gap"` mesh | **Done** |
+| Grounded plant = current deck every frame | **Done** |
+| Axle probes take land `hintDist`; reject 7 m flyover snaps | **Done** |
+| Headed probe: jump 3 → tunnel climb on deck | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=410`** · `vehicle.js?v=89` · `track.js?v=181` · `ai.js?v=113`
+
+**Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Desert jump 3, then the climb into the tunnel — all cars on the road. github.io is stale until this is pushed.
+
+---
+

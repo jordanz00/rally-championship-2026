@@ -21,14 +21,14 @@ import {
   STREAM,
 } from "./config.js?v=138";
 import { Input } from "./input.js?v=39";
-import { Vehicle } from "./physics/vehicle.js?v=86";
+import { Vehicle } from "./physics/vehicle.js?v=89";
 import { getSurface } from "./physics/surfaces.js?v=46";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=61";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=119";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=180";
+import { Track } from "./tracks/track.js?v=181";
 import { preparePropKit } from "./tracks/prop-kit.js?v=18";
-import { Opponent } from "./ai.js?v=112";
+import { Opponent } from "./ai.js?v=113";
 import { RallyAudio } from "./audio/engine.js?v=51";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=31";
@@ -2998,6 +2998,15 @@ export class RallyGame {
       this.camera.position.y += this._camKickY;
       this.camera.position.x += cosY * this._camKickLat;
       this.camera.position.z += -sinY * this._camKickLat;
+    }
+    // Never follow the car under the stage — that is the gray void shot.
+    if (!wantPov && this.track && typeof this.track.sample === "function" && Number.isFinite(p.progress)) {
+      const line = this.track.sample(p.progress, this._camLine || (this._camLine = {}));
+      if (line && Number.isFinite(line.y)) {
+        const minY = line.y + 1.25;
+        if (this.camera.position.y < minY) this.camera.position.y = minY;
+        if (this._camLookSmooth.y < line.y + 0.4) this._camLookSmooth.y = line.y + 0.4;
+      }
     }
     this.camera.lookAt(this._camLookSmooth);
 

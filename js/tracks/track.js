@@ -6028,8 +6028,12 @@ export class Track {
       let best = Math.max(1, Math.min(pts.length - 2, lo));
       let bestScore = Infinity;
       let bestD = Infinity;
-      const i0 = Math.max(0, best - 22);
-      const i1 = Math.min(pts.length - 1, best + 22);
+      // A visual pit is not a racing line. Desert jump 3's gap mesh is ~30 m;
+      // along-weighted scoring then kept every car on the hole while their XZ
+      // was already on the land / tunnel climb, so the pack sank through the road.
+      const hintedPit = !!(pts[best] && pts[best].jumpKind === "gap");
+      const i0 = Math.max(0, best - (hintedPit ? 8 : 22));
+      const i1 = Math.min(pts.length - 1, best + (hintedPit ? 48 : 22));
       // Hairpin opposite arms are close in XZ but far along the spline.
       // Euclidean-nearest inside this window was the teleport: the car
       // snapped to the other loop, then bounceOffRoad planted it there.
@@ -6037,7 +6041,7 @@ export class Track {
       // Stay on THIS loop even when another ribbon occupies the same XZ
       // (Desert mud vs later sweeper, Forest glade vs sweep, Mountain stack).
       // A global fallback here is the warp that resets cars and NaNs the loop.
-      const MAX_ALONG = 36;
+      const MAX_ALONG = hintedPit ? 56 : 36;
       const n = pts.length;
       const visit = (i) => {
         const p = pts[i];
@@ -6048,7 +6052,12 @@ export class Track {
         const dx = x - p.x;
         const dz = z - p.z;
         const d = dx * dx + dz * dz;
-        const score = d + along * along * ALONG_W;
+        let score = d + along * along * ALONG_W;
+        if (p.jumpKind === "gap") {
+          // Over the hole (d ≈ 0) the pit still wins. Once XZ has left it,
+          // amplify distance so the land under the car beats a stale hint.
+          score += d * 4;
+        }
         if (score < bestScore) {
           bestScore = score;
           bestD = d;
