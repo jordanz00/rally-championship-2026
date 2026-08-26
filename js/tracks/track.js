@@ -35,6 +35,21 @@ import { pickPaceNote } from "./pace-call.mjs?v=1";
 
 const STEP = 3.2;
 
+/** Yield a frame even if headless Chrome pauses rAF while the canvas is not painting. */
+function yieldFrame() {
+  return new Promise((resolve) => {
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    queueMicrotask(fire);
+    setTimeout(fire, 0);
+    requestAnimationFrame(fire);
+  });
+}
+
 /**
  * Length of one streaming slice, in metres along the racing line.
  *
@@ -152,7 +167,7 @@ export class Track {
     const report = (frac, status) => {
       if (onProgress) onProgress(Math.max(0, Math.min(1, frac)), status);
     };
-    const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const tick = () => yieldFrame();
 
     report(0.02, "Sampling racing line…");
     await tick();
@@ -932,7 +947,7 @@ export class Track {
       }
       if (onRowProgress) {
         onRowProgress((ri + 1) / rows.length);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await yieldFrame();
       }
     }
   }
@@ -2384,7 +2399,7 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const tick = () => yieldFrame();
     const plantStep = def.scenery === "forest" ? 1 : 2;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
@@ -6072,7 +6087,28 @@ export class Track {
       if (best >= n - 9) {
         for (let i = 0; i < Math.min(n, 24); i++) visit(i);
       }
-      if (bestScore < Infinity) return best;
+      if (bestScore < Infinity) {
+        // Stale pit hint: if the car's XZ has left this ribbon, keep walking
+        // AHEAD (land → climb → tunnel) instead of returning a 40 m-away hole.
+        if (bestD > 12 * 12) {
+          const iFwd1 = Math.min(pts.length - 1, best + 120);
+          for (let i = best; i <= iFwd1; i++) {
+            const p = pts[i];
+            let along = Math.abs(p.dist - hintDist);
+            const span = pts[n - 1].dist || 0;
+            if (span > 80 && along > span * 0.5) along = span - along;
+            if (along > 110) continue;
+            const dx = x - p.x;
+            const dz = z - p.z;
+            const d = dx * dx + dz * dz;
+            if (d < bestD) {
+              bestD = d;
+              best = i;
+            }
+          }
+        }
+        return best;
+      }
     }
     let best = 0;
     let bestD = Infinity;

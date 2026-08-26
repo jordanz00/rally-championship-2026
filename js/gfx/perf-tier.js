@@ -28,7 +28,7 @@ export const QUALITY_CAPS = {
   /** Sun shadow atlas ceiling (PCFSoft, re-rendered every frame). */
   maxShadowMap: 4096,
   /** Volumetric cloud raymarch ceiling — matches sky.js CLOUD_BUDGET. */
-  maxCloudViewSteps: 8,
+  maxCloudViewSteps: 16,
   maxCloudLightSteps: 2,
   /** Rearview render target — readable cabin glass, ~1/4 framebuffer width. */
   maxMirrorW: 384,

@@ -169,16 +169,18 @@ export async function prepareCelica() {
 }
 
 /**
- * Splash attract mesh — rival LOD only (Celica rival.glb is ~3 MB vs 7 MB hero).
- * Resolves as soon as that chassis can be cloned; does not wait on the garage.
+ * Splash attract mesh — hero GLB first so the title car is the race car,
+ * not the decimated rival LOD. Falls back to the LOD if the hero is missing.
  * @param {string} [id]
  * @returns {Promise<void>}
  */
 export async function prepareTitleCar(id = "celica") {
   const chassis = GARAGE[id] ? id : "celica";
-  if (rivalTemplates[chassis] || templates[chassis]) return;
-  if (await tryRivalGltf(chassis)) return;
+  if (templates[chassis] || rivalTemplates[chassis]) return;
+  // Let the splash and WebGL pad paint before the 7 MB parse.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   if (await tryLocalGltf(chassis)) return;
+  if (await tryRivalGltf(chassis)) return;
   await tryCachedGltf(chassis);
 }
 
@@ -355,19 +357,20 @@ export function createPlayerCar(carId = "celica") {
 }
 
 /**
- * Orbit-cam attract car: rival LOD with original livery, no cockpit or beams.
+ * Orbit-cam attract car: hero GLB with original livery. Cockpit stays hidden
+ * (race still promotes to the pooled driver mesh). Rival LOD is fallback only.
  * @param {string} [carId]
  * @returns {THREE.Group}
  */
 export function createTitleCar(carId = "celica") {
   const chassis = GARAGE[carId] ? carId : "celica";
   const template =
-    rivalTemplates[chassis] ||
     templates[chassis] ||
-    rivalTemplates.celica ||
-    templates.celica;
+    rivalTemplates[chassis] ||
+    templates.celica ||
+    rivalTemplates.celica;
   if (!template) {
-    throw new Error(`[garage] ${chassis}: no LOD or hero GLB for title car`);
+    throw new Error(`[garage] ${chassis}: no hero or LOD GLB for title car`);
   }
   const clone = template.clone(true);
   clone.traverse((obj) => {
@@ -377,11 +380,14 @@ export function createTitleCar(carId = "celica") {
         : obj.material.clone();
     }
   });
+  hideHeavyInterior(clone);
+  setCockpitView(clone, false);
   rebindClonedWheels(clone);
   clone.userData.wheels = findWheels(clone);
   clone.userData.body = clone;
   clone.userData.carId = chassis;
   clone.userData.titleLod = true;
+  clone.userData.titleHero = !!templates[chassis];
   enableCarShadows(clone);
   return clone;
 }

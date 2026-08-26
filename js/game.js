@@ -19,27 +19,27 @@ import {
   GFX,
   VISUAL,
   STREAM,
-} from "./config.js?v=138";
+} from "./config.js?v=142";
 import { Input } from "./input.js?v=39";
-import { Vehicle } from "./physics/vehicle.js?v=89";
+import { Vehicle } from "./physics/vehicle.js?v=90";
 import { getSurface } from "./physics/surfaces.js?v=46";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=61";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=119";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=121";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=181";
+import { Track } from "./tracks/track.js?v=184";
 import { preparePropKit } from "./tracks/prop-kit.js?v=18";
-import { Opponent } from "./ai.js?v=113";
+import { Opponent } from "./ai.js?v=114";
 import { RallyAudio } from "./audio/engine.js?v=51";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=31";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=27";
 import { Dust, TireMarks } from "./effects.js?v=54";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=37";
-import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=22"; // Sprint 69 volumetric cumulus
+import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=23";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=23";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=8";
-import { PhotoRealPost } from "./gfx/postfx.js?v=12";
-import { createPerfTier } from "./gfx/perf-tier.js?v=6";
+import { PhotoRealPost } from "./gfx/postfx.js?v=13";
+import { createPerfTier } from "./gfx/perf-tier.js?v=7";
 import { accumulateDamage, applyDamageVisuals, resetDamageVisuals } from "./assets/damage.js?v=1";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -55,6 +55,21 @@ import { shadowGeometry, carShadowMaterial } from "./tracks/trees.js?v=31";
 
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
+
+/** Yield even if headless Chrome pauses rAF and throttles timers. */
+function yieldFrame() {
+  return new Promise((resolve) => {
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    queueMicrotask(fire);
+    setTimeout(fire, 0);
+    requestAnimationFrame(fire);
+  });
+}
 /**
  * Load-time budget for linking every stage shader up front. Past this the
  * remaining passes are skipped: a long load is a worse trade than the rare
@@ -96,6 +111,7 @@ export class RallyGame {
     this.carId = "celica";
     this.stratosUnlocked = true;
     this.lakesideUnlocked = false;
+    this._titleCarWarm = prepareTitleCar(this.carId);
     try {
       // Legacy key still unlocks Lakeside; Stratos is starter content now.
       if (localStorage.getItem("rally-stratos") === "1") {
@@ -249,29 +265,13 @@ export class RallyGame {
     this._gfxFailed = false;
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
-    // Bind Start first, paint the splash, then bring up a light attract scene
-    // after the boot curtain has started fading — WebGL alloc must not hitch
-    // the black→title reveal.
+    // Bind Start first, paint the splash, then mount the showroom on the next
+    // frames. The hero GLB is HTML-preloaded so this is a present, not a wait.
     const bootGfx = () => {
       if (!this._bootGfx()) return;
       if (this.state === "title" || this.state === "menu") this._setupTitleStage();
     };
-    let reduced = false;
-    try {
-      reduced = !!(
-        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      );
-    } catch {
-      /* private mode */
-    }
-    if (reduced) {
-      requestAnimationFrame(() => requestAnimationFrame(bootGfx));
-    } else {
-      setTimeout(() => {
-        if (this.state !== "title") return;
-        bootGfx();
-      }, 1600);
-    }
+    requestAnimationFrame(() => requestAnimationFrame(bootGfx));
     // Light HTTP cache only. Props + stage meshes wait for PRESS START.
     this._startBackgroundWarm();
   }
@@ -314,7 +314,7 @@ export class RallyGame {
     const host = document.getElementById("game-view");
     this.renderer = new THREE.WebGLRenderer({
       // Post path renders to an RT — canvas MSAA does not help and costs GPU.
-      antialias: !(VISUAL.postFx && (VISUAL.tier || 0) >= 9),
+      antialias: true,
       alpha: false,
       powerPreference: "high-performance",
     });
@@ -342,7 +342,8 @@ export class RallyGame {
     if (window.visualViewport) window.visualViewport.addEventListener("resize", this._onResize);
     if (isPhonePlay()) this._perfDprScale = 0.78;
     this._onResize();
-    this._initMirror();
+    // Rearview RT is race/POV only — allocating it on splash hitchs the first paint.
+    if (this.state !== "title" && this.state !== "menu") this._initMirror();
     this._bindMirrorContext();
     this._initEnv();
 
@@ -350,8 +351,9 @@ export class RallyGame {
     this.hemi = new THREE.HemisphereLight(0x8eb8e8, 0xa07842, 0.26);
     this.sun = new THREE.DirectionalLight(0xffe4b0, 1.65);
     this.sun.castShadow = false;
-    // Title boots at 1024² — a 4096 map on splash hitchs the first present.
-    this.sun.shadow.mapSize.set(1024, 1024);
+    const titleBoot = this.state === "title" || this.state === "menu";
+    const bootShadow = titleBoot ? GFX.titleShadowMap || 2048 : 1024;
+    this.sun.shadow.mapSize.set(bootShadow, bootShadow);
     this.sun.shadow.camera.near = 4;
     this.sun.shadow.camera.far = 120;
     const ext = GFX.shadowExtent;
@@ -465,7 +467,8 @@ export class RallyGame {
     };
     this._onGarageReady = onGarageReady;
     this._mountTitleCar = mountTitleCar;
-    prepareTitleCar(this.carId).then(() => {
+    const titleReady = this._titleCarWarm || prepareTitleCar(this.carId);
+    titleReady.then(() => {
       mountTitleCar();
       this._markShowroomLive();
     });
@@ -475,15 +478,15 @@ export class RallyGame {
     }, 4200);
   }
 
-  /** Fade the attract canvas in once the LOD car is on the pad. */
+  /** Fade the attract canvas in once the hero car is on the pad. */
   _markShowroomLive() {
     const crt = document.getElementById("crt");
     if (crt) crt.classList.add("showroom-live");
   }
 
   /**
-   * Hero + full garage wait until PRESS START (or a few idle seconds on splash)
-   * so boot only fetches the rival LOD.
+   * Remaining garage chassis wait until PRESS START (or a few idle seconds)
+   * so splash only needs the title hero.
    */
   _warmGarage() {
     if (this._garageWarmStarted) return;
@@ -572,7 +575,7 @@ export class RallyGame {
   }
 
   /**
-   * Cheap attract mesh for title / SELECT MODE. Hero + cockpit wait until race.
+   * Hero attract mesh for title / SELECT MODE. Cockpit still waits until race.
    * @param {string} id
    */
   _showTitleLod(id) {
@@ -736,6 +739,7 @@ export class RallyGame {
   _scheduleTrackPreload(courseId, opts = {}) {
     if (!courseId || !COURSES[courseId]) return;
     if (this._trackCache[courseId]) return;
+    if (this._preloadBuilding === courseId) return;
     if (this.track && this.track.id === courseId && this.state !== "title" && this.state !== "menu") {
       return;
     }
@@ -830,9 +834,10 @@ export class RallyGame {
 
     const run = async () => {
       try {
-        await preparePropKit();
-        if (this._preloadToken !== token) return null;
-        await new Promise((r) => requestAnimationFrame(r));
+        // Terrain can start while PRESS START's prop-kit fetch is still in
+        // flight. Track.create awaits the kit at 52% — waiting here first
+        // froze the loading bar for a minute before any tarmac appeared.
+        await yieldFrame();
         if (this._preloadToken !== token) return null;
 
         const track = await Track.create(COURSES[courseId], (p, msg) => {
@@ -854,12 +859,15 @@ export class RallyGame {
         console.warn("[preload] track build failed", err);
         return null;
       } finally {
-        if (this._preloadToken === token) {
-          this._preloadToken = null;
+        // Always release this job's slot. A priority cancel used to leave
+        // `_preloadBuilding` set, so the queue deadlocked and `_beginRace`
+        // started a second Track.create in parallel (tab freeze / CDP timeout).
+        if (this._preloadBuilding === courseId) {
           this._preloadBuilding = null;
-          this._preloadPromise = null;
           this._preloadProgress = null;
         }
+        if (this._preloadToken === token) this._preloadToken = null;
+        this._preloadPromise = null;
         // Continue the queue during title/menu/result and mid-race lookahead.
         if (
           this.state === "title" ||
@@ -874,11 +882,16 @@ export class RallyGame {
       }
     };
 
-    // Start on the next frame — no multi-second idle delay.
+    // Start on the next frame — setTimeout so a paused rAF cannot stall load.
     this._preloadPromise = new Promise((resolve) => {
-      requestAnimationFrame(() => {
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
         run().then(resolve);
-      });
+      };
+      requestAnimationFrame(start);
+      setTimeout(start, 0);
     });
   }
 
@@ -904,7 +917,7 @@ export class RallyGame {
         if (!this._preloadPromise || this._preloadBuilding !== courseId) break;
         await Promise.race([
           this._preloadPromise,
-          new Promise((r) => requestAnimationFrame(r)),
+          yieldFrame(),
         ]);
       }
       if (!this._trackCache[courseId] && this._preloadPromise && this._preloadBuilding === courseId) {
@@ -919,6 +932,19 @@ export class RallyGame {
     // Promote to front of queue and wait if we asked for a cold stage mid-warm.
     if (this._preloadQueue.includes(courseId) || this._preloadBuilding) {
       this._scheduleTrackPreload(courseId, { priority: true });
+      const t0 = Date.now();
+      while (
+        this._preloadPromise &&
+        this._preloadBuilding &&
+        this._preloadBuilding !== courseId &&
+        Date.now() - t0 < 90000
+      ) {
+        if (report) report(0.1, "Finishing background stage…");
+        await Promise.race([
+          this._preloadPromise,
+          yieldFrame(),
+        ]);
+      }
       if (this._preloadBuilding === courseId && this._preloadPromise) {
         await waitWithProgress();
       }
@@ -1077,6 +1103,7 @@ export class RallyGame {
     }
     this._warmGarage();
     this._markShowroomLive();
+    if (this.renderer && !this._mirrorRT) this._initMirror();
     // Fetches only — never Track.create / WebGL on this click. Those block
     // the black-fade timers and made PRESS START wait seconds to swap menus.
     preparePropKit().catch((err) => console.warn("[warm] prop kit", err));
@@ -1094,8 +1121,12 @@ export class RallyGame {
     });
     setTimeout(() => {
       if (this.state === "race" || this.state === "countdown" || this.state === "loading") return;
+      const first = this.courseId || "desert";
+      // Do not steal the builder for Forest/Mountain while the first stage
+      // is still warming — that made PRESS START → countdown hang.
+      if (!this._isTrackReady(first)) return;
       for (const id of COURSE_ORDER) {
-        if (id !== (this.courseId || "desert")) this._scheduleTrackPreload(id);
+        if (id !== first) this._scheduleTrackPreload(id);
       }
     }, 8000);
   }
@@ -1223,12 +1254,135 @@ export class RallyGame {
   }
 
   /**
-   * Attract mode is sky + car only. Building Desert here froze the first
-   * paint so PRESS START never appeared (cached JS runs before a frame).
+   * Attract mode is a showroom pad: sky, tarmac, dunes, hero car.
    */
   _setupTitleStage() {
     if (!this.scene) return;
-    this._applyTitleLighting();
+    try {
+      this._applyTitleLighting();
+      this._markShowroomLive();
+    } catch (err) {
+      // Showroom is cosmetics. A throw here used to trip the boot overlay
+      // and cover PRESS START so the game could never leave the splash.
+      console.warn("[title] showroom failed", err);
+    }
+  }
+
+  /**
+   * Asphalt pad + kerb + sand apron + distant dunes. Procedural canvases, no
+   * extra GLBs — the hero car is the only network fetch on splash.
+   */
+  _ensureTitleWorld() {
+    if (this._titleWorld) return;
+    const group = new THREE.Group();
+    group.name = "title-showroom";
+    const aniso = Math.min(8, this.renderer && this.renderer.capabilities
+      ? this.renderer.capabilities.getMaxAnisotropy()
+      : 4);
+
+    const asphaltMap = makeTitleAsphaltMap();
+    asphaltMap.anisotropy = aniso;
+    const asphalt = new THREE.Mesh(
+      new THREE.CircleGeometry(9.4, 96),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: asphaltMap,
+        roughness: 0.72,
+        metalness: 0.08,
+        envMapIntensity: 0.55,
+      })
+    );
+    asphalt.rotation.x = -Math.PI / 2;
+    asphalt.receiveShadow = true;
+    asphalt.position.y = 0;
+    group.add(asphalt);
+    this._titleFloor = asphalt;
+
+    const kerbGeo = new THREE.RingGeometry(9.32, 9.88, 96, 1);
+    kerbGeo.rotateX(-Math.PI / 2);
+    const kerbCol = new Float32Array(kerbGeo.attributes.position.count * 3);
+    const pos = kerbGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const ang = Math.atan2(pos.getZ(i), pos.getX(i));
+      const stripe = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 22) % 2 === 0;
+      if (stripe) {
+        kerbCol[i * 3] = 0.86;
+        kerbCol[i * 3 + 1] = 0.12;
+        kerbCol[i * 3 + 2] = 0.1;
+      } else {
+        kerbCol[i * 3] = 0.94;
+        kerbCol[i * 3 + 1] = 0.91;
+        kerbCol[i * 3 + 2] = 0.84;
+      }
+    }
+    kerbGeo.setAttribute("color", new THREE.BufferAttribute(kerbCol, 3));
+    const kerb = new THREE.Mesh(
+      kerbGeo,
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.42,
+        metalness: 0.06,
+      })
+    );
+    kerb.position.y = 0.03;
+    kerb.receiveShadow = true;
+    group.add(kerb);
+
+    const sandMap = makeTitleSandMap();
+    sandMap.anisotropy = aniso;
+    const sandMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: sandMap,
+      roughness: 0.94,
+      metalness: 0.02,
+      envMapIntensity: 0.22,
+    });
+    const sand = new THREE.Mesh(new THREE.RingGeometry(9.78, 52, 96, 1), sandMat);
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.y = -0.035;
+    sand.receiveShadow = true;
+    group.add(sand);
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(110, 48),
+      new THREE.MeshStandardMaterial({
+        color: 0xb89464,
+        roughness: 0.98,
+        metalness: 0.0,
+        envMapIntensity: 0.12,
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.12;
+    ground.receiveShadow = true;
+    group.add(ground);
+
+    const duneMat = sandMat.clone();
+    duneMat.color.setHex(0xd8b888);
+    const duneMatFar = sandMat.clone();
+    duneMatFar.color.setHex(0xb08a58);
+    const duneMatMid = sandMat.clone();
+    duneMatMid.color.setHex(0xc4a06c);
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2 + 0.11;
+      const dist = 30 + (i % 6) * 4.8;
+      const sx = 9.5 + (i % 4) * 2.4;
+      const sy = 1.35 + (i % 5) * 0.55;
+      const sz = 6.2 + (i % 3) * 1.8;
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 14, 10),
+        i % 3 === 0 ? duneMat : i % 3 === 1 ? duneMatMid : duneMatFar
+      );
+      mesh.position.set(Math.sin(a) * dist, sy * 0.42, Math.cos(a) * dist);
+      mesh.scale.set(sx, sy, sz);
+      mesh.rotation.y = a * 0.4;
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+
+    this.scene.add(group);
+    this._titleWorld = group;
   }
 
   /**
@@ -1239,22 +1393,12 @@ export class RallyGame {
     if (!this.scene || !this.renderer || !this.hemi || !this.sun) return;
     const L = LIGHTING.title;
     this._titleShowcase = true;
-    if (!this._titleFloor) {
-      const geo = new THREE.CircleGeometry(52, 24);
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0xc8a870,
-        roughness: 0.72,
-        metalness: 0.04,
-      });
-      this._titleFloor = new THREE.Mesh(geo, mat);
-      this._titleFloor.rotation.x = -Math.PI / 2;
-      this._titleFloor.receiveShadow = true;
-      this.scene.add(this._titleFloor);
-    } else if (this._titleFloor.material && this._titleFloor.material.isMeshStandardMaterial) {
-      this._titleFloor.material.roughness = 0.72;
-      this._titleFloor.material.metalness = 0.04;
+    this._ensureTitleWorld();
+    if (this._titleWorld) {
+      this._titleWorld.visible = true;
+      if (!this._titleWorld.parent) this.scene.add(this._titleWorld);
     }
-    this._titleFloor.visible = true;
+    if (this._titleFloor) this._titleFloor.visible = true;
     if (this.player) {
       this.player.position.set(0, 0.02, 0);
       this.player.pitch = 0;
@@ -1281,15 +1425,15 @@ export class RallyGame {
     applySky(this.sky, L, "title");
     if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
     if (this._titleIblTimer) clearTimeout(this._titleIblTimer);
-    this._titleIblTimer = setTimeout(() => {
-      this._titleIblTimer = 0;
+    this._titleIblTimer = 0;
+    requestAnimationFrame(() => {
       if (this.state !== "title" && this.state !== "menu") return;
       try {
         this._bakeSkyEnv("title");
       } catch (err) {
         console.warn("Title IBL failed", err);
       }
-    }, 1800);
+    });
     this.hemi.color.setHex(L.hemiSky);
     this.hemi.groundColor.setHex(L.hemiGround);
     this.hemi.intensity = L.hemi;
@@ -1307,7 +1451,7 @@ export class RallyGame {
     this.caveLight.intensity = 0;
     for (const lamp of this._wallLights) lamp.intensity = 0;
     this.sun.castShadow = true;
-    this._setShadowMapSize(GFX.titleShadowMap || 512);
+    this._setShadowMapSize(GFX.titleShadowMap || 2048);
     this._titleShadowFrustReady = false;
     this._tunnelBlend = 0;
     this._applyTitleCarShowcase(true);
@@ -1477,7 +1621,7 @@ export class RallyGame {
     const report = (frac, status) => {
       if (onProgress) onProgress(Math.max(0, Math.min(1, frac)), status);
     };
-    const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const tick = () => yieldFrame();
 
     // Join any in-flight background build for this course before starting another.
     await this._awaitTrackPreload(courseId, report);
@@ -1588,6 +1732,10 @@ export class RallyGame {
     this._warmPov();
     this._applyCockpitCam();
     if (this._titleFloor) this._titleFloor.visible = false;
+    if (this._titleWorld) {
+      this._titleWorld.visible = false;
+      if (this._titleWorld.parent) this.scene.remove(this._titleWorld);
+    }
     if (this._titleShowcase) {
       this._titleShowcase = false;
       this._applyTitleCarShowcase(false);
@@ -1881,7 +2029,7 @@ export class RallyGame {
     this._plantStartGrid();
     this._onResize();
     setLoadingProgress(0.99, "Warming shaders…");
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await yieldFrame();
     this._settleRacePresent();
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
@@ -1934,6 +2082,10 @@ export class RallyGame {
     if (this._titleRim) this._titleRim.intensity = 0;
     if (this._titleKick) this._titleKick.intensity = 0;
     if (this._titleFloor) this._titleFloor.visible = false;
+    if (this._titleWorld) {
+      this._titleWorld.visible = false;
+      if (this._titleWorld.parent) this.scene.remove(this._titleWorld);
+    }
 
     this.renderer.shadowMap.enabled = true;
     this.sun.castShadow = true;
@@ -2768,17 +2920,17 @@ export class RallyGame {
     setHeadlights(this.playerMesh, false);
     this._syncContactBlobs(1);
 
-    const r = 6.15 + Math.sin(t * 0.55) * 0.42;
-    const lookY = p.position.y + 0.68;
+    const r = 6.15 + Math.sin(t * 0.55) * 0.18;
+    const lookY = p.position.y + 0.42;
     this.camera.up.set(0, 1, 0);
-    if (this.camera.near !== 0.2 || this.camera.fov !== 36) {
-      this.camera.near = 0.2;
+    if (this.camera.near !== 0.18 || this.camera.fov !== 36) {
+      this.camera.near = 0.18;
       this.camera.fov = 36;
       this.camera.updateProjectionMatrix();
     }
     this.camera.position.set(
       p.position.x + Math.sin(t) * r,
-      p.position.y + 1.34 + Math.sin(t * 0.48) * 0.18,
+      p.position.y + 1.92 + Math.sin(t * 0.48) * 0.08,
       p.position.z + Math.cos(t) * r
     );
     this.camera.lookAt(p.position.x, lookY, p.position.z);
@@ -3293,19 +3445,19 @@ export class RallyGame {
     // GFX.maxPixelRatio is the hard ceiling — a 3× phone panel or a
     // 5K desktop must never be allowed to ask for its native density here.
     const capPr = GFX.maxPixelRatio || 1.5;
-    const titlePr = GFX.titleMaxPixelRatio || 0.68;
+    const titlePr = GFX.titleMaxPixelRatio || 1.5;
     let pr = Math.min(
       window.devicePixelRatio || 1,
       onTitle ? titlePr : capPr,
       capPr
     );
-    if (isPhonePlay()) pr = Math.min(pr, onTitle ? 0.55 : 1.15);
+    if (isPhonePlay()) pr = Math.min(pr, onTitle ? 1.15 : 1.15);
     if (!onTitle && this._perfDprScale != null && this._perfDprScale < 1) {
       pr *= this._perfDprScale;
     }
-    const cap = onTitle ? GFX.titleMaxPixels || 720000 : GFX.maxPixels || 2800000;
+    const cap = onTitle ? GFX.titleMaxPixels || 2400000 : GFX.maxPixels || 2800000;
     const px = w * h * pr * pr;
-    if (px > cap) pr = Math.max(onTitle ? 0.42 : 0.75, pr * Math.sqrt(cap / px));
+    if (px > cap) pr = Math.max(onTitle ? 0.85 : 0.75, pr * Math.sqrt(cap / px));
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -3749,6 +3901,79 @@ export class RallyGame {
       glitchLog: p._glitchLog || [],
     };
   }
+}
+
+function hashNoise(i) {
+  const n = Math.sin(i * 12.9898) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function makeTitleAsphaltMap() {
+  const s = 1024;
+  const c = document.createElement("canvas");
+  c.width = c.height = s;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  const img = g.createImageData(s, s);
+  const d = img.data;
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      const n1 = hashNoise(x * 0.41 + y * 1.73);
+      const n2 = hashNoise(x * 2.19 + y * 0.67 + 17);
+      const n3 = hashNoise(x * 8.1 + y * 6.4 + 41);
+      const chip = n3 > 0.93 ? 42 : n3 > 0.82 ? 10 : 0;
+      const tar = n2 > 0.97 ? -18 : 0;
+      const base = 32 + n1 * 14 + chip + tar;
+      d[i] = base;
+      d[i + 1] = base - 1;
+      d[i + 2] = base - 4;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  g.strokeStyle = "rgba(22, 22, 24, 0.28)";
+  g.lineWidth = 2.2;
+  for (let k = 0; k < 7; k++) {
+    g.beginPath();
+    const y0 = 90 + k * 128 + hashNoise(k + 3) * 24;
+    g.moveTo(0, y0);
+    g.lineTo(s, y0 + 18);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(5, 5);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeTitleSandMap() {
+  const s = 512;
+  const c = document.createElement("canvas");
+  c.width = c.height = s;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  const img = g.createImageData(s, s);
+  const d = img.data;
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      const n1 = hashNoise(x * 0.33 + y * 0.91);
+      const n2 = hashNoise(x * 1.7 + y * 2.4 + 9);
+      const grain = n2 > 0.88 ? 28 : n2 < 0.12 ? -16 : 0;
+      d[i] = 198 + n1 * 22 + grain;
+      d[i + 1] = 154 + n1 * 18 + grain * 0.7;
+      d[i + 2] = 98 + n1 * 14 + grain * 0.4;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(8, 8);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function ordinal(n) {

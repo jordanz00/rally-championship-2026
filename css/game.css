@@ -25,8 +25,8 @@ body {
   position: relative;
   width: 100vw;
   height: 100vh;
-  background:
-    radial-gradient(ellipse 80% 70% at 72% 40%, #3d5c78 0%, #12180f 58%, #050705 100%);
+    background:
+    radial-gradient(ellipse 80% 70% at 72% 40%, #4a7ab8 0%, #1e3a58 58%, #0c1828 100%);
 }
 
 #game-view {
@@ -75,21 +75,21 @@ body {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 0;
+  justify-content: flex-start;
+  flex-direction: column;
+  padding: 3.5vh 0 0;
   background:
-    radial-gradient(ellipse 58% 52% at 50% 42%, rgba(8, 10, 8, 0.18) 0%, rgba(5, 7, 5, 0.08) 46%, rgba(5, 7, 5, 0.62) 100%);
+    radial-gradient(ellipse 22% 18% at 50% 14%, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0) 72%);
   overflow: hidden;
 }
 
 #crt:has(#screen-title.active) {
-  background: #050705;
+  background: #3a7ab8;
 }
 
 #crt:has(#screen-title.active) #game-view {
   visibility: visible;
-  opacity: 0;
-  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 1;
 }
 
 #crt.showroom-live #game-view,
@@ -125,11 +125,12 @@ body {
 /* —— Classic arcade title (Rally Championship 2026 emblem) —— */
 .sr-emblem {
   position: relative;
-  width: min(460px, 94vw);
+  width: min(300px, 46vw);
   aspect-ratio: 1;
-  margin-top: -6vh;
+  margin-top: 0;
   flex-shrink: 0;
-  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
 }
 
 .sr-emblem-svg {
@@ -358,8 +359,8 @@ body {
 
 @media (max-width: 820px) {
   .sr-emblem {
-    margin-top: -8vh;
-    width: min(380px, 94vw);
+    margin-top: 1vh;
+    width: min(240px, 58vw);
   }
 
   .sr-push-wrap {

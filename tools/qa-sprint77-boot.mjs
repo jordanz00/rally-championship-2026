@@ -40,23 +40,23 @@ check("desert music is not HTML-prefetched (boot bandwidth)", !/desert\.mp3/.tes
 check("title showroom is visible under the emblem", /#crt:has\(#screen-title\.active\) #game-view/.test(css) && /visibility:\s*visible/.test(css));
 check("showroom canvas fades in, does not pop", /showroom-live/.test(css) && /showroom-live/.test(game));
 check("black curtain CSS", /\.fx-curtain/.test(css) && /\.fx-curtain\.is-on/.test(css));
-check("title DPR cap is cheap", /titleMaxPixelRatio:\s*0\.68/.test(config) && /titleMaxPixels:\s*720000/.test(config));
-check("title shadow atlas is 512", /titleShadowMap:\s*512/.test(config) && /GFX\.titleShadowMap/.test(game));
-check("title boot delays WebGL past the curtain fade", /if \(this\.state !== "title"\) return[\s\S]*bootGfx\(\)[\s\S]*1600/.test(game));
-check("title loads rival LOD only", /prepareTitleCar\(this\.carId\)/.test(game) && /_warmGarage/.test(game));
+check("title DPR cap is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleMaxPixels:\s*2400000/.test(config));
+check("title shadow atlas is 2048", /titleShadowMap:\s*2048/.test(config) && /GFX\.titleShadowMap/.test(game));
+check("title boot is next-frame, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
+check("title loads the hero car (LOD fallback)", /prepareTitleCar\(this\.carId\)/.test(game) && /tryLocalGltf/.test(read("js/cars/celica.js")));
 check("full garage waits for PRESS START", /this\._warmGarage\(\)/.test(game) && !/\.then\(\(\) => prepareCelica\(\)\)/.test(game));
 check("title skips post-process RTs", /this\.post\.enabled = false/.test(game) && /this\.post && !onTitle/.test(game));
-check("IBL bake is deferred on splash", /1800/.test(game) && /_bakeSkyEnv\("title"\)/.test(game));
+check("IBL bake is next-frame on splash", /_bakeSkyEnv\("title"\)/.test(game) && !/, 1800\)/.test(game));
 check("showScreen fades through black", /fadeThroughBlack/.test(hud) && /FADE_OUT_MS/.test(hud) && /fx-curtain/.test(hud));
 check("load bar trickles instead of hanging", /tricklePerSec/.test(hud) && /armLoadBar/.test(hud) && /scaleX/.test(hud));
 check("loading fill is transform-driven", /transform:\s*scaleX\(0\)/.test(css));
 check("race start awaits the loading fade", /showLoadingScreen/.test(game) && /await showScreen\("screen-hud"\)/.test(game));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 397 && /hud\.js\?v=27/.test(game) && /config\.js\?v=13[67]/.test(game),
+  cacheOk && Number(gameV) >= 416 && /hud\.js\?v=27/.test(game),
   `main=${mainV} game=${gameV}`
 );
-check("css cache-bust", /game\.css\?v=26/.test(index));
+check("css cache-bust", /game\.css\?v=29/.test(index));
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "boot is cheap, fades are black, load bar trickles"}`);
 process.exit(fail ? 1 : 0);

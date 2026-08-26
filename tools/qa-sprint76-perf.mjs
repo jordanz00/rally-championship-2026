@@ -109,20 +109,20 @@ check("low tier uses the integrated atlas size", /integratedShadowMap/.test(perf
 
 console.log("\ncloud raymarch cap (Sprint 69 volume preserved)");
 check("CLOUD_BUDGET still exported", /export const CLOUD_BUDGET/.test(sky));
-check("view steps capped at 8", /maxViewSteps: 8/.test(sky));
+check("view steps capped at 16", /maxViewSteps: 16/.test(sky));
 check("light steps capped at 2", /maxLightSteps: 2/.test(sky));
 check(
   "shader loop is bounded, not full-res 128-step",
-  /const int MAX_VIEW = 8;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
+  /const int MAX_VIEW = 16;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
   "an unbounded raymarch loop is the classic browser cliff"
 );
-check("cinema is 6 view steps", /cinemaViewSteps: 6/.test(sky));
-check("low tier drops to 4 view steps", /lowViewSteps: 4/.test(sky));
+check("cinema is 12 view steps", /cinemaViewSteps: 12/.test(sky));
+check("low tier drops to 6 view steps", /lowViewSteps: 6/.test(sky));
 check(
   "low / min drop Worley and light samples",
   /uUseWorley\.value = 0/.test(sky) && /uLightSteps\.value = 1/.test(sky)
 );
-check("scaler mirrors the sky cap", /maxCloudViewSteps: 8/.test(perf) && /maxCloudLightSteps: 2/.test(perf));
+check("scaler mirrors the sky cap", /maxCloudViewSteps: 16/.test(perf) && /maxCloudLightSteps: 2/.test(perf));
 check("tier drives sky quality", /setSkyQuality\(this\.sky, t\.sky\)/.test(game));
 
 console.log("\nmirror render target cap");

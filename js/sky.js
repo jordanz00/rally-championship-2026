@@ -8,10 +8,10 @@
  *   tickSky() every frame. setSkyQuality() follows the perf tier.
  *
  * BUDGET (2020-class laptop / Chrome 60 Hz):
- *   Sky is a unit sphere (32×20) drawn first (depthWrite off). Clouds run only
- *   on sky fragments (rd.y > 0). Cinema: 6 view steps × 2 light samples, 3-octave
- *   fBm + cheap Worley. Low/min tier: 4 view × 1 light, 2-octave, no Worley.
- *   Not a 128-step fullscreen volume — fixed steps along the shell, dithered.
+ *   Sky is a unit sphere (64×40) drawn first (depthWrite off). Clouds run only
+ *   on sky fragments (rd.y > 0). Cinema: 12 view steps × 2 light samples,
+ *   4-octave fBm + large-scale Worley. Low/min: 6 view × 1 light, 2-octave.
+ *   Stable voxel centres — no temporal hash dither (that was the grain).
  *   Horizon path is longer, so each step covers more distance (froxel-style).
  *
  * POWER BI MAPPING: none
@@ -19,19 +19,20 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=138";
+import { VISUAL } from "./config.js?v=142";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
  */
 export const CLOUD_BUDGET = {
   technique: "planet-shell-raymarch",
-  maxViewSteps: 8,
-  cinemaViewSteps: 6,
-  lowViewSteps: 4,
+  maxViewSteps: 16,
+  cinemaViewSteps: 12,
+  mediumViewSteps: 8,
+  lowViewSteps: 6,
   maxLightSteps: 2,
   notes:
-    "6×2 cinema / 4×1 low. Early-out below horizon and when transmittance < 0.02. No full-screen 128-step march.",
+    "12×2 cinema / 8×2 medium / 6×1 low. Stable step centres (no temporal dither). Early-out below horizon and when transmittance < 0.02. No full-screen 128-step march.",
 };
 
 /**
@@ -39,11 +40,11 @@ export const CLOUD_BUDGET = {
  * cover is a floor — LIGHTING.cloudCover still wins when it is higher.
  */
 export const STAGE_CLOUD_PALETTES = {
-  desert: { lit: 0xfff1dc, dark: 0x8a7464, absorb: 1.05, silver: 0.62, cover: 0.42 },
-  forest: { lit: 0xf4f7fb, dark: 0x5e6c78, absorb: 1.22, silver: 0.5, cover: 0.5 },
-  mountain: { lit: 0xf8fbff, dark: 0x536878, absorb: 0.95, silver: 0.68, cover: 0.36 },
-  lakeside: { lit: 0xeef6f8, dark: 0x5c7380, absorb: 1.12, silver: 0.54, cover: 0.44 },
-  title: { lit: 0xfff6ec, dark: 0x6a7684, absorb: 1.02, silver: 0.64, cover: 0.44 },
+  desert: { lit: 0xfff1dc, dark: 0x8a7464, absorb: 1.05, silver: 0.62, cover: 0.5 },
+  forest: { lit: 0xf4f7fb, dark: 0x5e6c78, absorb: 1.22, silver: 0.5, cover: 0.56 },
+  mountain: { lit: 0xf8fbff, dark: 0x536878, absorb: 0.95, silver: 0.68, cover: 0.44 },
+  lakeside: { lit: 0xeef6f8, dark: 0x5c7380, absorb: 1.12, silver: 0.54, cover: 0.52 },
+  title: { lit: 0xfff6ec, dark: 0x4e5c6c, absorb: 1.28, silver: 0.58, cover: 0.58 },
 };
 
 const VERT = /* glsl */ `
@@ -88,7 +89,7 @@ varying vec3 vDir;
 const float PLANET_R = 8.0;
 const float CLOUD_INNER = 8.12;
 const float CLOUD_OUTER = 8.92;
-const int MAX_VIEW = 8;
+const int MAX_VIEW = 16;
 const int MAX_LIGHT = 2;
 
 float hash13(vec3 p3) {
@@ -100,7 +101,7 @@ float hash13(vec3 p3) {
 float noise3(vec3 x) {
   vec3 i = floor(x);
   vec3 f = fract(x);
-  f = f * f * (3.0 - 2.0 * f);
+  f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
   return mix(
     mix(mix(hash13(i), hash13(i + vec3(1.0, 0.0, 0.0)), f.x),
         mix(hash13(i + vec3(0.0, 1.0, 0.0)), hash13(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
@@ -127,9 +128,9 @@ float worleyPuff(vec3 x) {
   vec3 i = floor(x);
   vec3 f = fract(x);
   float d = 1.0;
-  for (int z = 0; z <= 1; z++) {
-    for (int y = 0; y <= 1; y++) {
-      for (int xx = 0; xx <= 1; xx++) {
+  for (int z = -1; z <= 1; z++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int xx = -1; xx <= 1; xx++) {
         vec3 g = vec3(float(xx), float(y), float(z));
         float h = hash13(i + g);
         vec3 o = vec3(h, fract(h * 17.13), fract(h * 31.71));
@@ -138,7 +139,7 @@ float worleyPuff(vec3 x) {
       }
     }
   }
-  return 1.0 - clamp(d * 1.35, 0.0, 1.0);
+  return 1.0 - clamp(d * 1.15, 0.0, 1.0);
 }
 
 float hgPhase(float mu, float g) {
@@ -168,32 +169,29 @@ vec3 atmosphericScatter(vec3 rd, vec3 sunDir) {
 
 float cloudHeightMask(vec3 p) {
   float h = (length(p) - CLOUD_INNER) / max(CLOUD_OUTER - CLOUD_INNER, 0.001);
-  float base = smoothstep(0.0, 0.16, h);
-  float top = 1.0 - smoothstep(0.52, 1.0, h);
-  return base * top * mix(0.72, 1.18, h);
+  float base = smoothstep(0.0, 0.18, h);
+  float top = 1.0 - smoothstep(0.48, 1.0, h);
+  return base * top * mix(0.78, 1.12, h);
 }
 
 float cloudDensity(vec3 p, int octaves, bool useWorley) {
   float hMask = cloudHeightMask(p);
   if (hMask < 0.001) return 0.0;
-  vec3 q = p * (0.36 * uCloudScale);
-  vec3 view = normalize(p - vec3(0.0, PLANET_R, 0.0));
-  float az = atan(view.z, view.x);
-  float el = view.y;
-  float dirMacro = fbm(vec3(az * 2.7, el * 4.0, 0.16), octaves);
+  vec3 q = p * (0.12 * uCloudScale);
+  float weather = fbm(q * 0.28, 3);
   float n = fbm(q, octaves);
-  float ridged = 1.0 - abs(fbm(q * 0.7 + vec3(9.1, 2.4, 4.7), max(2, octaves - 1)) * 2.0 - 1.0);
-  float shape = n * 0.38 + ridged * 0.62;
+  float ridged = 1.0 - abs(fbm(q * 0.48 + vec3(9.1, 2.4, 4.7), max(2, octaves - 1)) * 2.0 - 1.0);
+  float shape = n * 0.32 + ridged * 0.68;
   if (useWorley) {
-    float cells = worleyPuff(q * 0.9 + vec3(2.2, 0.4, 1.1));
-    shape = mix(shape, cells, 0.34);
+    float cells = worleyPuff(q * 0.22 + vec3(2.2, 0.4, 1.1));
+    shape = mix(shape, cells, 0.14);
   }
-  float erosion = fbm(q * 2.0 + vec3(-1.4, 3.1, 0.6), max(2, octaves - 1));
-  shape -= erosion * 0.12 * (1.0 - hMask);
+  float erosion = fbm(q * 1.1 + vec3(-1.4, 3.1, 0.6), 2);
+  shape -= erosion * 0.05 * (1.0 - hMask);
   float cover = clamp(uCloudCover, 0.0, 1.0);
-  float islands = smoothstep(0.38 - cover * 0.12, 0.7 - cover * 0.08, dirMacro);
+  float islands = smoothstep(0.08 - cover * 0.14, 0.46 - cover * 0.1, weather);
   shape *= islands;
-  float d = smoothstep(0.18, 0.52, shape) * hMask;
+  float d = smoothstep(0.18, 0.62, shape) * hMask;
   return clamp(d, 0.0, 1.0);
 }
 
@@ -209,7 +207,7 @@ float sunOptical(vec3 p, vec3 sunDir, float stepHint, int octaves, bool useWorle
 }
 
 vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
-  if (rd.y < 0.02 || uCloudCover < 0.02) return vec4(0.0);
+  if (rd.y < 0.004 || uCloudCover < 0.02) return vec4(0.0);
 
   vec3 ro = vec3(0.0, PLANET_R, 0.0);
   vec2 outer = raySphere(ro, rd, CLOUD_OUTER);
@@ -223,18 +221,17 @@ vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
   }
   if (t1 <= t0) return vec4(0.0);
 
-  int steps = int(clamp(uCloudSteps, 3.0, 8.0));
+  int steps = int(clamp(uCloudSteps, 4.0, 16.0));
   int octaves = int(clamp(uCloudDetail, 2.0, 5.0));
   bool useWorley = uUseWorley > 0.5;
   float span = t1 - t0;
   float dt = span / float(steps);
-  float dither = hash13(rd * 131.7 + vec3(uTime * 0.07));
-  float t = t0 + dt * (0.18 + dither * 0.64);
+  float t = t0 + dt * 0.5;
 
-  vec3 wind = uWind * uTime * 0.011;
+  vec3 wind = uWind * uTime * 0.0065;
   float mu = dot(rd, sunDir);
-  float phase = 0.72 * hgPhase(mu, 0.48) + 0.28 * hgPhase(mu, -0.18);
-  phase = clamp(phase, 0.15, 2.4);
+  float phase = 0.7 * hgPhase(mu, 0.52) + 0.3 * hgPhase(mu, -0.22);
+  phase = clamp(phase, 0.18, 2.6);
 
   vec3 scatter = vec3(0.0);
   float trans = 1.0;
@@ -244,15 +241,15 @@ vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
     if (i >= steps || trans < 0.02) break;
     vec3 p = ro + rd * t + wind;
     float dens = cloudDensity(p, octaves, useWorley);
-    if (dens > 0.004) {
-      float stepOd = dens * dt * absorb * 1.15;
+    if (dens > 0.003) {
+      float stepOd = dens * dt * absorb * 1.28;
       float beers = exp(-stepOd);
-      float powder = 1.0 - exp(-dens * 2.2);
+      float powder = 1.0 - exp(-dens * 2.8);
       float shadow = sunOptical(p, sunDir, dt, octaves, useWorley);
-      float sunVis = exp(-shadow * absorb * 1.55);
-      float wrap = mix(0.38, 1.0, sunVis);
-      vec3 ambient = mix(uCloudDark, uCloudLit * 0.78, 0.28 + 0.5 * cloudHeightMask(p));
-      vec3 direct = uCloudLit * wrap * phase * (0.7 + uSilver * powder);
+      float sunVis = exp(-shadow * absorb * 1.45);
+      float wrap = mix(0.42, 1.0, sunVis);
+      vec3 ambient = mix(uCloudDark, uCloudLit * 0.82, 0.3 + 0.48 * cloudHeightMask(p));
+      vec3 direct = uCloudLit * wrap * phase * (0.72 + uSilver * powder);
       vec3 inS = (ambient + direct * sunVis) * dens;
       scatter += trans * inS * (1.0 - beers) / max(dens, 0.04);
       trans *= beers;
@@ -261,9 +258,9 @@ vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
   }
 
   float alpha = clamp(1.0 - trans, 0.0, 1.0);
-  float horizonFade = smoothstep(-0.01, 0.05, rd.y);
+  float horizonFade = smoothstep(0.0, 0.028, rd.y);
   alpha *= horizonFade;
-  scatter *= 1.25;
+  scatter *= 1.06;
   return vec4(scatter, alpha);
 }
 
@@ -325,7 +322,7 @@ export function createSky() {
       uHorizonStrength: { value: 0.38 },
       uDust: { value: 0 },
       uCloudCover: { value: 0.34 },
-      uCloudScale: { value: 1.6 },
+      uCloudScale: { value: 1.75 },
       uExposure: { value: 1.0 },
       uTime: { value: 0 },
       uGroundBounce: { value: new THREE.Color(0.55, 0.42, 0.28) },
@@ -337,7 +334,7 @@ export function createSky() {
       uAtmoBlend: { value: 0.42 },
       uCloudDetail: { value: hi ? 4 : 3 },
       uWind: { value: new THREE.Vector3(1.2, 0, 0.4) },
-      uCloudSteps: { value: hi ? CLOUD_BUDGET.cinemaViewSteps : 5 },
+      uCloudSteps: { value: hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps },
       uLightSteps: { value: hi ? 2 : 1 },
       uAbsorb: { value: 1.12 },
       uSilver: { value: 0.55 },
@@ -350,7 +347,7 @@ export function createSky() {
     depthTest: false,
     fog: false,
   });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 40), mat);
   mesh.scale.setScalar(40);
   mesh.frustumCulled = false;
   mesh.renderOrder = -2000;
@@ -445,8 +442,8 @@ export function applySky(mesh, L, stageId) {
     if (stageId === "title" || L.bodyEnv != null) cover = Math.max(cover, pal.cover);
     else cover = Math.max(cover, pal.cover * 0.85);
     u.uCloudCover.value = cover;
-    const scale = L.cloudScale != null ? L.cloudScale : 1.6;
-    u.uCloudScale.value = stageId === "title" || L.bodyEnv != null ? Math.max(scale, 1.55) : Math.max(scale, 1.35);
+    const scale = L.cloudScale != null ? L.cloudScale : 1.75;
+    u.uCloudScale.value = stageId === "title" || L.bodyEnv != null ? Math.max(scale, 1.7) : Math.max(scale, 1.45);
     u.uAbsorb.value = pal.absorb;
     u.uSilver.value = pal.silver;
     const fogHex = L.fog != null ? L.fog : 0xc9b48a;
@@ -467,12 +464,14 @@ export function applySky(mesh, L, stageId) {
     u.uMie.value = L.skyMie != null ? L.skyMie * 180.0 : 0.75;
     u.uAtmoBlend.value = L.skyAtmoBlend != null ? L.skyAtmoBlend : 0.38;
     const e = L.skyExposure != null ? L.skyExposure : 0.46;
-    u.uExposure.value = Math.max(0.75, Math.min(1.32, 0.74 + e * 0.55));
+    let exp = Math.max(0.82, Math.min(1.16, 0.72 + e * 0.38));
+    if (stageId === "title" || L.bodyEnv != null) exp = Math.min(exp, 0.9);
+    u.uExposure.value = exp;
     const wind = Array.isArray(L.wind) && L.wind.length >= 3 ? L.wind : [1.2, 0, 0.4];
     u.uWind.value.set(wind[0], wind[1] || 0, wind[2]);
     const hi = cinemaCloud();
     u.uCloudDetail.value = hi ? 4 : 3;
-    u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : 5;
+    u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps;
     u.uLightSteps.value = hi ? 2 : 1;
     u.uUseWorley.value = hi ? 1 : 0;
   } catch (err) {
@@ -495,12 +494,12 @@ export function setSkyQuality(mesh, perfTier) {
     u.uCloudDetail.value = 2;
     u.uUseWorley.value = 0;
   } else if (perfTier === "medium") {
-    u.uCloudSteps.value = 5;
-    u.uLightSteps.value = 1;
+    u.uCloudSteps.value = CLOUD_BUDGET.mediumViewSteps;
+    u.uLightSteps.value = 2;
     u.uCloudDetail.value = 3;
     u.uUseWorley.value = 0;
   } else {
-    u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : 5;
+    u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps;
     u.uLightSteps.value = hi ? 2 : 1;
     u.uCloudDetail.value = hi ? 4 : 3;
     u.uUseWorley.value = hi ? 1 : 0;

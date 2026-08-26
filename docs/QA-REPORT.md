@@ -2345,3 +2345,73 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 ---
 
+## Sprint 84 — Title showroom (hero car, real pad, instant present) — 2026-08-26
+
+**Player moment:** Title used the rival LOD, a beige disc, a 512 shadow map, a 1.6s WebGL wait, and a dark green overlay. The splash looked cheap and hitchy.
+
+**Fix:** Hero `gt4.glb` from first present (HTML-preload + constructor fetch). Title DPR 1.5 / 2.4Mpx / 2048 shadows / canvas MSAA. Asphalt pad + kerbs + sand + dunes. Clearer sky/sun, vignette only behind the emblem. WebGL on the next frames, canvas visible immediately, IBL on the first idle frame. Garage still warms after PRESS START.
+
+| Change | Status |
+|--------|--------|
+| `prepareTitleCar` / `createTitleCar` hero-first | **Done** |
+| Title pad is tarmac + kerb + sand, not a beige disc | **Done** |
+| Title lighting / fog / IBL | **Done** |
+| Instant boot (no 1.6s / 1.8s delays) | **Done** |
+| Overlay is a vignette, not a dark slab | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=415`** · `config.js?v=141` · `celica.js?v=121` · `css/game.css?v=29`
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint77-boot.mjs`
+
+**Still human-only:** Title should show a sharp Celica on tarmac under a real sky, with no LOD pop and no black wait.
+
+---
+
+## Sprint 85 — Stage 1 never falls under the tunnel approach (26 Aug 2026)
+
+**Player moment:** Desert Safari throw, then the climb into the tunnel. The car stays ON the painted road. It does not clip through and sit in the white void with the hill/road above it.
+
+**Cause:** XZ integrates from velocity while spline `progress` can stay locked on jump 3's pit. `Track.query` then hinted at that hole (MAX_ALONG rejected the tunnel posts ~160 m ahead), so chassis Y was planted on the pit floor — under the climb and the tunnel hill. `_guardDrive` compared Y to the pit sample, which is already the underworld, so the void check never fired.
+
+**Fix:** Re-acquire progress from the car's XZ when it has left the hinted ribbon. Pit queries that are >12 m away walk forward along the spline. Gap mesh is never a floor; if Y drops under the solid deck or the land pad, snap back. Holding a pit Y is skipped once XZ has left the hole.
+
+| Change | Status |
+|--------|--------|
+| `_reacquireProgress` when XZ leaves the hinted pit | **Done** |
+| `_neverFallThrough` snaps under-world Y onto solid deck / land pad | **Done** |
+| `_nearestIndex` walks forward if hinted pit is far in XZ | **Done** |
+| `_preferSolidRoad` takes land when the car is not over the hole | **Done** |
+| Headed probe: pit progress + tunnel XZ cannot void | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=416`** · `vehicle.js?v=90` · `track.js?v=182` · `ai.js?v=114`
+
+**Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Drive Desert jump 3, then the climb into the tunnel — stay on the tarmac. github.io is stale until this is pushed.
+
+---
+
+## Sprint 86 — Seamless volumetric sky, no grain (26 Aug 2026)
+
+**Player moment:** Title and every stage sky. Clouds read as soft cumulus, not TV static. The dome has no azimuth seam.
+
+**Cause:** The planet-shell march offset each frame with `hash13(rd * 131.7 + uTime)` (crawling grain). Weather used `atan(view.z, view.x)` (a ±π jump). Cheap 2×2×2 Worley mixed hard. Post `filmGrain: 0.026` sanded the whole sky. The dome was only 32×20.
+
+**Fix:** Stable voxel centres. Seamless 3D weather. Larger, softer ridged cumulus. 12 cinema / 8 medium / 6 low view steps on a 64×40 sphere. Film grain off. Title sky exposure capped so the dome stays blue enough for cumulus to read.
+
+| Change | Status |
+|--------|--------|
+| Temporal march dither removed | **Done** |
+| Weather is 3D fBm (no atan seam) | **Done** |
+| Soft 3×3×3 Worley, lower mix | **Done** |
+| `CLOUD_BUDGET` 16/12/8/6 + `maxCloudViewSteps: 16` | **Done** |
+| `filmGrain: 0` | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=422`** · `sky.js?v=23` · `perf-tier.js?v=7` · `config.js?v=142` · `postfx.js?v=13`
+
+**Proof:** `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint76-perf.mjs` · `node tools/qa-sprint30-realism.mjs`
+
+**Still human-only:** Title sky should be a smooth blue with soft white clouds, no sparkle.
+
+---
+

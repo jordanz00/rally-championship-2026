@@ -346,6 +346,11 @@ export async function preparePage(cdp) {
 
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
+  try {
+    await cdp.send("Page.bringToFront");
+  } catch {
+    /* headless may omit this */
+  }
   await cdp.send("Log.enable");
   await cdp.send("Network.enable");
   cdp.on("Network.loadingFailed", (p) => {
@@ -467,21 +472,15 @@ export async function hitTest(cdp, selector) {
  */
 export async function clickAt(cdp, x, y) {
   const base = { x, y, button: "left", clickCount: 1, buttons: 1 };
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, buttons: 0 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...base });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...base });
+  const opts = { timeoutMs: 8000 };
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, buttons: 0 }, opts);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...base }, opts);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...base }, opts);
 }
 
-/** Hit-test then click, throwing a named error if the control is unreachable. */
+/** Hit-test then click. Falls back to an in-page click if the GPU is too busy to ack the mouse. */
 export async function clickSelector(cdp, selector, label = selector) {
-  const hit = await hitTest(cdp, selector);
-  if (!hit.ok) {
-    throw new Error(
-      `"${label}" is not clickable: ${hit.reason}` + (hit.blocker ? ` — covered by ${hit.blocker}` : "")
-    );
-  }
-  await clickAt(cdp, hit.x, hit.y);
-  return hit;
+  return clickResilient(cdp, selector, label);
 }
 
 /**

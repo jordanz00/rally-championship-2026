@@ -148,12 +148,16 @@ check(
   /_keepChassisOnRoad\(axles, pit\)/.test(vehicle) && /const LAND_PITCH_SLACK/.test(vehicle)
 );
 check(
+  "stale pit XZ reacquires the ribbon under the car",
+  /_reacquireProgress/.test(vehicle) && /_neverFallThrough/.test(vehicle)
+);
+check(
   "void rescue plants back on the ribbon instead of the gray underworld",
-  /_plantOnRibbon\(/.test(vehicle) && /void/.test(vehicle)
+  /_neverFallThrough/.test(vehicle) && /under-world/.test(vehicle)
 );
 check("TIRE_PLANT plant is unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("game + AI import vehicle.js", /vehicle\.js\?v=\d+/.test(game) && /vehicle\.js\?v=\d+/.test(ai));
-check("cache-bust chain", cacheOk && Number(gameV) >= 410, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 416, `main=${mainV} game=${gameV}`);
 check(
   "gap posts do not magnetize the query after a long throw",
   /hintedPit/.test(track) && /score \+= d \* 4/.test(track)
@@ -390,6 +394,7 @@ async function mainHeaded() {
         };
       }
       let climb = { ran: false };
+      let tunnelDist = null;
       if (jumps.length >= 3) {
         const gap3 = jumps[2];
         let ramp3 = Math.max(4, gap3.dist - 10);
@@ -398,7 +403,6 @@ async function mainHeaded() {
           if (k === "ramp") ramp3 = track.points[i].dist;
           else if (k !== "crest" && k !== "ramp" && k !== "gap") break;
         }
-        let tunnelDist = null;
         for (let i = 0; i < track.points.length; i++) {
           if (track.points[i].tunnel && track.points[i].dist > gap3.dist) {
             tunnelDist = track.points[i].dist;
@@ -457,7 +461,35 @@ async function mainHeaded() {
           samples: samples,
         };
       }
-      return { jumps: jumps.length, results: results, carry: carry, climb: climb };`
+      let desync = { ran: false };
+      if (jumps.length >= 3 && tunnelDist != null) {
+        const gap3 = jumps[2];
+        const tun = track.sample(tunnelDist);
+        v.spawn(track, gap3.dist + 2, 0);
+        v.progress = gap3.dist + 2;
+        v.position.x = tun.x;
+        v.position.z = tun.z;
+        v.position.y = 0;
+        v.velY = -8;
+        v.onGround = false;
+        v.velocity.set(Math.sin(v.yaw) * 12, 0, Math.cos(v.yaw) * 12);
+        for (let s = 0; s < 45; s++) v.step(dt, input, track);
+        const q = track.query(v.position.x, v.position.z, {}, v.progress);
+        const line = track.sample(v.progress);
+        const floor = (q.jumpKind === "gap" ? line.y + 0.06 : q.height) - TIRE;
+        desync = {
+          ran: true,
+          y: Math.round(v.position.y * 1000) / 1000,
+          floor: Math.round(floor * 1000) / 1000,
+          under: Math.round((floor - v.position.y) * 1000) / 1000,
+          progress: Math.round(v.progress),
+          tunnelDist: Math.round(tunnelDist),
+          gapDist: Math.round(gap3.dist),
+          onGround: !!v.onGround,
+          kind: (v._q && v._q.jumpKind) || "",
+        };
+      }
+      return { jumps: jumps.length, results: results, carry: carry, climb: climb, desync: desync };`
     );
 
     if (!probe || probe.err) {
@@ -523,6 +555,12 @@ async function mainHeaded() {
           climb.onGround
         ),
         JSON.stringify(climb)
+      );
+      const desync = probe.desync || {};
+      check(
+        "pit progress + tunnel XZ cannot fall into the void",
+        !!(desync.ran && (desync.under || 0) <= 0.12 && desync.onGround && (desync.y || 0) > 1),
+        JSON.stringify(desync)
       );
     }
   } finally {

@@ -38,21 +38,22 @@ const rivalStart = celica.indexOf("export function createRivalCar");
 const titleSlice = titleStart >= 0 && rivalStart > titleStart ? celica.slice(titleStart, rivalStart) : "";
 
 check(
-  "prepareTitleCar loads rival LOD first",
-  /export async function prepareTitleCar/.test(celica) && /await tryRivalGltf\(chassis\)/.test(celica)
+  "prepareTitleCar loads hero GLB first (LOD is fallback)",
+  /export async function prepareTitleCar/.test(celica) &&
+    /await tryLocalGltf\(chassis\)/.test(celica) &&
+    celica.indexOf("await tryLocalGltf(chassis)") < celica.indexOf("await tryRivalGltf(chassis)")
 );
 check(
-  "createTitleCar clones rivalTemplates, sets titleLod, skips cockpit",
-  /rivalTemplates\[chassis\]/.test(titleSlice) &&
-    /titleLod = true/.test(titleSlice) &&
-    !/attachCockpit/.test(titleSlice)
+  "createTitleCar prefers hero templates, hides cockpit",
+  /const template =\s*\n\s*templates\[chassis\]/.test(celica) &&
+    /hideHeavyInterior\(clone\)/.test(celica) &&
+    /titleLod = true/.test(titleSlice)
 );
 check(
-  "title boot shows LOD before prepareCelica",
+  "title boot shows the attract car, garage warms after",
   /prepareTitleCar\(this\.carId\)/.test(game) &&
     /_markShowroomLive/.test(game) &&
-    /_warmGarage/.test(game) &&
-    /prepareCelica\(\)/.test(game)
+    /_warmGarage/.test(game)
 );
 check(
   "title mesh is createTitleCar, not createPlayerCar",
@@ -65,8 +66,8 @@ check(
     /await prepareHeroCar\(this\.carId\)/.test(game)
 );
 const celicaV = (game.match(/celica\.js\?v=(\d+)/) || [])[1];
-check("celica.js cache-bust", Number(celicaV) >= 117, `game → celica v=${celicaV}`);
-check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
+check("celica.js cache-bust", Number(celicaV) >= 121, `game → celica v=${celicaV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 416, `main=${mainV} game=${gameV}`);
 
 const hero = path.join(ROOT, "assets/celica/gt4.glb");
 const lod = path.join(ROOT, "assets/celica/rival.glb");
@@ -82,5 +83,5 @@ if (fs.existsSync(hero) && fs.existsSync(lod)) {
   check("Celica rival.glb is on disk", fs.existsSync(lod), lod);
 }
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "title attract uses rival LOD"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "title attract uses the hero car"}`);
 process.exit(fail ? 1 : 0);

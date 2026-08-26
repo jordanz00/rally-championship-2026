@@ -50,11 +50,20 @@ check(
 );
 check(
   "view raymarch has a bounded step loop",
-  /const int MAX_VIEW = 8/.test(sky) &&
+  /const int MAX_VIEW = 16/.test(sky) &&
     /for \(int i = 0; i < MAX_VIEW; i\+\+\)/.test(sky) &&
-    /cinemaViewSteps:\s*6/.test(sky) &&
-    /lowViewSteps:\s*4/.test(sky)
+    /cinemaViewSteps:\s*12/.test(sky) &&
+    /lowViewSteps:\s*6/.test(sky)
 );
+check(
+  "no temporal hash dither on the cloud march",
+  !/dither = hash13/.test(sky) && /t = t0 \+ dt \* 0\.5/.test(sky)
+);
+check(
+  "weather field is seamless 3D, not atan azimuth",
+  /float weather = fbm\(q \* 0\.28/.test(sky) && !/atan\(view\.z, view\.x\)/.test(sky)
+);
+check("sky sphere is dense (no faceted dome)", /SphereGeometry\(1,\s*64,\s*40\)/.test(sky));
 check(
   "Beer-Lambert + sun self-shadow + HG phase",
   /exp\(-stepOd\)/.test(sky) &&
@@ -89,7 +98,7 @@ check(
 );
 check(
   "title attract has a visible cumulus floor",
-  /title: \{[^}]*cover: 0\.44/.test(sky) &&
+  /title: \{[^}]*cover: 0\.58/.test(sky) &&
     /stageId === "title"/.test(sky)
 );
 check(
@@ -123,7 +132,7 @@ check(
   "title + race both apply palettes",
   /applySky\(this\.sky, L, "title"\)/.test(game) && /applySky\(this\.sky, L, courseId\)/.test(game)
 );
-check("game imports sky.js?v=22", /sky\.js\?v=22/.test(game));
+check("game imports sky.js?v=23", /sky\.js\?v=23/.test(game));
 check(
   "no leftover flat cloud sprite as the only sky",
   /name = "pbr-sky"/.test(sky) &&

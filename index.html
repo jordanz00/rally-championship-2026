@@ -16,9 +16,10 @@
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=26" />
-    <!-- Splash: title bed only. Stage music waits until PRESS START. -->
+    <link rel="stylesheet" href="css/game.css?v=29" />
+    <!-- Splash: title bed + hero Celica so the showroom is ready on first paint. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
+    <link rel="preload" href="assets/celica/gt4.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
     <script>
       window.__rallyLeftTitle = false;
       function rallyShow(id) {
@@ -317,6 +318,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=410"></script>
+    <script type="module" src="js/main.js?v=422"></script>
   </body>
 </html>

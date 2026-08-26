@@ -27,6 +27,7 @@ import {
   waitFor,
   clickSelector,
   sleep,
+  waitForResponsiveMainThread,
 } from "./lib/qa-harness.mjs";
 
 const STATIC_ONLY = process.argv.includes("--static");
@@ -113,8 +114,8 @@ function staticGates() {
     /ALONG_W/.test(track) && /MAX_ALONG/.test(track) && /Hairpin opposite arms/.test(track)
   );
   check(
-    "hinted query never global-scans",
-    /if \(bestScore < Infinity\) return best;/.test(track)
+    "hinted query keeps a local winner, then walks forward if XZ left the pit",
+    /bestScore < Infinity/.test(track) && /Stale pit hint/.test(track)
   );
   check("overlapping ribbons become a flyover", /_separateOverlappingRibbon\(/.test(track));
   check("snapped re-query pins to last dist", /_pinQuery\(/.test(vehicle));
@@ -128,9 +129,10 @@ function staticGates() {
   check("qaSnapshot on the game", /qaSnapshot\(/.test(game));
   check("phone starts on low tier", /startTier: isPhonePlay\(\) \? "low"/.test(game));
   check("createPerfTier accepts startTier", /opts\.startTier/.test(perf));
-  check("game + AI import vehicle.js", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 89);
-  check("game imports track.js", /track\.js\?v=(\d+)/.test(game) && Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 181);
-  check("cache-bust chain", cacheOk && Number(gameV) >= 410, `main=${mainV} game=${gameV}`);
+  check("never-under-world floor", /_neverFallThrough/.test(vehicle) && /_reacquireProgress/.test(vehicle));
+  check("game + AI import vehicle.js", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 90);
+  check("game imports track.js", /track\.js\?v=(\d+)/.test(game) && Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 184);
+  check("cache-bust chain", cacheOk && Number(gameV) >= 422, `main=${mainV} game=${gameV}`);
 }
 
 async function driveCourse(cdp, course, first) {
@@ -139,6 +141,7 @@ async function driveCourse(cdp, course, first) {
   } else {
     // Drop the previous stage's throttle hold, then kick the next load on a
     // later task so this evaluate cannot sit behind a long sync rebuild.
+    await waitForResponsiveMainThread(cdp, 400, 120000);
     await evaluate(
       cdp,
       `
@@ -150,7 +153,8 @@ async function driveCourse(cdp, course, first) {
         const id = ${JSON.stringify(course)};
         setTimeout(() => { if (window.game) window.game._beginRace(id); }, 0);
         return true;
-      `
+      `,
+      { timeoutMs: 8000 }
     );
     await sleep(250);
   }

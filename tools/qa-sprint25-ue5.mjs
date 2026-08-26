@@ -37,7 +37,7 @@ check("VISUAL.tier >= 10", tier >= 10, `tier is ${tier}`);
 check("ue5Look armed", /ue5Look:\s*true/.test(config), "ue5Look: true");
 check("physicalLighting armed", /physicalLighting:\s*true/.test(config), "physicalLighting");
 check("roughnessMaps armed", /roughnessMaps:\s*true/.test(config), "roughnessMaps");
-check("filmGrain set", /filmGrain:\s*0\.\d+/.test(config), "filmGrain");
+check("filmGrain off (sky is not sandy)", /filmGrain:\s*0\s*,/.test(config), "filmGrain: 0");
 check("pmremSize 128", /pmremSize:\s*128/.test(config), "IBL bake size");
 check("paint clearcoat", /clearcoat:\s*1/.test(pbr) && /MeshPhysicalMaterial/.test(pbr), "player lacquer");
 check("glass Physical no transmission", /ior:\s*1\.45/.test(pbr) && !/transmission:\s*[1-9]/.test(pbr), "ior glass");

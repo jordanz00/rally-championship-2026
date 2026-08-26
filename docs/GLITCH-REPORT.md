@@ -1,6 +1,6 @@
 # Glitch report — road integrity
 
-**Date:** 2026-08-26T15:06:22.504Z
+**Date:** 2026-08-26T17:16:08.362Z
 **Department:** Glitch / QA — stay on the road.
 **Contract:** The car never glitches on the painted lane and never teleports.
 
@@ -8,9 +8,9 @@
 
 | Course | Samples | Dist (m) | Speed max | Glitch hits | Teleports | Buried | NaN | Verdict |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| desert | 32 | 43.3 | 24.1 | 0 | 0 | 0 | 0 | **PASS** |
-| forest | 32 | 53.1 | 27.4 | 0 | 0 | 0 | 0 | **PASS** |
-| mountain | 32 | 66.0 | 31.6 | 0 | 0 | 0 | 0 | **PASS** |
+| desert | 32 | 42.6 | 23.9 | 0 | 0 | 0 | 0 | **PASS** |
+| forest | 32 | 51.3 | 27.0 | 0 | 0 | 0 | 0 | **PASS** |
+| mountain | 32 | 65.5 | 31.5 | 0 | 0 | 0 | 0 | **PASS** |
 
 ## Static gates
 

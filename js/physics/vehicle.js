@@ -483,6 +483,7 @@ export class Vehicle {
     this._sFront = {};
     this._sRear = {};
     this._sample = {};
+    this._sReacq = {};
     this._ribbonF = {};
     this._ribbonR = {};
     this._felt = {};
@@ -795,8 +796,9 @@ export class Vehicle {
     this.position.z += this.velocity.z * dt;
     this.speed = this.velocity.length();
     this._glitchT += dt;
-    const prevProgress = this.progress;
     const prevY = this.position.y;
+    this.progress = this._reacquireProgress(track, this.progress);
+    const prevProgress = this.progress;
 
     let q2 = track.query(this.position.x, this.position.z, this._q, this.progress);
     q2 = this._preferSolidRoad(track, q2);
@@ -880,6 +882,7 @@ export class Vehicle {
     } else {
       this._keepChassisOnRoad(this._axles, pit);
     }
+    this._neverFallThrough(track);
     this._stashGoodPose();
   }
 
@@ -991,13 +994,20 @@ export class Vehicle {
             this._landPadArmed &&
             q2.dist < this._landPadEndDist + 4));
       if (holdThisPit && !(axles.front && axles.front.kind === "land") && !(axles.rear && axles.rear.kind === "land")) {
-        this.velY = 0;
-        this._climbVel *= Math.exp(-8 * dt);
-        this._airTime = 0;
-        const hold = this._landPadArmed ? this._landPadY : deck;
-        this.position.y = Number.isFinite(hold) ? hold : prevY;
-        this._snapPitchToRoad(axles);
-        return;
+        const gapLine = track.sample(q2.dist, this._sample);
+        const away =
+          !!gapLine &&
+          Math.hypot(this.position.x - gapLine.x, this.position.z - gapLine.z) >
+            (q2.width || 12) * 0.5 + 7;
+        if (!away) {
+          this.velY = 0;
+          this._climbVel *= Math.exp(-8 * dt);
+          this._airTime = 0;
+          const hold = this._landPadArmed ? this._landPadY : deck;
+          this.position.y = Number.isFinite(hold) ? hold : prevY;
+          this._snapPitchToRoad(axles);
+          return;
+        }
       }
 
       // Any grounded frame in a NEW hole is a takeoff. Do not wait out a
@@ -1257,8 +1267,9 @@ export class Vehicle {
       floor = floor === -Infinity ? mesh : Math.max(floor, mesh);
     }
     if (floor === -Infinity) {
-      if (Number.isFinite(deck)) return deck;
-      return 0;
+      if (this._landPadArmed && Number.isFinite(this._landPadY)) return this._landPadY;
+      if (Number.isFinite(deck) && !pit) return deck;
+      return Number.isFinite(this.position.y) ? this.position.y : 0;
     }
     return floor;
   }
@@ -1452,7 +1463,7 @@ export class Vehicle {
     if (!gapLine || !solidLine) return q;
     const dGap = Math.hypot(this.position.x - gapLine.x, this.position.z - gapLine.z);
     const dSolid = Math.hypot(this.position.x - solidLine.x, this.position.z - solidLine.z);
-    if (dSolid + 1.2 < dGap) {
+    if (dSolid + 1.2 < dGap || dGap > 8) {
       // Caller passed this._q; keep that bag as the live query so floor / HUD
       // / axles do not keep reading the pit we just rejected.
       if (q !== alt) {
@@ -1463,6 +1474,79 @@ export class Vehicle {
       return alt;
     }
     return q;
+  }
+
+  /**
+   * If XZ has left the hinted ribbon (stale jump pit while the body is at
+   * the tunnel), walk the spline forward and retarget progress.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {number} hint
+   * @returns {number}
+   */
+  _reacquireProgress(track, hint) {
+    if (!track || typeof track.sample !== "function" || !Number.isFinite(hint)) {
+      return hint;
+    }
+    const line = track.sample(hint, this._sReacq);
+    if (!line || !Number.isFinite(line.x)) return hint;
+    const here = Math.hypot(this.position.x - line.x, this.position.z - line.z);
+    const slack = Math.max((line.width || 12) * 0.5 + 10, 14);
+    if (here <= slack) return hint;
+    let bestD = hint;
+    let best = here;
+    const lo = Math.max(0, hint - 8);
+    const hi = Math.min((track.length || hint) - 1, hint + 200);
+    for (let d = lo; d <= hi; d += 3) {
+      const p = track.sample(d, this._sReacq);
+      if (!p) continue;
+      const dist = Math.hypot(this.position.x - p.x, this.position.z - p.z);
+      if (dist < best) {
+        best = dist;
+        bestD = d;
+      }
+    }
+    if (best + 1.5 < here) return bestD;
+    return hint;
+  }
+
+  /**
+   * Last-line floor: never sit under the solid roadway or the jump pad.
+   * Gap mesh Y is the visual pit, not a legal chassis floor.
+   * @param {import('../tracks/track.js').Track} track
+   */
+  _neverFallThrough(track) {
+    if (!track || typeof track.sample !== "function" || !this._isFinitePose()) return;
+    const line = track.sample(this.progress || 0, this._sReacq);
+    if (!line || !Number.isFinite(line.y)) return;
+    const pit = line.jumpKind === "gap";
+    let floor;
+    if (pit) {
+      floor =
+        this._landPadArmed && Number.isFinite(this._landPadY)
+          ? this._landPadY
+          : this._scanLandPad(track, this.progress || 0, this.position.y).y;
+    } else {
+      floor = line.y + ROAD_DECK - TIRE_PLANT;
+      const qh =
+        this._q && this._q.jumpKind !== "gap" && Number.isFinite(this._q.height)
+          ? this._q.height - TIRE_PLANT
+          : null;
+      if (qh != null) floor = Math.max(floor, qh);
+    }
+    if (!Number.isFinite(floor)) return;
+    if (this.position.y >= floor - 0.08) return;
+    this._noteGlitch("under-world", {
+      y: this.position.y,
+      floor,
+      pit: pit ? 1 : 0,
+      progress: this.progress,
+    });
+    this.position.y = floor;
+    this.velY = 0;
+    this.onGround = true;
+    this._airTime = 0;
+    this._landLock = Math.max(this._landLock || 0, 0.12);
+    this._snapPitchToRoad(this._axles);
   }
 
   /**
@@ -1576,13 +1660,7 @@ export class Vehicle {
       this._plantOnRibbon(track, { preferPad: true });
       return;
     }
-    // Through the painted mesh into the gray void — even if query still
-    // says "gap". The screenshot of the empty desert was this.
-    if (floor != null && this.position.y < floor - 1.15) {
-      this._noteGlitch("void", { y: this.position.y, floor, pitKind: pitKind ? 1 : 0 });
-      this._plantOnRibbon(track, { preferPad: !!pitKind });
-      return;
-    }
+    this._neverFallThrough(track);
     if (!this.onGround && this._airTime > 3.6) {
       this._noteGlitch("long-air", { air: this._airTime, y: this.position.y });
       this._plantOnRibbon(track, { preferPad: true });
