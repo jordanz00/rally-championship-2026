@@ -19,7 +19,7 @@ import {
   GFX,
   VISUAL,
   STREAM,
-} from "./config.js?v=142";
+} from "./config.js?v=143";
 import { Input } from "./input.js?v=39";
 import { Vehicle } from "./physics/vehicle.js?v=90";
 import { getSurface } from "./physics/surfaces.js?v=46";
@@ -27,12 +27,12 @@ import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=61";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS } from "./cars/celica.js?v=121";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=184";
-import { preparePropKit } from "./tracks/prop-kit.js?v=18";
+import { preparePropKit, loadTitleRocks } from "./tracks/prop-kit.js?v=19";
 import { Opponent } from "./ai.js?v=114";
-import { RallyAudio } from "./audio/engine.js?v=51";
+import { RallyAudio } from "./audio/engine.js?v=53";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=31";
-import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=27";
+import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=28";
 import { Dust, TireMarks } from "./effects.js?v=54";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=37";
 import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=23";
@@ -352,7 +352,7 @@ export class RallyGame {
     this.sun = new THREE.DirectionalLight(0xffe4b0, 1.65);
     this.sun.castShadow = false;
     const titleBoot = this.state === "title" || this.state === "menu";
-    const bootShadow = titleBoot ? GFX.titleShadowMap || 2048 : 1024;
+    const bootShadow = titleBoot ? GFX.titleShadowMap || 1024 : 1024;
     this.sun.shadow.mapSize.set(bootShadow, bootShadow);
     this.sun.shadow.camera.near = 4;
     this.sun.shadow.camera.far = 120;
@@ -972,12 +972,6 @@ export class RallyGame {
       btn.addEventListener("click", () => this._onMenu(btn.dataset.menu));
     });
     document.querySelectorAll("[data-course]").forEach((btn) => {
-      const warm = () => {
-        const id = btn.dataset.course;
-        if (id) this._scheduleTrackPreload(id, { priority: true });
-      };
-      btn.addEventListener("pointerenter", warm);
-      btn.addEventListener("focus", warm);
       btn.addEventListener("click", () => {
         this.courseId = btn.dataset.course;
         this._beginRace(this.courseId);
@@ -1094,41 +1088,39 @@ export class RallyGame {
     window.__rallyLeftTitle = true;
     if (this.state !== "title") return;
     this.state = "menu";
-    const fade = showScreen("screen-menu");
     try {
       this.audio.unlock();
       this.codriver.warm(this.audio);
     } catch (err) {
       console.warn(err);
     }
-    this._warmGarage();
     this._markShowroomLive();
-    if (this.renderer && !this._mirrorRT) this._initMirror();
-    // Fetches only — never Track.create / WebGL on this click. Those block
-    // the black-fade timers and made PRESS START wait seconds to swap menus.
-    preparePropKit().catch((err) => console.warn("[warm] prop kit", err));
-    this._prefetchStageBytes(true);
-    fade.then(() => {
-      if (this.state !== "menu" && this.state !== "title") return;
+    showScreen("screen-menu", { instant: true });
+    this._idleWarmAfterTitle();
+  }
+
+  /**
+   * After PRESS START the showroom is already on screen. Do not rebuild
+   * lighting, clone cars, or start Track.create on this click.
+   */
+  _idleWarmAfterTitle() {
+    const later = (ms, fn) => {
       setTimeout(() => {
-        if (this.state !== "menu" && this.state !== "title") return;
-        this._bootGfx();
-        if (this.state === "menu" || this.state === "title") this._setupTitleStage();
-        this._scheduleTrackPreload(this.courseId || "desert", { priority: true });
-        this._warmRaceSystems();
-        this._warmCarMeshes();
-      }, 400);
+        if (this.state === "race" || this.state === "countdown" || this.state === "loading") return;
+        fn();
+      }, ms);
+    };
+    later(80, () => {
+      if (!this.renderer) this._bootGfx();
     });
-    setTimeout(() => {
-      if (this.state === "race" || this.state === "countdown" || this.state === "loading") return;
-      const first = this.courseId || "desert";
-      // Do not steal the builder for Forest/Mountain while the first stage
-      // is still warming — that made PRESS START → countdown hang.
-      if (!this._isTrackReady(first)) return;
-      for (const id of COURSE_ORDER) {
-        if (id !== first) this._scheduleTrackPreload(id);
-      }
-    }, 8000);
+    later(900, () => {
+      preparePropKit().catch((err) => console.warn("[warm] prop kit", err));
+    });
+    later(1400, () => this._prefetchStageBytes(false));
+    later(2200, () => this._warmGarage());
+    later(2800, () => {
+      if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
+    });
   }
 
   _onMenu(id) {
@@ -1147,9 +1139,9 @@ export class RallyGame {
       this.mode = "practice";
       this._showCars();
     } else if (id === "controls") {
-      showScreen("screen-controls");
+      showScreen("screen-controls", { instant: true });
     } else if (id === "back") {
-      showScreen("screen-menu");
+      showScreen("screen-menu", { instant: true });
       this.state = "menu";
     } else if (id === "retry") {
       this._beginRace(this.courseId);
@@ -1178,11 +1170,7 @@ export class RallyGame {
         ? "STRATOS HF  ·  RWD SLIDE"
         : "STRATOS HF  ·  LOADING…";
     }
-    showScreen("screen-cars");
-    this._warmCarMeshes();
-    if (this.mode === "championship" && this.champOrder.length) {
-      this._scheduleTrackPreload(this.champOrder[this.stageIndex] || this.champOrder[0]);
-    }
+    showScreen("screen-cars", { instant: true });
   }
 
   _pickCar(id) {
@@ -1205,15 +1193,7 @@ export class RallyGame {
     }
 
     this._refreshCourseLock();
-    showScreen("screen-courses");
-    this._scheduleTrackPreload(this.courseId || "desert");
-    if (this.renderer) {
-      try {
-        this._showTitleLod(id);
-      } catch (err) {
-        console.warn("[garage] title LOD after pick", err);
-      }
-    }
+    showScreen("screen-courses", { instant: true });
   }
 
   _refreshCourseLock() {
@@ -1269,8 +1249,8 @@ export class RallyGame {
   }
 
   /**
-   * Asphalt pad + kerb + sand apron + distant dunes. Procedural canvases, no
-   * extra GLBs — the hero car is the only network fetch on splash.
+   * Asphalt pad + kerb + sand apron. Distant Kenney rocks load async.
+   * No sphere-blob dunes — those read as fake boulders.
    */
   _ensureTitleWorld() {
     if (this._titleWorld) return;
@@ -1337,16 +1317,16 @@ export class RallyGame {
       metalness: 0.02,
       envMapIntensity: 0.22,
     });
-    const sand = new THREE.Mesh(new THREE.RingGeometry(9.78, 52, 96, 1), sandMat);
+    const sand = new THREE.Mesh(new THREE.RingGeometry(9.78, 22, 64, 1), sandMat);
     sand.rotation.x = -Math.PI / 2;
     sand.position.y = -0.035;
     sand.receiveShadow = true;
     group.add(sand);
 
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(110, 48),
+      new THREE.CircleGeometry(72, 32),
       new THREE.MeshStandardMaterial({
-        color: 0xb89464,
+        color: 0xa89068,
         roughness: 0.98,
         metalness: 0.0,
         envMapIntensity: 0.12,
@@ -1357,32 +1337,44 @@ export class RallyGame {
     ground.receiveShadow = true;
     group.add(ground);
 
-    const duneMat = sandMat.clone();
-    duneMat.color.setHex(0xd8b888);
-    const duneMatFar = sandMat.clone();
-    duneMatFar.color.setHex(0xb08a58);
-    const duneMatMid = sandMat.clone();
-    duneMatMid.color.setHex(0xc4a06c);
-    for (let i = 0; i < 18; i++) {
-      const a = (i / 18) * Math.PI * 2 + 0.11;
-      const dist = 30 + (i % 6) * 4.8;
-      const sx = 9.5 + (i % 4) * 2.4;
-      const sy = 1.35 + (i % 5) * 0.55;
-      const sz = 6.2 + (i % 3) * 1.8;
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 14, 10),
-        i % 3 === 0 ? duneMat : i % 3 === 1 ? duneMatMid : duneMatFar
-      );
-      mesh.position.set(Math.sin(a) * dist, sy * 0.42, Math.cos(a) * dist);
-      mesh.scale.set(sx, sy, sz);
-      mesh.rotation.y = a * 0.4;
-      mesh.castShadow = false;
-      mesh.receiveShadow = true;
-      group.add(mesh);
-    }
-
     this.scene.add(group);
     this._titleWorld = group;
+    this._plantTitleRocks();
+  }
+
+  /**
+   * Kenney rock GLBs around the pad. Async — splash never waits on them.
+   */
+  _plantTitleRocks() {
+    if (this._titleRocksAsked) return;
+    this._titleRocksAsked = true;
+    loadTitleRocks()
+      .then((templates) => {
+        if (!this._titleWorld || this.state === "race" || this.state === "countdown") return;
+        const poses = [
+          { kind: "rock_largeA", a: 0.42, d: 15.8, s: 2.35, ry: 0.4 },
+          { kind: "rock_largeB", a: 1.18, d: 17.6, s: 2.05, ry: 1.1 },
+          { kind: "rock_tallA", a: 2.02, d: 16.4, s: 1.9, ry: 2.2 },
+          { kind: "rock_largeA", a: 2.88, d: 19.4, s: 2.7, ry: 0.2 },
+          { kind: "rock_smallA", a: 3.52, d: 14.2, s: 1.35, ry: 1.7 },
+          { kind: "rock_largeB", a: 4.38, d: 18.2, s: 2.15, ry: 2.8 },
+          { kind: "rock_tallA", a: 5.12, d: 15.6, s: 1.75, ry: 0.9 },
+          { kind: "rock_smallA", a: 5.82, d: 14.8, s: 1.22, ry: 3.4 },
+        ];
+        const box = new THREE.Box3();
+        for (const pose of poses) {
+          const src = templates[pose.kind];
+          if (!src) continue;
+          const node = src.clone(true);
+          node.scale.setScalar(pose.s);
+          node.rotation.y = pose.ry;
+          node.position.set(Math.sin(pose.a) * pose.d, 0, Math.cos(pose.a) * pose.d);
+          this._titleWorld.add(node);
+          box.setFromObject(node);
+          if (Number.isFinite(box.min.y)) node.position.y -= box.min.y;
+        }
+      })
+      .catch((err) => console.warn("[title] rocks", err));
   }
 
   /**
@@ -1398,6 +1390,7 @@ export class RallyGame {
       this._titleWorld.visible = true;
       if (!this._titleWorld.parent) this.scene.add(this._titleWorld);
     }
+    this._plantTitleRocks();
     if (this._titleFloor) this._titleFloor.visible = true;
     if (this.player) {
       this.player.position.set(0, 0.02, 0);
@@ -1426,14 +1419,18 @@ export class RallyGame {
     if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
     if (this._titleIblTimer) clearTimeout(this._titleIblTimer);
     this._titleIblTimer = 0;
-    requestAnimationFrame(() => {
-      if (this.state !== "title" && this.state !== "menu") return;
-      try {
-        this._bakeSkyEnv("title");
-      } catch (err) {
-        console.warn("Title IBL failed", err);
-      }
-    });
+    if (!this._titleIblReady) {
+      this._titleIblTimer = setTimeout(() => {
+        this._titleIblTimer = 0;
+        if (this.state !== "title" && this.state !== "menu") return;
+        try {
+          this._bakeSkyEnv("title");
+          this._titleIblReady = true;
+        } catch (err) {
+          console.warn("Title IBL failed", err);
+        }
+      }, 2400);
+    }
     this.hemi.color.setHex(L.hemiSky);
     this.hemi.groundColor.setHex(L.hemiGround);
     this.hemi.intensity = L.hemi;
@@ -1450,14 +1447,23 @@ export class RallyGame {
     this._titleKick.intensity = L.kickInt;
     this.caveLight.intensity = 0;
     for (const lamp of this._wallLights) lamp.intensity = 0;
-    this.sun.castShadow = true;
-    this._setShadowMapSize(GFX.titleShadowMap || 2048);
+    this.sun.castShadow = false;
     this._titleShadowFrustReady = false;
     this._tunnelBlend = 0;
     this._applyTitleCarShowcase(true);
     if (this.post) {
       this.post.enabled = false;
       this.post.setQuality("low");
+    }
+    if (!this._titleShadowArmed) {
+      this._titleShadowArmed = true;
+      setTimeout(() => {
+        if (!this.sun || !this.renderer) return;
+        if (this.state !== "title" && this.state !== "menu") return;
+        this.renderer.shadowMap.enabled = true;
+        this.sun.castShadow = true;
+        this._setShadowMapSize(GFX.titleShadowMap || 1024);
+      }, 700);
     }
     this._onResize();
     this._updateTitleLights(0);
@@ -1963,6 +1969,12 @@ export class RallyGame {
   async _beginRace(courseId) {
     this._pauseGarageWatch();
     this._warmGarage();
+    try {
+      if (this.audio && this.audio._bootSfxGraph) this.audio._bootSfxGraph();
+      if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
+    } catch {
+      /* music already running */
+    }
     this.state = "loading";
     this._loadGen += 1;
     const gen = this._loadGen;

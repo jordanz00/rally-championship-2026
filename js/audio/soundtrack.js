@@ -118,17 +118,34 @@ export class CdSoundtrack {
     this._voice = null;
     /** @type {{src: AudioBufferSourceNode, level: GainNode, id: string}[]} */
     this._dying = [];
+    this._warmingRest = false;
   }
 
   /**
-   * Decode the title disc first so Start has music, then the rest.
+   * Decode the title disc only. Stage beds wait for warmIdle() so the first
+   * click cannot decode ~60 MB of MP3 and freeze Chrome.
    */
   boot() {
     this.ready = true;
     this._load("title");
-    for (const id of Object.keys(DISCS)) {
-      if (id !== "title") this._load(id);
-    }
+  }
+
+  /**
+   * One remaining disc at a time, after the title bed is already playing.
+   */
+  warmIdle() {
+    if (this._warmingRest) return;
+    this._warmingRest = true;
+    const rest = Object.keys(DISCS).filter((id) => id !== "title");
+    let i = 0;
+    const step = () => {
+      if (i >= rest.length) return;
+      const id = rest[i++];
+      this._load(id)
+        .catch(() => {})
+        .finally(() => setTimeout(step, 480));
+    };
+    setTimeout(step, 700);
   }
 
   /**
@@ -144,10 +161,11 @@ export class CdSoundtrack {
       if (!res.ok) throw new Error("music fetch " + id);
       const raw = await res.arrayBuffer();
       const decoded = await decodeAudio(this.ctx, raw);
-      const baked = bakeLoop(this.ctx, decoded, LOOP_XFADE_SEC);
-      this._buffers[id] = baked;
+      // Do not sample-walk a 3–6 min stereo buffer on the click that
+      // unlocked audio — that was a Chrome "Page Unresponsive" stall.
+      this._buffers[id] = decoded;
       if (this._wanted === id && this.current !== id) this._crossfadeTo(id);
-      return baked;
+      return decoded;
     })().catch((err) => {
       delete this._loading[id];
       console.warn("CD soundtrack: failed to load " + id, err);
@@ -244,8 +262,9 @@ export class CdSoundtrack {
     const src = this.ctx.createBufferSource();
     src.buffer = this._buffers[id];
     src.loop = true;
-    src.loopStart = 0;
-    src.loopEnd = src.buffer.duration;
+    const dur = src.buffer.duration;
+    src.loopStart = Math.min(0.04, dur * 0.002);
+    src.loopEnd = Math.max(src.loopStart + 0.5, dur - 0.04);
     const level = this.ctx.createGain();
     const trim = DISC_TRIM[id] || 1;
     level.gain.setValueAtTime(0.0001, now);

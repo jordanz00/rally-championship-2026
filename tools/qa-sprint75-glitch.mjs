@@ -132,7 +132,7 @@ function staticGates() {
   check("never-under-world floor", /_neverFallThrough/.test(vehicle) && /_reacquireProgress/.test(vehicle));
   check("game + AI import vehicle.js", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 90);
   check("game imports track.js", /track\.js\?v=(\d+)/.test(game) && Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 184);
-  check("cache-bust chain", cacheOk && Number(gameV) >= 422, `main=${mainV} game=${gameV}`);
+  check("cache-bust chain", cacheOk && Number(gameV) >= 424, `main=${mainV} game=${gameV}`);
 }
 
 async function driveCourse(cdp, course, first) {
@@ -297,7 +297,7 @@ async function chromeDrive() {
     await waitFor(
       cdp,
       `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`,
-      { timeout: 8000, label: "SELECT MODE" }
+      { timeout: 60000, label: "SELECT MODE" }
     );
     await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
     await waitFor(

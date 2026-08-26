@@ -34,7 +34,7 @@ export const GFX = {
   titleMaxPixelRatio: 1.5,
   titleMaxPixels: 2400000,
   /** Title sun atlas — one hero car on a pad; 2048 keeps contact sharp. */
-  titleShadowMap: 2048,
+  titleShadowMap: 1024,
   /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
   targetFps: 60,
   lockRenderFps: true,

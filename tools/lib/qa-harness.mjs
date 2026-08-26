@@ -407,12 +407,21 @@ export async function evaluate(cdp, expression, opts = {}) {
 export async function waitFor(cdp, expression, opts = {}) {
   const timeout = opts.timeout ?? 15000;
   const interval = opts.interval ?? 100;
+  const evalTimeoutMs = opts.evalTimeoutMs ?? 8000;
   const deadline = Date.now() + timeout;
   let last;
   while (Date.now() < deadline) {
-    const remain = Math.max(5000, deadline - Date.now() + 2000);
-    last = await evaluate(cdp, expression, { timeoutMs: remain });
-    if (last) return last;
+    const remain = Math.max(1000, deadline - Date.now());
+    try {
+      last = await evaluate(cdp, expression, { timeoutMs: Math.min(evalTimeoutMs, remain) });
+      if (last) return last;
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (!/CDP timeout/.test(msg)) throw err;
+      if (Date.now() >= deadline) {
+        throw new Error(`timed out after ${timeout}ms waiting for: ${opts.label || expression.trim().slice(0, 120)}`);
+      }
+    }
     await sleep(interval);
   }
   throw new Error(`timed out after ${timeout}ms waiting for: ${opts.label || expression.trim().slice(0, 120)}`);
@@ -496,8 +505,14 @@ export async function clickSelector(cdp, selector, label = selector) {
  */
 export async function mainThreadLag(cdp) {
   const t0 = Date.now();
-  await evaluate(cdp, `return 1;`);
-  return Date.now() - t0;
+  try {
+    await evaluate(cdp, `return 1;`, { timeoutMs: 8000 });
+    return Date.now() - t0;
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    if (/CDP timeout/.test(msg)) return 8000;
+    throw err;
+  }
 }
 
 /**

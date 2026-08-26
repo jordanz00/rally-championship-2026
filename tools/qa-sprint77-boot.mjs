@@ -41,19 +41,19 @@ check("title showroom is visible under the emblem", /#crt:has\(#screen-title\.ac
 check("showroom canvas fades in, does not pop", /showroom-live/.test(css) && /showroom-live/.test(game));
 check("black curtain CSS", /\.fx-curtain/.test(css) && /\.fx-curtain\.is-on/.test(css));
 check("title DPR cap is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleMaxPixels:\s*2400000/.test(config));
-check("title shadow atlas is 2048", /titleShadowMap:\s*2048/.test(config) && /GFX\.titleShadowMap/.test(game));
+check("title shadow atlas is 1024 (boot stays cheap)", /titleShadowMap:\s*1024/.test(config) && /GFX\.titleShadowMap/.test(game));
 check("title boot is next-frame, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
 check("title loads the hero car (LOD fallback)", /prepareTitleCar\(this\.carId\)/.test(game) && /tryLocalGltf/.test(read("js/cars/celica.js")));
 check("full garage waits for PRESS START", /this\._warmGarage\(\)/.test(game) && !/\.then\(\(\) => prepareCelica\(\)\)/.test(game));
 check("title skips post-process RTs", /this\.post\.enabled = false/.test(game) && /this\.post && !onTitle/.test(game));
-check("IBL bake is next-frame on splash", /_bakeSkyEnv\("title"\)/.test(game) && !/, 1800\)/.test(game));
+check("IBL bake is deferred on splash", /_bakeSkyEnv\("title"\)/.test(game) && /_titleIblReady/.test(game));
 check("showScreen fades through black", /fadeThroughBlack/.test(hud) && /FADE_OUT_MS/.test(hud) && /fx-curtain/.test(hud));
 check("load bar trickles instead of hanging", /tricklePerSec/.test(hud) && /armLoadBar/.test(hud) && /scaleX/.test(hud));
 check("loading fill is transform-driven", /transform:\s*scaleX\(0\)/.test(css));
 check("race start awaits the loading fade", /showLoadingScreen/.test(game) && /await showScreen\("screen-hud"\)/.test(game));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 416 && /hud\.js\?v=27/.test(game),
+  cacheOk && Number(gameV) >= 423 && /hud\.js\?v=28/.test(game),
   `main=${mainV} game=${gameV}`
 );
 check("css cache-bust", /game\.css\?v=29/.test(index));

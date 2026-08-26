@@ -63,12 +63,15 @@ check("hero Celica is HTML-preloaded", /assets\/celica\/gt4\.glb/.test(index) &&
 check("WebGL boots on the next frames, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
 check("title fetch starts in the constructor", /this\._titleCarWarm = prepareTitleCar/.test(game));
 check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWorld/.test(game) && /makeTitleAsphaltMap/.test(game) && !/CircleGeometry\(52, 24\)/.test(game));
-check("title DPR is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleShadowMap:\s*2048/.test(config));
-check("IBL bakes on the first idle frame", /_bakeSkyEnv\("title"\)/.test(game) && !/, 1800\)/.test(game));
+check("title DPR is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleShadowMap:\s*1024/.test(config));
+check("IBL bakes after first present", /_bakeSkyEnv\("title"\)/.test(game) && /_titleIblReady/.test(game));
 check("title overlay is a vignette, not a dark slab", /rgba\(0, 0, 0, 0\.22\)/.test(css) && !/rgba\(5, 7, 5, 0\.62\)/.test(css));
 check("css cache-bust", /game\.css\?v=29/.test(index));
 check("celica.js cache-bust", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 121);
-check("cache-bust chain", cacheOk && Number(gameV) >= 416, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 423, `main=${mainV} game=${gameV}`);
+check("sphere dune blobs are gone", !/for \(let i = 0; i < 18; i\+\+\)/.test(game) && /loadTitleRocks/.test(game) && /rock_largeA/.test(game));
+check("PRESS START does not rebuild the showroom", /_idleWarmAfterTitle/.test(game) && /instant: true/.test(game));
+check("car and course menus swap instantly", /showScreen\("screen-courses", \{ instant: true \}/.test(game) && /showScreen\("screen-cars", \{ instant: true \}/.test(game));
 
 const hero = path.join(ROOT, "assets/celica/gt4.glb");
 const lod = path.join(ROOT, "assets/celica/rival.glb");

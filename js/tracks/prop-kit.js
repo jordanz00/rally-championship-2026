@@ -335,6 +335,55 @@ export function preparePropKit() {
   return loadPromise;
 }
 
+const TITLE_ROCK_KINDS = Object.freeze(["rock_largeA", "rock_largeB", "rock_tallA", "rock_smallA"]);
+
+/** @type {Promise<Record<string, THREE.Object3D>>|null} */
+let titleRockPromise = null;
+
+/**
+ * Four Kenney rock GLBs for the title showroom. Does not load the full
+ * spectator / forest kit — that stays on PRESS START idle.
+ *
+ * @returns {Promise<Record<string, THREE.Object3D>>}
+ */
+export function loadTitleRocks() {
+  if (titleRockPromise) return titleRockPromise;
+  titleRockPromise = (async () => {
+    const loader = new GLTFLoader();
+    /** @type {Record<string, THREE.Object3D>} */
+    const out = {};
+    await Promise.all(
+      TITLE_ROCK_KINDS.map(async (kind) => {
+        try {
+          const gltf = await loader.loadAsync(`assets/props/${kind}.glb?v=15`);
+          const root = (gltf.scene || gltf.scenes[0]).clone(true);
+          root.traverse((o) => {
+            if (!o.isMesh) return;
+            o.castShadow = true;
+            o.receiveShadow = true;
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            for (const m of mats) {
+              if (!m) continue;
+              if (m.map) {
+                m.map.colorSpace = THREE.SRGBColorSpace;
+                m.map.anisotropy = 4;
+              }
+              m.envMapIntensity = 0.32;
+              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.84);
+            }
+          });
+          root.name = `title-${kind}`;
+          out[kind] = root;
+        } catch (err) {
+          console.warn(`[title] rock failed ${kind}`, err);
+        }
+      })
+    );
+    return out;
+  })();
+  return titleRockPromise;
+}
+
 /**
  * Load Sketchfab low_poly_forest_tree_pack.glb — realistic trunk/canopy trees,
  * atlas backdrop cards, and pack rocks for Forest + Mountain stages.

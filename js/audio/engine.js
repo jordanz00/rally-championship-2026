@@ -10,7 +10,7 @@
  * See assets/sfx/ATTRIBUTION.txt and assets/music/ATTRIBUTION.txt.
  */
 
-import { CdSoundtrack } from "./soundtrack.js?v=132";
+import { CdSoundtrack } from "./soundtrack.js?v=134";
 import { PowertrainVoice } from "./powertrain.js?v=25";
 import { SkidVoice } from "./skid.js?v=6";
 import { loadSample, playHit, playClip } from "./bank.js?v=2";
@@ -115,17 +115,60 @@ export class RallyAudio {
     this._countSrc = null;
     /** @type {CrowdVoice|null} */
     this.crowd = null;
+    this._sfxReady = false;
+    this._unlocking = false;
   }
 
+  /**
+   * First gesture: resume the context and start the title bed only.
+   * Decoding every stage MP3 + baking loop tails here froze Chrome
+   * ("Page Unresponsive") on PRESS START.
+   */
   unlock() {
     if (this._workMute) return;
     if (this.ready) {
       this._kickContext();
       return;
     }
+    if (this._unlocking) {
+      this._kickContext();
+      return;
+    }
+    this._unlocking = true;
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.ctx = ctx;
     this._kickContext();
+
+    const music = ctx.createGain();
+    music.gain.value = 1;
+    music.connect(ctx.destination);
+    this.cd = new CdSoundtrack(ctx, music);
+    try {
+      this.cd.boot();
+    } catch (err) {
+      console.warn("CD soundtrack failed", err);
+      this.cd = null;
+    }
+    if (this.cd) {
+      this.cd.setUserVolume(this.musicVol);
+      this.cd.sync(this._screen || "title", "");
+    }
+    this.ready = true;
+    this._bindVisibility();
+    const later =
+      typeof requestIdleCallback === "function"
+        ? (fn) => requestIdleCallback(fn, { timeout: 1600 })
+        : (fn) => setTimeout(fn, 480);
+    later(() => this._bootSfxGraph());
+  }
+
+  /**
+   * Engine / tires / hits after music is already playing.
+   */
+  _bootSfxGraph() {
+    if (this._sfxReady || !this.ctx || this._workMute) return;
+    this._sfxReady = true;
+    const ctx = this.ctx;
 
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass";
@@ -166,24 +209,6 @@ export class RallyAudio {
     this._reverb = new ReverbZones(ctx, hp);
     this._reverb.connectSource(sfxMerge);
 
-    const music = ctx.createGain();
-    music.gain.value = 1;
-    music.connect(ctx.destination);
-    this.cd = new CdSoundtrack(ctx, music);
-    try {
-      this.cd.boot();
-    } catch (err) {
-      console.warn("CD soundtrack failed", err);
-      this.cd = null;
-    }
-    if (this.cd) {
-      this.cd.setUserVolume(this.musicVol);
-      // Start the bed now. syncMusic() only fires on a *change* of screen
-      // key, so without this the title disc decoded and then sat idle until
-      // the next menu transition.
-      this.cd.sync(this._screen || "title", "");
-    }
-
     this.voice = new PowertrainVoice(ctx, sfxMerge);
     this.voice.setCar(this._pendingCar);
     this.voice.boot();
@@ -200,15 +225,10 @@ export class RallyAudio {
     this._bootNavClips();
     this._hits.noise = makeNoiseBuffer(ctx, 0.18);
     this._hits.thump = makeNoiseBuffer(ctx, 0.28, 0.55);
-    // Distinct procedural landing bodies so soft hops, hard packs, and
-    // botched nose-high arrivals never share one identical sample.
     this._hits.landSoft = makeNoiseBuffer(ctx, 0.42, 0.88);
     this._hits.landMid = makeNoiseBuffer(ctx, 0.22, 0.62);
     this._hits.landHard = makeNoiseBuffer(ctx, 0.12, 0.28);
     this._hits.landScrape = makeNoiseBuffer(ctx, 0.2, 0.12);
-
-    this.ready = true;
-    this._bindVisibility();
   }
 
   /**

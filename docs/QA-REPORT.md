@@ -2415,3 +2415,26 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 ---
 
+## Sprint 87 — Instant menus, title music, real rocks (26 Aug 2026)
+
+**Player moment:** PRESS START, car, and stage clicks swap immediately. Title music starts on the first tap. The showroom is a tarmac pad, sky, orbiting hero car, and Kenney rock GLBs — no sphere boulders. Chrome does not throw "Page Unresponsive" on launch.
+
+**Cause:** First click decoded every stage MP3 (~60 MB) and sample-walked loop tails on the main thread. PRESS START then rebuilt title lighting, baked IBL, allocated a 2048 shadow atlas, cloned the hero GLB, and started Track.create. Hovering a stage button also started a track build.
+
+**Fix:** Unlock audio = title bed only; SFX and other discs idle later. Menus `instant: true`. No showroom rebuild / car clone / track preload on option clicks. Sphere dunes replaced with `rock_largeA/B`, `rock_tallA`, `rock_smallA`. Shadows + IBL after first present.
+
+| Change | Status |
+|--------|--------|
+| Title music on first gesture; no 6-disc decode | **Done** |
+| Instant SELECT MODE / car / course | **Done** |
+| Kenney rock GLBs on the title pad | **Done** |
+| Deferred IBL + 1024 title shadows | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=423`** · `config.js?v=143` · `engine.js?v=52` · `soundtrack.js?v=133` · `prop-kit.js?v=19` · `hud.js?v=28`
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-sprint69-clouds.mjs`
+
+**Still human-only:** Click Start — music + instant menu. Title rocks should read as stone, not balloons.
+
+---
+
