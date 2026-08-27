@@ -3512,11 +3512,11 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Clearance guard so fold arms stay driveable | **Done** |
 | In-lane / verge wash contracts still hold | **Done** (qa-desert-clip / qa-env-clip) |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=477`** · `track.js?v=204`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=206`
 
 **Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-boot-smoke.mjs`
 
-**Still human-only:** Hard refresh `?v=476`. Drive Desert into the tunnel — embankment meets the portal on both sides.
+**Still human-only:** Hard refresh `?v=478`. Drive Desert into the tunnel — embankment meets the portal on both sides.
 
 ---
 
@@ -3526,19 +3526,21 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 
 **Cause:** (1) Mouth-cut invented lateral distance from along-track (`ridgeDist`), so a sample on the exit centreline got a full hillside. (2) Tunnel-cut land refuse was only **2.4 m**, so 10 m tris folded rock onto the apron. (3) Portal had a **centre approach mound** on the ribbon plus a grounding slab whose top sat above the deck.
 
-**Fix:** Real lateral clearance only for mouth cut. Drive-verge refuse (`ROAD_VERGE+4.5`). Portal rock pushed past the verge; centre mound removed; drive-tube AABB scrub on portal children.
+**Fix:** Real lateral clearance only for mouth cut. Drive-verge refuse (`ROAD_VERGE+4.5`). Portal rock pushed past the verge; centre mound removed; drive-tube AABB scrub on portal children. Land tiles clamp under nearest ribbon deck in the drive corridor. Env-clip probe uses `roadY` (not cross-arm `overlapBed`) so grade-separated false positives do not mask real clips.
 
 | Item | State |
 |---|---|
 | Mouth cut never raises on-asphalt verts | **Done** |
 | Land refuse clears exit apron | **Done** |
 | Portal mid-lane rock scrubbed | **Done** |
+| Absolute land clamp under nearest deck | **Done** |
+| Env-clip bed = nearest `roadY` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=474`** · `track.js?v=199`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=206`
 
 **Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs`
 
-**Still human-only:** Hard refresh `?v=474`. Exit the Desert tunnel — clear ribbon, car not buried in rock.
+**Still human-only:** Hard refresh `?v=478`. Exit the Desert tunnel — clear ribbon, car not buried in rock.
 
 ---
 
