@@ -7,8 +7,9 @@
  *   assets/props/ once, merges each into a grounded BufferGeometry, preserves
  *   UVs, paints bark/canopy vertex colours, and exposes textured materials for
  *   InstancedMesh placement.
- * HOW IT CONNECTS: Track calls preparePropKit() during boot, then
- *   propGeometry(kind) / propNatureMaterial(kind) when planting.
+ * HOW IT CONNECTS: Track calls preparePropKit(scenery) so Desert does not
+ *   wait on the forest pack or alpine houses. propGeometry(kind) /
+ *   propNatureMaterial(kind) when planting.
  *
  * CACHE BUST: bump `?v=` on imports when the kit or asset set changes.
  */
@@ -16,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=138";
+import { VISUAL } from "../config.js?v=148";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -156,8 +157,65 @@ let ROCK_TEX = null;
 /** @type {boolean} */
 let ready = false;
 
+/** Per-kind in-flight loads. A Desert race must not wait on alpine houses. */
+const kindLoads = Object.create(null);
+/** @type {Record<string, Promise<void>>} */
+const sceneryLoads = Object.create(null);
 /** @type {Promise<void>|null} */
-let loadPromise = null;
+let forestPackPromise = null;
+/** @type {Promise<void>|null} */
+let natureTexPromise = null;
+/** @type {GLTFLoader|null} */
+let kitLoader = null;
+
+const KIT_ASSET_V = "15";
+
+const CROWD_FOUR = Object.freeze([
+  "character-male-a",
+  "character-male-b",
+  "character-female-a",
+  "character-female-b",
+]);
+const CROWD_SIX = Object.freeze([
+  "character-male-a",
+  "character-male-b",
+  "character-male-c",
+  "character-female-a",
+  "character-female-b",
+  "character-female-c",
+]);
+const DESERT_NATURE = Object.freeze([
+  "animal-zebra",
+  "animal-elephant",
+  "animal-gazelle",
+  "cactus_tall",
+  "rock_largeA",
+  "rock_largeB",
+  "rock_tallA",
+  "rock_smallA",
+  "plant_bushDetailed",
+  "plant_bushLarge",
+]);
+const FOREST_NATURE = Object.freeze([
+  "rock_largeA",
+  "rock_largeB",
+  "rock_tallA",
+  "rock_smallA",
+  "plant_bushDetailed",
+  "plant_bushLarge",
+  "plant_bushDense",
+  "plant_bushRound",
+  "plant_bushFern",
+  "log_large",
+  "tree_pineDefaultA",
+  "tree_pineDefaultB",
+  "tree_oak",
+  "tree_detailed",
+  "tree_default",
+  "tree_cone",
+  "tree_fir",
+]);
+const MOUNTAIN_NATURE = Object.freeze([...FOREST_NATURE, "tent_detailedClosed", "house-alpine"]);
 
 /**
  * Target / clamp heights in metres (bounding-box Y extent after footing).
@@ -283,56 +341,114 @@ export function propNatureMaterial(kind) {
 }
 
 /**
- * Load every PROP_KINDS GLB once. Safe to call repeatedly — subsequent calls
- * await the same promise. Missing files warn and cache null.
- *
+ * Kinds a scenery set actually instances. Desert must not pull the forest pack.
+ * @param {string} [scenery]
+ * @returns {readonly string[]}
+ */
+export function kindsForScenery(scenery) {
+  const s = scenery || "desert";
+  if (s === "forest" || s === "lakeside") return CROWD_SIX.concat(FOREST_NATURE);
+  if (s === "mountain") return CROWD_SIX.concat(MOUNTAIN_NATURE);
+  return CROWD_FOUR.concat(DESERT_NATURE);
+}
+
+function getKitLoader() {
+  if (kitLoader) return kitLoader;
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier((url) => {
+    const u = String(url || "");
+    if (/colormap\.png$/i.test(u)) return "assets/props/Textures/hd/crowd_atlas.png";
+    if (/crowd_atlas\.png$/i.test(u)) return "assets/props/Textures/hd/crowd_atlas.png";
+    return url;
+  });
+  kitLoader = new GLTFLoader(manager);
+  return kitLoader;
+}
+
+/**
+ * @param {string} kind
  * @returns {Promise<void>}
  */
-export function preparePropKit() {
-  if (loadPromise) return loadPromise;
-  loadPromise = (async () => {
+function ensureKind(kind) {
+  if (Object.prototype.hasOwnProperty.call(CACHE, kind)) return Promise.resolve();
+  if (kindLoads[kind]) return kindLoads[kind];
+  kindLoads[kind] = (async () => {
+    const loader = getKitLoader();
+    const url = `assets/props/${kind}.glb?v=${KIT_ASSET_V}`;
+    try {
+      const gltf = await loader.loadAsync(url);
+      const root = gltf.scene || gltf.scenes[0];
+      if (!root) {
+        console.warn(`[prop-kit] empty scene: ${url}`);
+        CACHE[kind] = null;
+        return;
+      }
+      const geo = extractPropGeometry(root, kind);
+      CACHE[kind] = geo;
+      if (kind.startsWith("character-") && geo) {
+        CHAR_PARTS[kind] = splitCrowdCharacter(geo);
+      } else if (kind.startsWith("character-")) {
+        CHAR_PARTS[kind] = null;
+      }
+    } catch (err) {
+      console.warn(`[prop-kit] missing or failed: ${url}`, err);
+      CACHE[kind] = null;
+    }
+  })();
+  return kindLoads[kind];
+}
+
+/**
+ * @param {string} scenery
+ * @returns {Promise<void>}
+ */
+function loadSceneryKit(scenery) {
+  const key = scenery || "desert";
+  if (sceneryLoads[key]) return sceneryLoads[key];
+  sceneryLoads[key] = (async () => {
     await loadNatureTextures();
-    // Kenney character GLBs reference Textures/colormap.png beside the pack.
-    // Geometry extraction ignores materials, but GLTFLoader still fetches the
-    // map — pin the path so a relative miss cannot 404-spam the console.
-    const manager = new THREE.LoadingManager();
-    manager.setURLModifier((url) => {
-      const u = String(url || "");
-      if (/colormap\.png$/i.test(u)) return "assets/props/Textures/hd/crowd_atlas.png";
-      if (/crowd_atlas\.png$/i.test(u)) return "assets/props/Textures/hd/crowd_atlas.png";
-      return url;
-    });
-    const loader = new GLTFLoader(manager);
-    /** Bust browser GLB cache when the kit module version bumps. */
-    const assetV = "15";
-    await Promise.all(
-      PROP_KINDS.map(async (kind) => {
-        const url = `assets/props/${kind}.glb?v=${assetV}`;
-        try {
-          const gltf = await loader.loadAsync(url);
-          const root = gltf.scene || gltf.scenes[0];
-          if (!root) {
-            console.warn(`[prop-kit] empty scene: ${url}`);
-            CACHE[kind] = null;
-            return;
-          }
-          const geo = extractPropGeometry(root, kind);
-          CACHE[kind] = geo;
-          if (kind.startsWith("character-") && geo) {
-            CHAR_PARTS[kind] = splitCrowdCharacter(geo);
-          } else if (kind.startsWith("character-")) {
-            CHAR_PARTS[kind] = null;
-          }
-        } catch (err) {
-          console.warn(`[prop-kit] missing or failed: ${url}`, err);
-          CACHE[kind] = null;
-        }
-      })
-    );
-    await loadForestTreePack(loader, assetV);
+    await Promise.all(kindsForScenery(key).map(ensureKind));
+    if (key === "forest" || key === "mountain") {
+      if (!forestPackPromise) forestPackPromise = loadForestTreePack(getKitLoader(), KIT_ASSET_V);
+      await forestPackPromise;
+    }
     ready = true;
   })();
-  return loadPromise;
+  return sceneryLoads[key];
+}
+
+/**
+ * Load GLBs for one scenery set. Omit scenery (idle warm) to load Desert only —
+ * championship starts there, and the forest pack must not compete with it.
+ * Safe to call repeatedly; overlapping calls share the same promises.
+ *
+ * @param {string} [scenery]
+ * @returns {Promise<void>}
+ */
+export function preparePropKit(scenery) {
+  return loadSceneryKit(scenery || "desert");
+}
+
+/**
+ * HTTP-cache scenery GLBs without parsing them. Menu clicks stay live; Track.create
+ * then hits disk/HTTP cache instead of competing with SELECT MODE.
+ *
+ * @param {string} [scenery]
+ * @returns {Promise<void>}
+ */
+export function prefetchPropKit(scenery) {
+  const kinds = kindsForScenery(scenery || "desert");
+  return Promise.all(
+    kinds.map((kind) =>
+      fetch(`assets/props/${kind}.glb?v=${KIT_ASSET_V}`, { mode: "cors", credentials: "same-origin" }).then(
+        (res) => {
+          if (res && res.ok) return res.arrayBuffer();
+          return null;
+        },
+        () => null
+      )
+    )
+  ).then(() => {});
 }
 
 const TITLE_ROCK_KINDS = Object.freeze(["rock_largeA", "rock_largeB", "rock_tallA", "rock_smallA"]);
@@ -692,6 +808,7 @@ function adoptPackMaterial(src, kind, opts) {
  * @returns {Promise<void>}
  */
 function loadNatureTextures() {
+  if (natureTexPromise) return natureTexPromise;
   const loader = new THREE.TextureLoader();
   const load = (url) =>
     new Promise((resolve) => {
@@ -707,7 +824,7 @@ function loadNatureTextures() {
         () => resolve(null)
       );
     });
-  return Promise.all([
+  natureTexPromise = Promise.all([
     load("assets/props/Textures/hd/leaf_diff.jpg"),
     load("assets/props/Textures/hd/bark_diff.jpg"),
     load("assets/props/Textures/hd/rock_diff.jpg"),
@@ -716,6 +833,7 @@ function loadNatureTextures() {
     BARK_TEX = bark;
     ROCK_TEX = rock;
   });
+  return natureTexPromise;
 }
 
 /**

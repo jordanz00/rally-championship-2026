@@ -52,7 +52,7 @@ check(
   "view raymarch has a bounded step loop",
   /const int MAX_VIEW = 16/.test(sky) &&
     /for \(int i = 0; i < MAX_VIEW; i\+\+\)/.test(sky) &&
-    /cinemaViewSteps:\s*12/.test(sky) &&
+    /cinemaViewSteps:\s*16/.test(sky) &&
     /lowViewSteps:\s*6/.test(sky)
 );
 check(
@@ -103,10 +103,10 @@ check(
 );
 check(
   "LIGHTING still owns per-stage cover (fog/sun stay in config)",
-  /cloudCover:\s*0\.36/.test(config) &&
-    /cloudCover:\s*0\.44/.test(config) &&
-    /cloudCover:\s*0\.32/.test(config) &&
-    /cloudCover:\s*0\.38/.test(config)
+  /cloudCover:\s*0\.55/.test(config) &&
+    /cloudCover:\s*0\.6/.test(config) &&
+    /cloudCover:\s*0\.5/.test(config) &&
+    /cloudCover:\s*0\.56/.test(config)
 );
 check(
   "sky still uses stage sun / fog / wind",
@@ -132,7 +132,7 @@ check(
   "title + race both apply palettes",
   /applySky\(this\.sky, L, "title"\)/.test(game) && /applySky\(this\.sky, L, courseId\)/.test(game)
 );
-check("game imports sky.js?v=23", /sky\.js\?v=23/.test(game));
+check("game imports sky.js?v=25", /sky\.js\?v=25/.test(game));
 check(
   "no leftover flat cloud sprite as the only sky",
   /name = "pbr-sky"/.test(sky) &&

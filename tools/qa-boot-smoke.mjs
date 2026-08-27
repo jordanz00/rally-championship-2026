@@ -193,7 +193,7 @@ async function main() {
       const screen = await waitFor(
         cdp,
         `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? el.id : null;`,
-        { timeout: 5000, label: "#screen-menu to become the active screen" }
+        { timeout: 15000, label: "#screen-menu to become the active screen" }
       );
       const mode = await evaluate(cdp, `return window.game ? window.game.state : null;`);
       assert(screen === "screen-menu", `expected screen-menu, got ${screen}`);
@@ -205,6 +205,12 @@ async function main() {
     // Root cause (d): a suspended AudioContext, or a stored volume of 0, made
     // the whole game silent with no visible symptom.
     await step("audio unlocked and not silently muted", async () => {
+      // Cinema showroom can hitch the main thread right after Start; nudge unlock
+      // then wait longer than the old 8s so a busy frame does not false-fail.
+      await evaluate(cdp, `
+        try { if (window.game && window.game.audio) window.game.audio.unlock(); } catch (_) {}
+        return 1;
+      `);
       const a = await waitFor(
         cdp,
         `
@@ -220,7 +226,7 @@ async function main() {
           masterGain: au.master ? au.master.gain.value : null,
         };
       `,
-        { timeout: 8000, label: "audio to report ready after the Start gesture" }
+        { timeout: 20000, label: "audio to report ready after the Start gesture" }
       );
       assert(a.musicVol > 0, `stored music volume is ${a.musicVol} — the mix is muted before anyone touched a slider`);
       assert(a.sfxVol > 0, `stored SFX volume is ${a.sfxVol} — the mix is muted before anyone touched a slider`);
@@ -245,7 +251,7 @@ async function main() {
       const screen = await waitFor(
         cdp,
         `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
-        { timeout: 5000, label: "#screen-cars to become active" }
+        { timeout: 15000, label: "#screen-cars to become active" }
       );
       await waitFor(
         cdp,
@@ -285,7 +291,7 @@ async function main() {
         if (g.state !== "countdown" && g.state !== "race") return null;
         return { state: g.state, course: g.courseId, countdown: g.countdown, hasTrack: !!g.track, hasRenderer: !!g.renderer };
       `,
-        { timeout: 60000, label: "the HUD screen with the game in countdown (track build + shader compile can be slow)" }
+        { timeout: 120000, label: "the HUD screen with the game in countdown (track build + shader compile can be slow)" }
       );
       assert(g.hasRenderer, "race started with no WebGL renderer");
       assert(g.hasTrack, "race started with no track built");

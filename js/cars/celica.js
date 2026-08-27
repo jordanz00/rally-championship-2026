@@ -5,7 +5,7 @@
  *   https://sketchfab.com/3d-models/toyota-celica-gt4-rally-6e63b42ef7ab4d8d98b9990b0caad704
  * Delta: FREE Lancia Delta HF Integrale evo 2 by TARANTULA / begemot.988888 (CC BY 4.0)
  *   https://sketchfab.com/3d-models/free-lancia-delta-hf-integrale-evo-2-85614131e0dc4613a948472aaa935fc7
- * Stratos: high-detail HF rally mesh (dense loft + HD materials) for this tribute (not Sega's model).
+ * Stratos: user-supplied 1974 Lancia Stratos HF GLB (CAD export, PBR maps).
  *
  * WHO THIS IS FOR: renderer + AI pack.
  * WHAT IT DOES: loads a GLB per chassis, fits it to the rally car, PBR-shades
@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=138";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=23";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=148";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=27";
 
 const GARAGE = {
   celica: {
@@ -54,8 +54,8 @@ const GARAGE = {
     idbKey: "stratos",
     name: "stratos-hf",
     /**
-     * Sprint 18 Blender rebuild (~15.6k tris) with named wheels/lamps.
-     * Drop a higher-detail GLB over this path to upgrade the hero shell.
+     * 1974 CAD GLB (user drop). Four meshes; two are fused L+R axles.
+     * `prepStratosCadModel` splits them into WHEEL_* hubs at load.
      */
     placeholderGlb: false,
   },
@@ -162,10 +162,26 @@ export function aiTintForIndex(index) {
 
 /**
  * Boot loader — local GLB, then a cached drop. No procedural stand-ins.
+ *
+ * `onEach` fires per chassis so SELECT CAR can unlock each button as its model
+ * lands, instead of every car waiting on the slowest parse.
+ *
+ * @param {(id: string) => void} [onEach]
  * @returns {Promise<void>}
  */
-export async function prepareCelica() {
-  await Promise.all(GARAGE_CAR_IDS.map(prepareCar));
+export async function prepareCelica(onEach) {
+  await Promise.all(
+    GARAGE_CAR_IDS.map(async (id) => {
+      await prepareCar(id);
+      if (onEach) {
+        try {
+          onEach(id);
+        } catch (err) {
+          console.warn("[garage] ready callback", err);
+        }
+      }
+    })
+  );
 }
 
 /**
@@ -200,6 +216,26 @@ export function isTitleCarReady(id) {
  */
 export async function prepareHeroCar(id) {
   await prepareCar(GARAGE[id] ? id : "celica");
+}
+
+/**
+ * Decimated pack cars for the AI grid. Skips 7 MB hero parses so a race load
+ * does not compete with the selected driver's cockpit mesh.
+ * @returns {Promise<void>}
+ */
+export async function prepareRivalLods(onEach) {
+  await Promise.all(
+    GARAGE_CAR_IDS.map(async (id) => {
+      await tryRivalGltf(id);
+      if (onEach) {
+        try {
+          onEach(id);
+        } catch (err) {
+          console.warn("[garage] LOD ready callback", err);
+        }
+      }
+    })
+  );
 }
 
 /**
@@ -663,6 +699,179 @@ async function tryCachedGltf(id) {
 }
 
 /**
+ * 1974 Stratos CAD: four meshes, one material. Two meshes are L+R wheels
+ * fused on a single axle (zero verts at X=0). Split, recenter hubs, name
+ * WHEEL_* so findWheels / steer / spin work like the Celica.
+ * @param {THREE.Object3D} root
+ * @returns {boolean}
+ */
+function prepStratosCadModel(root) {
+  const meshes = [];
+  root.traverse((obj) => {
+    if (obj.isMesh) meshes.push(obj);
+  });
+  if (meshes.length < 2 || meshes.length > 8) return false;
+  let cad = 0;
+  for (let i = 0; i < meshes.length; i++) {
+    const n = `${meshes[i].name || ""} ${(meshes[i].parent && meshes[i].parent.name) || ""}`;
+    if (/_lancia_stratos/i.test(n)) cad += 1;
+  }
+  if (!cad) return false;
+
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    // CAD exporters often stamp 0.001 on the mesh (mm→m) in addition to the
+    // scene scale fitToRallyCar applies. That shrinks the body to a speck
+    // while split wheels (new Mesh, scale 1) stay car-sized.
+    mesh.scale.set(1, 1, 1);
+    if (mesh.material) {
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : mesh.material.clone();
+      const mats = [].concat(mesh.material);
+      for (let m = 0; m < mats.length; m++) {
+        const mat = mats[m];
+        if (!mat) continue;
+        // CAD export ships alphaMode BLEND on a "wire" material. gameShade
+        // treats that as glass at 0.48 opacity and the body disappears.
+        mat.userData.cadOpaque = true;
+        mat.transparent = false;
+        mat.opacity = 1;
+        mat.depthWrite = true;
+        mat.side = THREE.DoubleSide;
+        if (mat.color) mat.color.setHex(0xffffff);
+      }
+    }
+  }
+
+  const axles = meshes.filter(isCadTwinAxleMesh);
+  if (axles.length < 2) return false;
+  for (let i = 0; i < axles.length; i++) splitCadAxleMesh(axles[i]);
+  root.userData.stratosCad = true;
+  return true;
+}
+
+/**
+ * Track-wide mesh (~1.6 m in mm) with wheel-sized height/length (~0.6 m).
+ * @param {THREE.Mesh} mesh
+ */
+function isCadTwinAxleMesh(mesh) {
+  if (!mesh.geometry) return false;
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const bb = mesh.geometry.boundingBox;
+  const sx = bb.max.x - bb.min.x;
+  const sy = bb.max.y - bb.min.y;
+  const sz = bb.max.z - bb.min.z;
+  const dims = [sx, sy, sz].sort((a, b) => a - b);
+  return dims[2] > 1200 && dims[2] < 2200 && dims[0] > 350 && dims[0] < 900 && dims[1] < 900;
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ */
+function splitCadAxleMesh(mesh) {
+  const parts = splitMeshBySignX(mesh);
+  if (!parts || !mesh.parent) return;
+  const parent = mesh.parent;
+  const left = new THREE.Mesh(parts.left, mesh.material);
+  const right = new THREE.Mesh(parts.right, mesh.material.clone());
+  bakeMeshAtCenter(left);
+  bakeMeshAtCenter(right);
+  nameCadWheel(left);
+  nameCadWheel(right);
+  left.castShadow = true;
+  right.castShadow = true;
+  parent.add(left, right);
+  parent.remove(mesh);
+  if (mesh.geometry) mesh.geometry.dispose();
+}
+
+/**
+ * CAD space: nose is −Y, +X is right.
+ * @param {THREE.Mesh} mesh
+ */
+function nameCadWheel(mesh) {
+  const front = mesh.position.y < 0;
+  const right = mesh.position.x >= 0;
+  mesh.name = `WHEEL_${front ? "F" : "R"}${right ? "R" : "L"}`;
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ */
+function bakeMeshAtCenter(mesh) {
+  mesh.geometry.computeBoundingBox();
+  const c = mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
+  mesh.geometry.translate(-c.x, -c.y, -c.z);
+  mesh.position.copy(c);
+  mesh.geometry.computeBoundingBox();
+  mesh.geometry.computeBoundingSphere();
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ * @returns {{left: THREE.BufferGeometry, right: THREE.BufferGeometry}|null}
+ */
+function splitMeshBySignX(mesh) {
+  if (!mesh.geometry || !mesh.geometry.attributes.position) return null;
+  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+  const pos = src.attributes.position;
+  const left = [];
+  const right = [];
+  for (let i = 0; i < pos.count; i += 3) {
+    const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
+    (cx >= 0 ? right : left).push(i);
+  }
+  if (!left.length || !right.length) {
+    if (src !== mesh.geometry) src.dispose();
+    return null;
+  }
+  const out = { left: extractTriangles(src, left), right: extractTriangles(src, right) };
+  if (src !== mesh.geometry) src.dispose();
+  return out;
+}
+
+/**
+ * @param {THREE.BufferGeometry} src
+ * @param {number[]} starts first vertex index of each triangle
+ */
+function extractTriangles(src, starts) {
+  const pos = src.attributes.position;
+  const nrm = src.attributes.normal;
+  const uv = src.attributes.uv;
+  const vcount = starts.length * 3;
+  const p = new Float32Array(vcount * 3);
+  const n = nrm ? new Float32Array(vcount * 3) : null;
+  const u = uv ? new Float32Array(vcount * 2) : null;
+  let w = 0;
+  for (let t = 0; t < starts.length; t++) {
+    const i0 = starts[t];
+    for (let k = 0; k < 3; k++) {
+      const i = i0 + k;
+      p[w * 3] = pos.getX(i);
+      p[w * 3 + 1] = pos.getY(i);
+      p[w * 3 + 2] = pos.getZ(i);
+      if (n) {
+        n[w * 3] = nrm.getX(i);
+        n[w * 3 + 1] = nrm.getY(i);
+        n[w * 3 + 2] = nrm.getZ(i);
+      }
+      if (u) {
+        u[w * 2] = uv.getX(i);
+        u[w * 2 + 1] = uv.getY(i);
+      }
+      w += 1;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(p, 3));
+  if (n) geo.setAttribute("normal", new THREE.BufferAttribute(n, 3));
+  else geo.computeVertexNormals();
+  if (u) geo.setAttribute("uv", new THREE.BufferAttribute(u, 2));
+  return geo;
+}
+
+/**
  * @param {string} id
  * @param {string} url
  */
@@ -674,6 +883,7 @@ async function loadCarGltf(id, url) {
   const root = new THREE.Group();
   root.name = spec.name;
   root.add(scene);
+  if (id === "stratos") prepStratosCadModel(root);
   gameShade(root);
   fitToRallyCar(root, spec);
   hideHeavyInterior(root);
@@ -708,6 +918,7 @@ async function loadRivalGltf(id, url) {
   const root = new THREE.Group();
   root.name = `${spec.name}-rival`;
   root.add(scene);
+  if (id === "stratos") prepStratosCadModel(root);
   gameShade(root);
   fitToRallyCar(root, spec);
   hideHeavyInterior(root);
@@ -943,7 +1154,8 @@ function shadeCarMaterial(src, obj) {
   const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
   const transparent = !!(src.transparent || (src.opacity != null && src.opacity < 0.9));
   const isGlass =
-    transparent || /glass|window|windshield|windscreen|screen|lens/.test(n);
+    !(src.userData && src.userData.cadOpaque) &&
+    (transparent || /glass|window|windshield|windscreen|screen|lens/.test(n));
   const isChrome =
     /chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) ||
     (src.metalness != null && src.metalness > 0.62);
@@ -2498,6 +2710,71 @@ function isRearCluster(c, hull, size) {
 }
 
 /**
+ * Outer tail cover the player actually sees — not an inner bulb box.
+ * Celica: wraparound `combi_glass_bl/br`. Delta: `Light Rear` bar.
+ * Stratos: `TailLight_L/R`.
+ * @param {THREE.Object3D} obj
+ */
+function isVisibleTailCover(obj) {
+  const label = ancestryLabel(obj);
+  if (isReverseLampLabel(label)) return false;
+  if (/combi_glass_b/.test(label)) return true;
+  if (/tail.?light/.test(label)) return true;
+  if (/light.?rear/.test(label)) return true;
+  return false;
+}
+
+/**
+ * Prefer the modeled tail lenses (one left, one right, or a full-width bar).
+ * Housings, reverse lamps, and extra REARLIGHT boxes are skipped so the glow
+ * sits in the red clusters the player can see.
+ * @param {THREE.Mesh[]} found
+ * @param {THREE.Object3D} root
+ * @returns {THREE.Mesh[]}
+ */
+function pickBrakeLampMeshes(found, root) {
+  if (!found || !found.length) return [];
+  const c = new THREE.Vector3();
+  const s = new THREE.Vector3();
+  const items = [];
+  for (let i = 0; i < found.length; i++) {
+    const obj = found[i];
+    const label = ancestryLabel(obj);
+    if (isReverseLampLabel(label)) continue;
+    const box = new THREE.Box3().setFromObject(obj);
+    box.getCenter(c);
+    box.getSize(s);
+    root.worldToLocal(c);
+    const bar = s.x > 0.85 && Math.abs(c.x) < 0.4;
+    const vol = s.x * s.y * s.z;
+    let score = 0;
+    if (isVisibleTailCover(obj)) score += 32;
+    if (isTailLampLensMesh(obj)) score += 24;
+    if (/light.?rear/.test(label)) score += 14;
+    if (/rearlight/.test(label)) score += 6;
+    if (/pod/.test(label) && !/glass/.test(label)) score -= 10;
+    if (bar) score += 10;
+    if (vol > 0.45 && !bar) score -= 8;
+    items.push({ obj, x: c.x, score, bar });
+  }
+  if (!items.length) return [];
+  // Inner REARLIGHT glass sits behind Celica wraparound covers and never
+  // reads as a lamp. Use the covers when they exist.
+  const covers = items.filter((it) => isVisibleTailCover(it.obj));
+  const pool = covers.length ? covers : items;
+  const bars = pool.filter((it) => it.bar).sort((a, b) => b.score - a.score);
+  if (bars.length) return [bars[0].obj];
+  const left = pool.filter((it) => it.x < -0.08).sort((a, b) => b.score - a.score);
+  const right = pool.filter((it) => it.x > 0.08).sort((a, b) => b.score - a.score);
+  const out = [];
+  if (left[0]) out.push(left[0].obj);
+  if (right[0]) out.push(right[0].obj);
+  if (out.length) return out;
+  pool.sort((a, b) => b.score - a.score);
+  return pool.slice(0, 2).map((it) => it.obj);
+}
+
+/**
  * GLB: use the model's tail-light meshes (Delta: full-width Light Rear bar).
  * Fallback: corner clusters inset into the rear fascia — never wraparound pods
  * that float outside a narrower tail.
@@ -2520,11 +2797,12 @@ function ensureBrakeLights(root) {
   const hull = localHull(root);
   const sizeX = hull.maxX - hull.minX;
   const found = findBrakeLights(root);
+  const picked = pickBrakeLampMeshes(found, root);
   const keep = [];
-  for (let i = 0; i < found.length; i++) {
-    const mesh = found[i];
+  for (let i = 0; i < picked.length; i++) {
+    const mesh = picked[i];
     const label = ancestryLabel(mesh);
-    const named = isNamedRearLamp(label);
+    const named = isNamedRearLamp(label) || isTailLampLensMesh(mesh);
     const c = new THREE.Vector3();
     new THREE.Box3().setFromObject(mesh).getCenter(c);
     root.worldToLocal(c);
@@ -2540,12 +2818,15 @@ function ensureBrakeLights(root) {
     keep.push(mesh);
   }
   if (keep.length >= 1) {
-    const emitters = [];
-    for (let i = 0; i < keep.length; i++) {
-      prepareBrakeMaterial(keep[i]);
-      emitters.push(...nestBrakeEmittersInLamp(keep[i]));
-    }
-    root.userData.brakeLights = emitters.length ? emitters : keep;
+    for (let i = 0; i < keep.length; i++) prepareBrakeMaterial(keep[i]);
+    // Light the model's own lenses. Nested sphere pads sat in geometry-AABB
+    // space and floated off the red clusters (pods, reverse, REARLIGHT boxes).
+    root.userData.brakeLights = keep;
+    return;
+  }
+  // 1974 CAD has tail lamps painted on the body atlas — extra boxes float.
+  if (root.userData.stratosCad) {
+    root.userData.brakeLights = [];
     return;
   }
   attachClusterLamps(root, hull);
@@ -2638,8 +2919,29 @@ function isRearLampLabel(label) {
   );
 }
 
+/** Reverse / backup lenses — not the brake cluster. */
+function isReverseLampLabel(label) {
+  return /(?:^|[^a-z])(?:rev_|reverse|light_rev|rev_glass)/.test(label);
+}
+
+/**
+ * The modeled red/clear tail lens, not the chrome pod or a reverse lamp.
+ * Celica: x0_light_combi_glass_bl/br. Stratos: TailLight_L/R.
+ */
+function isTailLampLensMesh(obj) {
+  const label = ancestryLabel(obj);
+  const mat = matName(obj).toLowerCase();
+  if (isReverseLampLabel(label)) return false;
+  if (/combi_glass_b/.test(label)) return true;
+  if (/tail.?light/.test(label)) return true;
+  if (/rearlight/.test(label) && /glass/.test(label)) return true;
+  if (isRearLampLabel(label) && (/glass/.test(label) || /glass/.test(mat))) return true;
+  return false;
+}
+
 function isNamedRearLamp(label) {
   if (isNamedFrontLamp(label)) return false;
+  if (isReverseLampLabel(label)) return false;
   if (/window|windshield|interior|cabin|mirror|plate|license|number.?plate/.test(label)) return false;
   return isRearLampLabel(label);
 }
@@ -2821,11 +3123,48 @@ function prepareBrakeMaterial(mesh) {
   for (let i = 0; i < mats.length; i++) {
     const mat = mats[i];
     if (!mat) continue;
+    if (mat.userData._brakeRestOpacity == null) {
+      mat.userData._brakeRestOpacity = mat.opacity != null ? mat.opacity : 1;
+    }
     if (!mat.emissive) mat.emissive = new THREE.Color(0xff1a0a);
     else mat.emissive.setHex(0xff1a0a);
-    mat.emissiveIntensity = 0.08;
+    mat.emissiveIntensity = 0.1;
     mat.toneMapped = false;
   }
+}
+
+/**
+ * Glow sits on the clusters, not on the plate (x = 0).
+ * @param {THREE.Object3D} root
+ * @param {THREE.PointLight} glow
+ */
+/**
+ * Lens center in car space. Sketchfab pivots sit at the origin — matrix
+ * position is the chassis, not the cluster.
+ * @param {THREE.Object3D} lamp
+ * @param {THREE.Object3D} root
+ * @param {THREE.Vector3} target
+ */
+function lampLocalCenter(lamp, root, target) {
+  lamp.updateWorldMatrix(true, false);
+  const geo = lamp.geometry;
+  if (geo) {
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    if (bb) {
+      target.set(
+        (bb.min.x + bb.max.x) * 0.5,
+        (bb.min.y + bb.max.y) * 0.5,
+        (bb.min.z + bb.max.z) * 0.5
+      );
+      lamp.localToWorld(target);
+      root.worldToLocal(target);
+      return target;
+    }
+  }
+  target.setFromMatrixPosition(lamp.matrixWorld);
+  root.worldToLocal(target);
+  return target;
 }
 
 /**
@@ -2840,21 +3179,14 @@ function attachBrakeGlow(root, glow) {
   let z = 0;
   let n = 0;
   for (let i = 0; i < lamps.length; i++) {
-    const lamp = lamps[i];
-    lamp.updateWorldMatrix(true, false);
-    tmp.setFromMatrixPosition(lamp.matrixWorld);
-    root.worldToLocal(tmp);
+    lampLocalCenter(lamps[i], root, tmp);
     if (Math.abs(tmp.x) < 0.18 && lamps.length > 1) continue;
     y += tmp.y;
     z += tmp.z;
     n += 1;
   }
   if (!n && lamps.length) {
-    const lamp = lamps[0];
-    lamp.updateWorldMatrix(true, false);
-    const box = new THREE.Box3().setFromObject(lamp);
-    box.getCenter(tmp);
-    root.worldToLocal(tmp);
+    lampLocalCenter(lamps[0], root, tmp);
     y = tmp.y;
     z = tmp.z;
     n = 1;
@@ -2891,8 +3223,18 @@ export function setBrakeLights(root, on) {
           if (mat.color) mat.color.setHex(on ? 0xff3a1c : 0x2a0606);
           if (mat.emissive) mat.emissive.setHex(on ? 0xff2208 : 0x4a0808);
         } else {
+          if (mat.userData._brakeRestOpacity == null) {
+            mat.userData._brakeRestOpacity = mat.opacity != null ? mat.opacity : 1;
+          }
           if (mat.emissive) mat.emissive.setHex(0xff220e);
-          mat.emissiveIntensity = on ? 6.2 : 0.08;
+          mat.emissiveIntensity = on ? 8.4 : 0.1;
+          // gameShade caps Lights_Glass at 0.48 opacity — without this the
+          // cover never reads as a lamp even when emissive is high.
+          if (mat.transparent || mat.userData._brakeRestOpacity < 0.95) {
+            mat.transparent = true;
+            mat.opacity = on ? 0.94 : mat.userData._brakeRestOpacity;
+            mat.depthWrite = !!on;
+          }
         }
       }
     }
@@ -3226,6 +3568,14 @@ function ensureHeadlights(root) {
   const z = hull.maxZ - 0.03;
   const y = hull.minY + sizeY * 0.38;
   const x = Math.max(0.5, Math.min(0.72, sizeX * 0.36));
+  if (root.userData.stratosCad) {
+    root.userData.headlights = [];
+    root.userData.headBeamOrigins = [
+      new THREE.Vector3(-x, y, z),
+      new THREE.Vector3(x, y, z),
+    ];
+    return;
+  }
   attachHeadlights(root, [
     { x, y, z, w: 0.22, h: 0.14, d: 0.09 },
     { x: -x, y, z, w: 0.22, h: 0.14, d: 0.09 },
@@ -3938,12 +4288,38 @@ function gaugeFace(kind, maxVal, redFrom) {
   return tex;
 }
 
+/**
+ * Cabin HUD mesh: ignore depth, skip ACES, live on the overlay layer.
+ * @param {THREE.Mesh} mesh
+ * @param {number} [order]
+ */
+function markPovHudMesh(mesh, order) {
+  if (!mesh) return;
+  mesh.layers.set(POV_HUD_LAYER);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = order != null ? order : 20;
+  const list = [].concat(mesh.material || []);
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (!m) continue;
+    m.userData.hud = true;
+    m.toneMapped = false;
+    m.fog = false;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.transparent = true;
+    if (m.opacity == null || m.opacity > 0.98) m.opacity = 1;
+  }
+}
+
 function hudMat(opts) {
   const mat = new THREE.MeshBasicMaterial({
     depthTest: false,
     depthWrite: false,
     fog: false,
     toneMapped: false,
+    transparent: true,
+    opacity: 1,
     ...opts,
   });
   if (mat.map) mat.color.setHex(0xffffff);
@@ -3969,12 +4345,14 @@ function makeNeedle() {
       toneMapped: false,
       fog: false,
       depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
       side: THREE.DoubleSide,
     })
   );
   needle.position.x = blade * 0.38;
-  needle.frustumCulled = false;
-  needle.renderOrder = 9;
+  markPovHudMesh(needle, 21);
   const hubR = r * 0.11;
   const hub = new THREE.Mesh(
     new THREE.CylinderGeometry(hubR, hubR, hubR * 0.7, 10),
@@ -3983,12 +4361,14 @@ function makeNeedle() {
       toneMapped: false,
       fog: false,
       depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
       side: THREE.DoubleSide,
     })
   );
   hub.rotation.x = Math.PI / 2;
-  hub.frustumCulled = false;
-  hub.renderOrder = 10;
+  markPovHudMesh(hub, 22);
   pivot.add(needle, hub);
   pivot.rotation.z = -GAUGE_START;
   return pivot;
@@ -4009,8 +4389,7 @@ function makeDial(kind, maxVal, redFrom) {
     new THREE.CircleGeometry(POV_GAUGE_R, 48),
     clusterMat({ map: gaugeFace(kind, maxVal, redFrom) })
   );
-  face.frustumCulled = false;
-  face.renderOrder = 8;
+  markPovHudMesh(face, 20);
   const needle = makeNeedle();
   needle.position.z = 0.004;
   g.add(face, needle);
@@ -4096,10 +4475,12 @@ function attachCockpit(root) {
   binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
   binnacle.userData.cabinFill = true;
   cluster.add(binnacle);
-  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.16, rig.eyeZ + 0.42);
+  // Sit in front of the dash box (dash near face is ~eyeZ+0.32). Inside the
+  // dash, the opaque cowl wins the main pass and the discs read as black.
+  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.14, rig.eyeZ + 0.30);
   // Face the seated eye so the printed discs are not edge-on or windshield-facing.
   cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
-  cluster.renderOrder = 8;
+  cluster.renderOrder = 20;
   cab.add(cluster);
 
   const hasGlbWheel = !!root.userData.glbSteerWheel;
@@ -4175,11 +4556,14 @@ function clusterMat(opts) {
     depthWrite: false,
     fog: false,
     toneMapped: false,
+    transparent: true,
+    opacity: 1,
     side: THREE.DoubleSide,
     ...opts,
   });
   if (mat.map) mat.color.setHex(0xffffff);
   mat.toneMapped = false;
+  mat.userData.hud = true;
   return mat;
 }
 
@@ -4221,12 +4605,13 @@ function makeRearviewMirror() {
       fog: false,
       depthTest: false,
       depthWrite: false,
+      transparent: true,
+      opacity: 1,
       side: THREE.DoubleSide,
     })
   );
   glass.position.z = 0.01;
-  glass.frustumCulled = false;
-  glass.renderOrder = 12;
+  markPovHudMesh(glass, 30);
   const stem = new THREE.Mesh(
     new THREE.BoxGeometry(0.012, 0.028, 0.012),
     cabinMat(0x121216, 0.6, 0.15)

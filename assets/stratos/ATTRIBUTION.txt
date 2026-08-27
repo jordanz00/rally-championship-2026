@@ -1,6 +1,12 @@
-Lancia Stratos HF — high-detail playable chassis
-------------------------------------------------
-assets/stratos/stratos.glb — dense Blender loft rebuild (~42k tris) with
-authored body panels, glass, lights, and wheels for this tribute project.
-Not Sega's model. Low-poly prior build: stratos-lowpoly-backup.glb.
-rival.glb — simplified LOD for the AI pack (see tools/build-car-lods.sh).
+Lancia Stratos HF — playable chassis
+------------------------------------
+assets/stratos/stratos.glb — 1974 Lancia Stratos HF CAD GLB supplied for this
+tribute (4 meshes, PBR albedo / MR / normal). Textures resized to 2048 for
+browser boot. Not Sega's model.
+
+Wheels ship fused per axle; js/cars/celica.js splits them into WHEEL_* hubs
+at load so they spin and steer.
+
+rival.glb — simplified LOD from the same hero (see tools/build-car-lods.sh).
+stratos-loft-backup.glb — previous Blender loft hero.
+stratos-lowpoly-backup.glb — earlier low-poly hero.

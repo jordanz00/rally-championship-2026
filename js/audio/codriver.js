@@ -2,16 +2,24 @@
  * Co-driver — recorded rally navigator, not browser TTS.
  *
  * WHO THIS IS FOR: the race loop + pause NAVIGATOR slider.
- * WHAT IT DOES: plays human VO clips (easy/medium/hard/hairpin L/R + jump)
- *   for the soonest turn or jump. One jump call per crest pair. Own gain bus.
+ * WHAT IT DOES: plays spoken grade clips (easy/medium/hard/hairpin L/R + jump)
+ *   once per turn or jump. Own gain bus.
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 
-import { PACE } from "../config.js?v=138";
-
 const VOL_NAV_KEY = "rally-vol-navigator";
-/** Ignore a second jump until the car has covered this many metres. */
-const JUMP_LOCK_M = 110;
+
+const ALLOWED = new Set([
+  "easy-left",
+  "easy-right",
+  "medium-left",
+  "medium-right",
+  "hard-left",
+  "hard-right",
+  "hairpin-left",
+  "hairpin-right",
+  "jump",
+]);
 
 /**
  * @param {string} key
@@ -43,15 +51,14 @@ function saveVol(key, v) {
 
 export class CoDriver {
   constructor() {
-    this.lastId = "";
+    /** @type {Set<string>} */
+    this._said = new Set();
     this.cool = 0;
-    this._spokeAt = -999;
-    /** Seconds between calls. game.js overrides this from PACE.speakGap. */
     this.gap = 2.4;
     this.volume = loadVol(VOL_NAV_KEY, 1);
     this._previewAt = 0;
     this._boundaryAt = 0;
-    this._jumpLockUntil = -999;
+    this._damageSaid = 0;
   }
 
   /**
@@ -66,33 +73,24 @@ export class CoDriver {
    * @param {{id:string, speech:string, text:string, severity:number, kind?:string, clip?:string}|null} note
    * @param {number} dt
    * @param {{paceCall?: Function}} audio
-   * @param {number} [progress] metres along the stage
-   * @param {number} [speed] m/s — wider re-call gap at speed so corners are not spammed
+   * @param {number} [_progress]
+   * @param {number} [_speed]
    * @returns {{display:string, spoken:boolean}} HUD line + whether voice fired
    */
-  update(note, dt, audio, progress = 0, speed = 0) {
+  update(note, dt, audio, _progress = 0, _speed = 0) {
     this.cool -= dt;
     if (!note) return { display: "", spoken: false };
-    if (note.kind === "jump" && progress < this._jumpLockUntil) {
-      return { display: "", spoken: false };
-    }
     const display = note.text || "";
-    if (note.id === this.lastId) return { display: "", spoken: false };
-    if (this.cool > 0) return { display: "", spoken: false };
-    const recallGap = Math.max(
-      PACE.recallMetres || 14,
-      speed * (PACE.recallSpeedScale || 0.32)
-    );
-    if (progress - this._spokeAt < recallGap) return { display: "", spoken: false };
-    const key = note.clip || clipKey(note);
+    if (this._said.has(note.id)) return { display, spoken: false };
+    const key = clipKey(note);
     if (!key) return { display: "", spoken: false };
-    if (this.volume > 0.001 && audio && audio.paceCall && !audio.paceCall(key)) {
-      return { display: "", spoken: false };
+    if (this.volume <= 0.001) {
+      this._said.add(note.id);
+      return { display, spoken: true };
     }
-    this.lastId = note.id;
-    this._spokeAt = progress;
-    this.cool = Math.max(PACE.speakGap || this.gap, 2.2);
-    if (note.kind === "jump") this._jumpLockUntil = progress + JUMP_LOCK_M;
+    if (!audio || !audio.paceCall) return { display: "", spoken: false };
+    if (!audio.paceCall(key)) return { display: "", spoken: false };
+    this._said.add(note.id);
     return { display, spoken: true };
   }
 
@@ -129,10 +127,22 @@ export class CoDriver {
   }
 
   reset() {
-    this.lastId = "";
+    this._said = new Set();
     this.cool = 0;
-    this._spokeAt = -999;
-    this._jumpLockUntil = -999;
+    this._damageSaid = 0;
+  }
+
+  /**
+   * HUD sting when bodywork crosses a wear tier. Recorded VO has no "Bodywork"
+   * clip — the flash is the navigator call the driver can read.
+   * @param {number} tier 0..3
+   * @param {{flashMessage?: Function}} [hud]
+   */
+  damageCall(tier, hud) {
+    if (tier < 2) return;
+    if ((this._damageSaid || 0) >= tier) return;
+    this._damageSaid = tier;
+    if (hud && hud.flashMessage) hud.flashMessage(tier >= 3 ? "BODYWORK" : "CONTACT");
   }
 }
 
@@ -140,12 +150,18 @@ export class CoDriver {
  * @param {{kind?:string, dir?:string, severity?:number, clip?:string}} note
  */
 function clipKey(note) {
-  if (note.clip) return note.clip;
-  if (note.kind === "jump") return "jump";
-  const side = note.dir === "LEFT" ? "left" : note.dir === "RIGHT" ? "right" : "";
-  if (!side) return "";
-  const sev = note.severity || 1;
-  if (sev >= 3) return `hard-${side}`;
-  if (sev === 2) return `medium-${side}`;
-  return `easy-${side}`;
+  let key = note.clip || "";
+  if (!key) {
+    if (note.kind === "jump") key = "jump";
+    else {
+      const side = note.dir === "LEFT" ? "left" : note.dir === "RIGHT" ? "right" : "";
+      if (!side) return "";
+      const sev = note.severity || 1;
+      if (sev >= 4) key = `hairpin-${side}`;
+      else if (sev >= 3) key = `hard-${side}`;
+      else if (sev === 2) key = `medium-${side}`;
+      else key = `easy-${side}`;
+    }
+  }
+  return ALLOWED.has(key) ? key : "";
 }

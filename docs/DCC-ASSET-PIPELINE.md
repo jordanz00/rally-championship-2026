@@ -14,8 +14,8 @@ node tools/dcc-pipeline.mjs
 
 ## Damage variants (runtime)
 
-- **Today:** shader tiers in `js/assets/damage.js` (0–3 from wall rubs)
-- **Next:** author `assets/<car>/damaged.glb` and swap at tier ≥ 2 in `celica.js`
+- **Today:** directional dents + paint tiers in `js/assets/damage.js` (wall / rival hits). Sparks on hard contact. BODYWORK flash at tier 3. Optional `assets/<car>/damaged.glb` is catalogued by the pipeline; runtime uses procedural dents until that file exists.
+- **HUD:** chase cluster BODY bar appears after the first scuff.
 
 ## Photogrammetry (external)
 

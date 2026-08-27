@@ -62,13 +62,16 @@ check("title car hides the cockpit", /hideHeavyInterior\(clone\)/.test(celica) &
 check("hero Celica is HTML-preloaded", /assets\/celica\/gt4\.glb/.test(index) && /rel="preload"/.test(index));
 check("WebGL boots on the next frames, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
 check("title fetch starts in the constructor", /this\._titleCarWarm = prepareTitleCar/.test(game));
-check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWorld/.test(game) && /makeTitleAsphaltMap/.test(game) && !/CircleGeometry\(52, 24\)/.test(game));
-check("title DPR is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleShadowMap:\s*1024/.test(config));
-check("IBL bakes after first present", /_bakeSkyEnv\("title"\)/.test(game) && /_titleIblReady/.test(game));
+check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWorld/.test(game) && /makeTitleAsphaltMaps/.test(game) && !/CircleGeometry\(52, 24\)/.test(game));
+check("title pad is wet Physical asphalt", /MeshPhysicalMaterial/.test(game) && /roughnessMap:\s*asphaltMaps\.roughness/.test(game));
+check("title DPR is showroom-sharp", /titleMaxPixelRatio:\s*1\.5/.test(config) && /titleShadowMap:\s*2048/.test(config));
+check("IBL bakes after first present", /_bakeSkyEnv\("title"\)/.test(game) && /_titleIblReady/.test(game) && /TITLE_SHOWROOM/.test(game) && /iblDelayMs:\s*420/.test(config));
+check("title live cube reflections are wired", /_updateTitleReflections\(\)/.test(game) && /_ensureTitleReflectCam/.test(game) && /if \(onPad\) this\._updateTitleReflections/.test(game));
 check("title overlay is a vignette, not a dark slab", /rgba\(0, 0, 0, 0\.22\)/.test(css) && !/rgba\(5, 7, 5, 0\.62\)/.test(css));
-check("css cache-bust", /game\.css\?v=29/.test(index));
+check("SELECT MODE leaves the car visible", /#screen-menu\.active/.test(css) && /transparent 100%/.test(css));
+check("css cache-bust", /game\.css\?v=\d+/.test(index) && Number((index.match(/game\.css\?v=(\d+)/) || [])[1]) >= 34);
 check("celica.js cache-bust", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 121);
-check("cache-bust chain", cacheOk && Number(gameV) >= 425, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 467, `main=${mainV} game=${gameV}`);
 check("yieldFrame never uses queueMicrotask", !/queueMicrotask\(fire\)/.test(game));
 check(
   "championship car pick does not double-start Track.create",
@@ -115,7 +118,7 @@ async function probeTitle() {
       `const g = window.game;
        const m = g && g.playerMesh;
        return !!(m && m.userData && (m.userData.titleHero || m.userData.titleLod));`,
-      { timeout: 12000, label: "title car" }
+      { timeout: 20000, label: "title car" }
     );
     const info = await evaluate(
       cdp,
@@ -144,6 +147,33 @@ async function probeTitle() {
     check("canvas marked live", !!(info && info.showroomLive));
     check("title sky is volumetric", !!(info && info.volumetricClouds), `steps=${info && info.cloudSteps}`);
     check("film grain is off on the compositor", info && info.filmGrain === 0, `grain=${info && info.filmGrain}`);
+    await waitFor(
+      cdp,
+      `const g = window.game; return !!(g && g._titleIblReady && g.scene && g.scene.environment);`,
+      { timeout: 8000, label: "title IBL" }
+    );
+    const wow = await evaluate(
+      cdp,
+      `const g = window.game;
+       const floor = g && g._titleFloor;
+       const mat = floor && floor.material;
+       const L = g && g.constructor && null;
+       const cfg = (window.__LIGHTING_TITLE) || null;
+       return {
+         ibl: !!(g && g._titleIblReady && g.scene && g.scene.environment),
+         wetPad: !!(mat && mat.isMeshPhysicalMaterial && mat.clearcoat > 0.1 && mat.roughnessMap),
+         reflectCam: !!(g && g._reflectCam),
+         showroomPost: !!(g && g.post && g.post._titleShowroom && g.post.enabled),
+         cloudCover: g && g.sky && g.sky.material && g.sky.material.uniforms && g.sky.material.uniforms.uCloudCover
+           ? g.sky.material.uniforms.uCloudCover.value : -1,
+         rim: g && g._titleRim ? g._titleRim.intensity : -1,
+       };`
+    );
+    check("title IBL is live under ~1s", !!(wow && wow.ibl), JSON.stringify(wow));
+    check("pad is wet Physical asphalt", !!(wow && wow.wetPad), JSON.stringify(wow));
+    check("title CubeCamera exists", !!(wow && wow.reflectCam));
+    check("showroom post path is on", !!(wow && wow.showroomPost), JSON.stringify(wow));
+    check("title clouds are denser than a wash", !!(wow && wow.cloudCover >= 0.34), `cover=${wow && wow.cloudCover}`);
     const jpeg = await screenshot(cdp);
     const shot = path.join(os.tmpdir(), "rally-title-showroom-sprint84.jpg");
     fs.writeFileSync(shot, Buffer.from(jpeg, "base64"));

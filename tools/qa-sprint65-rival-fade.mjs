@@ -82,7 +82,10 @@ check(
   "game + track share occlusion-fade.js?v=8",
   /occlusion-fade\.js\?v=7/.test(game) && /occlusion-fade\.js\?v=7/.test(track)
 );
-check("game imports track.js?v=178", /track\.js\?v=177/.test(game));
+check(
+  "game imports track.js?v=177+",
+  Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 177
+);
 check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "blocking rivals go transparent"}`);

@@ -41,23 +41,50 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  /track\.js\?v=176/.test(gameSrc),
+  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 190,
   "stale browser cache would keep the old dune mesh"
 );
 check(
-  "desert full-stage land wash at 44 m",
-  /scenery === "desert"[\s\S]*?lateral: 44/.test(trackSrc),
+  "desert full-stage land wash at 56 m",
+  /scenery === "desert"[\s\S]*?lateral: 56/.test(trackSrc),
   "_markDriveClearCorridors must flatten the Desert drive corridor"
 );
 check(
-  "desert chase-flat holds dunes past half+48",
-  /if \(desert\) \{[\s\S]*?chaseFlat = roadW \* 0\.5 \+ 48/.test(trackSrc),
+  "desert chase-flat holds dunes past half+56",
+  /if \(desert\) \{[\s\S]*?chaseFlat = roadW \* 0\.5 \+ 56/.test(trackSrc),
   "_groundHeight must not rise the instant the trench ends"
 );
 check(
   "desert land-tile chase flatten",
-  /else if \(desert\) \{[\s\S]*?chase = near\.roadW \* 0\.5 \+ 48/.test(trackSrc),
+  /else if \(desert\) \{[\s\S]*?chase = near\.roadW \* 0\.5 \+ 56/.test(trackSrc),
   "_addLandTile mesh must match the height function"
+);
+check(
+  "lane poses are stripped before instancing",
+  /_stripLanePoses/.test(trackSrc) && /_laneKeepout/.test(trackSrc),
+  "rocks/trees/props must not sit on painted asphalt"
+);
+check(
+  "land verts that can own a triangle over asphalt stay a floor",
+  /refusePad/.test(trackSrc) ||
+    /minOver < \(tunnelCut \? 2\.4 : \(this\._landCell \|\| 12\) \* 2\.05\)/.test(trackSrc) ||
+    /minOver < \(this\._landCell \|\| 12\) \* 2\.05/.test(trackSrc),
+  "10 m land tris must not interpolate dunes onto the ribbon"
+);
+check(
+  "tunnel exit refuse keeps drive verge clear",
+  /ROAD_VERGE \+ 4\.5/.test(trackSrc) && /_scrubTunnelPortalDrive/.test(trackSrc),
+  "portal rock and mouth-cut must not occupy the painted exit"
+);
+check(
+  "mouth cut never invents lateral from along",
+  !/ridgeDist = Math\.max\(lat, cutTrench/.test(trackSrc),
+  "fake ridgeDist raised hills on lat≈0 exit apron"
+);
+check(
+  "no centre approach mound on the ribbon",
+  !/Centre approach mound/.test(trackSrc) && !/ties the ribbon into the cut/.test(trackSrc),
+  "mound at outward*14 sat on the racing line"
 );
 check(
   "desert skirt is a short tuck",
@@ -78,6 +105,28 @@ check(
   "desert roadside rocks use drive-clear + verge pad",
   /const shoulderPad = def\.scenery === "desert"\s*\n\s*\? 16\.5/.test(trackSrc),
   "rocks at half+9 overlapped the chase corridor"
+);
+check(
+  "desert tunnel cutting preserves ridge under portal",
+  /_tunnelCutHeight/.test(trackSrc) && /_inTunnelCut/.test(trackSrc),
+  "landmark wash used to plane the tunnel hill to bed — floating portal"
+);
+check(
+  "land tiles keep tunnel cut (skip wash / chase flatten)",
+  /_inTunnelCutAt\(/.test(trackSrc) || /_inTunnelCut\(near\.along/.test(trackSrc),
+  "_addLandTile must not re-flatten the authored ridge"
+);
+check(
+  "tunnel cut uses bore neighbor + mouth apron",
+  /_tunnelNeighbor/.test(trackSrc) && /_tunnelMouthCutY/.test(trackSrc),
+  "Euclidean nearest-road beside the mouth was a lower Desert arm"
+);
+check(
+  "desert tunnel portal has buried embankment footing",
+  /tunnelPortal/.test(trackSrc) &&
+    (/_scrubTunnelPortalDrive/.test(trackSrc) || /Grounding slab under the whole mouth/.test(trackSrc)) &&
+    /Approach embankment/.test(trackSrc),
+  "portal must plant into the hillside, not float as a gate"
 );
 
 if (fail) {
@@ -167,13 +216,127 @@ async function main() {
           if (delta > 0.35) vergeHits += 1;
         }
       }
+      let meshHits = 0;
+      let worstMesh = -99;
+      let instHits = 0;
+      const group = track.group;
+      if (group) {
+        group.traverse((obj) => {
+          if (obj.userData && obj.userData.envLand && obj.geometry && obj.geometry.attributes) {
+            const pos = obj.geometry.attributes.position;
+            const e = obj.matrixWorld.elements;
+            for (let i = 0; i < pos.count; i++) {
+              const lx = pos.getX(i);
+              const ly = pos.getY(i);
+              const lz = pos.getZ(i);
+              const x = e[0] * lx + e[4] * ly + e[8] * lz + e[12];
+              const y = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+              const z = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+              const near = track._nearestRoad(x, z);
+              const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
+              if (over > 1.2) continue;
+              const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
+              const delta = y - bed;
+              if (delta > worstMesh) worstMesh = delta;
+              if (delta > -0.02) meshHits += 1;
+            }
+          }
+          if (obj.isInstancedMesh && obj.userData && obj.userData.envProp && obj.instanceMatrix) {
+            const arr = obj.instanceMatrix.array;
+            const n = obj.count;
+            for (let i = 0; i < n; i++) {
+              const o = i * 16;
+              const x = arr[o + 12];
+              const y = arr[o + 13];
+              const z = arr[o + 14];
+              const sx = Math.hypot(arr[o], arr[o + 1], arr[o + 2]);
+              const sz = Math.hypot(arr[o + 8], arr[o + 9], arr[o + 10]);
+              const r = Math.max(0.55, Math.max(sx, sz) * 0.48);
+              const road = track._nearestRoad(x, z);
+              if (y > road.roadY + 2.6) continue;
+              const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+              if (road.tunnel && over > -1.4) continue;
+              if (over - r < 0.75) instHits += 1;
+            }
+          }
+        });
+      }
       const colliders = track.colliders || [];
       let onLane = 0;
       for (let i = 0; i < colliders.length; i++) {
         const c = colliders[i];
+        if (c.kind === "wall") continue;
         const road = track._nearestRoad(c.x, c.z);
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-        if (over - (c.r || 0.5) < -0.5) onLane += 1;
+        if (over - (c.r || 0.5) < 0.15) onLane += 1;
+      }
+      // Portal grounding proof:
+      // 1) Cut formula raises beside the bore (folded arms make world samples noisy).
+      // 2) Portal meshes bury below the deck (footing / embankment).
+      let ridgeOk = 0;
+      let ridgeN = 0;
+      let worstRidge = 99;
+      const runs = track._tunnels || [];
+      for (let r = 0; r < runs.length; r++) {
+        const mid = (runs[r].startDist + runs[r].endDist) * 0.5;
+        let best = null;
+        let bestD = 1e9;
+        for (let i = 0; i < pts.length; i++) {
+          const d = Math.abs(pts[i].dist - mid);
+          if (d < bestD) {
+            bestD = d;
+            best = pts[i];
+          }
+        }
+        if (!best || !best.tunnel) continue;
+        const lat = best.width * 0.5 + 18;
+        const cut = track._tunnelCutHeight(best.dist, lat, best.width, best.y - 1.15);
+        ridgeN += 1;
+        const lift = cut == null ? -99 : cut - best.y;
+        if (lift < worstRidge) worstRidge = lift;
+        if (lift >= 4.5) ridgeOk += 1;
+        // World sample when clear of other ribbons.
+        for (const side of [-1, 1]) {
+          const x = best.x + best.nx * side * lat;
+          const z = best.z + best.nz * side * lat;
+          const near = track._nearestRoad(x, z);
+          if (near.minOver < 3) continue;
+          const gh = track._groundHeight(x, z, "desert");
+          const wLift = gh - best.y;
+          ridgeN += 1;
+          if (wLift < worstRidge) worstRidge = wLift;
+          if (wLift >= 4.5) ridgeOk += 1;
+        }
+      }
+      let portalMeshes = 0;
+      let portalBuried = 0;
+      if (group) {
+        group.traverse((obj) => {
+          if (!(obj.isMesh && obj.userData && obj.userData.tunnelPortal)) return;
+          portalMeshes += 1;
+          obj.updateWorldMatrix(true, false);
+          const e = obj.matrixWorld.elements;
+          const geo = obj.geometry;
+          if (geo && !geo.boundingBox && geo.computeBoundingBox) geo.computeBoundingBox();
+          const bb = geo && geo.boundingBox;
+          if (!bb) return;
+          let minY = Infinity;
+          const corners = [
+            [bb.min.x, bb.min.y, bb.min.z],
+            [bb.min.x, bb.min.y, bb.max.z],
+            [bb.max.x, bb.min.y, bb.min.z],
+            [bb.max.x, bb.min.y, bb.max.z],
+          ];
+          for (let c = 0; c < corners.length; c++) {
+            const lx = corners[c][0];
+            const ly = corners[c][1];
+            const lz = corners[c][2];
+            const y = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+            if (y < minY) minY = y;
+          }
+          const near = track._nearestRoad(e[12], e[14]);
+          if (minY < near.roadY - 1.2) portalBuried += 1;
+        });
       }
       return {
         course: g.courseId,
@@ -184,6 +347,14 @@ async function main() {
         worstVerge,
         colliders: colliders.length,
         onLane,
+        meshHits,
+        worstMesh,
+        instHits,
+        ridgeOk,
+        ridgeN,
+        worstRidge,
+        portalMeshes,
+        portalBuried,
       };`
     );
 
@@ -206,6 +377,32 @@ async function main() {
       throw new Error(`${probe.onLane} collider(s) overlap the painted lane`);
     }
     console.log(`  ok  ${probe.colliders} colliders, none on painted asphalt`);
+    if (probe.meshHits > 0) {
+      throw new Error(
+        `land mesh verts on the ribbon at ${probe.meshHits} sample(s); worst ${probe.worstMesh.toFixed(2)} m`
+      );
+    }
+    console.log(`  ok  land mesh verts below ribbon (worst ${probe.worstMesh.toFixed(2)} m)`);
+    if (probe.instHits > 0) {
+      throw new Error(`${probe.instHits} env instance(s) overlap the painted lane`);
+    }
+    console.log(`  ok  env instances clear of painted asphalt`);
+    if (!probe.ridgeN || probe.ridgeOk < 1) {
+      throw new Error(
+        `tunnel cut formula too low (${probe.ridgeOk}/${probe.ridgeN}; worst ${Number(probe.worstRidge).toFixed(2)} m)`
+      );
+    }
+    console.log(
+      `  ok  tunnel cut formula raises ridge (${probe.ridgeOk}/${probe.ridgeN}; worst lift ${probe.worstRidge.toFixed(2)} m)`
+    );
+    if (!probe.portalMeshes || probe.portalBuried < Math.max(4, (probe.portalMeshes * 0.25) | 0)) {
+      throw new Error(
+        `tunnel portal footing not buried (${probe.portalBuried}/${probe.portalMeshes} meshes below deck-1.2 m)`
+      );
+    }
+    console.log(
+      `  ok  tunnel portal footing buried (${probe.portalBuried}/${probe.portalMeshes} meshes below deck)`
+    );
 
     const fatal = errors.filter((e) => !/mergeGeometries/.test(String(e.text || "")));
     if (fatal.length) throw new Error(`${fatal.length} page error(s)`);

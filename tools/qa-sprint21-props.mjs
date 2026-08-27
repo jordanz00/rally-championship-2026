@@ -41,7 +41,7 @@ check("glbProps armed", /glbProps:\s*true/.test(config), "set glbProps: true");
 check("prop-kit module exists", exists("js/tracks/prop-kit.js"), "missing prop-kit.js");
 check("preparePropKit exported", /export function preparePropKit/.test(kit), "export preparePropKit");
 check("track imports prop-kit", /prop-kit\.js\?v=/.test(track), "import prop-kit in track.js");
-check("track awaits preparePropKit", /await preparePropKit\(\)/.test(track), "await in buildAsync");
+check("track awaits preparePropKit", /await preparePropKit\(/.test(track), "await in buildAsync");
 check("game boots prop kit", /preparePropKit/.test(game), "call from game.js");
 check("spectators use character GLBs", /character-male-a/.test(track), "wire character kinds");
 check("safari uses animal GLBs", /animal-zebra/.test(track), "wire animal kinds");

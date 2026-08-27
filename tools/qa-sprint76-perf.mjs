@@ -116,7 +116,7 @@ check(
   /const int MAX_VIEW = 16;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
   "an unbounded raymarch loop is the classic browser cliff"
 );
-check("cinema is 12 view steps", /cinemaViewSteps: 12/.test(sky));
+check("cinema is 16 view steps", /cinemaViewSteps: 16/.test(sky));
 check("low tier drops to 6 view steps", /lowViewSteps: 6/.test(sky));
 check(
   "low / min drop Worley and light samples",
@@ -216,11 +216,21 @@ check(
   `ended at ${sustained.tier}, changes ${JSON.stringify(sustained.changes)}`
 );
 
-const borderline = drive(20, 900);
+// Sprint 96 changed this expectation deliberately. The old scaler settled on
+// `medium` at a steady 20 ms and stopped — leaving the player on a permanent,
+// juddering 50 fps because the ladder only classifies cost, it never chases the
+// frame deadline. The invariant that matters is "no oscillation", not "stop
+// moving": tiers must walk monotonically downward and then stay put.
+const borderline = drive(20, 3200);
+const monotonic = borderline.changes.every((c, i, all) => {
+  if (i === 0) return true;
+  const order = ["high", "medium", "low", "min"];
+  return order.indexOf(c[1]) >= order.indexOf(all[i - 1][1]);
+});
 check(
-  "steady 20ms (50 fps) settles on one tier and stops moving",
-  borderline.changes.length === 1 && borderline.tier === "medium",
-  `changes ${JSON.stringify(borderline.changes)} — more than one means oscillation`
+  "steady 20ms (50 fps) spends every quality tier, never oscillates",
+  monotonic && borderline.tier === "min" && borderline.changes.length <= 3,
+  `changes ${JSON.stringify(borderline.changes)} — must descend only, high→min at most`
 );
 
 const recovery = (() => {
@@ -251,6 +261,76 @@ check(
   "the scaler is fed the present interval, not the CPU render cost",
   /this\.perfTier\.tick\(presentDelta\)/.test(game) && /_lastPresentDelta/.test(game),
   "renderer.render() returns before the GPU is done — CPU cost cannot see a GPU-bound machine"
+);
+
+// Sprint 96 — the frame rate must be one of two numbers, never a juddering
+// average. An M1 Pro measured p50 16.8ms with p95 34.0ms: half the frames hit
+// vsync and half missed it, which reads worse than a steady 30.
+console.log("\npresent cadence lock (60 or 30, never 46)");
+check(
+  "a healthy machine keeps the 60 Hz cadence",
+  (() => {
+    const t = createPerfTier(GFX_TEST);
+    for (let i = 0; i < 600; i++) t.tick(16.7);
+    return t.presentHz === 60 && t.locked30 === false;
+  })(),
+  "16.7ms frames must never trigger the 30 lock"
+);
+check(
+  "a machine stuck over budget at min quality locks to an even 30",
+  (() => {
+    const t = createPerfTier(GFX_TEST);
+    for (let i = 0; i < 1400; i++) t.tick(24);
+    return t.tier === "min" && t.presentHz === 30 && t.locked30 === true;
+  })(),
+  "24ms frames = 41 fps of judder; lock it"
+);
+check(
+  "quality is spent before frame rate is",
+  (() => {
+    const t = createPerfTier(GFX_TEST);
+    // 19ms is over the 60 Hz deadline but only just. The ladder must walk down
+    // to min *first* and only then consider halving the cadence.
+    let lockedBeforeMin = false;
+    for (let i = 0; i < 600; i++) {
+      t.tick(19);
+      if (t.locked30 && t.tier !== "min") lockedBeforeMin = true;
+    }
+    return !lockedBeforeMin;
+  })(),
+  "never drop the cadence while quality tiers remain"
+);
+check(
+  "the lock is downward-only within a stage",
+  (() => {
+    const t = createPerfTier(GFX_TEST);
+    for (let i = 0; i < 1400; i++) t.tick(24);
+    if (!t.locked30) return false;
+    // A recovered machine must not flip back mid-stage — an oscillating cadence
+    // is worse than either rate. A new stage builds a new scaler.
+    for (let i = 0; i < 2000; i++) t.tick(9);
+    return t.locked30 === true && t.presentHz === 30;
+  })()
+);
+check(
+  "locked 30 is not reported as a permanent emergency",
+  (() => {
+    const t = createPerfTier(GFX_TEST);
+    for (let i = 0; i < 1400; i++) t.tick(24);
+    for (let i = 0; i < 300; i++) t.tick(33.3);
+    return t.locked30 && t.emergency === false;
+  })(),
+  "33.3ms is the target once locked, not a failure to hit 16.7ms"
+);
+check(
+  "the loop presents on the scaler's cadence, not a hardcoded 60",
+  /perfTier\.presentHz/.test(game) && /const frameMs = 1000 \/ presentHz/.test(game),
+  "GFX.targetFps alone cannot express a deliberate 30"
+);
+check(
+  "the FPS readout counts presented frames over wall time",
+  /_fpsMark/.test(game) && !/this\._fpsT \+= dt/.test(game),
+  "summing dt only on presented frames reported the rAF rate, not the delivered one"
 );
 
 console.log("\ncache bust");

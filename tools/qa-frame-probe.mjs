@@ -109,7 +109,25 @@ async function main() {
 
     await installFrameRecorder(cdp);
     await startRecording(cdp);
-    await sleep(SECONDS * 1000);
+
+    // Sample the *presented* cadence too. installFrameRecorder taps
+    // requestAnimationFrame, which fires at display refresh — on a 120 Hz
+    // ProMotion panel it reported a p50 of 8.9 ms (112 fps) while the game was
+    // actually presenting 27 fps. rAF deltas cannot see a capped renderer.
+    const presentSamples = [];
+    const tPoll = Date.now();
+    while (Date.now() - tPoll < SECONDS * 1000) {
+      await sleep(500);
+      const s = await evaluate(cdp, `return {
+        fps: window.game.fps,
+        hz: window.game.perfTier ? window.game.perfTier.presentHz : 0,
+        locked30: window.game.perfTier ? window.game.perfTier.locked30 : false,
+        tier: window.game.perfTier ? window.game.perfTier.tier : "?",
+        ema: window.game.perfTier ? Math.round(window.game.perfTier.emaMs * 10) / 10 : 0,
+      };`);
+      presentSamples.push(s);
+    }
+
     const deltas = await stopRecording(cdp);
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "w", code: "KeyW", windowsVirtualKeyCode: 87 });
 
@@ -142,9 +160,23 @@ async function main() {
       if (d > 33.3) hitches.push({ at: elapsed / 1000, ms: d });
     }
 
+    const presentFps = presentSamples.map((s) => s.fps).filter((n) => n > 0);
+    const avgPresent = presentFps.length
+      ? presentFps.reduce((a, b) => a + b, 0) / presentFps.length
+      : NaN;
+    const minPresent = presentFps.length ? Math.min(...presentFps) : NaN;
+    const maxPresent = presentFps.length ? Math.max(...presentFps) : NaN;
+    const last = presentSamples[presentSamples.length - 1] || {};
+
     const line = "─".repeat(72);
     console.log(line);
-    console.log(`frames captured .............. ${deltas.length} over ${SECONDS}s  (${(deltas.length / SECONDS).toFixed(1)} fps average)`);
+    console.log("PRESENTED FRAMES  (what the player sees)");
+    console.log(`delivered fps ................ ${avgPresent.toFixed(1)} avg   ${minPresent}–${maxPresent} range`);
+    console.log(`scaler cadence ............... ${last.hz || "?"} Hz target${last.locked30 ? "  (LOCKED to an even 30)" : ""}`);
+    console.log(`quality tier ................. ${last.tier}  ·  present-interval EMA ${last.ema} ms`);
+    console.log("");
+    console.log("DISPLAY REFRESH  (rAF cadence — NOT the delivered frame rate)");
+    console.log(`frames captured .............. ${deltas.length} over ${SECONDS}s  (${(deltas.length / SECONDS).toFixed(1)} rAF/s)`);
     console.log(`mean frame time .............. ${mean.toFixed(2)} ms`);
     console.log(`p50 frame time ............... ${p50.toFixed(2)} ms   (${fpsFromP50.toFixed(1)} fps)`);
     console.log(`p95 frame time ............... ${p95.toFixed(2)} ms`);
@@ -179,11 +211,20 @@ async function main() {
       console.log("VERDICT: NOT A VALID MEASUREMENT — software rasteriser.");
       console.log("         Re-run headed on the target machine: node tools/qa-frame-probe.mjs");
     } else {
-      const holds60 = p95 <= 18 && over / deltas.length < 0.1;
-      if (holds60) {
-        console.log("VERDICT: holds 60 fps — p95 within budget, under 10% of frames over 16.6ms.");
+      // Judge the delivered cadence, not the display refresh. The mandate is a
+      // *consistent* rate: a steady 30 passes, an uneven 46 does not.
+      const spread = maxPresent - minPresent;
+      if (avgPresent >= 55 && spread <= 8) {
+        console.log(`VERDICT: holds 60 fps — delivered ${avgPresent.toFixed(1)} fps, spread ${spread}.`);
+      } else if (last.locked30 && avgPresent >= 27 && spread <= 6) {
+        console.log(`VERDICT: holds a deliberate, even 30 fps — delivered ${avgPresent.toFixed(1)} fps, spread ${spread}.`);
+        console.log("         The scaler chose 30 over an uneven 46. Consistent, but 60 is the target.");
+      } else if (avgPresent < 27) {
+        console.log(`VERDICT: BELOW 30 FPS — delivered ${avgPresent.toFixed(1)} fps (${minPresent}–${maxPresent}). This is the serious case.`);
+        if (STRICT) exit = 1;
       } else {
-        console.log(`VERDICT: MISSES the locked-60 mandate — p50 ${p50.toFixed(1)}ms, p95 ${p95.toFixed(1)}ms, ${((over / deltas.length) * 100).toFixed(0)}% of frames over budget.`);
+        console.log(`VERDICT: INCONSISTENT — delivered ${avgPresent.toFixed(1)} fps ranging ${minPresent}–${maxPresent}, tier ${last.tier}.`);
+        console.log("         Neither a held 60 nor an even 30. This is the judder case.");
         if (STRICT) exit = 1;
       }
     }

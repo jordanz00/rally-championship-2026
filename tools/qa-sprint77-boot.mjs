@@ -53,10 +53,10 @@ check("loading fill is transform-driven", /transform:\s*scaleX\(0\)/.test(css));
 check("race start awaits the loading fade", /showLoadingScreen/.test(game) && /await showScreen\("screen-hud"\)/.test(game));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 425 && /hud\.js\?v=29/.test(game),
+  cacheOk && Number(gameV) >= 425 && Number((game.match(/hud\.js\?v=(\d+)/) || [])[1]) >= 29,
   `main=${mainV} game=${gameV}`
 );
-check("css cache-bust", /game\.css\?v=29/.test(index));
+check("css cache-bust", /game\.css\?v=(\d+)/.test(index) && Number((index.match(/game\.css\?v=(\d+)/) || [])[1]) >= 29);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "boot is cheap, fades are black, load bar trickles"}`);
 process.exit(fail ? 1 : 0);

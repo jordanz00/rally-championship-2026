@@ -62,6 +62,9 @@ export class Input {
     this.back = false;
     this.reset = false;
     this.transToggle = false;
+    /** Set by poll() the moment a human overrides a QA hold; game.js clears it. */
+    this.qaReleased = false;
+    this._qaHold = null;
     this._steerAnalog = 0;
     this._lastPoll = performance.now();
     this._padCamWas = false;
@@ -199,13 +202,23 @@ export class Input {
       if (touch.camera) this.camera = true;
     }
 
-    // Headless QA hold — applied last so a real key/pad still wins if present.
+    // Headless QA hold. This used to claim a real key still won — it never did.
+    // Being applied last, it overwrote every human input unconditionally, and a
+    // QA run that was killed mid-drive left it latched on a live page: steering
+    // was completely dead with nothing on screen to explain why. A hand on the
+    // controls now always wins and retires the override for good, so no QA
+    // state can outlive its run and silently take the car off the player.
     const qa = this._qaHold;
     if (qa && typeof qa === "object") {
-      if (qa.throttle != null) this.throttle = bounded(qa.throttle, 0, 1);
-      if (qa.steer != null) this.steer = bounded(qa.steer, -1, 1);
-      if (qa.brake != null) this.brake = bounded(qa.brake, 0, 1);
-      if (qa.handbrake != null) this.handbrake = bounded(qa.handbrake, 0, 1);
+      if (usingKeys || usingPad || (touch && touch.active)) {
+        this._qaHold = null;
+        this.qaReleased = true;
+      } else {
+        if (qa.throttle != null) this.throttle = bounded(qa.throttle, 0, 1);
+        if (qa.steer != null) this.steer = bounded(qa.steer, -1, 1);
+        if (qa.brake != null) this.brake = bounded(qa.brake, 0, 1);
+        if (qa.handbrake != null) this.handbrake = bounded(qa.handbrake, 0, 1);
+      }
     }
 
     this._edge.clear();

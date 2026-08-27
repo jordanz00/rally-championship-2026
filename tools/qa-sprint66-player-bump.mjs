@@ -63,11 +63,18 @@ check(
   "AI-AI pack path is unchanged",
   /AI_PASS_LATERAL\s*=\s*0\.55/.test(collide) && /AI_SEPARATE\s*=\s*0\.55/.test(collide)
 );
-check("game + vehicle import collide.js?v=34", /collide\.js\?v=34/.test(game) && /collide\.js\?v=34/.test(vehicle));
+check(
+  "game + vehicle import collide.js?v=34+",
+  Number((game.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 34 &&
+    Number((vehicle.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 34
+);
 const vehGame = (game.match(/vehicle\.js\?v=(\d+)/) || [])[1];
 const vehAi = (ai.match(/vehicle\.js\?v=(\d+)/) || [])[1];
 check("game + AI import vehicle.js", Number(vehGame) >= 75 && Number(vehAi) >= 75, `game=${vehGame} ai=${vehAi}`);
-check("game imports ai.js?v=110", /ai\.js\?v=109/.test(game));
+check(
+  "game imports ai.js?v=109+",
+  Number((game.match(/ai\.js\?v=(\d+)/) || [])[1]) >= 109
+);
 check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "rivals bump, they do not slide the player"}`);

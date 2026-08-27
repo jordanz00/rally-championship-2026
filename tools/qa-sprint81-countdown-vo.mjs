@@ -51,7 +51,7 @@ for (const key of COUNT) {
   check(`clip ${key}.mp3`, !!(st && st.size > 7000), st ? `${st.size} bytes` : "missing");
 }
 
-check("game imports engine.js?v=51", /engine\.js\?v=51/.test(game));
+check("game imports engine.js?v=51+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 51);
 check("cache-bust chain", cacheOk && Number(gameV) >= 407, `main=${mainV} game=${gameV}`);
 
 console.log(

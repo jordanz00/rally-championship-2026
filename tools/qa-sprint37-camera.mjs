@@ -97,9 +97,9 @@ check(
 
 check(
   "cache bust on the camera module graph",
-  /celica\.js\?v=11[8-9]/.test(game) && /game\.js\?v=37[0-9]/.test(read("js/main.js")) &&
-    /cockpit-anim\.js\?v=[4-9]/.test(game),
-  "game.js must import bumped celica; main must import bumped game"
+  /celica\.js\?v=1[3-9][0-9]/.test(game) && /game\.js\?v=46[3-9]|game\.js\?v=[5-9][0-9]{2}/.test(read("js/main.js")) &&
+    /cockpit-anim\.js\?v=[4-9]/.test(game) && /config\.js\?v=14[7-9]|config\.js\?v=1[5-9][0-9]/.test(game),
+  "game.js must import bumped celica/config; main must import bumped game"
 );
 
 check(

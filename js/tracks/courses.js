@@ -28,7 +28,7 @@
  * backwards and the co-driver reads every corner the wrong way.
  */
 
-import { COLORS } from "../config.js?v=138";
+import { COLORS } from "../config.js?v=148";
 
 export const COURSES = {
   /**
@@ -90,10 +90,11 @@ export const COURSES = {
       // Jump pair: medium then big Safari throw — heights must read different.
       { type: "jump", ramp: 20, rise: 3.0, lip: 6, gap: 16, drop: 2.2, land: 18, surface: "sand", width: 15 },
       { type: "straight", length: 34, surface: "sand", width: 15 },
-      { type: "jump", ramp: 30, rise: 5.2, lip: 8, gap: 26, drop: 3.6, land: 30, surface: "sand", width: 15 },
+      { type: "jump", ramp: 30, rise: 5.2, lip: 8, gap: 26, drop: 3.6, land: 52, surface: "sand", width: 15 },
 
-      // Desert's single checkpoint, a little past halfway.
-      { type: "straight", length: 52, surface: "sand", width: 15, checkpoint: true },
+      // Long flat after the Safari throw so a fast landing stays on sand,
+      // not inside the climb / tunnel.
+      { type: "straight", length: 72, surface: "sand", width: 15, checkpoint: true },
       { type: "curve", radius: 80, angle: 44, surface: "sand", width: 14, dy: 5 },
       { type: "straight", length: 48, surface: "sand", surfaceOut: "dirt", width: 12, dy: 6 },
 

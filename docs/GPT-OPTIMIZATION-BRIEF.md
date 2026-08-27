@@ -46,14 +46,16 @@ index.html → js/main.js?v=320 → js/game.js
 ## 3. Sprint 35 — DCC pipeline + damage (honest scope)
 
 ### Shipped
-- **`tools/dcc-pipeline.mjs`** — validates 6 car GLB folders, writes `assets/dcc-manifest.json`
-- **`js/assets/damage.js`** — `accumulateDamage()`, `applyDamageVisuals()` (roughness/color tiers)
-- **`vehicle.damage`** 0..1 from wall rubs; no handling penalty (arcade-first)
-- **`docs/DCC-ASSET-PIPELINE.md`** pattern via manifest + existing `tools/build-car-lods.sh`
+- **`tools/dcc-pipeline.mjs`** — validates garage GLB folders, writes `assets/dcc-manifest.json` with mesh counts
+- **`js/assets/damage.js`** — `accumulateDamage()`, `applyImpactDamage()` (directional dents + paint 0–3)
+- **`ImpactSparks`** — additive burst on wall / rival hits
+- **`vehicle.damage`** 0..1 from wall rubs and car bumps; no handling penalty (arcade-first)
+- **Co-driver HUD** — CONTACT at tier 2, BODYWORK at tier 3
+- **`docs/DCC-ASSET-PIPELINE.md`**
 
 ### Not shipped (next human/AI work)
 - Real **photogrammetry** meshes (need capture + retopo outside browser)
-- Per-car **`damaged.glb`** mesh swap (hook is documented; runtime uses shader tiers today)
+- Per-car **`damaged.glb`** mesh swap (hook is documented; runtime dents until authored)
 - Blender batch export automation beyond existing `glbedit.mjs` / `build-car-lods.sh`
 
 ### GPT optimization targets

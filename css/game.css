@@ -84,7 +84,7 @@ body {
 }
 
 #crt:has(#screen-title.active) {
-  background: #3a7ab8;
+  background: #164e88;
 }
 
 #crt:has(#screen-title.active) #game-view {
@@ -439,7 +439,19 @@ body {
   pointer-events: auto;
 }
 
-#screen-menu.active,
+/* SELECT MODE keeps the showroom hero visible — dark wash only behind UI text. */
+#screen-menu.active {
+  background: linear-gradient(
+    90deg,
+    rgba(4, 10, 8, 0.78) 0%,
+    rgba(4, 10, 8, 0.42) 34%,
+    rgba(4, 10, 8, 0.12) 58%,
+    rgba(4, 10, 8, 0.02) 78%,
+    transparent 100%
+  );
+  pointer-events: auto;
+}
+
 #screen-cars.active,
 #screen-courses.active,
 #screen-controls.active,
@@ -745,9 +757,9 @@ button.ghost {
 #hud-flash {
   position: absolute;
   left: 50%;
-  top: 38%;
-  transform: translate(-50%, -50%);
-  font-size: 42px;
+  top: 14px;
+  transform: translateX(-50%);
+  font-size: 28px;
   letter-spacing: 0.2em;
   color: var(--yellow);
   text-shadow: 3px 3px 0 #000;
@@ -759,17 +771,9 @@ button.ghost {
   animation: flash 1.1s ease-out;
 }
 
+/* Navigator is audio — on-screen calls sat in the sightline. */
 #hud-pace {
-  position: absolute;
-  left: 50%;
-  top: 22%;
-  transform: translateX(-50%);
-  font-size: 22px;
-  letter-spacing: 0.28em;
-  color: #3a7adf;
-  text-shadow: 2px 2px 0 #000;
-  pointer-events: none;
-  min-height: 1.2em;
+  display: none;
 }
 
 #hud-pace[data-sev="mid"] {
@@ -790,11 +794,11 @@ button.ghost {
 @keyframes flash {
   0% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.2);
+    transform: translateX(-50%) scale(1.08);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) scale(1);
   }
 }
 
@@ -817,7 +821,7 @@ button.ghost {
 @media (prefers-reduced-motion: reduce) {
   #hud-flash.show {
     animation: flashStill 1.1s linear;
-    transform: translate(-50%, -50%);
+    transform: translateX(-50%);
   }
 }
 
@@ -989,6 +993,29 @@ button.ghost {
 #grip-fill[data-hot="1"],
 #cluster-grip-fill[data-hot="1"] {
   filter: brightness(1.15);
+}
+
+.cluster-body {
+  margin-top: 6px;
+  width: 100%;
+  min-width: 44px;
+}
+
+#cluster-body-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, #c4b07a 0%, #e8a04a 55%, #e24a3a 100%);
+  transition: transform 0.08s linear;
+}
+
+#cluster-body-fill[data-tier="2"] {
+  filter: saturate(1.15);
+}
+
+#cluster-body-fill[data-tier="3"] {
+  filter: saturate(1.25) brightness(1.08);
 }
 
 .cluster-slide {
@@ -1401,5 +1428,81 @@ body.is-mobile #minimap {
   }
   .touch-pedal.gas {
     min-height: 100px;
+  }
+}
+
+/* Title + SELECT MODE — phones / Android Chrome / iOS Safari */
+body.is-mobile #screen-title {
+  justify-content: flex-start;
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
+}
+
+body.is-mobile #screen-title #btn-start {
+  min-height: 48px;
+  padding: 12px 4px;
+  font-size: clamp(18px, 5.2vw, 26px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+body.is-mobile .sr-push-wrap {
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  max-width: min(92vw, 420px);
+}
+
+body.is-mobile .sr-title-foot {
+  /* Keep Garage drop from covering PUSH START on short phones. */
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
+  max-width: min(46vw, 200px);
+  opacity: 0.88;
+}
+
+body.is-mobile #screen-menu,
+body.is-mobile #screen-cars,
+body.is-mobile #screen-courses,
+body.is-mobile #screen-controls,
+body.is-mobile #screen-paused,
+body.is-mobile #screen-result {
+  gap: 10px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+}
+
+body.is-mobile #screen-menu h2,
+body.is-mobile #screen-cars h2,
+body.is-mobile #screen-courses h2 {
+  font-size: clamp(22px, 7vw, 36px);
+  margin-bottom: 8px;
+}
+
+body.is-mobile .screen button {
+  max-width: min(100%, 440px);
+  padding: 14px 18px;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: break-word;
+}
+
+body.is-mobile #screen-controls ul {
+  max-width: min(100%, 440px);
+  font-size: 13px;
+  line-height: 1.45;
+  padding-left: 1.1em;
+}
+
+/* Landscape phones — keep pedals thumb-reachable above the home indicator */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.is-mobile .touch-pedal.hb {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  body.is-mobile .hud-bottom {
+    margin-bottom: 34vh;
+  }
+  body.is-mobile .sr-emblem {
+    width: min(160px, 28vw);
   }
 }

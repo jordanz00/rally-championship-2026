@@ -109,6 +109,7 @@ export class RallyAudio {
     this._hits = {};
     /** @type {Record<string, AudioBuffer|null>} */
     this._navClips = {};
+    this._navBooted = false;
     /** @type {AudioBufferSourceNode|null} */
     this._navSrc = null;
     /** Start-grid 3-2-1-GO — separate so a late pace decode cannot cut GO. */
@@ -155,6 +156,7 @@ export class RallyAudio {
     }
     this.ready = true;
     this._bindVisibility();
+    this._ensureNavBus();
     const later =
       typeof requestIdleCallback === "function"
         ? (fn) => requestIdleCallback(fn, { timeout: 1600 })
@@ -216,13 +218,9 @@ export class RallyAudio {
     this.skid.boot();
     this.crowd = new CrowdVoice(ctx, sfxMerge);
     this.crowd.boot();
-    const nav = ctx.createGain();
-    nav.gain.value = NAV_GAIN * this.navVol;
-    nav.connect(ctx.destination);
-    this._navGain = nav;
+    this._ensureNavBus();
     this._initWind();
     this._bootHits();
-    this._bootNavClips();
     this._hits.noise = makeNoiseBuffer(ctx, 0.18);
     this._hits.thump = makeNoiseBuffer(ctx, 0.28, 0.55);
     this._hits.landSoft = makeNoiseBuffer(ctx, 0.42, 0.88);
@@ -320,9 +318,26 @@ export class RallyAudio {
     });
   }
 
+  /**
+   * Navigator bus + clip decode as soon as the context exists so the first
+   * corner is not silent while engine/tire beds are still booting.
+   */
+  _ensureNavBus() {
+    if (!this.ctx || this._workMute) return;
+    if (!this._navGain) {
+      const nav = this.ctx.createGain();
+      nav.gain.value = NAV_GAIN * this.navVol;
+      nav.connect(this.ctx.destination);
+      this._navGain = nav;
+    }
+    this._bootNavClips();
+  }
+
   _bootNavClips() {
+    if (this._navBooted || !this.ctx) return;
+    this._navBooted = true;
     for (const key of NAV_CLIPS) {
-      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3`).then((buf) => {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=3`).then((buf) => {
         this._navClips[key] = buf;
       });
     }
@@ -335,9 +350,9 @@ export class RallyAudio {
    */
   paceCall(key) {
     if (!this.ready || this._workMute || this.navVol <= 0.001) return false;
-    if (!Object.prototype.hasOwnProperty.call(this._navClips, key)) return false;
+    if (!NAV_CLIPS.includes(key)) return false;
     const buf = this._navClips[key];
-    if (!buf || !this._navGain) return true;
+    if (!buf || !this._navGain) return false;
     this._kickContext();
     if (this._navSrc) {
       try {

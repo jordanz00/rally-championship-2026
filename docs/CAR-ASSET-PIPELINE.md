@@ -11,8 +11,8 @@ Rebuild any of this with `bash tools/build-car-lods.sh`; inspect with
 | `assets/celica/rival.glb` | 10,304 | 172 | Celica rival LOD |
 | `assets/delta/integrale.glb` | 45,616 | 27 | Delta hero (player) |
 | `assets/delta/rival.glb` | 15,619 | 27 | Delta rival LOD |
-| `assets/stratos/stratos.glb` | 15,612 | 85 | Stratos hero — Sprint 18 original Blender rebuild |
-| `assets/stratos/rival.glb` | 14,256 | 85 | Stratos rival LOD (`build-car-lods.sh` ratio 0.55) |
+| `assets/stratos/stratos.glb` | 12,638 | 4 | Stratos hero — 1974 CAD GLB (wheels split at load) |
+| `assets/stratos/rival.glb` | 6,950 | 4 | Stratos rival LOD (`build-car-lods.sh` ratio 0.55) |
 
 Originals are archived in `.backups/models/`.
 
@@ -82,9 +82,9 @@ serving; the code still needs these changes.
 
 ## Still outstanding
 
-- **The Stratos is an original Sprint 18 rebuild** (~15.6k tris hero, rival LOD
-  via `build-car-lods.sh`). Still untextured; a Sketchfab CC BY drop remains
-  optional if the user supplies it (see `assets/stratos/ATTRIBUTION.txt`).
+- **The Stratos hero is the user-supplied 1974 CAD GLB** (~12.6k tris, 2048
+  PBR maps). Axles ship fused; `prepStratosCadModel` splits them into `WHEEL_*`
+  hubs at load. Rival LOD via `build-car-lods.sh`.
 - Per-instance wheel rotation on rivals must be re-verified after any merge
   work — check `node tools/glbstats.mjs` reports 4 wheel hubs, and confirm in
   play that rival wheels actually turn.

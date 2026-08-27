@@ -13,7 +13,8 @@ const STORE_SIGN = "rally-tilt-sign";
 
 /**
  * True when this session should show phone controls.
- * iPad + keyboard still reports touches, so we also accept an explicit ?touch=1.
+ * iPhone / Android phones, coarse pointers, iPads, and Android tablets.
+ * Desktop can force with ?touch=1; phones can opt out with ?touch=0.
  */
 export function isPhonePlay() {
   if (typeof window === "undefined") return false;
@@ -26,10 +27,12 @@ export function isPhonePlay() {
   }
   const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-  const phone = /iPhone|iPod|Android.+Mobile|webOS|BlackBerry/i.test(ua);
-  const tablet = /iPad|Android(?!.*Mobile)/i.test(ua);
+  const phone = /iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const tablet = /iPad|Android(?!.*Mobile)|Tablet|Silk/i.test(ua);
   const points = typeof navigator !== "undefined" ? navigator.maxTouchPoints || 0 : 0;
-  return !!(coarse || phone || (tablet && points > 0) || (points > 1 && window.innerWidth < 980));
+  // iPadOS 13+ desktop UA still reports touch points; treat wide touch as tablet play.
+  const iPadOs = points > 1 && /Macintosh/i.test(ua);
+  return !!(coarse || phone || iPadOs || (tablet && points > 0) || (points > 1 && window.innerWidth < 980));
 }
 
 function clamp(v, lo, hi) {

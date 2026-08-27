@@ -14,8 +14,8 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=46";
-import { VISUAL } from "./config.js?v=138";
+import { getSurface } from "./physics/surfaces.js?v=48";
+import { VISUAL } from "./config.js?v=148";
 
 /**
  * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
@@ -339,6 +339,126 @@ export class Dust {
     if (fog.color) u.uFogColor.value.copy(fog.color);
     if (fog.near != null) u.uFogNear.value = fog.near * 0.32;
     if (fog.far != null) u.uFogFar.value = fog.far * 0.58;
+  }
+}
+
+const SPARK_VERT = /* glsl */ `
+attribute float aSize;
+attribute float aLife;
+varying float vLife;
+void main() {
+  vLife = aLife;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = max(1.2, aSize / max(1.0, -mv.z));
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const SPARK_FRAG = /* glsl */ `
+varying float vLife;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float d = dot(p, p);
+  if (d > 1.0) discard;
+  float core = exp(-d * 3.2) * vLife;
+  gl_FragColor = vec4(1.0, 0.82 + (1.0 - d) * 0.15, 0.35, core);
+}
+`;
+
+/**
+ * Short additive sparks on a wall or rival hit — the chase-cam read that paint
+ * darkening never gave.
+ */
+export class ImpactSparks {
+  /**
+   * @param {THREE.Scene} scene
+   */
+  constructor(scene) {
+    this.count = 96;
+    this.pos = new Float32Array(this.count * 3);
+    this.vel = new Float32Array(this.count * 3);
+    this.life = new Float32Array(this.count);
+    this.maxLife = new Float32Array(this.count);
+    this.size = new Float32Array(this.count);
+    this.fade = new Float32Array(this.count);
+    this.geo = new THREE.BufferGeometry();
+    this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
+    this.geo.setAttribute("aSize", new THREE.BufferAttribute(this.size, 1));
+    this.geo.setAttribute("aLife", new THREE.BufferAttribute(this.fade, 1));
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: SPARK_VERT,
+      fragmentShader: SPARK_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    this.points = new THREE.Points(this.geo, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 6;
+    scene.add(this.points);
+    this.i = 0;
+    this.alive = 0;
+    for (let i = 0; i < this.count; i++) this.pos[i * 3 + 1] = -80;
+  }
+
+  /**
+   * @param {{x:number,y:number,z:number}} pos
+   * @param {number} nx
+   * @param {number} nz
+   * @param {number} mag
+   */
+  burst(pos, nx, nz, mag) {
+    if (!pos) return;
+    const n = Math.min(32, 10 + ((mag || 0.5) * 16) | 0);
+    const len = Math.hypot(nx, nz) || 1;
+    const hx = nx / len;
+    const hz = nz / len;
+    const px = pos.x + hx * 0.85;
+    const py = (pos.y || 0.6) + 0.35;
+    const pz = pos.z + hz * 0.85;
+    for (let k = 0; k < n; k++) {
+      const i = this.i % this.count;
+      this.i += 1;
+      this.pos[i * 3] = px + (Math.random() - 0.5) * 0.4;
+      this.pos[i * 3 + 1] = py + Math.random() * 0.35;
+      this.pos[i * 3 + 2] = pz + (Math.random() - 0.5) * 0.4;
+      const spray = 4 + Math.random() * 10 * (0.5 + mag);
+      this.vel[i * 3] = hx * spray + (Math.random() - 0.5) * 6;
+      this.vel[i * 3 + 1] = 2.2 + Math.random() * 7;
+      this.vel[i * 3 + 2] = hz * spray + (Math.random() - 0.5) * 6;
+      this.maxLife[i] = 0.12 + Math.random() * 0.22;
+      this.life[i] = this.maxLife[i];
+      this.size[i] = 7 + Math.random() * 10;
+    }
+    this.alive = 1;
+    this.geo.attributes.aSize.needsUpdate = true;
+  }
+
+  /**
+   * @param {number} dt
+   */
+  step(dt) {
+    if (!this.alive) return;
+    let live = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      if (this.life[i] <= 0) {
+        this.pos[i * 3 + 1] = -80;
+        this.fade[i] = 0;
+        continue;
+      }
+      live += 1;
+      this.vel[i * 3 + 1] -= 28 * dt;
+      this.pos[i * 3] += this.vel[i * 3] * dt;
+      this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
+      this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.fade[i] = this.life[i] / (this.maxLife[i] || 1);
+    }
+    this.alive = live;
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aLife.needsUpdate = true;
   }
 }
 

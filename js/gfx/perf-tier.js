@@ -39,6 +39,28 @@ export const QUALITY_CAPS = {
 const DOWN_HOLD = 24;
 const UP_HOLD = 150;
 /**
+ * Presented frames of settled, over-deadline cost before the scaler gives up one
+ * more quality tier in pursuit of 60 Hz.
+ */
+const PUSH_HOLD = 90;
+/**
+ * Presented frames of settled, over-deadline cost *at the cheapest tier* before
+ * the present cadence drops from 60 Hz to a deliberate 30 Hz.
+ *
+ * WHY A LOCK AT ALL: a machine that renders a frame in ~18 ms cannot hit the
+ * 16.7 ms vsync deadline, so it waits for the next one — 33.3 ms. Mixed with
+ * frames that do make it, the player sees an uneven 46 fps with visible judder.
+ * Presenting every second vsync costs frame rate but delivers an even cadence,
+ * which reads as far smoother. Measured on an M1 Pro: p50 16.8 ms with p95
+ * 34.0 ms and 65% of frames over budget — the worst case for feel.
+ *
+ * WHY SO MUCH LONGER THAN PUSH_HOLD: halving the frame rate is the most drastic
+ * thing the scaler can do and it does not reverse until the next stage, so a
+ * dense village section or a background app must not spend it. Ten seconds of
+ * evidence at the cheapest tier is the bar.
+ */
+const LOCK30_HOLD = 600;
+/**
  * Ceiling on a single sample folded into the EMA. A shader compile or a GC
  * pause can present one 1000 ms frame; letting that raw number into the EMA
  * would trip the 30 fps floor and strip the stage of shadows and pixels for a
@@ -67,8 +89,22 @@ function buildLadder(gfx) {
   const capShadow = Math.min(QUALITY_CAPS.maxShadowMap, gfx.shadowMap || QUALITY_CAPS.maxShadowMap);
   const minDpr = Math.max(0.6, Math.min(1, gfx.minPixelRatio || 0.75));
   const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 2048);
+  // `shadowEvery` is the sun atlas re-render interval in presented frames. The
+  // shadow pass is a second full geometry pass over the visible world, so at 1
+  // it is one of the largest single line items in the frame. Sunlight barely
+  // moves, so re-baking it every other frame is imperceptible on a soft PCF
+  // shadow while returning a large share of the budget.
   return [
-    { id: "high", floorMs: 0, dpr: 1, shadow: capShadow, post: "high", sky: "high", mirrorEvery: 1 },
+    {
+      id: "high",
+      floorMs: 0,
+      dpr: 1,
+      shadow: capShadow,
+      post: "high",
+      sky: "high",
+      mirrorEvery: 1,
+      shadowEvery: 1,
+    },
     {
       id: "medium",
       floorMs: gfx.integratedFloorMs ?? 18.5,
@@ -77,6 +113,7 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "medium",
       mirrorEvery: 2,
+      shadowEvery: 1,
     },
     {
       id: "low",
@@ -86,6 +123,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "low",
       mirrorEvery: 3,
+      shadowEvery: 2,
     },
     {
       id: "min",
@@ -95,6 +133,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "min",
       mirrorEvery: 4,
+      shadowEvery: 2,
     },
   ];
 }
@@ -121,6 +160,15 @@ export function createPerfTier(gfx, opts = {}) {
   let downFor = 0;
   let upFor = 0;
   let hardFor = 0;
+  /** 0 while targeting GFX.targetFps; 30 once the stage has given up on 60. */
+  let lockedHz = 0;
+  let lock30For = 0;
+  const targetHz = gfx.targetFps || 60;
+  /**
+   * The interval we must beat to call 60 Hz held. 6% of slack keeps EMA noise
+   * and a single late vsync from arming the cadence lock.
+   */
+  const deadlineMs = Math.min(gfx.lock30AboveMs ?? 20, (1000 / targetHz) * 1.06);
 
   /** @param {number} ms */
   function wantIndex(ms) {
@@ -143,7 +191,27 @@ export function createPerfTier(gfx, opts = {}) {
     },
     /** True while the scaler has given up post bloom to hold the floor. */
     get emergency() {
+      // Once locked to 30 the interval is 33.3 ms *by design*, so the 22 ms
+      // threshold would read as a permanent emergency. Judge against the
+      // cadence we actually committed to.
+      if (lockedHz) return emaMs >= (1000 / lockedHz) * 1.12;
       return emaMs >= emergencyMs;
+    },
+
+    /**
+     * Presentation cadence in Hz — 60 normally, 30 once this stage has proven it
+     * cannot hold 60 at the cheapest tier. Downward-only within a stage, for the
+     * same reason the DPR and shadow floors are: a cadence that flips back and
+     * forth is worse than either steady rate. A new stage re-grades from 60.
+     * @returns {number}
+     */
+    get presentHz() {
+      return lockedHz || targetHz;
+    },
+
+    /** True when this stage deliberately gave up 60 fps for an even 30. */
+    get locked30() {
+      return lockedHz === 30;
     },
 
     /**
@@ -160,7 +228,10 @@ export function createPerfTier(gfx, opts = {}) {
     tick(frameMs) {
       const raw = Number.isFinite(frameMs) && frameMs > 0 ? frameMs : emaMs;
       emaMs = emaMs * 0.9 + Math.min(raw, SAMPLE_CLAMP_MS) * 0.1;
-      hardFor = raw >= hardFloorMs ? hardFor + 1 : 0;
+      // Scale the emergency floor to the cadence we committed to. Once locked at
+      // 30 Hz a 33 ms interval *is* the target, not a sub-30 emergency.
+      const cadenceScale = lockedHz ? targetHz / lockedHz : 1;
+      hardFor = raw >= hardFloorMs * cadenceScale ? hardFor + 1 : 0;
 
       let changed = false;
       // Sustained sub-30 fps is not worth deliberating over: take the cheapest
@@ -174,6 +245,12 @@ export function createPerfTier(gfx, opts = {}) {
         return { ...ladder[index], changed: true };
       }
 
+      // While locked at 30 Hz the present interval is 33.3 ms by construction,
+      // so it no longer says anything about what a frame costs. Grading quality
+      // from it would drive every locked machine to `min` for no reason, so the
+      // tier freezes at whatever the machine nearly held at 60.
+      if (lockedHz) return { ...ladder[index], changed };
+
       const want = wantIndex(emaMs);
       if (want > index) {
         upFor = 0;
@@ -183,7 +260,14 @@ export function createPerfTier(gfx, opts = {}) {
           downFor = 0;
           changed = true;
         }
-      } else if (want < index && emaMs < ladder[index].floorMs * UP_MARGIN) {
+      } else if (
+        want < index &&
+        emaMs < ladder[index].floorMs * UP_MARGIN &&
+        // Never buy quality back while we are still missing the frame deadline.
+        // Without this the scaler climbed out of a tier it had deliberately
+        // been pushed into, then got pushed back down — a visible oscillation.
+        emaMs <= deadlineMs
+      ) {
         downFor = 0;
         upFor += 1;
         if (upFor >= UP_HOLD) {
@@ -194,6 +278,30 @@ export function createPerfTier(gfx, opts = {}) {
       } else {
         downFor = 0;
         upFor = 0;
+      }
+
+      // Spend quality first, then cadence.
+      //
+      // The ladder only classifies cost into a tier — it does not chase a
+      // deadline, so a machine sitting at a steady 24 ms would settle on `low`
+      // and deliver a permanently juddering 41 fps. That was the shipped
+      // behaviour. Instead: once the ladder has reached equilibrium and we are
+      // still over the 60 Hz deadline, step down one more tier; when there is
+      // nothing left to give, halve the cadence and hold it.
+      const settled = !changed && downFor === 0 && upFor === 0;
+      if (settled && emaMs > deadlineMs) {
+        lock30For += 1;
+        const atFloor = index >= ladder.length - 1;
+        if (!atFloor && lock30For >= PUSH_HOLD) {
+          lock30For = 0;
+          index += 1;
+          changed = true;
+        } else if (atFloor && lock30For >= LOCK30_HOLD) {
+          lock30For = 0;
+          lockedHz = 30;
+        }
+      } else {
+        lock30For = 0;
       }
       return { ...ladder[index], changed };
     },
@@ -211,6 +319,8 @@ export function createPerfTier(gfx, opts = {}) {
         emergency: emaMs >= emergencyMs,
         dprScale: ladder[index].dpr,
         shadowMap: ladder[index].shadow,
+        presentHz: lockedHz || targetHz,
+        locked30: lockedHz === 30,
       };
     },
   };

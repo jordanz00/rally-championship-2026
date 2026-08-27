@@ -36,6 +36,9 @@ export class Hud {
     this.clusterSurface = document.getElementById("cluster-surface");
     this.gripFill = document.getElementById("cluster-grip-fill");
     this.slideBadge = document.getElementById("cluster-slide");
+    this.bodyFill = document.getElementById("cluster-body-fill");
+    this.bodyWrap = document.getElementById("cluster-body");
+    if (this.bodyWrap) this.bodyWrap.hidden = true;
     this._mphShown = 0;
     this._rpmShown = 0;
     this._chase = false;
@@ -170,6 +173,8 @@ export class Hud {
       const hot = slide > 0.55 ? "1" : "0";
       if (this.slideBadge.dataset.hot !== hot) this.slideBadge.dataset.hot = hot;
     }
+
+    if (this.bodyWrap) this.bodyWrap.hidden = true;
 
     if (!this._chase) return;
     const mph = Math.max(0, kmh * KMH_TO_MPH);

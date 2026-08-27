@@ -4,19 +4,22 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Rally 2026" />
+    <meta name="theme-color" content="#050705" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#050705" />
     <meta name="format-detection" content="telephone=no" />
+    <meta name="color-scheme" content="dark" />
     <title>Rally Championship 2026</title>
     <meta name="description" content="Arcade browser rally — Celica, Delta, Stratos, four stages, championship mode, power slides, co-driver calls." />
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=29" />
+    <link rel="stylesheet" href="css/game.css?v=34" />
     <!-- Splash: title bed + hero Celica so the showroom is ready on first paint. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="preload" href="assets/celica/gt4.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
@@ -214,7 +217,7 @@
         </div>
         <canvas id="minimap" width="140" height="100"></canvas>
         <div id="hud-flash"></div>
-        <div id="hud-pace"></div>
+        <div id="hud-pace" hidden></div>
         <div id="cluster" hidden>
           <canvas id="gauge-mph" width="280" height="280"></canvas>
           <div class="cluster-hub">
@@ -224,6 +227,10 @@
             <div class="cluster-grip" id="cluster-grip" aria-hidden="true">
               <span class="cluster-grip-label">GRIP</span>
               <div class="grip-bar"><div id="cluster-grip-fill"></div></div>
+            </div>
+            <div class="cluster-body" id="cluster-body" hidden>
+              <span class="cluster-grip-label">BODY</span>
+              <div class="grip-bar"><div id="cluster-body-fill"></div></div>
             </div>
             <span class="cluster-slide" id="cluster-slide" hidden>SLIDE</span>
           </div>
@@ -318,6 +325,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=425"></script>
+    <script type="module" src="js/main.js?v=477"></script>
   </body>
 </html>

@@ -2167,7 +2167,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 1. **The main path does not hold 60.** At full quality on an M1 Pro the probe measures a steady ~28–37 ms frame interval (~35 fps), GPU-bound. The caps and the degradation ladder are in place, and the scaler will now correctly see this and step down — but the *default* tier is not yet 60-safe on this machine. Next sprint must cut fixed GPU cost (4096² PCFSoft shadow atlas re-rendered every frame at `shadowEvery: 1` is the first suspect) rather than add more scaling.
 2. **Non-deterministic stage-build wedge.** Twice in six headed runs the Desert track failed to finish building within 120 s, with the main thread unresponsive to `Runtime.evaluate` for >180 s. This reproduced **before** any Sprint 76 change and occurs upstream of `_precompileStage` (the probe was still waiting for `window.game.track` to exist). Owner: whoever owns `track.js` construction. This is a hard ship blocker on its own.
-3. **HUD FPS readout is optimistic.** `_fpsT` accumulates the substep-clamped `dt`, so the on-screen number read 65 while the probe measured 49. Do not use it as evidence.
+3. ~~**HUD FPS readout is optimistic.**~~ **CLOSED in Sprint 96** — the readout now counts presented frames over wall-clock time. `_fpsT` summed `dt` only on frames that presented, so skipped frames' time was discarded and the number reported the rAF rate rather than the delivered one.
 
 **Harness:** `clickResilient` now polls the hit-test for up to 15 s instead of failing on the first zero-size rect. A saturated boot main thread can answer `evaluate` before style/layout has flushed, which was failing `qa-frame-probe` at PRESS START with a spurious "element has zero size".
 
@@ -2461,3 +2461,1110 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 
 ---
 
+## Sprint 89 — No teleport after jump 3; cars stay on the road (26 Aug 2026)
+
+**Player moment:** Desert Safari throw (jump 3). The car lands on the sand pad and drives the climb into the tunnel. It is not snapped inside the tunnel. Rivals stay spread on the road. The rock-bridge underpass is a hole a car can drive through. Dunes and rocks stay off the asphalt.
+
+**Cause:** After the pit, `Track.query` walked ~110 m ahead and locked onto the tunnel. `_restoreGoodPose` / off-road reset then planted XZ there, so the pack clustered in the tube. A later hairpin flyover filled the rock-bridge portal.
+
+**Fix (first pass):** Keep world XZ. Pin progress instead of teleporting. Pit recovery stopped at the land pad and refused tunnel samples. Off-road hauls toward the lane. Underpass is marked before flyover and skipped. Portal is 11.2 m tall with a wider drive tube. Y-only floor when a car is under the deck.
+
+| Change | Status |
+|--------|--------|
+| No XZ teleport on spline snap / bury / off-road | **Done** |
+| Jump 3 lands on the pad, not in the tunnel | **PARTIAL** — human playtest 26 Aug: still transported + clipping after jump 3 |
+| AI pack is not reset onto one ribbon point | **Done** |
+| Rock-bridge drive-through stays empty | **Done** |
+| Y floor at the car, not at a warped progress | **PARTIAL** — floor stayed on pit-pad Y |
+
+**Cache (this pass, stale):** `?v=426` · `vehicle.js?v=91` · `track.js?v=186`
+
+**Still human-only:** Closed by sprint 90.
+
+---
+
+## Sprint 90 — Jump 3 floor is the road under the car (26 Aug 2026)
+
+**Player moment:** After Desert jump 3 (Safari throw), the car lands on sand and stays on that road through the climb into the tunnel. It does not fall through the climbing mesh and it is not moved into the tunnel.
+
+**Cause:** Sprint 89 capped pit recovery at ~50 m along and treated the climb as a teleport. Progress stayed in the hole. `_roadFloorY` / pad lift used land-pad Y (~3.7 m) while the visual climb sat at ~8–17 m, so the chassis clipped through. A later query that finally saw the tunnel then lifted Y onto the tube.
+
+**Fix:** Floor is the ribbon under current XZ. A large along-jump is legal when XZ is on that ribbon. Pit query / reacquire walk ~180 m by Euclidean nearest; tunnel samples only count when the car is actually there. Safari throw land pad is 52 m with 72 m of flat after it. Stale pit is not a takeoff and not a pad floor.
+
+| Change | Status |
+|--------|--------|
+| Climb after jump 3 is a road lock, not a teleport | **Done** |
+| Pad Y cannot hold the chassis under the climb | **Done** |
+| Tunnel magnet requires XZ in the tube | **Done** |
+| Jump 3 land + flat is long enough for a fast throw | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=427`** · `vehicle.js?v=92` · `track.js?v=187` · `courses.js?v=62` · `ai.js` vehicle import 92
+
+**Proof:** `node tools/qa-sprint89-no-teleport.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Drive Desert jump 3 at speed. Land on the sand, climb, enter the tunnel on the road. Hard-refresh `?v=428`. GitHub Pages is stale until this is pushed.
+
+---
+
+## Sprint 91 — Navigator says each turn/jump once (26 Aug 2026)
+
+**Player moment:** Before each corner the co-driver says **easy / medium / hard left or right**. Before each jump it says **jump**. One line per corner and per crest. A long sweeper is not a loop of the same call.
+
+**Cause:** Turn ids bucketed every 36 m so a sweeper re-fired. A 2.2 s cooldown skipped the next corner. Jump lock of 110 m ate the second jump of a pair. Hairpins used a different clip. Nav decode waited on the idle SFX graph.
+
+**Fix:** Stable id = arc start. Spoken-id set for the race. Whole-arc grade (easy < 42°, medium < 95°, else hard). Hairpin-scale turns use hard left/right. Nav bus + clips boot on first gesture.
+
+| Change | Status |
+|--------|--------|
+| Easy / medium / hard L/R + jump VO | **Done** |
+| One call per turn and per jump | **Done** |
+| Sweeper is silent after the first line | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=428`** · `engine.js?v=54` · `codriver.js?v=32` · `track.js?v=188` · `pace-call.mjs?v=2`
+
+**Proof:** `node tools/qa-sprint67-pace-vo.mjs`
+
+**Still human-only:** Desert teaching left then right, then Jump, with NAVIGATOR up. Each line once.
+
+---
+
+## Sprint 92 — Jump 3 never drops under the stage (27 Aug 2026)
+
+**Player moment:** Desert (stage 1) Safari throw. Land on the sand, drive the climb, enter the tunnel on the road. The car is not pulled under the stage, does not clip through the ribbon, and is not teleported.
+
+**Cause:** After a good landing the query could still say `gap` while XZ was already on the pad/climb (`_stalePit`). `pit` was forced false, so grounded plant / hover cap treated the **hole mesh Y** (~0–4 m) as the road. The chassis was slammed under the climbing asphalt. `_keepOnRibbon` then pinned that pit query, `_neverFallThrough` no-op'd, and unstick could haul toward a distant ribbon.
+
+**Fix:** Never use gap-axle / stale-pit Y as a grounded deck. Floor is `_solidFloorY` (road under current XZ). A gap query the car has left is replaced with the solid ribbon, not pinned. Reacquire will not keep a pit hint when the car is already on the pad. Unstick will not haul more than 14 m. Desert land under jump 3 → tunnel stays a wash so dunes cannot eat the chassis.
+
+| Change | Status |
+|--------|--------|
+| Stale pit / both-gap deck cannot plant the car under the climb | **Done** |
+| Hover cap cannot pull down onto hole Y | **Done** |
+| Left-the-hole query is not pinned back into the pit | **Done** |
+| Unstick cannot teleport toward the tunnel | **Done** |
+| Jump 3 climb corridor stays a land floor | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=429`** · `vehicle.js?v=93` · `track.js?v=189` · `ai.js` vehicle import 93
+
+**Proof:** `node tools/qa-sprint89-no-teleport.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Drive Desert jump 3 at speed. Land, climb, tunnel on the road. Hard-refresh `?v=429`. GitHub Pages is stale until this is pushed.
+
+---
+
+## Sprint 93 — Roadway clear of environment geometry (27 Aug 2026)
+
+**Player moment:** Every championship stage. Drive the painted ribbon. Dunes, ridges, rocks, trees, and props do not sit on the asphalt or clip through the chassis on the racing line.
+
+**Cause:** 10 m land cells interpolated banks onto the lane after the trench ended. Props could still instance onto paint if a centre-only keep-out missed a GLB footprint. Colliders tolerated 0.4 m of asphalt overlap.
+
+**Fix:** Widen Desert wash/chase so dune tris cannot straddle the ribbon. Refuse any land vert that can own a triangle over paint. Strip every instanced pose whose footprint overlaps the lane (overhead tunnel ribs kept). Scrub colliders that touch asphalt. Headed QA samples land mesh verts and env instances, not only `_groundHeight`.
+
+| Change | Status |
+|--------|--------|
+| Desert land wash 56 m; jump 3 corridor 64 m | **Done** |
+| Land-vert refuse 2.05 cells; desert chase-flat 56 m | **Done** |
+| `_stripLanePoses` / `_laneKeepout` on every instance batch | **Done** |
+| Rock/cactus/canopy drive strip matches GLB radius | **Done** |
+| Colliders that touch paint are dropped | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=430`** · `track.js?v=190`
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
+
+**Still human-only:** Hard-refresh `?v=430` and drive Desert, Forest, and Mountain on the racing line. GitHub Pages is stale until this is pushed.
+
+---
+
+## Sprint 94 — Realistic volumetric sky and lighting (27 Aug 2026)
+
+**Player moment:** Title pad and every stage. Look up: distinct cumulus with lit tops, shadowed bases, and silver edges. The dome is a blue atmosphere with a sun disc, not a painted ramp. Ground lighting is a hard key with sky fill — cars and dunes have a lit side.
+
+**Cause:** Weather islands were almost always on, so the march drew a thin white sheet. Atmosphere blend was 0.38 (the sand-tinted gradient won). Cloud colours were converted to sRGB then tone-mapped as linear. Fill + ambient outran the sun, flattening the stage. Cinema march was 12 coarse steps through a short shell.
+
+**Fix:** Island weather + Worley billows, thicker planet shell, 16 cinema view steps, Beer-Lambert with dark bases and dual-lobe HG. Rayleigh/Mie atmosphere owns the dome. Linear cloud colours. Sun as key, fill/ambient dropped. Lower sun altitude for rims and longer shadows.
+
+| Change | Status |
+|--------|--------|
+| Distinct volumetric cumulus (islands, Worley, self-shadow) | **Done** |
+| Analytic atmosphere blend ~0.82; no sand in the sky ramp | **Done** |
+| Cinema 16×2 raymarch; linear cloud lighting into ACES | **Done** |
+| Stage lights: stronger key, weaker fill, lower sun | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=433`** · `sky.js?v=25` · `config.js?v=144`
+
+**Proof:** `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint30-realism.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Still human-only:** Hard-refresh `?v=433`. Title sky and a Desert look-up should show puffy clouds and a directional sun.
+
+---
+
+## Sprint 95 — Fast first-race load (27 Aug 2026)
+
+**Player moment:** PRESS START → car pick → Desert countdown. The loading overlay should clear in a handful of seconds, not sit on “Sculpting terrain / Grid 8 / 14” while the tab feels frozen.
+
+**Cause:** `preparePropKit()` fetched every spectator, alpine house, and the forest tree pack before Desert planted a cactus. Terrain yielded one rAF per tile row. Championship spawned 14 rivals with a yield each. `_beginRace` kicked `prepareCelica()` (all 7 MB heroes) during the track build. GPU settle compiled the entire stage (`showAllChunks`) then compiled it again, and allocated a 4096² shadow atlas before the first present.
+
+**Fix:** Scenery-scoped kit (Desert omits the forest pack). Idle PRESS START only HTTP-prefetches those GLBs so SELECT MODE stays clickable. Time-budgeted yields (~10 ms, no no-op awaits). Hero + rival LODs parse together after the course mesh. Grid spawns in one pass. Compile the prewarmed start-grid view only. First presents at 2048; desktop quality starts at medium.
+
+| Change | Status |
+|--------|--------|
+| `preparePropKit(scenery)` — Desert skips forest pack + alpine | **Done** |
+| Land / plants yield on a 10 ms budget, not per row | **Done** |
+| `prepareRivalLods` overlaps the track build; no full garage on car pick | **Done** |
+| Start-grid compile only; 2048 settle atlas; medium start tier | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=434`** · `track.js?v=191` · `prop-kit.js?v=20` · `celica.js?v=122` · `crowd.js?v=11`
+
+**Proof:** `node tools/qa-sprint95-load.mjs` · `node tools/qa-sprint88-car-pick.mjs` · `node tools/qa-sprint77-boot.mjs` · `node tools/qa-boot-smoke.mjs`
+
+**Still human-only:** Hard-refresh `?v=434`. Smash through PRESS START → Championship → Celica and confirm countdown in well under the old ~40 s wait. GitHub Pages is stale until this is pushed.
+
+---
+
+## Sprint 35 — Visible crash damage (27 Aug 2026)
+
+**Player moment:** Clip a Desert berm or rub a rival. The shell dents on that side, sparks kick off the contact, paint scuffs, and the chase cluster BODY bar fills. A hard beating flashes **BODYWORK**.
+
+**Cause:** Sprint 35 shipped paint darkening applied every frame. At rally speed it was invisible. Shared materials could tint the pack. No sparks, no HUD, no navigator sting.
+
+**Fix:** Impact-normal dents (up to six, cloned geos/materials). Additive spark burst. BODY meter. CONTACT / BODYWORK HUD calls. DCC manifest lists every car GLB with mesh counts.
+
+| Change | Status |
+|--------|--------|
+| Directional dents + paint tiers on hit (not per-frame) | **Done** |
+| `ImpactSparks` on wall / rival hits | **Done** |
+| BODY cluster bar + BODYWORK flash at tier 3 | **Done** |
+| DCC pipeline catalogs all car folders + GLB stats | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=435`** · `damage.js?v=2` · `effects.js?v=55` · `collide.js?v=39` · `vehicle.js?v=94` · `hud.js?v=30` · `codriver.js?v=33` · `css/game.css?v=30` · unified `config.js?v=144`
+
+**Proof:** `node tools/qa-sprint35-damage.mjs` · `node tools/qa-sprint35-40-matrix.mjs`
+
+**Still human-only:** Drive Desert, bank a wall at speed, confirm the quarter-panel crumples and sparks read in chase cam. Author `damaged.glb` later for a mesh swap. Sprints 36–40 stay as the next AAA pass (pace, audio, Pacejka, iGPU, ghosts) — this sprint closed the damage gap only.
+
+---
+
+## Sprint 35a — SELECT CAR unlock regression (27 Aug 2026)
+
+**Player moment:** Open SELECT CAR. Buttons light up as each chassis finishes parsing, instead of the whole garage waiting on the slowest model.
+
+**Cause:** The Sprint 95 load fix pushed `_warmGarage()` to an 8 s idle timer, so entering SELECT CAR could show Delta / Stratos as `LOADING…`. Boot smoke caught it: **1/3 cars selectable**. `prepareCelica()` also only reported completion after `Promise.all`, so no button unlocked early.
+
+**Fix:** `_showCars()` starts the garage warm immediately. `prepareCelica(onEach)` fires per chassis and re-syncs the buttons as each GLB lands.
+
+| Change | Status |
+|--------|--------|
+| Car screen starts the garage warm on entry | **Done** |
+| `prepareCelica` reports per-chassis readiness | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=436`** · `celica.js?v=124`
+
+**Proof:** `node tools/qa-boot-smoke.mjs` — 16/16, 0 page errors, selectable cars 1/3 → **2/3** on a 1.3 fps software rasteriser; countdown wall-clock 42.0 s → 27.5 s.
+
+**Still human-only:** Hard-refresh `?v=436` and confirm all three cars are pickable on hardware GPU without a `LOADING…` beat.
+
+---
+
+## Sprint 96 — Frame rate: is it 60 or 30? (27 Aug 2026)
+
+**Question asked:** "Is it hitting 60 fps or 30 fps? Keep it consistent."
+
+**Measured answer — it was neither.** Headed probe, Apple M1 Pro, Desert, 14 rivals:
+
+| Metric | Before | Note |
+|---|---|---|
+| p50 present interval | 16.80 ms (59.5 fps) | median frame *did* hit vsync |
+| p95 present interval | 34.00 ms (29 fps) | exactly two vsyncs — one missed deadline |
+| frames over 16.6 ms | 65.2% | |
+| delivered rate | ~46 fps average | **the judder case: half the frames at 60, half at 30** |
+
+A frame that costs 17 ms cannot hit the 16.67 ms deadline, so it waits a whole
+extra vsync and lands at 33.3 ms. Mixed with frames that make it, the result is
+an uneven ~46 fps, which reads worse than a steady 30.
+
+**Four defects found and fixed:**
+
+| # | Defect | Fix |
+|---|--------|-----|
+| 1 | **Sprint 35 dent rebuild ran per physics substep.** `hitWall` is re-stamped every substep, so a wall scrape called `rebuildDents()` several times per frame, each re-uploading every body position buffer and recomputing vertex normals — measured 44 ms frames and climbing during a sustained rub. | Rate-limited to one geometry pass per 220 ms; the worst magnitude of the rub is remembered so the dent that lands still reflects the hardest contact. |
+| 2 | **The cheapest quality tier was not cheap.** `minPixelRatio: 0.85` resolved to an effective 1.275 pixel ratio on a 2× Retina panel, so tier `min` still rendered 2.0 Mpix with nowhere left to go. | Floor lowered to 0.65 (~1.17 Mpix). |
+| 3 | **The scaler classified cost but never chased the deadline.** At a steady 24 ms it settled on `low` and delivered a permanently juddering 41 fps, by design — the old QA test asserted exactly that ("settles on one tier and stops moving"). | Ladder now spends every quality tier while over the deadline, and never buys quality back while still missing it. |
+| 4 | **HUD FPS readout lied.** Closed Sprint 76 open item 3 (see above). | Counts presented frames over wall time. |
+
+**New mechanism — present-cadence lock.** When the scaler has spent every quality
+tier and still cannot hold 60, it stops chasing it and presents every second
+vsync for an even 30 instead. Downward-only within a stage (an oscillating
+cadence is worse than either rate); a new stage re-grades from 60. `LOCK30_HOLD`
+is 600 presented frames — ~10 s of evidence at the cheapest tier — so a dense
+village section or a background app cannot spend it.
+
+`shadowEvery` is now tier-driven (1 at high/medium, 2 at low/min). The sun atlas
+re-render is a second full geometry pass of the visible world; sunlight barely
+moves, so re-baking every other frame is imperceptible on a soft PCF shadow.
+
+**After:** the cadence lock engages correctly and delivers 30.4 fps avg, tier
+`min`, `locked30: true`. **But the present-interval EMA is 37 ms, so the machine
+is missing even the 30 Hz deadline** — with the car nearly stationary (speed 6.9).
+
+**Open — still not a 60 fps build:**
+
+1. **Fixed GPU cost is still ~37 ms at the cheapest tier, with the car barely moving.** This is static scene rendering, not motion or streaming cost. Sprint 76 open item 1 remains open. Attribution showed pixel ratio is the dominant lever (−15.8 ms going to 0.6), i.e. the build is fragment/fill-rate bound. Cube reflections are already off (`reflectEvery: 0`) and the cabin mirror is POV-only, so neither is a suspect. Next: draw-call and overdraw reduction, not more scaling knobs.
+2. **Sprint 76 open item 2 (stage-build wedge) reproduced twice more today** — 2 of ~6 headed runs, matching the documented rate. `Runtime.evaluate` unresponsive >180 s, and separately a >120 s track build. It is *not* caused by the Sprint 96 changes and not by the perf probe's subsystem toggles (both were initially suspected here and both were wrong). Still the hardest ship blocker.
+3. **This machine cannot produce a trustworthy absolute number.** Three identical probe runs gave rAF p50 of 8.9 / 16.8 / 24.5 ms. The host Chrome had 30 live processes, several days old, competing for the same GPU. Any future perf claim needs a quiet machine.
+
+**Note on the probe itself:** `qa-frame-probe` taps `requestAnimationFrame`, which
+fires at *display* refresh. On this 120 Hz ProMotion panel it reported p50 8.9 ms
+("112 fps") while the game presented 27. It now reports delivered fps, scaler
+cadence and tier first, and its verdict grades consistency — a steady 30 passes,
+an uneven 46 fails.
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=440`** · `perf-tier.js?v=9` · `celica.js?v=125` · `damage.js?v=3` · `config.js?v=144`
+
+**Proof:** `node tools/qa-sprint76-perf.mjs` (20 checks, incl. 7 new cadence-lock checks) · `node tools/qa-boot-smoke.mjs` (16/16, 0 page errors) · `node tools/qa-frame-probe.mjs` · `node tools/qa-perf-attribute.mjs` (new)
+
+**Still human-only:** Hard-refresh `?v=440`, drive Desert 2 minutes and confirm the cadence feels even rather than juddery. Scrape a wall at speed and confirm dents still land and the frame does not collapse.
+
+---
+
+## Sprint 97 — Stage 1 is not functional: the teleport after jump 3
+
+**Reported:** "the car clips through the ground and gets teleported when landing
+after the third jump, before entering the tunnel. Stop the glitch teleport, stop
+resetting the car in this section. The entire course should be functional — right
+now stage 1 glitches and bugs out before completing the first section."
+
+**Both halves of that report were true, and they were two independent defects.**
+Neither lived in the jump code, the guard, or the reset logic that previous
+sprints kept patching.
+
+### Why this shipped: the glitch test never reached a jump
+
+`qa-sprint75-glitch.mjs` held full throttle with **`steer: 0`** for 240 fixed
+steps. The car left the road in the first corner and the run ended after ~46 m of
+a 3375 m stage — so it had never reached jump 1, let alone the Safari throw at
+~990 m. It reported **PASS** on all three stages while Desert was unfinishable.
+`docs/GLITCH-REPORT.md` recorded the tell in plain sight: `Dist (m) 45.8 / 53.6 /
+65.5`. A pass over 1.4% of a stage is not a pass.
+
+### Defect 1 — a tunnel wall flung the car 573 m (the teleport)
+
+Trapped with an accessor on the live `position` Vector3, which named the call
+site directly: `applyGlance` ← `glanceObstacles` (`js/physics/collide.js`).
+
+The wall branch treated a tunnel/underpass face as an **infinite one-sided
+half-space**. `along` bounded the wall's *length*, but `dist` — the signed
+distance from the wall plane — was unbounded below:
+
+```
+const dist = dx * nx + dz * nz;
+const overlap = ext - dist;       // dist = -571  ->  overlap = 573
+applyGlance(v, nx, nz, overlap);  // pushes by overlap * 1.05
+```
+
+Desert's tunnel arm curves back over its own approach, so that infinite strip
+crosses the jump-3 landing zone. Measured, dead centre on the road at 44 m/s:
+
+| step | progress | world XZ | lateral | moved |
+|---|---|---|---|---|
+| n | 1110.5 | (425.2, 878.9) | 0.8 m | 0.73 m |
+| n+1 | 1111.2 | (984.4, 750.3) | **573.6 m** | **573.75 m** |
+
+Then `_unstick` hauled the car back at ~3 m/step while `_keepOnRibbon` refused
+the 74.6 m query jump and pinned progress at 1111.2 **forever** — 840 samples
+frozen, 43 `spline-snap` recoveries. So the same root cause produced both the
+teleport *and* the "car reset / stuck" the player sees.
+
+**Fix (two layers, `collide.js`):** a wall is a slab, not a half-space — reject
+the hit when the chassis centre is more than `WALL_BACK` (2 m) behind the face;
+and cap any single depenetration at `MAX_PUSH` (3 m), so **no** collider can
+ever teleport a car again, whatever future geometry reports.
+
+### Defect 2 — an 8.9 m cliff in the road at 2438 m
+
+Found only after defect 1 let the car reach the rest of the stage. The car was
+dead centre (lateral 1.2 → 0.5 m) at 48 m/s and **the road itself fell 8.9 m over
+4 m of track**, logging `under-world` + three `y-warp` recoveries.
+
+`_separateOverlappingRibbon` lifts a later ribbon into a flyover over ±24 posts,
+but its apply loop did `if (pts[k].tunnel || pts[k].underpass) continue;` —
+correct intent (a tunnel floor cannot move) with a broken consequence: the
+neighbours were lifted and the protected post was not.
+
+```
+#934 dist=2437.41 y=24.732
+#935 dist=2440.66 y=15.872  UNDERPASS   <- 8.86 m step, one 3.25 m span
+```
+
+**Fix (`track.js`):** the ramp now fades to zero *before* the first protected
+post (`_liftRampEnd`), and a lift is **all-or-nothing** — if full clearance will
+not fit inside `LIFT_GRADE_MAX` (18%, matching the steepest hand-authored ramp
+in the game), it is refused. The intermediate version that merely *clamped* the
+height was worse: a partial lift never reaches `CLEAR`, so all six passes
+re-applied it and stacked a 12.5 m hump with a 154% wall — a cliff traded for a
+ramp. Where the lift will not fit, the crossing is already grade-separated by
+the tunnel or underpass that is limiting the run.
+
+### Proof
+
+| Stage | Before | After |
+|---|---|---|
+| Desert | frozen at 1111 m, 48 guard events | **3300 m driven, 0 severe** |
+| Forest | (never tested past 54 m) | **1300 m driven, 0 severe** |
+| Mountain | (never tested past 66 m) | **3050 m driven, 0 severe** |
+
+- `node tools/qa-desert-jump3.mjs` (new) — centreline autopilot pumping
+  `_fixed(1/60)`, zone-by-zone incident report, and a position-warp trap that
+  prints a stack trace. No renderer, so it is immune to the GPU noise that makes
+  the frame probes unreliable on this host.
+- `node tools/qa-spline-continuity.mjs` (new) — walks every stage centreline and
+  fails on horizontal breaks **or vertical cliffs** (>60% grade). All three
+  stages now clean; this is the gate that would have caught defect 2 on day one.
+  Its first version only measured horizontal gap and passed the 8.9 m cliff.
+- `node tools/qa-sprint75-glitch.mjs` — now steers. Real coverage: **1477.8 m /
+  1306.0 m / 910.4 m** (was 45.8 / 53.6 / 65.5). Verdict is severity-aware, and
+  a lap wrap no longer reads as a teleport.
+
+**Accepted, not hidden:** 1–2 `buried` events per stage remain, all 6–12 cm on
+jump ramps where the deck climbs 0.19 m per step at 45 m/s. The guard corrects
+them inside the same physics step, so nothing renders sunk. They are reported as
+"minor ramp catch-up" rather than asserted to zero, because claiming zero would
+have meant deleting the assertion.
+
+### Two stale QA assertions repaired (pre-existing, unrelated to this work)
+
+- `qa-sprint72-road-lock`: asserted the literal `onGround && !pit && ...y > floor`.
+  A prior refactor replaced `!pit` with an `onSolid` term that *also* covers
+  stale-pit and gap-deck — strictly stronger. Now asserts the contract.
+- `qa-sprint66-player-bump`: labelled `ai.js?v=110` but matched `?v=109`; the
+  tree is at 115. Now a `>=` comparison, like its neighbours.
+
+### The stage-build wedge is still open, and still not this
+
+Three `qa-desert-bridge-portal` runs failed with the main thread blocked, and one
+run with the old lift code passed — which looked like a regression I had caused.
+It is not, and guessing was not good enough, so it was measured:
+
+| Stage | Build | `_separateOverlappingRibbon` | Share |
+|---|---|---|---|
+| Forest | 42448 ms | 6.8 ms | 0.016% |
+| Desert | 34215 ms | 41.8 ms | 0.122% |
+| Mountain | 11267 ms | 24.5 ms | 0.217% |
+
+The separator is 0.016–0.217% of a build and calls `_liftRampEnd` 30–52 times
+total. It cannot produce a 34 s build. Those builds were slow because the host
+was at **load average 17.6** with 28 competing Chrome processes — the same
+condition Sprint 96 flagged as making absolute numbers worthless. Sprint 76 open
+item 2 stays open and still needs a quiet machine.
+
+`node tools/qa-stage-build-time.mjs` and `node tools/qa-lift-cost.mjs` (both new)
+exist so the next person gets many timed samples per minute instead of one
+5-minute sample, and can separate "slow build" from "wedged main thread".
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=441`** · `collide.js?v=40` · `track.js?v=193`
+
+**Still human-only:** hard-refresh `?v=441`, drive Desert and confirm the landing
+after the third jump now runs straight into the tunnel with no warp, no freeze
+and no reset, and that the run home past 2400 m is a road rather than a ledge.
+
+---
+
+## Sprint 98 — Dead steering, and the teleport class closed for good (27 Aug 2026)
+
+Two things happened in this sprint. A player-blocking regression was reported
+mid-verification and took priority; the jump-3 work from Sprint 97 was then
+hardened from "this instance is fixed" to "this class cannot ship".
+
+### Defect 1 — CRITICAL: steering completely dead
+
+**Reported:** "cannot turn in this version: `http://127.0.0.1:52243/index.html`
+turning not responding at all."
+
+**Root cause — a QA-only override that could latch permanently.** Port 52243 was
+never the dev server (that is `8765`); it was an ephemeral port from
+`qa-harness.mjs` `startServer()`. A `qa-sprint75-glitch.mjs` run was killed
+part-way through, which left its Chrome page alive with `game._qaDrive` and
+`input._qaHold` still set to `{throttle: 1, steer: 0, ...}`.
+
+`Input.poll()` applied that hold **last**, unconditionally:
+
+```js
+// Headless QA hold — applied last so a real key/pad still wins if present.
+const qa = this._qaHold;
+if (qa && typeof qa === "object") {
+  if (qa.steer != null) this.steer = bounded(qa.steer, -1, 1);   // overwrites the player
+```
+
+The comment was simply false. A real key never won — `steer` was overwritten
+with the QA value every poll, so the car could not turn at all, with nothing on
+screen to explain why. `game.js` made it worse by re-arming `_qaHold` from
+`_qaDrive` every frame *and* re-applying `_qaDrive` straight onto `this.input`
+**after** `poll()`, so releasing it in `input.js` alone would not have worked.
+
+**Fix (both sides of the loop):**
+
+- `js/input.js` — a hand on the controls (`usingKeys || usingPad || touch`) now
+  drops `_qaHold` and raises `qaReleased`, instead of being overwritten by it.
+  The hold is honoured only while nobody is driving.
+- `js/game.js` — honours `input.qaReleased` immediately after `poll()` and
+  clears `_qaDrive`, so the re-apply block below cannot undo the release.
+- `js/game.js` — clears `_qaDrive` / `_qaHold` at race start as a second guard.
+  Every QA tool arms `_qaDrive` after the grid is live, so no run is affected.
+
+**Why it was shippable: nothing in the suite asserted that the car turns.** The
+most basic possible regression passed QA in silence. That is the real finding —
+the override bug was one way to break steering, and the suite would not have
+caught *any* of them.
+
+`tools/qa-steering.mjs` (new) closes it. It dispatches real keyboard events over
+CDP and asserts the chassis yaw actually changes, then deliberately latches a QA
+hold and proves a key takes the car back:
+
+```
+LEFT   dYaw=1.702  input.steer=1  rack=0.47
+RIGHT  dYaw=-1.693 input.steer=-1 rack=-0.46
+LATCHED QA HOLD  ·  before key: qaDrive=true  ·  after LEFT: qaDrive=false qaHold=false
+PASS — the car steers
+```
+
+One tooling note worth keeping: the first version of this test held a key for
+1.2 s of wall clock and measured `dYaw=0.021`, which looks exactly like dead
+steering. It was not — headless Chrome throttles `requestAnimationFrame` to a
+few frames per second, so almost no physics ran. The test now steps physics
+explicitly while still driving the real `input.poll()` path. A wall-clock-based
+input test in headless is close to worthless.
+
+### Defect 2 — the teleport class, not just the instance
+
+Sprint 97 fixed the specific collider that flung the car 573 m. This sprint
+makes the whole category non-shippable.
+
+**`_guardXZ` invariant (`js/physics/vehicle.js`).** `_guardDrive` policed NaN,
+Y-bury and along-track progress, but on a progress warp it deliberately *keeps
+the body* and rewinds progress only — so world-space XZ had never been bounded
+at all. Any subsystem writing a bad position moved the car unchallenged. Now a
+step may move the chassis `speed * dt + XZ_STEP_SLACK` (12 m, covering two 3 m
+depenetration passes plus a 5.6 m `_unstick` haul) and no further. Past that the
+pose is held for one step and logged as `xz-warp`; 30 consecutive rejections
+escalate to `_restoreGoodPose` so a bad collider cannot freeze the car instead.
+
+**Wall faces are slabs with a real back (`track.js` + `collide.js`).** Sprint 97
+capped how far a wall could shove the car; the face was still geometrically
+infinite behind its plane, and the blanket 2 m cutoff meant a car more than 2 m
+inside a **5.2 m** bridge pier was ignored entirely and could drive through solid
+rock. `_wallFace` now takes the lining's real thickness (tunnel `2.4`, desert
+bridge portal `5.2`) and the collision test bounds the slab at
+`-(depth + ext)` — buried cars are still pushed out, distant ones ignored.
+
+### Coverage: one sample of a 3-D approach space is not a test
+
+Sprint 97's evidence was a single centreline pass over jump 3 at ~45 m/s. Players
+arrive off-line, crooked and at any speed. `tools/qa-jump3-sweep.mjs` (new)
+drives the same 410 m from **175 launch states** (5 speeds x 7 lateral offsets to
++-11 m x 5 yaw errors to +-0.6 rad), hooking every `Vehicle.step` — not every
+frame — to catch WARP / SINK / PINNED / NaN / STUCK.
+
+Two harness lessons are baked into the tool. Practice mode has a stage timer, so
+without topping up `timeLeft` the race ended part-way through the sweep and every
+later case looked "pinned" at its spawn — a fake failure. And a case that ends in
+a state other than `race` is now reported as **skipped**, never as a pass.
+
+### Status
+
+| Item | State |
+|---|---|
+| Steering responds to real input | **Verified** — `qa-steering.mjs` |
+| Throttle / brake / handbrake respond | **Verified** — same tool, measured deltas below |
+| Latched QA override cannot kill input | **Verified** — latch armed deliberately, key takes it back |
+| `_guardXZ` does not fire in clean driving | **Verified** — 0 `xz-warp` across 175 sweep states + 3 stage drives |
+| `_guardXZ` actually catches a teleport | **Verified** — `qa-guard-xz.mjs`, injected 200 m warp |
+| Jump 3 survives every approach | **Verified** — 175/175 launch states, through to 1376 m |
+| Wall slabs have a modelled back | **Fixed**, covered by the sweep + glitch drive |
+
+### The coverage gap was wider than steering
+
+The first fix here was scoped to "the car turns". The report then escalated to
+**"no steering or acceleration controls work"** — and nothing in the suite
+asserted throttle either, so the headline complaint was still uncovered by the
+test written to prevent it. `qa-steering.mjs` now exercises the whole control
+set through the real `Input.poll()` path, with measured values rather than a
+bare PASS:
+
+```
+THROTTLE   0 -> 10.3 m/s   (+10.3 in 2 s)    input.throttle=1
+BRAKE      30 -> 20.9 m/s  (-9.1 in 1 s)     input.brake=1
+HANDBRAKE  30 -> 19.7 m/s  (-10.3 in 1 s)    rearSlide=true
+LEFT       dYaw=+1.693     RIGHT dYaw=-1.693  rack=+-0.46
+```
+
+The latch proof is now throttle-aware, because the killed run left
+`{throttle: 1, steer: 0}` — a latched hold means **stuck full throttle** as much
+as dead steering. After a real key retires the override the test asserts the
+player can both apply throttle again (`0 -> 10.3 m/s`) and **lift off**
+(`10.3 -> 8.4 m/s`, `input.throttle=0`). A car pinned at full throttle that
+ignores the player is as broken as one that will not move.
+
+### The guard is now tested positively, not just for false positives
+
+`_guardXZ` was previously only shown *not* to misfire. `tools/qa-guard-xz.mjs`
+wraps `track.query` on the live Track — called mid-step, after `_capturePrev()`
+and before `_guardDrive` — to write a bogus offset into `player.position` from
+inside the step, exactly as the unbounded wall face did. All patching is runtime
+only; no diagnostic code ships in `js/`.
+
+```
+REJECT    injected 200 m -> moved 0 m (budget 12.42 m), 1 xz-warp, drove 23.8 m after
+ALLOW     injected 5 m   -> moved 5.01 m, 0 xz-warp  (guard is not refusing everything)
+ESCALATE  40 warps -> 40 rejected, counter reset at exactly 30, 1 checkpoint restore,
+                     car back on the ribbon (lateral 0 m), drove 23.3 m after, pose finite
+```
+
+Two things this exposed. `spawn()` sets `_glitchIgnore = 8`, a grace window in
+which `_guardDrive` skips **every** check — a test that injects inside it proves
+nothing, which is why the first run reported a 200 m warp sailing through. And
+the escalation now calls `_restoreCheckpoint` (a later, better recovery that
+falls back to `_restoreGoodPose`), so the "never exercised" note from the last
+pass is closed: it fires at exactly 30 and the car recovers rather than freezing.
+
+### Verification run (27 Aug 2026, final state on disk)
+
+```
+node tools/qa-static-audit.mjs     PASS  10 checks, 0 failures
+node tools/qa-steering.mjs         PASS  full control set, values above
+node tools/qa-guard-xz.mjs         PASS  reject / allow / escalate
+node tools/qa-boot-smoke.mjs       13/16 — see boot-smoke note below
+node tools/qa-sprint75-glitch.mjs  PASS  desert 1497.9m forest 1309.0m mountain 914.5m
+                                         severe=0 tele=0 buried=0 nan=0
+node tools/qa-jump3-sweep.mjs      PASS  175/175 launch states, 0 xz-warp
+```
+
+The Desert glitch drive covers 1497.9 m, past both the jump-3 landing
+(~1036–1103 m) and the tunnel mouth (~1284 m); the sweep runs to 1376 m, so the
+tunnel wall faces that produced the original 573 m warp are actually driven.
+
+**Boot-smoke note — not clean, and not claimed as clean.** Three runs on the
+final tree: the first reached 16/16 earlier in the pass, the last two stopped at
+13/16. Every run passes boot, title, menu, car select, course select, countdown,
+`race produces animating frames and responds to input`, and HUD — so the build
+boots and is drivable. The failure is the *second*, post-reload pass:
+`#screen-cars after PRACTICE`, which has a **5 s** budget, on a machine at load
+~8 rendering at **2.2 fps** through the software rasteriser (it was 5.5 fps when
+the step passed). A third run failed instead at the 60 s track build. Two
+different failure points across runs is the signature of the known stage-build
+wedge under load, not a deterministic defect, and none of it is in code changed
+here — but it is **unresolved**, needs a quiet machine, and if it persists once
+the concurrent `vehicle.js` / `game.js` refactor settles it belongs to that work,
+not to this one.
+
+**Concurrent-edit note.** Another agent was refactoring `js/sky.js` and
+`js/physics/vehicle.js` during this pass, and the tree was caught in a
+non-booting state twice: a `SyntaxError` at `js/sky.js:184` (raw GLSL at module
+top level, mid-edit) and `TypeError: this._guardBuried is not a function` thrown
+every frame from `Vehicle.step`. **Neither was caused by this work** — both
+cleared within a minute as that agent finished, and every result above was
+re-run afterwards against a parsing tree. It is worth knowing that the build is
+briefly unbootable while that refactor lands.
+
+**Not verified / still open.** No human 10-minute drive yet. `_guardXZ` is proven
+against a synthetic injected warp, not against a naturally occurring one — the
+natural cause it was written for is fixed, so it cannot currently be provoked in
+play. The fixed GPU cost at the minimum quality tier from Sprint 96 remains open
+and needs a quiet machine.
+
+---
+
+# Sprint 99 — Three-layer fall-through lock (27 Aug 2026)
+
+**Engine:** custom JS / Three.js arcade chassis (`js/physics/vehicle.js`), not Unity.
+There is no Rigidbody CCD toggle. The analog is a thick solid-deck sweep plus a
+query that is forbidden to use the visual jump pit as a floor.
+
+**Player moment:** After Desert jump 3 (Safari throw) the car lands on the
+asphalt and keeps racing. If a future query or hitch still puts the chassis
+under the stage, it restores the last checkpoint instead of freezing in the void.
+
+**Cause (the "second problem"):** the road collider is a spline height sample,
+not a thick mesh. `_solidFloorY` treated nearby `jumpKind === "gap"` posts as a
+legal floor, and used `_landPadY` even when the pad was **disarmed** (`0` is
+finite). After the landing strip the car could plant on pit Y / world 0 while
+the painted deck was metres above — same location every run.
+
+**Three layers (Unity CCD / checkpoint advice, mapped to this engine):**
+
+1. **Correct physics** — `_sweepSolidDeck` tests the segment
+   `previousPosition → newPosition` (4–12 samples, 0.4 m apart), not a point
+   overlap at the destination. Hitch time is capped at `FIXED_DT * MAX_SUBSTEPS`
+   (3 × 1/60 s); each `step()` is always `FIXED_DT`. After runoff, walls, unstick,
+   and car-car, `confirmOnRoad()` runs again so a later writer cannot leave the
+   chassis under the deck.
+2. **Track safety** — `_solidFloorAt` skips gap posts; only an *armed* land pad
+   is a hole floor; `_preferSolidRoad` follows the deck the car is already on.
+3. **Recovery** — NaN on position *or* velocity restores the last checkpoint.
+   Geometric recovery is checkpoint-based, not a global Y (tunnels/jumps would
+   false-trigger). Last-frame pose is not used once the car is already underground.
+
+| Item | State |
+|---|---|
+| Jump 3 centreline through tunnel mouth | **Verified** — `qa-desert-jump3.mjs` 1400 m, **0 guard hits** |
+| All Desert jumps stay on deck | **Verified** — `qa-sprint68-jump-land.mjs` max under 0 m |
+| Static glitch gates (swept segment + NaN vel) | **Verified** — `qa-sprint75-glitch.mjs --static` |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=98`
+
+**Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint68-jump-land.mjs`
+
+**Still human-only:** a full-throttle Desert run over jump 3, then the climb into
+the tunnel. Hard refresh `?v=446`.
+
+---
+
+# Sprint 100 — Trace the fall-through pipeline (27 Aug 2026)
+
+**Player moment:** After Desert jump 3 the car stays on the painted road. The
+glitch log no longer screams "buried" on every rising ramp.
+
+**Cause:** "Buried on every course" was a **false diagnostic**, not a void.
+`_guardDrive` compared contact-patch Y to the **visual centreline**
+(`line.y + ROAD_DECK`) minus 6 cm. On a rising ramp the axle plane sits ~8 cm
+off that centreline, so jump 2/3 logged `buried` every run (`y=7.16` vs
+`floor=7.24`). That is ramp catch-up, not `y=1.2 → -8.7` tunneling, not a
+downward collision normal, and not a physics/mesh split (`playerMesh` is
+`drawPose` of the same Vector3).
+
+**What changed (trace, not another collider):**
+
+1. Per-tick `_pipe` snapshot around every physics Y write: `prevY` → `afterXZ`
+   → `afterAir` → `destFloor` / `hit` / `pen` / `normalY` (+1 lift only) →
+   `resolvedY`. QA prints this on any remaining `buried` hit.
+2. `buried` / `_neverFallThrough` run **after** sweep, against the **axle
+   plant**, and only if residual penetration is **> 12 cm**. Deep bury
+   (`> VOID_RECOVER_M`) restores the checkpoint instead of simulating
+   underground. The leftover `under-world` at jump 3 (`y=7.24` `floor=7.33`)
+   was the same 9 cm centreline-vs-axle catch-up under another name.
+3. `qaSnapshot()` exposes `physY`, `meshY`, `velY`, `pipe` so a headed probe
+   can split tunnel / bad resolve / transform desync in one look.
+
+| Item | State |
+|---|---|
+| False ramp `buried` / `under-world` (8–9 cm centreline) | **Closed** — axle plant + 12 cm residual |
+| Pipeline snapshot on every physics Y write | **Done** |
+| Mesh vs physics transform | **Not the bug** — same `drawPose` Vector3 |
+| Desert jump 3 → tunnel (1400 m) | **Verified** — 0 teleport, 0 clip, 0 NaN, **0 guard** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=98` · `ai.js?v=118`
+
+**Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Desert jump 3 at speed, then the climb into the tunnel.
+Hard refresh `?v=446`.
+
+---
+
+# Sprint 101 — Shared tick invariant (not a Desert patch) (27 Aug 2026)
+
+**Player moment:** After any jump — Desert Safari throw is the regression case —
+the car lands on the road. A hitch, a crooked approach, or a Forest/Mountain
+crest uses the same step.
+
+**Invariant (every physics tick, every course):**
+
+```
+previous = pose at step start
+stepPhysics(fixedDt)          // dt clamped to 1/60 inside Vehicle.step
+sweep(previous → proposed)
+if hit: resolveTrackContact   // Y = floor + 4 mm, kill velocity into the road
+if !valid || buried: checkpoint   // safety net, not the collider
+mesh = drawPose(physics)      // never writes Vehicle.position
+```
+
+Hitch: the loop caps accum at `FIXED_DT * MAX_SUBSTEPS` (3). `step()` also
+rejects a 0.2 s dt so a future caller cannot integrate a tunnel in one tick.
+Recovery clears linear and angular velocity, then plants on the last checkpoint.
+
+| Item | State |
+|---|---|
+| Swept segment + contact resolve + inward-velocity kill | **Done** — shared, not Desert-only |
+| Hitch cannot one-shot the integrator | **Done** — loop cap + `step()` clamp |
+| Mesh cannot overwrite physics | **Done** — `drawPose` only |
+| Checkpoint is the net, not the collider | **Done** — after sweep |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=448`** · `vehicle.js?v=99` · `ai.js?v=119`
+
+**Proof:** `node tools/qa-desert-jump3.mjs` (0.2 s hitch at the jump-3 gap, 1400 m, 0 guard) ·
+`node tools/qa-jump3-sweep.mjs --quick` (45/58 m/s, lat 0/6, hitch at gap, sink=0) ·
+`node tools/qa-desert-jump3.mjs --course=forest --metres=800` ·
+`node tools/qa-desert-jump3.mjs --course=mountain --metres=800` ·
+`node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Desert jump 3 at speed. Hard refresh `?v=448`.
+
+---
+
+# Sprint 102 — Recovery is invalid-state only (27 Aug 2026)
+
+**Player moment:** Driving onto Desert jump 3 does not relocate the car. If the
+chassis is ever genuinely buried or NaN, it returns to the last pose that
+collision resolve had already accepted — not a checkpoint marker, not a
+hard-coded map coordinate.
+
+**Cause to close:** `_restoreCheckpoint` sampled `track.sample(_cpDist)` and
+planted on the racing-line at that dist. After jump 3 that dist is the tunnel
+climb. Reaching the throw then recovering looked like a teleport to a place
+the car had never been.
+
+**Invariant:**
+
+```
+// Reaching a track location must never teleport the car.
+// There is no isDesertJump3(car) branch that writes position.
+
+if (isBuried(car) || !isValidPhysicsState(car)) {
+    restoreLastValidTransform(car);  // saved x,y,z,yaw after a successful resolve
+    // velocity is zeroed only here
+}
+```
+
+The saved transform updates only after `confirmOnRoad` succeeds. An underground
+pose cannot become the recovery point. Velocity is not cleared by arriving at
+the jump.
+
+| Item | State |
+|---|---|
+| No `if (desertJump3) position = …` | **Done** — never existed in physics; spline restore removed |
+| Last-valid stash after resolve | **Done** |
+| Restore is saved transform, not `track.sample(checkpoint)` | **Done** |
+| Velocity reset only on recovery | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=449`** · `vehicle.js?v=100` · `ai.js?v=120`
+
+**Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
+
+**Still human-only:** Desert jump 3 at speed. Hard refresh `?v=449`.
+
+---
+
+# Sprint 103 — No body damage model (27 Aug 2026)
+
+**Player moment:** Rubbing a wall or a rival still throws sparks and plays the
+bump. The car mesh stays pristine — no dents, paint wear, smashed lamps, or
+BODYWORK HUD.
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=450`** · `hud.js?v=31`
+
+**Proof:** `node tools/qa-sprint35-damage.mjs`
+
+---
+
+# Sprint 104 — POV mirror + gauges visible (27 Aug 2026)
+
+**Player moment:** Press C into the seat. The tach/speedo show printed faces and
+yellow needles. The interior rearview shows the road behind, not a black
+rectangle.
+
+**Cause:** Cluster and rearview glass were MeshBasic maps in the main ACES pass.
+The opaque dash drew over them (HUD `depthTest: false` did not write depth, so
+later cabin geometry won). ACES also crushed the unlit maps.
+
+**Fix:** Put the discs, needles, and mirror glass on layer 1. After the graded
+frame, `_renderPovHudOverlay` draws that layer with depth cleared, background
+suppressed, and `NoToneMapping`. Cluster sits just in front of the dash box.
+
+| Item | State |
+|---|---|
+| Layer-1 HUD overlay after post | **Done** |
+| Mirror RT still linear, captured behind the bumper | **Done** |
+| Gauges face the seat, MPH 0–140 / 9k tach | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=451`** · `celica.js?v=126` · `pbr.js?v=25`
+
+**Proof:** `node tools/qa-pov-mirror.mjs` · `node tools/qa-pov-gauges.mjs`
+
+**Still human-only:** C into POV on Desert — glass shows the grid/road; both
+dials read.
+
+---
+
+# Sprint 105 — Brake glow on modeled tail covers (27 Aug 2026)
+
+**Player moment:** Hit the brakes behind the Celica. The red sits in the
+wraparound clusters (`x0_light_combi_glass_bl/br`), not as inner boxes or
+floating pads. Delta uses the `Light Rear` bar; Stratos uses `TailLight_L/R`.
+
+**Cause:** Glow was wired to inner `REARLIGHT3/4` glass behind the cover, and
+`gameShade` caps `Lights_Glass` at 0.48 opacity, so the lamps never read. Mesh
+pivots sit at the origin, so the point glow was at the chassis, not the tail.
+
+**Fix:** Light the visible covers. Punch opacity when on. Place the point glow
+on the lens AABB.
+
+| Item | State |
+|---|---|
+| Pick `combi_glass` / `TailLight` / `Light Rear` | **Done** |
+| Glass opacity 0.94 when braking | **Done** |
+| Glow origin is lens AABB | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=453`** · `celica.js?v=128` · `ai.js?v=122`
+
+**Proof:** `node tools/qa-brake-lamps.mjs`
+
+**Still human-only:** Chase the Celica, brake, confirm the clusters light. Hard refresh `?v=453`.
+
+---
+
+# Sprint 106 — Stratos 1974 CAD GLB (27 Aug 2026)
+
+**Player moment:** SELECT CAR → Stratos. The car is the 1974 wedge with PBR
+maps, not the old untextured loft.
+
+The drop is a 4-mesh CAD export (30 MB of 4K PNG, fused L+R axles, `alphaMode:
+BLEND` on a black "wire" material, extra 0.001 mm-scale on the body). Boot
+resizes textures to 2048, splits axles into `WHEEL_*` hubs, forces the paint
+opaque, and clears the double millimetre scale so the body is car-sized.
+
+| Item | State |
+|---|---|
+| Hero `assets/stratos/stratos.glb` from 1974 CAD | **Done** — 7.8 MB / 12.6k tris |
+| Rival LOD | **Done** — 1.0 MB / 7.0k tris |
+| Four spinning/steering hubs | **Done** |
+| No dummy lamp boxes on painted CAD lights | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=458`** · `celica.js?v=133` · `ai.js?v=127`
+
+**Proof:** `node tools/qa-stratos-starter.mjs`
+
+**Still human-only:** Pick Stratos on the title/SELECT CAR pad. Hard refresh `?v=458`.
+
+---
+
+## Sprint — Desert cacti + live tumbleweeds (2026-08-27)
+
+**Player moment:** Desert verge reads as a real arid stage — two-arm saguaros, sandstone, and scrub — not a stem with a round blob or a palm “circle” on top. Dry tumbleweed balls sit off the ribbon and occasionally roll past with the wind.
+
+| Item | State |
+|---|---|
+| Dropped Kenney `cactus_short` (one-arm / blob silhouette) | **Done** |
+| Dropped Desert palms / cone / default trees and acacia cards | **Done** |
+| Roadside mix is `cactus_tall` + rocks + `rock_tallA` + desert bushes | **Done** |
+| Horizon cactus rings use `cactus_tall` only | **Done** |
+| Real twig-ball tumbleweeds, max two rolling at once | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=459`** · `track.js?v=195` · `prop-kit.js?v=22` · `crowd.js?v=12`
+
+**Proof:** `node tools/qa-sprint-desert-tumble.mjs`
+
+**Still human-only:** Drive Desert and confirm no lollipop cacti; watch a tumbleweed roll across the verge.
+
+---
+
+## Sprint — Clear the driving sightline (2026-08-27)
+
+**Player moment:** The road is in the middle of the screen, not “EASY LEFT” / 3-2-1 captions.
+
+| Item | State |
+|---|---|
+| On-screen pace notes hidden (co-driver audio kept) | **Done** |
+| 3-2-1 / GO / checkpoint flash moved into the top HUD band | **Done** |
+
+**Cache:** `css/game.css?v=31`
+
+**Proof:** `node tools/qa-hud-sightline.mjs`
+
+---
+
+## Sprint — Jump physics variability (2026-08-27)
+
+**Player moment:** The teaching hop skips. The Safari lip throws. A crawl dunks. Lift-and-brake lands flatter and shorter; flat-out lofts, hangs, and can bounce the tail. Brake in the air to drop the nose.
+
+| Item | State |
+|---|---|
+| Leave is speed × sin(grade) — no 0.4 / 0.75 floors | **Done** |
+| Spring pop scales with approach speed | **Done** |
+| Nose-up hangs + drags; nose-down dives | **Done** |
+| Tail-first bounce vs nose-plant scrub | **Done** |
+| Fujimoto lift still cuts height vs flat-out | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=460`** · `vehicle.js?v=101` · `jump.js?v=15` · `config.js?v=145` · `ai.js?v=128`
+
+**Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs`
+
+**Still human-only:** Drive Desert hop vs jump 3 at different speeds; brake in the air on the big one.
+
+---
+
+## Sprint — Navigator says the grade and the side (2026-08-27)
+
+**Player moment:** The co-driver says the corner you are about to take: **easy left / easy right**, **medium left / medium right**, **hard left / hard right**, or **hairpin left / hairpin right**. Desert’s teaching kinks are easy; the bowl and linked pins are hairpin, not a recycled hard call. Jump is still “jump”.
+
+**Cause:** The Freesound pack is WRC **1–5 Left/Right**, so `easy-left.mp3` said “one left”. Hairpin clips were remapped to hard in `clipKey`, and `makeTurnNote` never emitted a hairpin grade.
+
+**Fix:** New spoken grade clips that say those words, left and right distinct. Geometry above 135° plays `hairpin-*`. Cache-bust the nav MP3s.
+
+| Item | State |
+|---|---|
+| VO says easy / medium / hard / hairpin + left or right | **Done** |
+| Hairpin clips actually play | **Done** |
+| Teaching 30° / −28° stay easy L then R | **Done** |
+| Desert bowl −165° and linked ±148° are hairpin | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=461`** · `track.js?v=196` · `pace-call.mjs?v=3` · `engine.js?v=55` · `codriver.js?v=34` · nav clips `?v=3`
+
+**Proof:** `node tools/qa-sprint67-pace-vo.mjs`
+
+**Still human-only:** Hard refresh `?v=461`. Drive Desert — first two kinks should say easy left then easy right; the bowl should say hairpin right.
+
+---
+
+## Sprint — Cinema daylight (sun, landscape shadows, AO) (27 Aug 2026)
+
+**Player moment:** At rest on Desert, the sun has a direction. Cacti and dunes cast shadows into the chase view, not only under the car. Shade is cooler than the lit face. The road and bodywork sit in the dirt instead of floating on a bright matte.
+
+**Cause:** The race sun frustum was **17 m** half-width — chase cam sees ~120 m, so almost the whole stage was unshadowed. Sprint 61 then raised fill/hemi and dropped post contrast, so the remaining key could not sculpt. No contact AO.
+
+**Fix:** Shadow ortho **54 m** / far **180 m**. Key up, fill/hemi down. Photographic grade (contrast 1.12). Fog starts in the mid-field. Half-res SSAO in the post stack. Not a brightness boost.
+
+| Item | State |
+|---|---|
+| Landscape sun shadows in chase view | **Done** |
+| Sun owns form; fill is fill | **Done** |
+| Screen-space crevice AO | **Done** |
+| Stage fog / aerial depth | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=468`** · `config.js?v=148` · `postfx.js?v=16` · `lighting-rig.js?v=7`
+
+**Proof:** `node tools/qa-sprint61-lighting.mjs` · `node tools/qa-sprint25-ue5.mjs`
+
+**Still human-only:** Hard refresh `?v=468`. Stand still on Desert — shadows on the sand past the car, paint has a lit side and a dark side.
+
+---
+
+## Sprint — Readable drift chase camera (27 Aug 2026)
+
+**Player moment:** Handbrake into a Desert hairpin. The chase stays planted behind the direction of travel — a calm rear-quarter with the car angled — instead of whipping wide off the outside so the exit disappears. Straight-line medium chase and POV are unchanged.
+
+**Cause:** Chase yaw tracked chassis attitude at full stiffness. During a slide the body points inside the turn, so the lens sat outside the racing line. `slideCamOut` 0.42 plus lateral kick stacked on that whip; look-ahead stayed short while the car was sideways.
+
+**Fix:** Blend chase yaw toward velocity while sliding (`slideYawBlend`), soften yaw follow (`yawStiffnessSlide`), cut outside offset and kick, push look toward travel, and add slide look-ahead so the exit stays in frame.
+
+| Tunable | Before → After |
+|---------|----------------|
+| `slideCamOut` | 0.42 → 0.16 |
+| `slideLook` | 0.62 → 0.78 |
+| outside factor cap | `min(0.55, drift×0.85)` → `min(0.28, drift×0.45)` |
+| lateral kick cap | 0.09 → 0.045 (`slideKickMax`) |
+| `slideYawBlend` | (new) 0.62 |
+| `yawStiffnessSlide` | (new) 16 |
+| `slideLookAhead` | (new) 4.2 m |
+| drift FOV kick | max 3.6 → 2.4 |
+
+| Item | State |
+|------|-------|
+| Slide chase stays on the racing line | **Done** |
+| Straight chase / POV untouched | **Done** |
+| Smooth blends (no snap) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=463`** · `config.js?v=147`
+
+**Proof:** `node tools/qa-sprint37-camera.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-cam-blend.mjs`
+
+**Still human-only:** Hard refresh `?v=463`. Drift a Desert hairpin in medium chase — road exit stays readable; car still looks angled.
+
+---
+
+## Sprint — Mobile / Android / iOS ship pass (27 Aug 2026)
+
+**Player moment:** On a phone or tablet, tap PUSH START, pick a mode and car, and drive with on-screen GAS / BRAKE / HB / STEER (or TILT). Title and SELECT MODE stay tappable above the home indicator; Safari and Chrome unlock audio on the first gesture.
+
+| Item | State |
+|---|---|
+| Title START ≥48px + safe-area | **Done** |
+| SELECT MODE / car / course scroll + wrap | **Done** |
+| Touch overlay 44px+ targets, landscape HB | **Done** |
+| iPadOS / Android tablet detection | **Done** |
+| Viewport `interactive-widget` + web-app title | **Done** |
+| Mobile QA gate extended | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=477`** · `css/game.css?v=34` · `input.js?v=41` · `touch-controls.js?v=3`
+
+**Proof:** `node tools/qa-mobile-controls.mjs` · `node tools/qa-static-audit.mjs` · championship path of `node tools/qa-boot-smoke.mjs` (Desert countdown + race PASS; practice-reload flake under showroom)
+
+**Still human-only:** Drive on a real iPhone Safari and an Android Chrome phone — portrait tip → landscape, GAS/STEER, co-driver VO after Start.
+
+---
+
+## Sprint — Desert tunnel grounded in the hillside (27 Aug 2026)
+
+**Player moment:** Climb into the Stage 1 tunnel. The mouth is a cut through a
+sandstone ridge / embankment — not a free-standing tube floating on flat sand.
+
+**Cause:** `_tunnelHill` existed, but the Desert landmark wash (56–64 m) and
+`_addLandTile` chase flatten planed every ridge vert back to bed. Portal boxes
+sat on washed sand with no hillside attachment.
+
+**Fix:** Apply `_tunnelCutHeight` / mouth-apron lift before wash; land tiles keep
+the cut; portal gets buried shoulder footing, talus aprons, and approach ramps.
+Ridge only rises when `minOver` clears the drive verge — folded Desert arms
+must not get a hillside on their asphalt. Ribbon refuse stays floors.
+
+| Item | State |
+|---|---|
+| Land ridge rises beside the bore / clear apron | **Done** |
+| Portal footing buried + approach embankment | **Done** |
+| Clearance guard so fold arms stay driveable | **Done** |
+| In-lane / verge wash contracts still hold | **Done** (qa-desert-clip / qa-env-clip) |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=477`** · `track.js?v=204`
+
+**Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-boot-smoke.mjs`
+
+**Still human-only:** Hard refresh `?v=476`. Drive Desert into the tunnel — embankment meets the portal on both sides.
+
+---
+
+## Sprint — Tunnel exit roadway clear (27 Aug 2026)
+
+**Player moment:** Exit the Desert tunnel. The painted lane is empty sand/asphalt. Rock and land do not punch through the road or the car. Shoulder embankment stays on the verge.
+
+**Cause:** (1) Mouth-cut invented lateral distance from along-track (`ridgeDist`), so a sample on the exit centreline got a full hillside. (2) Tunnel-cut land refuse was only **2.4 m**, so 10 m tris folded rock onto the apron. (3) Portal had a **centre approach mound** on the ribbon plus a grounding slab whose top sat above the deck.
+
+**Fix:** Real lateral clearance only for mouth cut. Drive-verge refuse (`ROAD_VERGE+4.5`). Portal rock pushed past the verge; centre mound removed; drive-tube AABB scrub on portal children.
+
+| Item | State |
+|---|---|
+| Mouth cut never raises on-asphalt verts | **Done** |
+| Land refuse clears exit apron | **Done** |
+| Portal mid-lane rock scrubbed | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=474`** · `track.js?v=199`
+
+**Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs`
+
+**Still human-only:** Hard refresh `?v=474`. Exit the Desert tunnel — clear ribbon, car not buried in rock.
+
+---
+
+
+
+# Sprint — Cinema title / SELECT MODE showroom (27 Aug 2026)
+
+**Player moment:** Open the game. The attract pad and SELECT MODE feel like a cinema showroom — wet asphalt, sculpted key/rim, golden horizon clouds, lacquer and chrome answering the sky — not a flat blue disc behind a dark menu wash.
+
+**Cause:** IBL waited **2400 ms** (flat paint on first look). Live cube reflections existed but were **never called**. Asphalt was dull Standard (rough 0.72). SELECT MODE used an 82% left dark slab. Post FX was hard-off on title. Sky exposure capped to a wash.
+
+**Fix:** Early PMREM (`TITLE_SHOWROOM.iblDelayMs: 420`), title CubeCamera + `_updateTitleReflections` on the pad, wet `MeshPhysicalMaterial` asphalt + roughness map, denser rocks/apron, cinema `LIGHTING.title`, wet clearcoat showcase, soft showroom bloom (no AO), SELECT MODE gradient that leaves the car hero-visible.
+
+| Item | State |
+|---|---|
+| Atmospheric title sky + golden horizon | **Done** |
+| Wet reflective pad + contact blob | **Done** |
+| Lacquer/chrome/glass IBL + live cubes | **Done** |
+| Sculpted key/rim (not washed) | **Done** |
+| SELECT MODE UI readable, car visible | **Done** |
+| Race / tunnel / chase cam | **Untouched** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=470`** · `config.js?v=148` · `sky.js?v=28` · `pbr.js?v=27` · `postfx.js?v=16` · `game.css?v=34`
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs` **PASS** (wet pad, IBL, CubeCamera, showroom post, cloudCover 0.5). Boot smoke: title → SELECT MODE → championship → Desert race **PASS**; practice reload Enter timed out at 5s (cold-boot flake under heavier showroom — not a SELECT MODE wash).
+
+**Still human-only:** Hard refresh `?v=470`. Judge lacquer on PRESS START and on SELECT MODE — pad reflections, rim light on the silhouette, sky depth behind the rocks.
+
+---

@@ -98,10 +98,31 @@ check(
   "stale Safari cache would hide the overlay"
 );
 
+const inputVer = (game.match(/input\.js\?v=(\d+)/) || [])[1];
 check(
   "input.js cache bump",
-  /input\.js\?v=39/.test(game),
-  "game must import the QA-hold input module"
+  !!inputVer && Number(inputVer) >= 40,
+  "game must import input.js?v=40+ (QA-hold release + touch merge)"
+);
+
+check(
+  "title START + menu tap targets on phones",
+  /body\.is-mobile #screen-title #btn-start/.test(css) &&
+    /min-height:\s*48px/.test(css) &&
+    /body\.is-mobile #screen-menu/.test(css),
+  "narrow screens need 48px START and scrollable SELECT MODE"
+);
+
+check(
+  "HB pedal meets 44px",
+  /\.touch-pedal\.hb\s*\{[^}]*min-height:\s*(4[4-9]|[5-9]\d)px/.test(css.replace(/\s+/g, " ")),
+  "handbrake hit target must be ≥44px"
+);
+
+check(
+  "iOS audio unlock path exists",
+  /audio\.unlock\(\)/.test(game) && /webkitAudioContext|AudioContext/.test(read("js/audio/engine.js")),
+  "Safari needs gesture unlock before engine/nav VO"
 );
 
 if (fail) {

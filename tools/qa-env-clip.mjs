@@ -63,7 +63,7 @@ check(
 );
 check(
   "colliders whose sphere overlaps asphalt are scrubbed",
-  /over - r >= -0\.4/.test(trackSrc),
+  /over - r >= 0\.15/.test(trackSrc),
   "_scrubRoadwayColliders uses minOver across nearby arms"
 );
 check(
@@ -82,8 +82,8 @@ check(
   "land tris must stay a floor through Stage 3 hairpins"
 );
 check(
-  "desert full-stage land wash at 44 m",
-  /scenery === "desert"[\s\S]*?lateral: 44/.test(trackSrc),
+  "desert full-stage land wash at 56 m",
+  /scenery === "desert"[\s\S]*?lateral: 56/.test(trackSrc),
   "coarse dune cells must not fold through Stage 1 ribbon"
 );
 check(
@@ -98,9 +98,14 @@ check(
 );
 check(
   "land verts that can own a triangle over asphalt stay a floor",
-  /minOver < \(this\._landCell \|\| 12\) \* 1\.25/.test(trackSrc) &&
+  (/refusePad/.test(trackSrc) || /minOver < \(this\._landCell \|\| 12\) \* 2\.05/.test(trackSrc)) &&
     /const drop = mountain \? 1\.2/.test(trackSrc),
   "final sink under any nearby ribbon"
+);
+check(
+  "lane instances cannot sit on painted asphalt",
+  /_stripLanePoses\(poses\)/.test(trackSrc) && /_laneKeepout/.test(trackSrc),
+  "last-line keep-out before InstancedMesh"
 );
 check(
   "prop strip is past a GLB rock radius",
@@ -160,7 +165,9 @@ const PROBE_JS = `const g = window.game;
           const z = p.z + p.nz * lat;
           const near = track._nearestRoad(x, z);
           const gh = track._groundHeight(x, z, scenery);
-          const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
+          // Nearest ribbon deck — not overlapBed (a lower grade-separated arm
+          // falsely reports +12 m land "above deck" at the tunnel / underpass).
+          const bed = near.roadY;
           const delta = gh - bed;
           const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
           if (delta > worstLand) worstLand = delta;
@@ -171,7 +178,7 @@ const PROBE_JS = `const g = window.game;
           const z = p.z + p.nz * lat;
           const near = track._nearestRoad(x, z);
           const gh = track._groundHeight(x, z, scenery);
-          const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
+          const bed = near.roadY;
           const delta = gh - bed;
           if (delta > worstVerge) worstVerge = delta;
           if (delta > 0.35) vergeHits += 1;
@@ -181,9 +188,55 @@ const PROBE_JS = `const g = window.game;
       let onLane = 0;
       for (let i = 0; i < colliders.length; i++) {
         const c = colliders[i];
+        if (c.kind === "wall") continue;
         const road = track._nearestRoad(c.x, c.z);
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-        if (over - (c.r || 0.5) < -0.5) onLane += 1;
+        if (over - (c.r || 0.5) < 0.15) onLane += 1;
+      }
+      let meshHits = 0;
+      let worstMesh = -99;
+      let instHits = 0;
+      const group = track.group;
+      if (group) {
+        group.traverse((obj) => {
+          if (obj.userData && obj.userData.envLand && obj.geometry && obj.geometry.attributes) {
+            const pos = obj.geometry.attributes.position;
+            const e = obj.matrixWorld.elements;
+            for (let i = 0; i < pos.count; i++) {
+              const lx = pos.getX(i);
+              const ly = pos.getY(i);
+              const lz = pos.getZ(i);
+              const x = e[0] * lx + e[4] * ly + e[8] * lz + e[12];
+              const y = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+              const z = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+              const near = track._nearestRoad(x, z);
+              const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
+              if (over > 1.2) continue;
+              const bed = near.roadY;
+              const delta = y - bed;
+              if (delta > worstMesh) worstMesh = delta;
+              if (delta > -0.02) meshHits += 1;
+            }
+          }
+          if (obj.isInstancedMesh && obj.userData && obj.userData.envProp && obj.instanceMatrix) {
+            const arr = obj.instanceMatrix.array;
+            const n = obj.count;
+            for (let i = 0; i < n; i++) {
+              const o = i * 16;
+              const x = arr[o + 12];
+              const y = arr[o + 13];
+              const z = arr[o + 14];
+              const sx = Math.hypot(arr[o], arr[o + 1], arr[o + 2]);
+              const sz = Math.hypot(arr[o + 8], arr[o + 9], arr[o + 10]);
+              const r = Math.max(0.55, Math.max(sx, sz) * 0.48);
+              const road = track._nearestRoad(x, z);
+              if (y > road.roadY + 2.6) continue;
+              const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+              if (road.tunnel && over > -1.4) continue;
+              if (over - r < 0.75) instHits += 1;
+            }
+          }
+        });
       }
       return {
         course: g.courseId,
@@ -195,6 +248,9 @@ const PROBE_JS = `const g = window.game;
         worstVerge,
         colliders: colliders.length,
         onLane,
+        meshHits,
+        worstMesh,
+        instHits,
       };`;
 
 async function bootCourse(cdp, courseId) {
@@ -277,6 +333,16 @@ async function main() {
         throw new Error(`${id}: ${probe.onLane} collider(s) overlap the painted lane`);
       }
       console.log(`  ok  ${id} ${probe.colliders} colliders, none on painted asphalt`);
+      if (probe.meshHits > 0) {
+        throw new Error(
+          `${id}: land mesh verts on the ribbon at ${probe.meshHits}; worst ${probe.worstMesh.toFixed(2)} m`
+        );
+      }
+      console.log(`  ok  ${id} land mesh verts below ribbon (worst ${probe.worstMesh.toFixed(2)} m)`);
+      if (probe.instHits > 0) {
+        throw new Error(`${id}: ${probe.instHits} env instance(s) overlap the painted lane`);
+      }
+      console.log(`  ok  ${id} env instances clear of painted asphalt`);
     }
 
     const fatal = errors.filter((e) => !/mergeGeometries/.test(String(e.text || "")));

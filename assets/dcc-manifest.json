@@ -1,19 +1,341 @@
 {
-  "generated": "2026-08-23T22:06:11.105Z",
+  "generated": "2026-08-27T14:48:28.995Z",
   "cars": [
+    {
+      "id": "accord",
+      "glbs": [
+        "accord.glb",
+        "rival.glb"
+      ],
+      "stats": {
+        "accord.glb": {
+          "bytes": 11867396,
+          "meshes": 183,
+          "primitives": 183
+        },
+        "rival.glb": {
+          "bytes": 8479320,
+          "meshes": 180,
+          "primitives": 180
+        }
+      },
+      "damagedGlb": false
+    },
     {
       "id": "celica",
       "glbs": [
         "gt4.glb",
         "rival.glb"
-      ]
+      ],
+      "stats": {
+        "gt4.glb": {
+          "bytes": 7569432,
+          "meshes": 172,
+          "primitives": 172
+        },
+        "rival.glb": {
+          "bytes": 3115892,
+          "meshes": 172,
+          "primitives": 172
+        }
+      },
+      "damagedGlb": false
     },
     {
       "id": "delta",
       "glbs": [
         "integrale.glb",
         "rival.glb"
-      ]
+      ],
+      "stats": {
+        "integrale.glb": {
+          "bytes": 2964544,
+          "meshes": 24,
+          "primitives": 27
+        },
+        "rival.glb": {
+          "bytes": 1869912,
+          "meshes": 24,
+          "primitives": 27
+        }
+      },
+      "damagedGlb": false
+    },
+    {
+      "id": "focus",
+      "glbs": [
+        "focus.glb",
+        "rival.glb"
+      ],
+      "stats": {
+        "focus.glb": {
+          "bytes": 9414804,
+          "meshes": 803,
+          "primitives": 803
+        },
+        "rival.glb": {
+          "bytes": 8342544,
+          "meshes": 798,
+          "primitives": 798
+        }
+      },
+      "damagedGlb": false
+    },
+    {
+      "id": "jaguar",
+      "glbs": [
+        "etype.glb",
+        "rival.glb"
+      ],
+      "stats": {
+        "etype.glb": {
+          "bytes": 7560280,
+          "meshes": 8,
+          "primitives": 8
+        },
+        "rival.glb": {
+          "bytes": 5189576,
+          "meshes": 8,
+          "primitives": 8
+        }
+      },
+      "damagedGlb": false
+    },
+    {
+      "id": "props",
+      "glbs": [
+        "animal-elephant.glb",
+        "animal-gazelle.glb",
+        "animal-zebra.glb",
+        "cactus_short.glb",
+        "cactus_tall.glb",
+        "character-female-a.glb",
+        "character-female-b.glb",
+        "character-female-c.glb",
+        "character-female-d.glb",
+        "character-female-e.glb",
+        "character-female-f.glb",
+        "character-male-a.glb",
+        "character-male-b.glb",
+        "character-male-c.glb",
+        "character-male-d.glb",
+        "character-male-e.glb",
+        "character-male-f.glb",
+        "house-alpine.glb",
+        "log_large.glb",
+        "low_poly_forest_tree_pack.glb",
+        "plant_bushDense.glb",
+        "plant_bushDetailed.glb",
+        "plant_bushFern.glb",
+        "plant_bushLarge.glb",
+        "plant_bushRound.glb",
+        "rock_largeA.glb",
+        "rock_largeB.glb",
+        "rock_smallA.glb",
+        "rock_tallA.glb",
+        "tent_detailedClosed.glb",
+        "tree_cone.glb",
+        "tree_default.glb",
+        "tree_detailed.glb",
+        "tree_fir.glb",
+        "tree_oak.glb",
+        "tree_palmDetailedTall.glb",
+        "tree_pineDefaultA.glb",
+        "tree_pineDefaultB.glb"
+      ],
+      "stats": {
+        "animal-elephant.glb": {
+          "bytes": 260748,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "animal-gazelle.glb": {
+          "bytes": 195040,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "animal-zebra.glb": {
+          "bytes": 174204,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "cactus_short.glb": {
+          "bytes": 173812,
+          "meshes": 2,
+          "primitives": 2
+        },
+        "cactus_tall.glb": {
+          "bytes": 177124,
+          "meshes": 3,
+          "primitives": 3
+        },
+        "character-female-a.glb": {
+          "bytes": 306452,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-female-b.glb": {
+          "bytes": 306452,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-female-c.glb": {
+          "bytes": 306456,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-female-d.glb": {
+          "bytes": 306452,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-female-e.glb": {
+          "bytes": 306452,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-female-f.glb": {
+          "bytes": 306452,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-a.glb": {
+          "bytes": 306520,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-b.glb": {
+          "bytes": 306520,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-c.glb": {
+          "bytes": 306516,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-d.glb": {
+          "bytes": 306516,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-e.glb": {
+          "bytes": 306516,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "character-male-f.glb": {
+          "bytes": 306516,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "house-alpine.glb": {
+          "bytes": 601828,
+          "meshes": 2,
+          "primitives": 2
+        },
+        "log_large.glb": {
+          "bytes": 457856,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "low_poly_forest_tree_pack.glb": {
+          "bytes": 14498120,
+          "meshes": 30,
+          "primitives": 30
+        },
+        "plant_bushDense.glb": {
+          "bytes": 806368,
+          "meshes": 12,
+          "primitives": 12
+        },
+        "plant_bushDetailed.glb": {
+          "bytes": 315532,
+          "meshes": 6,
+          "primitives": 6
+        },
+        "plant_bushFern.glb": {
+          "bytes": 276156,
+          "meshes": 5,
+          "primitives": 5
+        },
+        "plant_bushLarge.glb": {
+          "bytes": 787728,
+          "meshes": 10,
+          "primitives": 10
+        },
+        "plant_bushRound.glb": {
+          "bytes": 316948,
+          "meshes": 6,
+          "primitives": 6
+        },
+        "rock_largeA.glb": {
+          "bytes": 291240,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "rock_largeB.glb": {
+          "bytes": 293512,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "rock_smallA.glb": {
+          "bytes": 265312,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "rock_tallA.glb": {
+          "bytes": 296396,
+          "meshes": 1,
+          "primitives": 1
+        },
+        "tent_detailedClosed.glb": {
+          "bytes": 618676,
+          "meshes": 2,
+          "primitives": 2
+        },
+        "tree_cone.glb": {
+          "bytes": 772792,
+          "meshes": 6,
+          "primitives": 6
+        },
+        "tree_default.glb": {
+          "bytes": 830580,
+          "meshes": 16,
+          "primitives": 16
+        },
+        "tree_detailed.glb": {
+          "bytes": 839196,
+          "meshes": 17,
+          "primitives": 17
+        },
+        "tree_fir.glb": {
+          "bytes": 857828,
+          "meshes": 15,
+          "primitives": 15
+        },
+        "tree_oak.glb": {
+          "bytes": 839700,
+          "meshes": 17,
+          "primitives": 17
+        },
+        "tree_palmDetailedTall.glb": {
+          "bytes": 985356,
+          "meshes": 13,
+          "primitives": 13
+        },
+        "tree_pineDefaultA.glb": {
+          "bytes": 967520,
+          "meshes": 28,
+          "primitives": 28
+        },
+        "tree_pineDefaultB.glb": {
+          "bytes": 764780,
+          "meshes": 11,
+          "primitives": 11
+        }
+      },
+      "damagedGlb": false
     },
     {
       "id": "stratos",
@@ -21,8 +343,26 @@
         "rival.glb",
         "stratos-lowpoly-backup.glb",
         "stratos.glb"
-      ]
+      ],
+      "stats": {
+        "rival.glb": {
+          "bytes": 1849728,
+          "meshes": 85,
+          "primitives": 85
+        },
+        "stratos-lowpoly-backup.glb": {
+          "bytes": 776560,
+          "meshes": 85,
+          "primitives": 85
+        },
+        "stratos.glb": {
+          "bytes": 1936660,
+          "meshes": 85,
+          "primitives": 85
+        }
+      },
+      "damagedGlb": false
     }
   ],
-  "damageVariants": "runtime shader tiers 0-3 (author damaged.glb per car for mesh swap)"
+  "damageVariants": "runtime directional dents + paint tiers 0-3; optional damaged.glb swap at tier >= 2"
 }

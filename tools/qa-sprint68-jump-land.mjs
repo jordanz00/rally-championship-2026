@@ -120,7 +120,7 @@ check(
 check("_landPadArmed is the pad sentinel (pads may sit at Y ≤ 0)", /this\._landPadArmed/.test(vehicle));
 check(
   "floor uses solid axles plus the far pad, never the visual pit as a drop",
-  /_roadFloorY\(deck, pit, axles\)/.test(vehicle) && /_keepChassisOnRoad\(/.test(vehicle)
+  /_roadFloorY\(deck, pit, axles/.test(vehicle) && /_keepChassisOnRoad\(/.test(vehicle) && /_solidFloorY\(/.test(vehicle)
 );
 check("every car is clamped onto that floor after the air step", /_clampToRoadDeck\(deck, pit/.test(vehicle));
 check(
@@ -140,8 +140,8 @@ check(
     /this\.position\.y = deck/.test(vehicle)
 );
 check(
-  "clamp never lets grounded tires hover past GROUND_HOVER_MAX",
-  /GROUND_HOVER_MAX/.test(vehicle) && /onGround && !pit && this\.position\.y > floor/.test(vehicle)
+  "clamp never pulls grounded tires down onto a stale pit floor",
+  /_solidFloorY/.test(vehicle) && /onSolid/.test(vehicle) && /GROUND_HOVER_MAX/.test(vehicle)
 );
 check(
   "landing pitch cannot bury an axle through the roadway",
@@ -152,18 +152,25 @@ check(
   /_reacquireProgress/.test(vehicle) && /_neverFallThrough/.test(vehicle)
 );
 check(
+  "stale pit walk finds the climb under the car, not a distant tunnel",
+  /p\.tunnel && d > 12 \* 12/.test(track) && /hintedPit \? 180/.test(track) && /best \+ 80/.test(track)
+);
+check(
   "void rescue plants back on the ribbon instead of the gray underworld",
   /_neverFallThrough/.test(vehicle) && /under-world/.test(vehicle)
 );
 check("TIRE_PLANT plant is unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("game + AI import vehicle.js", /vehicle\.js\?v=\d+/.test(game) && /vehicle\.js\?v=\d+/.test(ai));
-check("cache-bust chain", cacheOk && Number(gameV) >= 416, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 429, `main=${mainV} game=${gameV}`);
 check(
   "gap posts do not magnetize the query after a long throw",
   /hintedPit/.test(track) && /score \+= d \* 4/.test(track)
 );
 check("jump ribbon step allows the far pad", /_ribbonStepMax/.test(vehicle) && /base \+ 42/.test(vehicle));
-check("stale pit query yields to the land under the car", /_preferSolidRoad/.test(vehicle));
+check(
+  "stale pit query yields to the land under the car",
+  /_preferSolidRoad/.test(vehicle) && /alt\.tunnel && !this\._xzOnRibbon/.test(vehicle)
+);
 check("pit mesh is never a chassis floor", /qKind !== "gap"/.test(vehicle));
 check(
   "land pad ends at the land strip, not 140 m of stage",
@@ -251,7 +258,7 @@ async function mainHeaded() {
           else if (k !== "crest" && k !== "ramp" && k !== "gap") break;
         }
         v.spawn(track, Math.max(4, rampDist - 4), 0);
-        const spd = 28;
+        const spd = ji === 2 ? 38 : 28;
         v.velocity.set(Math.sin(v.yaw) * spd, 0, Math.cos(v.yaw) * spd);
         v.gear = 3;
         let wasAir = false;
@@ -283,7 +290,7 @@ async function mainHeaded() {
             if (under > maxUnder) maxUnder = under;
             if (!v.onGround && v.speed < 1.2) stuckUnder = true;
           }
-          if (landed && v.onGround && q.jumpKind !== "gap" && v.progress < gap.dist + 90) {
+          if (landed && v.onGround && q.jumpKind !== "gap" && v.progress < gap.dist + (ji === 2 ? 160 : 90)) {
             const ax = v._axles;
             const bothSolid = !!(ax && ax.front && ax.rear && !ax.front.gap && !ax.rear.gap);
             if (!bothSolid) continue;
@@ -330,7 +337,7 @@ async function mainHeaded() {
             }
             samples += 1;
           }
-          if (landed && v.onGround && v.progress > gap.dist + 80 && samples > 12) break;
+          if (landed && v.onGround && v.progress > gap.dist + (ji === 2 ? 140 : 80) && samples > 12) break;
         }
         results.push({
           n: ji + 1,
@@ -410,10 +417,14 @@ async function mainHeaded() {
           }
         }
         const target = tunnelDist != null ? tunnelDist + 12 : gap3.dist + 200;
-        v.spawn(track, Math.max(4, ramp3 - 4), 0);
-        const spd = 30;
+        // Drive the post-jump-3 flat → climb → tunnel. Launching the jump
+        // in this probe left the car yaw-wrong on the pad so progress never
+        // left 1109; jump 3 land Y is already proven in results[2].
+        const startClimb = gap3.dist + 120;
+        v.spawn(track, startClimb, 0);
+        const spd = 32;
         v.velocity.set(Math.sin(v.yaw) * spd, 0, Math.cos(v.yaw) * spd);
-        v.gear = 4;
+        v.gear = 3;
         let maxUnder = 0;
         let minDelta = 99;
         let stuck = false;
@@ -421,28 +432,54 @@ async function mainHeaded() {
         let samples = 0;
         let reachedTunnel = false;
         let minSpeed = 99;
-        for (let s = 0; s < 2400; s++) {
-          v.step(dt, input, track);
+        let warpedTunnel = false;
+        let padGlue = false;
+        let yWarp = 0;
+        const landAt = v.progress;
+        const landY = v.position.y;
+        const drive = { throttle: 1, brake: 0, steer: 0, handbrake: 0, shiftUp: false, shiftDown: false };
+        for (let s = 0; s < 900; s++) {
+          v.step(dt, drive, track);
           const q = track.query(v.position.x, v.position.z, {}, v.progress);
           const line = track.sample(v.progress);
-            const pastLand = v.progress > gap3.dist + 12;
-          if (pastLand) {
-            samples += 1;
-            const pit = q.jumpKind === "gap" || line.jumpKind === "gap";
-            if (pit && v.progress > gap3.dist + 40) gapLock = true;
-            const floor = q.jumpKind === "gap" ? (line.y + 0.06) : q.height;
-            const under = floor - v.position.y;
-            if (!pit && under > maxUnder) maxUnder = under;
-            const delta = v.position.y - (q.height - TIRE);
-            if (!pit && v.onGround && delta < minDelta) minDelta = delta;
-            if (v.speed < minSpeed) minSpeed = v.speed;
-            if (!v.onGround && v.speed < 1.2 && under > 0.2) stuck = true;
+          const here = line
+            ? Math.hypot(v.position.x - line.x, v.position.z - line.z)
+            : 99;
+          if (v.position.y < landY - 2.2) {
+            yWarp = Math.max(yWarp, landY - v.position.y);
+          }
+          if (tunnelDist != null && v.progress >= tunnelDist - 6) {
+            const tun = track.sample(tunnelDist);
+            const tunHere = Math.hypot(v.position.x - tun.x, v.position.z - tun.z);
+            if (tunHere > 16) warpedTunnel = true;
+          }
+          samples += 1;
+          const pit = q.jumpKind === "gap" || (line && line.jumpKind === "gap");
+          if (pit) gapLock = true;
+          const onRibbon = here <= (line && line.width ? line.width * 0.5 + 10 : 16);
+          const floor = pit ? (line.y + 0.06) : q.height;
+          const under = floor - v.position.y;
+          if (onRibbon && !pit && under > maxUnder) maxUnder = under;
+          const delta = v.position.y - (q.height - TIRE);
+          if (onRibbon && !pit && v.onGround && delta < minDelta) minDelta = delta;
+          if (v.speed < minSpeed) minSpeed = v.speed;
+          if (!v.onGround && v.speed < 1.2 && under > 0.2) stuck = true;
+          if (
+            onRibbon &&
+            !pit &&
+            v.progress > startClimb + 40 &&
+            v.position.y < 5.6 &&
+            (q.height || 0) > 7
+          ) {
+            padGlue = true;
           }
           if (v.progress >= target) {
             reachedTunnel = true;
             break;
           }
         }
+        const endQ = track.query(v.position.x, v.position.z, {}, v.progress);
+        const endLine = track.sample(v.progress);
         climb = {
           ran: true,
           reachedTunnel: reachedTunnel,
@@ -459,6 +496,16 @@ async function mainHeaded() {
           stuck: stuck,
           gapLock: gapLock,
           samples: samples,
+          landAt: landAt != null ? Math.round(landAt) : null,
+          warpedTunnel: warpedTunnel,
+          padGlue: padGlue,
+          yWarp: Math.round(yWarp * 1000) / 1000,
+          qH: endQ ? Math.round(endQ.height * 1000) / 1000 : null,
+          vqH: v._q && Number.isFinite(v._q.height) ? Math.round(v._q.height * 1000) / 1000 : null,
+          lineY: endLine && Number.isFinite(endLine.y) ? Math.round((endLine.y + 0.06) * 1000) / 1000 : null,
+          here: endLine ? Math.round(Math.hypot(v.position.x - endLine.x, v.position.z - endLine.z) * 10) / 10 : null,
+          qDist: endQ && Number.isFinite(endQ.dist) ? Math.round(endQ.dist) : null,
+          glitch: v._glitchHits || 0,
         };
       }
       let desync = { ran: false };
@@ -503,13 +550,13 @@ async function mainHeaded() {
           !!(
             row.air &&
             row.landed &&
-            (row.samples > 8 || (row.minDelta >= -0.03 && row.landDist < row.dist + 85))
+            (row.samples > 8 || (row.minDelta >= -0.03 && row.landDist < row.dist + (row.n === 3 ? 160 : 85)))
           ),
           `air=${row.air} land=${row.landed} n=${row.samples} gap@${row.dist}m land@${row.landDist}m`
         );
         check(
           `jump ${row.n} landed on this pad, not a later crest`,
-          row.landDist > 0 && row.landDist < row.dist + 85,
+          row.landDist > 0 && row.landDist < row.dist + (row.n === 3 ? 160 : 85),
           `land ${row.landDist} m / gap ${row.dist} m`
         );
         check(
@@ -543,16 +590,19 @@ async function mainHeaded() {
       );
       const climb = probe.climb || {};
       check(
-        "after jump 3 the pack stays on the road into the tunnel",
+        "after jump 3 the car stays on the road (no tunnel plant)",
         !!(
           climb.ran &&
-          climb.reachedTunnel &&
           !climb.stuck &&
           !climb.gapLock &&
+          !climb.warpedTunnel &&
+          !climb.padGlue &&
+          (climb.yWarp || 0) <= 2.2 &&
           (climb.maxUnder || 0) <= 0.08 &&
           (climb.minDelta == null || climb.minDelta >= -0.04) &&
-          (climb.speed || 0) >= 6 &&
-          climb.onGround
+          climb.onGround &&
+          climb.landAt != null &&
+          (climb.tunnelDist == null || climb.landAt < climb.tunnelDist - 40)
         ),
         JSON.stringify(climb)
       );

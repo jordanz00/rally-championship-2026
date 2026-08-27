@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>sky preview</title>
+<!--
+  sky-preview.html — isolated sky dome, for iterating js/sky.js quickly.
+
+  WHO THIS IS FOR: whoever is tuning the atmosphere or cloud shader.
+  WHY IT EXISTS: judging the sky through the game costs a ~200 s Desert stage
+    build per look, which is far too slow to tune a shader. This page imports
+    the SAME js/sky.js and the SAME LIGHTING entry from js/config.js and
+    renders only the dome, so a look costs about a second.
+  NOT A SUBSTITUTE for the in-game shot: it has no terrain, fog or post stack.
+    Use tools/qa-sky-shots.mjs for the final verdict.
+
+  QUERY: ?course=desert&tier=high&pitch=8&fov=62&t=0
+    course  desert | forest | mountain | lakeside | title
+    tier    high | medium | low | min
+    pitch   degrees above the horizon at frame centre
+    t       animation seconds (fixed, so shots are reproducible)
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #tag {
+    position: fixed; left: 8px; top: 8px; z-index: 5;
+    font: 12px/1.5 ui-monospace, Menlo, monospace; color: #fff;
+    text-shadow: 0 1px 2px #000; white-space: pre;
+  }
+  /* A neutral strip so the horizon seam can be judged against a mid grey. */
+  #ref {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 26px; z-index: 4;
+    background: linear-gradient(#fff, #808080, #000);
+  }
+</style>
+</head>
+<body>
+<div id="tag"></div>
+<div id="ref"></div>
+<script type="module">
+import * as THREE from "../vendor/three.module.js";
+import { createSky, applySky, setSkyQuality, tickSky } from "../js/sky.js?v=26";
+import { LIGHTING, VISUAL } from "../js/config.js?v=146";
+
+const q = new URLSearchParams(location.search);
+const course = q.get("course") || "desert";
+const tier = q.get("tier") || "high";
+const pitch = Number(q.get("pitch") ?? 8);
+const fov = Number(q.get("fov") ?? 62);
+const tFixed = q.get("t");
+const showRef = q.get("ref") !== "0";
+if (!showRef) document.getElementById("ref").remove();
+
+// Match the game's renderer setup, otherwise the preview lies about tone
+// mapping. game.js uses ACES at cinema tier and Reinhard otherwise.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const cinema = (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
+renderer.toneMapping = cinema ? THREE.ACESFilmicToneMapping : THREE.ReinhardToneMapping;
+const L = LIGHTING[course] || LIGHTING.desert;
+renderer.toneMappingExposure = L.exposure != null ? L.exposure : 1.22;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(L.skyBack != null ? L.skyBack : L.fog);
+const camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1400);
+
+const sky = createSky();
+scene.add(sky);
+applySky(sky, L, course);
+setSkyQuality(sky, tier);
+
+// Uniform overrides, so a single term can be isolated without editing the
+// shader. `?cover=0` answers "is the tan ceiling the clouds or the atmosphere?"
+// in one page load, which is the whole reason this harness exists.
+const OVERRIDES = {
+  cover: "uCloudCover", scale: "uCloudScale", absorb: "uAbsorb",
+  silver: "uSilver", atmo: "uAtmoBlend", expo: "uExposure",
+  dust: "uDust", horizon: "uHorizonStrength", mie: "uMie",
+  rayleigh: "uRayleigh", zenith: "uZenithBoost", steps: "uCloudSteps",
+  detail: "uCloudDetail", lights: "uLightSteps", turbidity: "uTurbidity",
+};
+const applied = [];
+for (const [key, uniform] of Object.entries(OVERRIDES)) {
+  if (!q.has(key)) continue;
+  const v = Number(q.get(key));
+  if (!Number.isFinite(v)) continue;
+  sky.material.uniforms[uniform].value = v;
+  applied.push(`${key}=${v}`);
+}
+
+/**
+ * A thin ground disc tinted with the stage FOG colour. The horizon must meet
+ * the fog colour without a seam, and that is impossible to judge with nothing
+ * below the horizon at all.
+ */
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(600, 64).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: new THREE.Color(L.fog != null ? L.fog : 0xc9b48a) })
+);
+ground.position.y = -1.2;
+scene.add(ground);
+
+const tag = document.getElementById("tag");
+const u = sky.material.uniforms;
+tag.textContent =
+  `${course} · tier ${tier} · pitch ${pitch}°\n` +
+  `steps ${u.uCloudSteps.value}×${u.uLightSteps.value} detail ${u.uCloudDetail.value} worley ${u.uUseWorley.value}\n` +
+  `cover ${u.uCloudCover.value.toFixed(2)} scale ${u.uCloudScale.value.toFixed(2)} expo ${u.uExposure.value.toFixed(3)}\n` +
+  `sun ${[u.uSun.value.x, u.uSun.value.y, u.uSun.value.z].map((n) => n.toFixed(2)).join(", ")}\n` +
+  `toneMap ${cinema ? "ACES" : "Reinhard"} @ ${renderer.toneMappingExposure}` +
+  (applied.length ? `\nOVERRIDE ${applied.join(" ")}` : "");
+
+/**
+ * Aim the camera `pitch` degrees above the horizon, along the stage sun's
+ * azimuth so the forward-scattering lobe is in frame. `yaw` shifts off-sun.
+ */
+function aim() {
+  const yawDeg = Number(q.get("yaw") ?? 0);
+  const s = u.uSun.value;
+  const az = Math.atan2(s.x, s.z) + (yawDeg * Math.PI) / 180;
+  const p = (pitch * Math.PI) / 180;
+  camera.position.set(0, 2, 0);
+  camera.lookAt(Math.sin(az) * Math.cos(p) * 100, 2 + Math.sin(p) * 100, Math.cos(az) * Math.cos(p) * 100);
+}
+aim();
+
+window.addEventListener("resize", () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  aim();
+});
+
+let frames = 0;
+function loop() {
+  const secs = tFixed != null ? Number(tFixed) : performance.now() * 0.001;
+  tickSky(sky, secs);
+  sky.position.copy(camera.position);
+  renderer.render(scene, camera);
+  frames += 1;
+  window.__skyPreviewFrames = frames;
+  requestAnimationFrame(loop);
+}
+loop();
+window.__skyPreviewReady = true;
+</script>
+</body>
+</html>

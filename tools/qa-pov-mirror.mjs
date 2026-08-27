@@ -47,9 +47,12 @@ check(
 
 check(
   "glass is HUD-style so the dash cannot eat it",
-  /depthTest: false/.test(car.slice(car.indexOf("function makeRearviewMirror"))) &&
-    /renderOrder = 12/.test(car),
-  "depthTest false + renderOrder on the live glass"
+  /markPovHudMesh\(glass/.test(car) &&
+    /POV_HUD_LAYER/.test(car) &&
+    /_renderPovHudOverlay\(/.test(game) &&
+    /layers\.set\(POV_HUD_LAYER\)/.test(game) &&
+    /depthTest: false/.test(car.slice(car.indexOf("function makeRearviewMirror"))),
+  "layer-1 overlay after post; glass marked HUD with depthTest false"
 );
 
 check(
@@ -74,7 +77,7 @@ check(
   "mirror RT is a cheap fixed size (256–384 long edge), not the main canvas",
   /mirrorW:\s*384/.test(read("js/config.js")) &&
     /mirrorH:\s*120/.test(read("js/config.js")) &&
-    /Math\.min\(384/.test(game),
+    /Math\.min\(GFX\.mirrorW \|\| 384, 384\)/.test(game),
   "long edge 384, height 120"
 );
 

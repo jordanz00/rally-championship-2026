@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=138";
+import { VISUAL } from "../config.js?v=148";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -569,6 +569,7 @@ export function applyEnvMap(root, envMap, intensity) {
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         if (!m) continue;
+        if (m.userData.hud || m.userData.povHud) continue;
         if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
           m.envMap = envMap;
           if (intensity != null && !m.userData.lockEnv) {
@@ -628,6 +629,7 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         if (!m) continue;
+        if (m.userData.hud || m.userData.povHud) continue;
         if (active) {
           if (!m.userData._showcaseSnap) {
             m.userData._showcaseSnap = {
@@ -637,6 +639,9 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
               reflectivity: m.reflectivity,
               shininess: m.shininess,
               combine: m.combine,
+              clearcoat: m.clearcoat,
+              clearcoatRoughness: m.clearcoatRoughness,
+              clearcoatEnvMapIntensity: m.clearcoatEnvMapIntensity,
             };
           }
           const kind = m.userData.kind;
@@ -648,27 +653,39 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
           if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
             if (isGlass) {
               if (!m.userData.lockEnv) m.envMapIntensity = glassEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.12, 0.05);
-              m.metalness = Math.min(m.metalness != null ? m.metalness : 0, 0.12);
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.12, 0.04);
+              m.metalness = Math.min(m.metalness != null ? m.metalness : 0, 0.1);
             } else if (isChrome) {
               if (!m.userData.lockEnv) m.envMapIntensity = chromeEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.1);
-              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.82, 0.94);
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.06);
+              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.82, 0.96);
             } else if (isRubber) {
               if (!m.userData.lockEnv) m.envMapIntensity = 0.22;
             } else {
               if (!m.userData.lockEnv) m.envMapIntensity = bodyEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.52, 0.24);
-              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.08, 0.26);
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.52, 0.18);
+              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.08, 0.28);
+              // Wet showroom lacquer — clearcoat catches sky / rim.
+              if (m.isMeshPhysicalMaterial) {
+                m.clearcoat = Math.max(m.clearcoat != null ? m.clearcoat : 0, 1);
+                m.clearcoatRoughness = Math.min(
+                  m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.12,
+                  0.06
+                );
+                m.clearcoatEnvMapIntensity = Math.max(
+                  m.clearcoatEnvMapIntensity != null ? m.clearcoatEnvMapIntensity : 1,
+                  1.35
+                );
+              }
             }
           } else if (m.isMeshPhongMaterial) {
-            m.reflectivity = isChrome ? 0.78 : 0.42;
-            m.shininess = isChrome ? 84 : 52;
+            m.reflectivity = isChrome ? 0.85 : 0.5;
+            m.shininess = isChrome ? 96 : 64;
             if (envMap && envMap.isCubeTexture && !m.userData.lockEnv) {
               m.combine = THREE.MixOperation;
             }
           } else if (m.isMeshLambertMaterial && envMap && envMap.isCubeTexture && !m.userData.lockEnv) {
-            m.reflectivity = isChrome ? 0.62 : 0.34;
+            m.reflectivity = isChrome ? 0.68 : 0.4;
             m.combine = THREE.MixOperation;
           }
           m.needsUpdate = true;
@@ -680,6 +697,11 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
           if (s.reflectivity != null) m.reflectivity = s.reflectivity;
           if (s.shininess != null) m.shininess = s.shininess;
           if (s.combine != null) m.combine = s.combine;
+          if (s.clearcoat != null) m.clearcoat = s.clearcoat;
+          if (s.clearcoatRoughness != null) m.clearcoatRoughness = s.clearcoatRoughness;
+          if (s.clearcoatEnvMapIntensity != null) {
+            m.clearcoatEnvMapIntensity = s.clearcoatEnvMapIntensity;
+          }
           delete m.userData._showcaseSnap;
           m.needsUpdate = true;
         }

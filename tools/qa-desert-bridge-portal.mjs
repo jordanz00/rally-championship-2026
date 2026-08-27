@@ -26,7 +26,7 @@ async function main() {
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: true });
   const { cdp } = browser;
-  await preparePage(cdp);
+  const { errors } = await preparePage(cdp);
   try {
     await goto(cdp, `${server.origin}/index.html`);
     await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "boot" });
@@ -197,6 +197,23 @@ async function main() {
     server.close();
   } catch (err) {
     console.error("FAIL", err.message || err);
+    // A boot timeout is almost always a thrown module error upstream; without
+    // this the failure looked like an unexplained stage-build wedge.
+    try {
+      const state = await evaluate(
+        cdp,
+        `const g = window.game;
+         return g ? { state: g.state, courseId: g.courseId, hasTrack: !!g.track, hasPlayer: !!g.player } : null;`,
+        { timeoutMs: 5000 }
+      );
+      console.error("  game:", JSON.stringify(state));
+    } catch {
+      console.error("  game: unreachable (main thread blocked)");
+    }
+    if (errors && errors.length) {
+      console.error(`  ${errors.length} console error(s):`);
+      for (const e of errors.slice(0, 8)) console.error(`    [${e.type}] ${e.text || e}`);
+    } else console.error("  no console errors captured");
     await browser.close();
     server.close();
     process.exit(1);

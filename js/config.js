@@ -34,7 +34,7 @@ export const GFX = {
   titleMaxPixelRatio: 1.5,
   titleMaxPixels: 2400000,
   /** Title sun atlas — one hero car on a pad; 2048 keeps contact sharp. */
-  titleShadowMap: 1024,
+  titleShadowMap: 2048,
   /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
   targetFps: 60,
   lockRenderFps: true,
@@ -42,11 +42,14 @@ export const GFX = {
   unlockFpsOnTitle: true,
   /** Soft shadows — update every frame so the blob under the car does not strobe. */
   shadowMap: 4096,
-  shadowExtent: 22,
-  /** Race shadow ortho half-width — tighter = sharper contact (Sprint 32 PBR). */
-  shadowExtentRace: 17,
-  shadowNear: 3,
-  shadowFar: 96,
+  shadowExtent: 36,
+  /**
+   * Race sun ortho half-width (metres). 17 m only shaded the car; the chase
+   * camera sees ~120 m of stage, so cacti/trees/dunes must take sun too.
+   */
+  shadowExtentRace: 54,
+  shadowNear: 2,
+  shadowFar: 180,
   shadowEvery: 1,
   reflectEvery: 0,
   cubeSize: 64,
@@ -67,8 +70,24 @@ export const GFX = {
   adaptLowMs: 14.5,
   /** Hard floor — present cost above this forces low post + thinner pixel ratio. */
   adaptFloorMs: 33.3,
-  /** Minimum DPR when the 30 fps floor trips (restored when cost recovers). */
-  minPixelRatio: 0.85,
+  /**
+   * Minimum DPR scale the quality ladder may fall to.
+   *
+   * Sprint 96: this was 0.85, which on a 2× Retina panel still resolved to an
+   * effective 1.275 pixel ratio — the *cheapest* tier was rendering 2.0 Mpix
+   * and an M1 Pro measured p50 33 ms (30 fps) there with nowhere left to go.
+   * 0.65 gives the scaler a floor that is genuinely cheap (~1.17 Mpix), so a
+   * machine that cannot hold 60 at medium can still hold it at min instead of
+   * juddering between 60 and 30.
+   */
+  minPixelRatio: 0.65,
+  /**
+   * Present-cadence lock (Sprint 96). If the machine still cannot hold the 60 Hz
+   * target at the cheapest quality tier, stop free-running at ~46 fps with
+   * alternating 16.8/33.7 ms frames and deliberately present every second
+   * vsync instead. A clean 30 reads as smooth; 46 with judder does not.
+   */
+  lock30AboveMs: 20,
   /** Sprint 39 — integrated GPU targets (iGPU / M-series low power). */
   integratedFloorMs: 18.5,
   integratedEmergencyMs: 22,
@@ -93,12 +112,12 @@ export const VISUAL = {
    * Depth comes from ACES + IBL + texture, not saturation/bloom boosts.
    */
   postFx: true,
-  bloomStrength: 0.15,
-  bloomThreshold: 0.76,
-  vignette: 0.08,
-  gradeContrast: 0.96,
-  gradeSaturation: 1.04,
-  gradeWarmth: 0.08,
+  bloomStrength: 0.12,
+  bloomThreshold: 0.78,
+  vignette: 0.18,
+  gradeContrast: 1.12,
+  gradeSaturation: 1.02,
+  gradeWarmth: 0.06,
   /** Film grain off — it read as crawling static on the volumetric sky. */
   sharpen: 0,
   fxaa: false,
@@ -111,9 +130,9 @@ export const VISUAL = {
   cameraOcclusionFade: true,
   /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
   aerialPerspective: true,
-  aerialStrength: 0.38,
-  aerialStart: 55,
-  aerialEnd: 640,
+  aerialStrength: 0.52,
+  aerialStart: 36,
+  aerialEnd: 520,
   /** One authored silhouette cluster per stage (desert arch, forest cedars, lakeside pier). */
   heroLandmarks: true,
   /** Stronger water env response at tier 4+ (lakeside). */
@@ -129,15 +148,18 @@ export const VISUAL = {
   /** Stage sky dust band + horizon bounce (sky.js). */
   envAtmosphere: true,
   /** Tier 13 IBL — world and car read sunlit materials. */
-  worldEnvIntensity: 1.18,
-  carEnvIntensity: 1.12,
+  worldEnvIntensity: 0.92,
+  carEnvIntensity: 1.18,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
-  highlightRolloff: 0.24,
+  highlightRolloff: 0.28,
   pbrSkySigma: 0,
+  /** Screen-space crevice AO — contact between car, road, and verge. */
+  aoStrength: 0.58,
+  aoRadius: 1.45,
   /** Normal strength on road/terrain. */
-  normalStrength: 1.22,
+  normalStrength: 1.48,
   /** Half-res normals — chase-cam distance; keep Sprint 24 GPU win. */
   normalMapScale: 0.5,
   /** Albedo ×4 + procedural roughness maps. */
@@ -214,7 +236,9 @@ export const COLORS = {
   kerbCream: 0xf2ead0,
   kerbRed: 0xd4121a,
   dunePale: 0xd8c090,
-  fogDesert: 0xc8d8e8,
+  // Matches LIGHTING.desert.fog — the backdrop tint and the scene fog must be
+  // the same colour or the far dunes sit in front of a differently coloured haze.
+  fogDesert: 0xd0bfa2,
   fogForest: 0xb8d0e8,
   fogMountain: 0xb0cce8,
   fogLakeside: 0xa8c8dc,
@@ -232,47 +256,65 @@ export const LIGHTING = {
      * Tuned for ACES (not arcade Reinhard punch).
      */
     skyGradient: [
-      [0.0, "#c4b090"],
-      [0.38, "#d8cdb8"],
+      [0.0, "#6a8498"],
+      [0.38, "#8eaccc"],
       [0.5, "#b8cce0"],
-      [0.62, "#5a9ed4"],
-      [0.8, "#2e7eb8"],
-      [1.0, "#1e6aa8"],
+      [0.62, "#4a96d4"],
+      [0.8, "#1e6eb8"],
+      [1.0, "#0c4a98"],
     ],
-    skyZenith: 0x1e6aa8,
+    skyZenith: 0x0c4a98,
     skyHorizon: 0xb8cce0,
-    skyTurbidity: 2.4,
-    skyRayleigh: 1.12,
+    skyTurbidity: 2.2,
+    skyRayleigh: 1.18,
     skyMie: 0.0042,
     skyMieG: 0.78,
-    skyExposure: 1.04,
-    sunSkyBoost: 0.92,
-    sunBloom: 0.58,
-    zenithBoost: 0.28,
-    groundBounceMix: 0.18,
-    cloudCover: 0.36,
-    cloudScale: 1.42,
-    horizonGlow: 0xe0d4c0,
-    horizonStrength: 0.32,
-    dustStrength: 0.22,
+    skyExposure: 1.08,
+    skyAtmoBlend: 0.84,
+    sunSkyBoost: 1.05,
+    sunBloom: 0.92,
+    zenithBoost: 0.34,
+    groundBounceMix: 0.12,
+    // cloudCover is a SKY FRACTION since the 2026-08 sky rewrite. The old field
+    // saturated, so authored values had drifted upward chasing an effect they
+    // could not produce; 0.55 on the new scale is heavy overcast, which is not
+    // what a Safari stage wants. 0.30 is scattered cumulus with open blue.
+    cloudCover: 0.3,
+    cloudScale: 1.95,
+    horizonGlow: 0xd8c8b0,
+    horizonStrength: 0.22,
+    dustStrength: 0.2,
     wind: [1.8, 0, 0.6],
-    fog: 0xc0c8d0,
-    fogNear: 340,
-    fogFar: 1280,
-    hemiSky: 0xa8c8e8,
-    hemiGround: 0xd0b080,
-    hemi: 1.22,
-    sun: 0xfff0d8,
-    sunKelvin: 5780,
-    sunInt: 2.05,
-    sunDir: [0.42, 0.86, 0.28],
-    rimSky: 0xb8d4f0,
+    /**
+     * WARM dust haze, not blue-grey.
+     *
+     * This was 0xb8c4d0 — a cool overcast-temperate haze — on a stage whose
+     * ground is warm sand. Distance therefore went cold while the foreground
+     * stayed orange, which reads as two unrelated images stitched at the
+     * skyline and is a large part of why Desert looked flat and washed out.
+     * Dust in a desert scatters warm. The sky shader now converges its horizon
+     * onto exactly this colour, so sky, haze and distant terrain agree by
+     * construction rather than by eye.
+     */
+    fog: 0xd0bfa2,
+    // Mid-field haze (was 360 — skyline never read; 110 milked the start grid).
+    fogNear: 180,
+    fogFar: 1080,
+    hemiSky: 0x8eb4e0,
+    hemiGround: 0xc4a070,
+    // Key owns form. Fill/hemi only keep shade readable — not a second sun.
+    hemi: 0.58,
+    sun: 0xffeccd,
+    sunKelvin: 5350,
+    sunInt: 2.88,
+    sunDir: [0.58, 0.66, 0.36],
+    rimSky: 0xa8c8f0,
     rimInt: 0.38,
-    fill: 0xa0b8d0,
-    fillInt: 0.82,
-    ambient: 0xb8c4c8,
-    ambientInt: 0.64,
-    exposure: 1.4,
+    fill: 0x90b0d0,
+    fillInt: 0.2,
+    ambient: 0xa8b4c0,
+    ambientInt: 0.1,
+    exposure: 1.08,
     gradeWarmth: 0.12,
     skyBack: 0x2e7eb8,
     worldEnv: 1.16,
@@ -282,48 +324,51 @@ export const LIGHTING = {
      * Sprint 30 cinema Forest — cool canopy bounce, clear key, soft green ground.
      */
     skyGradient: [
-      [0.0, "#a8b890"],
-      [0.38, "#c8d8c0"],
+      [0.0, "#5a7890"],
+      [0.38, "#88b0c8"],
       [0.5, "#a8c8e0"],
-      [0.62, "#4a98d8"],
-      [0.82, "#2878c0"],
-      [1.0, "#1868b0"],
+      [0.62, "#3a90d4"],
+      [0.82, "#1868b8"],
+      [1.0, "#0c4a98"],
     ],
     skyZenith: 0x1868b0,
     skyHorizon: 0xa8c8e0,
-    skyTurbidity: 2.0,
-    skyRayleigh: 1.15,
+    skyTurbidity: 1.9,
+    skyRayleigh: 1.2,
     skyMie: 0.0032,
     skyMieG: 0.76,
-    skyExposure: 1.06,
-    sunSkyBoost: 0.9,
-    sunBloom: 0.55,
-    zenithBoost: 0.3,
-    groundBounceMix: 0.2,
-    cloudCover: 0.44,
-    cloudScale: 1.48,
-    horizonGlow: 0xc8dcc8,
-    horizonStrength: 0.28,
-    dustStrength: 0.08,
+    skyExposure: 1.08,
+    skyAtmoBlend: 0.82,
+    sunSkyBoost: 1.02,
+    sunBloom: 0.86,
+    zenithBoost: 0.34,
+    groundBounceMix: 0.12,
+    // Rebased onto the sky-fraction scale (see LIGHTING.desert.cloudCover).
+    // Forest keeps the most cloud of the four — temperate, broken sky.
+    cloudCover: 0.42,
+    cloudScale: 2.02,
+    horizonGlow: 0xc0d4c8,
+    horizonStrength: 0.18,
+    dustStrength: 0.05,
     wind: [0.4, 0, -0.9],
-    fog: 0xa8bcd0,
-    fogNear: 280,
-    fogFar: 1180,
+    fog: 0xa0b8cc,
+    fogNear: 100,
+    fogFar: 980,
     skyBack: 0x2878c0,
-    hemiSky: 0xb0d8f0,
-    hemiGround: 0x5a8848,
-    hemi: 1.24,
+    hemiSky: 0x8ec4e8,
+    hemiGround: 0x4a7840,
+    hemi: 0.64,
     sun: 0xfff8e8,
-    sunKelvin: 5520,
-    sunInt: 1.98,
-    sunDir: [0.4, 0.88, 0.32],
-    rimSky: 0xc0e0f8,
-    rimInt: 0.34,
-    fill: 0x88b070,
-    fillInt: 0.78,
-    ambient: 0x98b090,
-    ambientInt: 0.64,
-    exposure: 1.42,
+    sunKelvin: 5400,
+    sunInt: 2.72,
+    sunDir: [0.52, 0.68, 0.4],
+    rimSky: 0xb0d4f0,
+    rimInt: 0.32,
+    fill: 0x88b0c8,
+    fillInt: 0.22,
+    ambient: 0x88a090,
+    ambientInt: 0.14,
+    exposure: 1.12,
     gradeWarmth: 0.06,
     worldEnv: 1.14,
   },
@@ -332,48 +377,50 @@ export const LIGHTING = {
      * Sprint 30 cinema Mountain — thin alpine air, hard key, cool rock bounce.
      */
     skyGradient: [
-      [0.0, "#a8b8a0"],
-      [0.4, "#c8d8d0"],
+      [0.0, "#5a7088"],
+      [0.4, "#88b0d0"],
       [0.52, "#98c4e8"],
-      [0.68, "#3a8cd8"],
-      [0.88, "#2070c8"],
-      [1.0, "#1058b0"],
+      [0.68, "#2e84d4"],
+      [0.88, "#1058b8"],
+      [1.0, "#083888"],
     ],
     skyZenith: 0x1058b0,
     skyHorizon: 0x98c4e8,
-    skyTurbidity: 1.6,
-    skyRayleigh: 1.22,
+    skyTurbidity: 1.45,
+    skyRayleigh: 1.28,
     skyMie: 0.0026,
     skyMieG: 0.74,
-    skyExposure: 1.08,
-    sunSkyBoost: 0.95,
-    sunBloom: 0.52,
-    zenithBoost: 0.34,
-    groundBounceMix: 0.14,
+    skyExposure: 1.1,
+    skyAtmoBlend: 0.86,
+    sunSkyBoost: 1.08,
+    sunBloom: 0.9,
+    zenithBoost: 0.4,
+    groundBounceMix: 0.1,
+    // Rebased onto the sky-fraction scale. High and clear, with build-ups.
     cloudCover: 0.32,
-    cloudScale: 1.52,
-    horizonGlow: 0xc0d8e8,
-    horizonStrength: 0.24,
-    dustStrength: 0.05,
+    cloudScale: 2.08,
+    horizonGlow: 0xb8d0e4,
+    horizonStrength: 0.16,
+    dustStrength: 0.03,
     wind: [2.4, 0, 1.1],
-    fog: 0xa0bcd8,
-    fogNear: 320,
-    fogFar: 1380,
+    fog: 0x98b4d0,
+    fogNear: 140,
+    fogFar: 1180,
     skyBack: 0x2070c8,
-    hemiSky: 0xa8d0f0,
-    hemiGround: 0x7a7460,
-    hemi: 1.2,
+    hemiSky: 0x90c4f0,
+    hemiGround: 0x6a6454,
+    hemi: 0.6,
     sun: 0xfffaf5,
-    sunKelvin: 6420,
-    sunInt: 2.05,
-    sunDir: [0.48, 0.84, 0.28],
-    rimSky: 0xb0d8f8,
-    rimInt: 0.34,
-    fill: 0x88a878,
-    fillInt: 0.78,
-    ambient: 0x90a8b8,
-    ambientInt: 0.62,
-    exposure: 1.42,
+    sunKelvin: 6200,
+    sunInt: 2.95,
+    sunDir: [0.62, 0.62, 0.34],
+    rimSky: 0xa8d0f8,
+    rimInt: 0.36,
+    fill: 0x88a8c8,
+    fillInt: 0.2,
+    ambient: 0x8098a8,
+    ambientInt: 0.12,
+    exposure: 1.1,
     gradeWarmth: 0.03,
     worldEnv: 1.14,
   },
@@ -382,92 +429,111 @@ export const LIGHTING = {
      * Sprint 30 cinema Lakeside — cool water bounce, soft mist, bright key.
      */
     skyGradient: [
-      [0.0, "#90b8a8"],
-      [0.38, "#b8d4d0"],
+      [0.0, "#5a8090"],
+      [0.38, "#88b8c8"],
       [0.52, "#90c4e0"],
-      [0.7, "#3a94c8"],
-      [0.9, "#2278b8"],
-      [1.0, "#1468a8"],
+      [0.7, "#2e8cc8"],
+      [0.9, "#1468b0"],
+      [1.0, "#0a4a90"],
     ],
     skyZenith: 0x1468a8,
     skyHorizon: 0x90c4e0,
-    skyTurbidity: 2.2,
-    skyRayleigh: 1.25,
+    skyTurbidity: 2.05,
+    skyRayleigh: 1.26,
     skyMie: 0.004,
     skyMieG: 0.76,
-    skyExposure: 1.04,
-    sunSkyBoost: 0.88,
-    sunBloom: 0.5,
-    zenithBoost: 0.26,
-    groundBounceMix: 0.22,
-    cloudCover: 0.38,
-    cloudScale: 1.4,
-    horizonGlow: 0xb8dce8,
-    horizonStrength: 0.34,
-    dustStrength: 0.18,
+    skyExposure: 1.08,
+    skyAtmoBlend: 0.8,
+    sunSkyBoost: 1.0,
+    sunBloom: 0.84,
+    zenithBoost: 0.3,
+    groundBounceMix: 0.14,
+    // Rebased onto the sky-fraction scale.
+    cloudCover: 0.4,
+    cloudScale: 1.92,
+    horizonGlow: 0xb0d4e0,
+    horizonStrength: 0.22,
+    dustStrength: 0.1,
     wind: [-0.8, 0, 1.4],
-    fog: 0x98b8c8,
-    fogNear: 240,
-    fogFar: 980,
+    fog: 0x90b4c4,
+    fogNear: 90,
+    fogFar: 880,
     skyBack: 0x2278b8,
-    hemiSky: 0xa0d0e8,
-    hemiGround: 0x487858,
-    hemi: 1.22,
+    hemiSky: 0x88c4e0,
+    hemiGround: 0x3e6c4c,
+    hemi: 0.66,
     sun: 0xfff0e0,
-    sunKelvin: 5980,
-    sunInt: 2.0,
-    sunDir: [0.5, 0.86, 0.2],
-    rimSky: 0xa8d8f0,
-    rimInt: 0.36,
-    fill: 0x80b8d0,
-    fillInt: 0.8,
-    ambient: 0x88a8b8,
-    ambientInt: 0.64,
-    exposure: 1.42,
+    sunKelvin: 5800,
+    sunInt: 2.7,
+    sunDir: [0.56, 0.68, 0.28],
+    rimSky: 0x98d0ec,
+    rimInt: 0.34,
+    fill: 0x78b0c8,
+    fillInt: 0.24,
+    ambient: 0x78a0b0,
+    ambientInt: 0.14,
+    exposure: 1.12,
     gradeWarmth: 0.05,
     worldEnv: 1.16,
   },
   /**
-   * Title attract — showroom key/fill/rim tuned for lacquer and chrome on the
-   * splash car. Brighter IBL than race so paint reads wet, not flat.
+   * Title attract / SELECT MODE — cinema showroom. Sculpted key + cool rim,
+   * golden horizon, wet IBL. Not a flat blue pad wash.
    */
   title: {
-    skyTurbidity: 1.72,
-    skyRayleigh: 0.92,
-    skyMie: 0.0018,
+    skyTurbidity: 2.05,
+    skyRayleigh: 1.2,
+    skyMie: 0.0028,
     skyMieG: 0.86,
-    skyExposure: 1.08,
-    cloudCover: 0.48,
-    cloudScale: 1.08,
-    fog: 0x8ec4ea,
-    fogNear: 96,
-    fogFar: 320,
-    skyBack: 0x3e8fd0,
-    skyZenith: 0x1a58a8,
-    horizonGlow: 0xe8f2ff,
-    horizonStrength: 0.28,
-    sunBloom: 0.4,
-    dustStrength: 0,
-    sun: 0xfff3dc,
-    sunInt: 2.55,
-    sunDir: [0.46, 0.84, 0.22],
-    fill: 0xc8dcff,
-    fillInt: 0.68,
-    ambient: 0xffead0,
-    ambientInt: 0.14,
-    hemiSky: 0xf2f7ff,
-    hemiGround: 0xc8a06c,
-    hemi: 0.68,
-    exposure: 1.18,
-    rim: 0xd4e8ff,
-    rimInt: 1.72,
-    kick: 0xffd9a0,
-    kickInt: 0.88,
-    envIntensity: 1.78,
-    bodyEnv: 1.62,
-    chromeEnv: 2.28,
-    glassEnv: 1.22,
+    skyExposure: 1.2,
+    skyAtmoBlend: 0.9,
+    // Broken cumulus with depth — expensive sky behind the hero car.
+    cloudCover: 0.5,
+    cloudScale: 2.2,
+    fog: 0xa2cce8,
+    fogNear: 120,
+    fogFar: 400,
+    skyBack: 0x164e88,
+    skyZenith: 0x0a3568,
+    horizonGlow: 0xffe6c8,
+    horizonStrength: 0.36,
+    sunBloom: 1.08,
+    dustStrength: 0.05,
+    groundBounceMix: 0.24,
+    zenithBoost: 0.44,
+    sun: 0xfff1d6,
+    // Lower sun = longer contact shadow + chrome catch-lights.
+    sunInt: 3.4,
+    sunDir: [0.64, 0.56, 0.34],
+    fill: 0xa0c0f0,
+    fillInt: 0.2,
+    ambient: 0xffe2c4,
+    ambientInt: 0.055,
+    hemiSky: 0xc4dcff,
+    hemiGround: 0xc49858,
+    hemi: 0.4,
+    exposure: 1.2,
+    gradeWarmth: 0.12,
+    rim: 0xc0e0ff,
+    rimInt: 2.15,
+    kick: 0xffc878,
+    kickInt: 1.12,
+    envIntensity: 2.1,
+    bodyEnv: 1.98,
+    chromeEnv: 2.72,
+    glassEnv: 1.58,
+    /** Pad / apron pick up sky IBL so asphalt reads wet. */
+    worldEnv: 1.42,
   },
+};
+
+/** Title showroom timing — IBL must land before the player judges the car. */
+export const TITLE_SHOWROOM = {
+  /** ms after pad mount before sky PMREM bake (was 2400 — flat paint for 2s). */
+  iblDelayMs: 420,
+  /** Live cube refresh every N presents (0 = sky IBL only). */
+  reflectEvery: 6,
+  cubeSize: 96,
 };
 
 /**
@@ -906,37 +972,37 @@ export const JUMP = {
    * Fraction of launch velocity kept by a perfectly executed lift.
    * Good technique lands flatter/lower; flat-out throws higher and arrives wrong.
    */
-  liftLaunchCut: 0.62,
+  liftLaunchCut: 0.64,
   /** Flat-out launch bonus (multiplies raw before technique cut). */
-  flatOutLaunchBoost: 1.08,
+  flatOutLaunchBoost: 1.14,
   /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
-  liftNoseDrop: 0.2,
+  liftNoseDrop: 0.24,
   /**
-   * Apex height multiplier (h ∝ vy²). Sprint 73: a bit more hang so a lip
-   * reads as a throw, not a skip — still far under the old floaty 1.0.
+   * Apex height multiplier (h ∝ vy²). High enough that a Safari lip hangs
+   * longer than a teaching hop — not a shared skip, not a floaty hang.
    */
-  launchHeightScale: 0.28,
+  launchHeightScale: 0.45,
   /**
    * Extra apex cut for AI / lowDetail pack only (h ∝ vy²). 0.2 = one-fifth of
    * the shared launchHeightScale flight — rivals were still lofting like rockets.
    */
   aiLaunchHeightScale: 0.2,
   /** Ballistic launch ceiling (m/s) after launchHeightScale. */
-  maxLaunchVy: 12,
+  maxLaunchVy: 10.8,
   /**
    * Floor only for real lips — was 1.8 and forced a hop on every crest.
    * Tiny transitions can leave with near-zero vertical and still glide.
    */
-  minLaunchVy: 0.08,
+  minLaunchVy: 0.04,
   /** Road-following vertical gain on ramps — speed × sin(pitch) × this. */
-  rampVyScale: 0.62,
+  rampVyScale: 0.8,
   /** How much stored ramp climb energy joins the ballistic leave (0–1). */
-  throwBlend: 0.42,
+  throwBlend: 0.3,
   /**
    * Suspension stores energy on the ramp; the lip releases it into launch speed.
    * Scales with approach speed so fast lips pop higher than crawls.
    */
-  springBurst: 2.55,
+  springBurst: 2.7,
   springCompressRate: 3.8,
   springReleaseRate: 10,
   /** Throttle/brake weight transfer into compress while climbing a lip. */
@@ -948,20 +1014,24 @@ export const JUMP = {
    * throttle keeps the wheels driving and the nose up; braking spins them
    * down and the reaction torque tips the nose over.
    */
-  airPitchUp: 0.24,
-  airPitchDown: 0.22,
-  airPitchRate: 4.6,
-  airPitchMax: 0.42,
+  airPitchUp: 0.3,
+  airPitchDown: 0.34,
+  airPitchRate: 5.8,
+  airPitchMax: 0.46,
   /** In-air pitch inertia — lower = snappier rotation, higher = floaty tumble risk. */
-  airPitchInertia: 1.7,
-  airPitchDamp: 2.35,
+  airPitchInertia: 1.45,
+  airPitchDamp: 1.85,
   /**
-   * Nose-high aero lift. Keep modest so flight stays a parabola — large values
-   * flatten the apex into a floaty hang then a late drop (reads as a hop).
+   * Nose-high aero lift. Modest hang at speed — large values flatten the apex
+   * into a float then a late drop (reads as a hop).
    */
-  aeroFloat: 0.11,
+  aeroFloat: 0.22,
+  /** Extra g when the nose is down (dive). */
+  aeroDive: 0.2,
+  /** Extra forward drag per radian of nose-up (shortens a lofted jump). */
+  airNoseDrag: 0.58,
   /** Pitch/path mismatch (rad) that counts as a fully botched arrival. */
-  mismatchFull: 0.3,
+  mismatchFull: 0.28,
   /**
    * Speed kept on a flat landing vs a fully mismatched one.
    *
@@ -973,10 +1043,10 @@ export const JUMP = {
    * unsettled pool takes away afterwards. Widen the gap to make the technique
    * matter more; narrow it to make crests more forgiving.
    */
-  flatScrub: 0.998,
-  worstScrub: 0.72,
+  flatScrub: 0.997,
+  worstScrub: 0.7,
   /** Yaw kick (rad/s) a fully botched landing throws at you. */
-  landUpsetYaw: 0.55,
+  landUpsetYaw: 0.68,
   /**
    * "Teetering on the edge of control": each bad landing tops up an unsettled
    * pool that bleeds grip and adds yaw noise. It decays over this many
@@ -994,12 +1064,12 @@ export const JUMP = {
    * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
    * Variation is state at the lip — speed, attitude, compress, line — never RNG.
    */
-  lipGrain: 0.045,
-  inheritPitch: 0.55,
-  airRollMax: 0.2,
-  airRollDamp: 1.85,
-  landBounce: 0.16,
-  landBounceImpact: 6.2,
+  lipGrain: 0.07,
+  inheritPitch: 0.72,
+  airRollMax: 0.28,
+  airRollDamp: 1.55,
+  landBounce: 0.24,
+  landBounceImpact: 4.4,
 };
 
 /**
@@ -1147,12 +1217,26 @@ export const CAMERA = {
   /** How hard chase yaw tracks the car — high = no “camera late” lag. */
   yawStiffness: 36,
   /**
+   * Soften chase yaw follow while sliding so the lens does not whip with
+   * body attitude into the outside of the turn.
+   */
+  yawStiffnessSlide: 16,
+  /**
+   * When sliding, blend chase yaw target toward velocity (travel) vs chassis
+   * yaw. Higher = camera stays behind the racing line; car still reads angled.
+   */
+  slideYawBlend: 0.62,
+  /**
    * Chase look blends toward velocity in a slide so the road you are sliding
    * toward stays in frame while the car sits at an angle (arcade poster).
    */
-  slideLook: 0.62,
-  /** Metres of camera offset to the outside of a power slide. */
-  slideCamOut: 0.42,
+  slideLook: 0.78,
+  /** Metres of camera offset to the outside of a power slide (subtle rear-quarter). */
+  slideCamOut: 0.16,
+  /** Extra look-ahead (m) while sliding so the exit stays readable. */
+  slideLookAhead: 4.2,
+  /** Cap on |lateral kick| during a slide (metres). */
+  slideKickMax: 0.045,
   /**
    * Seconds for a C-key pose ease. Short enough to feel instant, long enough
    * to read as a move instead of a cut. From-pose rides with the car.

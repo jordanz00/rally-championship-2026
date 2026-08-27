@@ -40,16 +40,19 @@ Loops were trimmed, denoised, loudness-matched, and mixed for in-game use.
 Adapted Wikimedia recordings remain CC BY-SA 3.0. This tribute does not
 use Sega’s Saturn engine or tire samples.
 
-Navigator / co-driver (Sprint 67)
+Navigator / co-driver
   assets/sfx/nav/*.mp3
-  Source: SentientMattress, “Rally Co-Driver Pacenote Cues”
+  Turn grades (easy / medium / hard / hairpin L/R): original spoken lines
+  that say those words, matching left vs right. Render:
+  `tools/build-nav-grade-vo.sh` (macOS Daniel + radio EQ). Not the Freesound
+  1–5 number notes.
+  Jump + countdown: SentientMattress, “Rally Co-Driver Pacenote Cues”
           Freesound 833028, CC BY 4.0
           https://freesound.org/people/SentientMattress/sounds/833028/
-  Human-recorded WRC-style 1–5 Left/Right, hairpin, jump, and start-grid
-  3 / 2 / 1 / GO cues.
-  Sliced to first utterance only (no Into / And variants). Not TTS.
-  Required attribution: SentientMattress / Freesound, CC BY 4.0.
-  Do not feed this voice into a generative model (author request).
+  Sliced to first utterance. Required attribution for those clips:
+  SentientMattress / Freesound, CC BY 4.0.
+  Do not feed the SentientMattress voice into a generative model
+  (author request).
 
 Crowd beds (clap / cheer)
   Synthesised in js/audio/crowd.js at runtime — no third-party sample.

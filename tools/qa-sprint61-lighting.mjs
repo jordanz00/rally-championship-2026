@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sprint 61 — brighter, lower-contrast lighting (fill/hemi/ambient up, sun and post contrast down).
+ * Cinema daylight — sun sculpts the stage; shadows reach chase-cam mid-ground.
  *
  * RUN: node tools/qa-sprint61-lighting.mjs
  */
@@ -21,6 +21,11 @@ function sliceBlock(src, startKey, endKey) {
   return start >= 0 && end > start ? src.slice(start, end) : "";
 }
 
+function num(block, key) {
+  const m = block.match(new RegExp(`${key}:\\s*([0-9.]+)`));
+  return m ? Number(m[1]) : NaN;
+}
+
 let fail = 0;
 function check(label, ok, detail = "") {
   if (ok) console.log(`  ok  ${label}${detail ? ` — ${detail}` : ""}`);
@@ -30,7 +35,7 @@ function check(label, ok, detail = "") {
   }
 }
 
-console.log(`SPRINT 61 LIGHTING  ·  ${new Date().toISOString()}\n`);
+console.log(`CINEMA DAYLIGHT  ·  ${new Date().toISOString()}\n`);
 
 const config = read("js/config.js");
 const game = read("js/game.js");
@@ -40,80 +45,38 @@ const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 const visual = sliceBlock(config, "export const VISUAL = {", "export const STREAM");
+const gfx = sliceBlock(config, "export const GFX = {", "export const VISUAL");
 const desert = sliceBlock(config, "  desert: {", "  forest: {");
 const forest = sliceBlock(config, "  forest: {", "  mountain: {");
 const mountain = sliceBlock(config, "  mountain: {", "  lakeside: {");
 const lakeside = sliceBlock(config, "  lakeside: {", "  title: {");
-const title = sliceBlock(config, "  title: {", "export const TUNNEL");
-const tunnel = sliceBlock(config, "export const TUNNEL = {", "headEmissive:");
 
-check("post gradeContrast is below 1.0", /gradeContrast:\s*0\.96/.test(visual));
-check("vignette is light, not a corner crush", /vignette:\s*0\.08/.test(visual));
-check(
-  "IBL fill is above 1.0",
-  /worldEnvIntensity:\s*1\.18/.test(visual) && /carEnvIntensity:\s*1\.12/.test(visual)
-);
-check("highlight rolloff tames punch", /highlightRolloff:\s*0\.24/.test(visual));
+check("post contrast is photographic, not washed", num(visual, "gradeContrast") >= 1.08, `contrast=${num(visual, "gradeContrast")}`);
+check("vignette frames the stage", num(visual, "vignette") >= 0.14, `vignette=${num(visual, "vignette")}`);
+check("screen-space AO is armed", num(visual, "aoStrength") >= 0.4 && /AO_FRAG/.test(postfx));
+check("race shadow frustum covers chase mid-ground", num(gfx, "shadowExtentRace") >= 48, `extent=${num(gfx, "shadowExtentRace")}`);
+check("shadow far plane reaches the sun follow", num(gfx, "shadowFar") >= 160, `far=${num(gfx, "shadowFar")}`);
 
-check(
-  "Desert: more fill/hemi/ambient, less sun punch",
-  /hemi:\s*1\.22/.test(desert) &&
-    /sunInt:\s*2\.05/.test(desert) &&
-    /fillInt:\s*0\.82/.test(desert) &&
-    /ambientInt:\s*0\.64/.test(desert) &&
-    /exposure:\s*1\.4/.test(desert) &&
-    /worldEnv:\s*1\.16/.test(desert)
-);
-check(
-  "Forest follows the fill recipe",
-  /hemi:\s*1\.24/.test(forest) &&
-    /sunInt:\s*1\.98/.test(forest) &&
-    /fillInt:\s*0\.78/.test(forest) &&
-    /ambientInt:\s*0\.64/.test(forest) &&
-    /exposure:\s*1\.42/.test(forest)
-);
-check(
-  "Mountain follows the fill recipe",
-  /hemi:\s*1\.2/.test(mountain) &&
-    /sunInt:\s*2\.05/.test(mountain) &&
-    /fillInt:\s*0\.78/.test(mountain) &&
-    /ambientInt:\s*0\.62/.test(mountain) &&
-    /exposure:\s*1\.42/.test(mountain)
-);
-check(
-  "Lakeside follows the fill recipe",
-  /hemi:\s*1\.22/.test(lakeside) &&
-    /sunInt:\s*2\.0/.test(lakeside) &&
-    /fillInt:\s*0\.8/.test(lakeside) &&
-    /ambientInt:\s*0\.64/.test(lakeside) &&
-    /exposure:\s*1\.42/.test(lakeside)
-);
-check(
-  "Title pad is brighter without a harder key",
-  /hemi:\s*1\.48/.test(title) &&
-    /sunInt:\s*2\.12/.test(title) &&
-    /fillInt:\s*1\.68/.test(title) &&
-    /ambientInt:\s*0\.74/.test(title) &&
-    /exposure:\s*1\.74/.test(title)
-);
-check(
-  "Tunnel shade keeps fill instead of going black",
-  /ambientFloor:\s*0\.82/.test(tunnel) && /hemiRetain:\s*0\.72/.test(tunnel) && /fillRetain:\s*0\.48/.test(tunnel)
-);
+function keyOwns(block, name) {
+  const sun = num(block, "sunInt");
+  const fill = num(block, "fillInt");
+  const hemi = num(block, "hemi");
+  return sun > fill * 8 && sun > hemi * 3.5;
+}
+check("Desert key sculpts, fill does not", keyOwns(desert, "desert"), `sun=${num(desert, "sunInt")} hemi=${num(desert, "hemi")}`);
+check("Forest key sculpts, fill does not", keyOwns(forest, "forest"));
+check("Mountain key sculpts, fill does not", keyOwns(mountain, "mountain"));
+check("Lakeside key sculpts, fill does not", keyOwns(lakeside, "lakeside"));
+check("Desert fog starts in the mid-field", num(desert, "fogNear") <= 200 && num(desert, "fogNear") >= 140, `near=${num(desert, "fogNear")}`);
 
-check(
-  "vignette strength actually scales (no baked +d crush)",
-  /smoothstep\(0\.45, 1\.05, d\) \* vignette/.test(postfx)
-);
-check(
-  "postfx still grades from VISUAL.gradeContrast",
-  /VISUAL\.gradeContrast/.test(postfx) && /VISUAL\.vignette/.test(postfx)
-);
-check("lighting-rig + postfx cache-bust", /lighting-rig\.js\?v=4/.test(game) && /postfx\.js\?v=11/.test(game));
-check("sky cache-bust", /sky\.js\?v=19/.test(game));
+check("ACES filmic path", /ACESFilmicToneMapping/.test(read("js/gfx/lighting-rig.js")));
+check("depth-aware AO pass", /tDepth/.test(postfx) && /DepthTexture/.test(postfx));
+check("vignette still scales with the uniform", /smoothstep\(0\.45, 1\.05, d\) \* vignette/.test(postfx));
+check("postfx cache-bust", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 15);
+check("lighting-rig cache-bust", /lighting-rig\.js\?v=7/.test(game));
 const configV = (game.match(/config\.js\?v=(\d+)/) || [])[1];
-check("config.js cache-bust", Number(configV) >= 131, `v=${configV}`);
-check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
+check("config.js cache-bust", Number(configV) >= 148, `v=${configV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 468, `main=${mainV} game=${gameV}`);
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "brighter, softer lighting armed"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "cinema daylight — sun, shadows, AO"}`);
 process.exit(fail ? 1 : 0);

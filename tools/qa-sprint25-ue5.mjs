@@ -38,7 +38,8 @@ check("ue5Look armed", /ue5Look:\s*true/.test(config), "ue5Look: true");
 check("physicalLighting armed", /physicalLighting:\s*true/.test(config), "physicalLighting");
 check("roughnessMaps armed", /roughnessMaps:\s*true/.test(config), "roughnessMaps");
 check("filmGrain off (sky is not sandy)", /filmGrain:\s*0\s*,/.test(config), "filmGrain: 0");
-check("pmremSize 128", /pmremSize:\s*128/.test(config), "IBL bake size");
+check("pmrem capture armed", /pmremFar:\s*240/.test(config) || /pmremSize:\s*128/.test(config), "IBL bake range");
+check("legacy lights off", /useLegacyLights\s*=\s*false/.test(game) || /useLegacyLights\s*=\s*false/.test(read("js/gfx/lighting-rig.js")), "physical light model");
 check("paint clearcoat", /clearcoat:\s*1/.test(pbr) && /MeshPhysicalMaterial/.test(pbr), "player lacquer");
 check("glass Physical no transmission", /ior:\s*1\.45/.test(pbr) && !/transmission:\s*[1-9]/.test(pbr), "ior glass");
 check("chrome metal Standard", /metalness:\s*1/.test(pbr), "chrome metalness");
@@ -46,7 +47,6 @@ check("road roughnessMap arg", /roughnessMap/.test(pbr) && /worldRoadMaterial\(i
 check("roadRoughFor", /function roadRoughFor/.test(track), "road roughness bake");
 check("landRoughnessMap", /function landRoughnessMap/.test(track), "land roughness bake");
 check("roadRough wired", /roadRoughFor\(b\.id\)/.test(track), "ribbon uses roughness");
-check("legacy lights off", /useLegacyLights\s*=\s*false/.test(game), "physical light model");
 check("adaptive 60Hz kept", /adaptHighMs/.test(config) && /setQuality/.test(post), "Sprint 24 budget");
 check("post film grain", /uniform float grain/.test(post), "grade grain");
 

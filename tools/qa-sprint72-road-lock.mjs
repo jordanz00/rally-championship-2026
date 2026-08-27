@@ -36,25 +36,35 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check("_keepOnRibbon rejects a spline snap", /_keepOnRibbon\(/.test(vehicle) && /maxStep/.test(vehicle));
 check("NaN / warp restores last good pose", /_restoreGoodPose\(/.test(vehicle) && /_stashGoodPose\(/.test(vehicle));
-check("gap takeoff does not require enteringGap edge", /takeoff = \(pit \|\| kind === "gap"\)/.test(vehicle));
+check(
+  "gap takeoff does not require enteringGap edge",
+  /takeoff = .*(\(pit \|\| kind === "gap"\))/.test(vehicle) && !/enteringGap/.test(vehicle)
+);
 check("no grounded sit-in-the-hole return", !/Do not plant on the visual hole/.test(vehicle));
 check(
   "grounded clamp keeps wheels on the deck (no ramp/crest skip)",
+  // The hover cap is now gated on `onSolid`, which folds in the old `!pit`
+  // plus the stale-pit and gap-deck cases. Assert the contract, not the
+  // exact expression the check was first written against.
   /GROUND_HOVER_MAX/.test(vehicle) &&
-    /onGround && !pit && this\.position\.y > floor/.test(vehicle) &&
+    /this\.onGround && onSolid && this\.position\.y > floor \+ GROUND_HOVER_MAX/.test(vehicle) &&
+    /const onSolid\s*=[\s\S]{0,200}!pit/.test(vehicle) &&
     !/onGround && !pit && !airKind/.test(vehicle)
 );
 check(
-  "off-road reset plants Y on the ribbon",
-  /v\.position\.y = \(line\.y \|\| 0\) \+ 0\.046/.test(collide) && /v\.onGround = true/.test(collide)
+  "off-road never teleports onto the centre line",
+  !/v\.position\.x = line\.x/.test(collide) && /haul toward the ribbon/.test(collide)
 );
 check(
-  "off-road reset refuses an along-track warp",
-  /dAlong <= 18/.test(collide)
+  "off-road extreme path does not plant a loop warp",
+  !/dAlong <= 18/.test(collide)
 );
 check("TIRE_PLANT unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
 check("game + AI import vehicle.js?v>=80", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 80 && Number((ai.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 80);
-check("game imports collide.js?v=37", /collide\.js\?v=37/.test(game));
+check(
+  "game imports collide.js?v=38+",
+  Number((game.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 38
+);
 check("cache-bust chain", cacheOk && Number(gameV) >= 387, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "ribbon lock is in the step"}`);

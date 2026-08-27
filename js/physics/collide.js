@@ -4,9 +4,9 @@
  * WHO THIS IS FOR: the race loop.
  * WHAT IT DOES: oriented-box overlap between cars, then a soft scrape so you
  *   can rub, block, or get a light nudge without bouncing off. Off-road is a
- *   free runoff with a gentle pull back toward the ribbon; only extreme
- *   excursions reset you to mid-track. Scenery glances redirect travel instead
- *   of scrubbing you along a wall.
+ *   free runoff with a gentle pull back toward the ribbon. Extreme runoff
+ *   hauls toward the lane without teleporting — a snap to mid-track clustered
+ *   the pack after jump 3.
  * HOW IT CONNECTS: game.js runs the car-car pass after every physics step;
  *   Vehicle.step calls bounceOffRoad and glanceObstacles itself.
  *
@@ -22,6 +22,18 @@ const BROAD_RADIUS = Math.hypot(HALF_LENGTH, HALF_WIDTH);
 const RESTITUTION = 0.04;
 const FRICTION = 0.05;
 const CAR_RADIUS = 1.15;
+/**
+ * Ceiling on one depenetration push (m). Getting shoved out of a rock is a
+ * sub-metre correction; anything larger is a bad overlap, and acting on it is
+ * indistinguishable from a teleport.
+ */
+const MAX_PUSH = 3;
+/**
+ * Fallback lining thickness (m) for a wall collider built without an explicit
+ * `depth`. A wall face is a slab with a back, not an infinite half-space — see
+ * the wall branch of glanceObstacles.
+ */
+const WALL_BACK = 2;
 const SEPARATE = 0.72;
 const YAW_NUDGE = 0.01;
 /** AI-AI: soft separate — hard restitution + high friction was welding the pack. */
@@ -56,7 +68,7 @@ const PLAYER_YAW_CAP = 0.09;
 /**
  * Off-road bands past the painted edge (metres).
  * Shoulder: light bank. Runoff: free driving with a soft pull. Recover: stronger
- * guide. Reset: teleport to the ribbon centre — never a sliding wall.
+ * Recover: stronger guide. Extreme: haul toward the lane — never teleport.
  */
 const OFF_SHOULDER = 1.6;
 const OFF_RUNOFF = 10;
@@ -127,8 +139,16 @@ function resolvePair(a, b) {
     b.velocity.x += jn * nx * invB;
     b.velocity.z += jn * nz * invB;
     const mag = Math.abs(relN) + hit.overlap;
-    if (!a.ai) a.hitCar = Math.max(a.hitCar || 0, mag);
-    if (!b.ai) b.hitCar = Math.max(b.hitCar || 0, mag);
+    if (!a.ai) {
+      a.hitCar = Math.max(a.hitCar || 0, mag);
+      a.hitNx = nx;
+      a.hitNz = nz;
+    }
+    if (!b.ai) {
+      b.hitCar = Math.max(b.hitCar || 0, mag);
+      b.hitNx = -nx;
+      b.hitNz = -nz;
+    }
   }
 
   const tx = -nz;
@@ -231,6 +251,8 @@ function resolvePlayerRival(a, b, hit, dx, dz) {
     rival.velocity.x += jn * nx * invR;
     rival.velocity.z += jn * nz * invR;
     player.hitCar = Math.max(player.hitCar || 0, Math.abs(relN) * 0.45 + overlap);
+    player.hitNx = nx;
+    player.hitNz = nz;
   }
 
   const tx = -nz;
@@ -337,8 +359,11 @@ function projectBox(v, axis) {
  * @param {number} fast
  */
 function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast) {
-  // Full separation — opaque environment must not be penetrable.
-  const push = overlap * (pass === 0 ? 1.05 : 1.01);
+  // Full separation — opaque environment must not be penetrable. Capped:
+  // depenetration is a nudge out of a solid, so it can never exceed a car
+  // length. Without this, any collider that reports a bad overlap becomes a
+  // teleport (a tunnel wall face flung the car 573 m off Desert after jump 3).
+  const push = Math.min(overlap, MAX_PUSH) * (pass === 0 ? 1.05 : 1.01);
   v.position.x += nx * push;
   v.position.z += nz * push;
   const vn = v.velocity.x * nx + v.velocity.z * nz;
@@ -355,6 +380,8 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast) {
     v.velocity.x = v.velocity.x * (1 - blend) + fx * keep * blend;
     v.velocity.z = v.velocity.z * (1 - blend) + fz * keep * blend;
     v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.65 + push * 0.45);
+    v.hitNx = nx;
+    v.hitNz = nz;
     if (v.ai && keep < 7) {
       v.velocity.x += fx * 4.5;
       v.velocity.z += fz * 4.5;
@@ -404,6 +431,19 @@ export function glanceObstacles(v, track) {
         const dist = dx * nx + dz * nz;
         const overlap = ext - dist;
         if (overlap <= 0) continue;
+        // `dist` is unbounded below, so this face is only a *slab* if we say
+        // so. `along` limits the wall's length but nothing limited its depth:
+        // a car merely behind the lining — off-course, or on the far side of a
+        // tunnel whose arm curves back over its own approach — computed
+        // overlap = ext + (hundreds of metres) and was flung exactly that far
+        // along the normal in one step. On Desert that strip crosses the
+        // jump-3 landing, which is the teleport-into-the-tunnel bug.
+        //
+        // The bound is the lining's real thickness plus the chassis extent, so
+        // a car genuinely buried in the rock is still pushed out (a blanket
+        // 2 m let it tunnel clean through a 5.2 m portal pier) while one that
+        // is simply somewhere else in the world is ignored.
+        if (dist < -((c.depth || WALL_BACK) + ext)) continue;
         applyGlance(v, nx, nz, overlap, pass, fx, fz, fast);
         continue;
       }
@@ -428,7 +468,7 @@ export function glanceObstacles(v, track) {
  * alone. AI keep stronger guide so the pack does not vanish into the trees.
  *
  * Never builds a sliding wall at the edge. Shoulder is a soft bank; deeper
- * runoff costs speed; extreme distance resets you to mid-track.
+ * runoff costs speed; extreme distance hauls toward the lane without a snap.
  *
  * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, yawRate?:number, ai?:boolean, hitWall?:number, _rearSlide?:boolean}} v
  * @param {{lateral:number, width:number, nx:number, nz:number, heading:number, tunnel?:boolean, dist?:number}} q
@@ -454,39 +494,9 @@ export function bounceOffRoad(v, q, track = null) {
   const hx = Math.sin(q.heading);
   const hz = Math.cos(q.heading);
 
-  // Extreme: place back on the centre line. AI gets a strong pull instead of a
-  // teleport so packs do not pop. Never plant onto a different loop of the
-  // stage (query snaps at self-crossings) or 8 m of Y (Mountain stacked hairpin).
+  // Extreme runoff: haul toward the ribbon. Never snap XZ onto the centre
+  // line — that teleported the pack into the tunnel after Desert jump 3.
   if (over > resetAt) {
-    if (isPlayer && track && typeof track.sample === "function") {
-      const along = Number.isFinite(v.progress) ? v.progress : q.dist || 0;
-      const qDist = q.dist;
-      let dAlong = Number.isFinite(qDist) ? Math.abs(qDist - along) : 0;
-      const span = track.length || 0;
-      if (span > 80 && dAlong > span * 0.5) dAlong = span - dAlong;
-      const air =
-        q.jumpKind === "gap" || q.jumpKind === "crest" || q.jumpKind === "ramp";
-      if (!air && dAlong <= 18 && Number.isFinite(along)) {
-        const line = track.sample(along);
-        const dy = Math.abs((line.y || 0) - (v.position.y || 0));
-        if (dy < 2.6 && Number.isFinite(line.x) && Number.isFinite(line.z)) {
-          v.position.x = line.x;
-          v.position.y = (line.y || 0) + 0.046;
-          v.position.z = line.z;
-          v.yaw = line.heading;
-          v.yawRate = 0;
-          v.velY = 0;
-          v.onGround = true;
-          const spd = Math.hypot(v.velocity.x, v.velocity.z);
-          const out = Math.max(7, Math.min(14, spd * 0.5));
-          v.velocity.x = Math.sin(v.yaw) * out;
-          v.velocity.z = Math.cos(v.yaw) * out;
-          v._rearSlide = false;
-          return true;
-        }
-      }
-    }
-    // AI / no sample: haul hard toward the ribbon without a wall scrub.
     v.position.x += nx * inward * Math.min(over - recover, 6) * 0.35;
     v.position.z += nz * inward * Math.min(over - recover, 6) * 0.35;
   }

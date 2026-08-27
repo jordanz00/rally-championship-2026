@@ -25,13 +25,15 @@ function check(name, ok, detail = "") {
 
 console.log("STRATOS STARTER\n");
 
-check("stratos.glb on disk", fs.existsSync(glb), `${(fs.statSync(glb).size / 1024) | 0} KB`);
-check("loads with Celica/Delta at boot", /Promise\.all\(\["celica", "delta", "stratos"\]/.test(celica));
+check("stratos.glb on disk", fs.existsSync(glb) && fs.statSync(glb).size > 2e6, `${(fs.statSync(glb).size / 1024) | 0} KB`);
+check("splits fused CAD axles into WHEEL hubs", /function prepStratosCadModel/.test(celica) && /splitCadAxleMesh/.test(celica));
+check("CAD wire material stays opaque", /cadOpaque/.test(celica) && /alphaMode BLEND/.test(celica));
 check("config not locked", /stratos:[\s\S]*?locked:\s*false/.test(config));
 check("unlocked by default in game", /this\.stratosUnlocked = true/.test(game));
 check("SELECT CAR button enabled", /data-car="stratos">STRATOS HF/.test(index) && !/data-car="stratos" disabled/.test(index));
 check("pickCar no championship lock", !/_pickCar\(id\) \{\s*if \(id === "stratos" && !this\.stratosUnlocked\)/.test(game));
-check("cache-bust game.js?v=267", /game\.js\?v=267/.test(main));
+check("CAD mm-scale on the mesh is cleared", /mesh\.scale\.set\(1, 1, 1\)/.test(celica));
+check("cache-bust game.js?v=458+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 458);
 
 console.log(failed ? `\nFAIL  ·  ${failed}` : "\nPASS  ·  all checks");
 process.exit(failed ? 1 : 0);

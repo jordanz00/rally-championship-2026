@@ -29,7 +29,7 @@ check(
   /_startBackgroundWarm\(/.test(game) &&
     /PRESS START/.test(game) &&
     /_leaveTitle/.test(game) &&
-    /preparePropKit\(\)/.test(game)
+    /prefetchPropKit\(\)|preparePropKit\(/.test(game)
 );
 check(
   "leave title queues championship cup (Desert first)",

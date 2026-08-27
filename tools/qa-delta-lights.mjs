@@ -48,15 +48,18 @@ check(
   /light\[\\s_\.-]\*front/.test(src) || /light\[\\s_\.\-\]\*front/.test(src)
 );
 check("strips headDummy floating boxes", /headDummy/.test(src) && /scrubDeltaHeadArtifacts/.test(src));
-check("brake path still nests rear emitters", /nestBrakeEmittersInLamp/.test(src));
+check("picks modeled tail lenses instead of floating pads", /pickBrakeLampMeshes/.test(src) && /isTailLampLensMesh/.test(src));
+check("brake glow sits on visible covers (combi / TailLight / Light Rear)", /isVisibleTailCover/.test(src) && /combi_glass_b/.test(src));
+check("brake on punches glass opacity so the cover reads", /_brakeRestOpacity/.test(src) && /opacity = on \? 0\.94/.test(src));
+check("brake glow uses lens AABB, not mesh pivot", /function lampLocalCenter/.test(src));
 check(
   "named front lamp excludes light glass sheets",
   /isFullLengthLightSheetLabel\(label\) return false/.test(src) ||
     /isFullLengthLightSheetLabel\(label\)\) return false/.test(src)
 );
-check("cache-bust celica.js?v=93", /celica\.js\?v=93/.test(game), "game imports v93");
-check("main → game v=295", /game\.js\?v=295/.test(main));
-check("index → main v=295", /main\.js\?v=295/.test(index));
+check("cache-bust celica.js?v=128+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 128, "game imports celica");
+check("main → game v=453+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 453);
+check("index → main v=453+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 453);
 
 console.log(failed ? `\nFAIL  ·  ${failed}` : "\nPASS  ·  all checks");
 process.exit(failed ? 1 : 0);

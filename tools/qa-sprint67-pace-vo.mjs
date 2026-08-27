@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pickPaceNote } from "../js/tracks/pace-call.mjs";
+import { pickPaceNote, makeTurnNote } from "../js/tracks/pace-call.mjs";
 import { readCacheVersions } from "./qa-cache-version.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -49,8 +49,8 @@ const attr = read("assets/sfx/ATTRIBUTION.txt");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(read("js/main.js"), read("index.html"));
 
 check("no speechSynthesis on the race path", !/speechSynthesis/.test(driver) && !/SpeechSynthesisUtterance/.test(driver));
-check("codriver plays clips via paceCall", /paceCall/.test(driver) && /JUMP_LOCK_M = 110/.test(driver));
-check("noteAt uses pickPaceNote", /pickPaceNote/.test(track) && /pace-call\.mjs\?v=1/.test(track));
+check("codriver plays each note once via paceCall", /paceCall/.test(driver) && /this\._said/.test(driver) && /_said\.add\(note\.id\)/.test(driver));
+check("noteAt uses pickPaceNote", /pickPaceNote/.test(track) && /pace-call\.mjs\?v=3/.test(track));
 check("authored notes do not override", !/findAuthoredNote/.test(track));
 check(
   "geometry picker has no surface/tunnel speech",
@@ -62,6 +62,11 @@ check(
 );
 check("soonest event, not sharpest-in-window", /jumpAt <= turnAt/.test(call) && !/bestDeg/.test(call));
 check("jump id is run start", /jump-\$\{Math\.round\(jumpStart\)\}/.test(call));
+check("turn id is arc start, not a 36 m bucket", /\$\{dir\}-\$\{severity\}-\$\{Math\.round\(at\)\}/.test(call));
+check("in-progress arcs are skipped", /arc\.start \+ TURN_LEAD < dist/.test(call));
+check("hairpin-grade turns speak hairpin", /grade = "hairpin"/.test(call) && /hairpin-left/.test(driver) && /hairpin-right/.test(driver));
+check("clipKey does not rewrite hairpin to hard", !/startsWith\("hairpin-"\)/.test(driver));
+check("nav clips cache-busted", /nav\/\$\{key\}\.mp3\?v=3/.test(engine));
 check("nav bus bypasses SFX compressor", /_navGain/.test(engine) && /NAV_GAIN/.test(engine));
 check("playClip does not dump the line", /export function playClip/.test(bank) && /paceCall/.test(engine));
 check("CC BY attribution for SentientMattress", /SentientMattress/.test(attr) && /833028/.test(attr));
@@ -70,6 +75,14 @@ for (const key of NAV_CLIPS) {
   const file = path.join(ROOT, "assets/sfx/nav", `${key}.mp3`);
   const st = fs.existsSync(file) ? fs.statSync(file) : null;
   check(`clip ${key}.mp3`, !!(st && st.size > 8000), st ? `${st.size} bytes` : "missing");
+}
+
+for (const grade of ["easy", "medium", "hard", "hairpin"]) {
+  const left = path.join(ROOT, "assets/sfx/nav", `${grade}-left.mp3`);
+  const right = path.join(ROOT, "assets/sfx/nav", `${grade}-right.mp3`);
+  const a = fs.readFileSync(left);
+  const b = fs.readFileSync(right);
+  check(`${grade} left ≠ right`, !a.equals(b));
 }
 
 function sampleAt(d) {
@@ -121,15 +134,54 @@ const pin = pickPaceNote((d) => {
   return { heading, jump: false, landmark: d >= 24 && d < 90 };
 }, 0, 80, 200);
 check(
-  "landmark calls hairpin, not surface",
-  !!(pin && pin.clip && pin.clip.startsWith("hairpin")),
+  "160° pin calls hairpin left, not hard or a surface line",
+  !!(pin && pin.clip === "hairpin-left"),
   pin ? pin.clip : "null"
 );
 
-check("game imports track.js?v=178", /track\.js\?v=177/.test(game));
-check("game imports engine.js?v=50", /engine\.js\?v=49/.test(game));
-check("game imports codriver.js?v=31", /codriver\.js\?v=30/.test(game));
-check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
+const hardBend = pickPaceNote((d) => {
+  const heading = d > 20 ? ((Math.min(d, 80) - 20) / 60) * (110 * Math.PI / 180) : 0;
+  return { heading, jump: false, landmark: false };
+}, 0, 80, 200);
+check(
+  "110° bend calls hard left",
+  !!(hardBend && hardBend.clip === "hard-left"),
+  hardBend ? hardBend.clip : "null"
+);
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "navigator is recorded VO on the next turn or jump"}`);
+const rad = (d) => (d * Math.PI) / 180;
+const grades = [
+  ["easy left", 30, "easy-left"],
+  ["easy right", -28, "easy-right"],
+  ["medium left", 70, "medium-left"],
+  ["medium right", -78, "medium-right"],
+  ["hard left", 110, "hard-left"],
+  ["hard right", -120, "hard-right"],
+  ["hairpin left", 148, "hairpin-left"],
+  ["hairpin right", -165, "hairpin-right"],
+];
+for (const [label, deg, clip] of grades) {
+  const note = makeTurnNote(0, rad(deg), Math.abs(deg));
+  check(`grade VO ${label}`, note.clip === clip, note.clip);
+}
+
+function sweeper(d) {
+  let heading = 0;
+  if (d > 40) heading -= Math.min(90, d - 40) * (Math.PI / 180);
+  return { heading, jump: false, landmark: false };
+}
+const sweepA = pickPaceNote(sweeper, 0, 190, 400);
+const sweepB = pickPaceNote(sweeper, 70, 190, 400);
+check(
+  "a long sweeper is one call, then silent while you are in it",
+  !!(sweepA && sweepA.kind === "turn" && sweepA.clip === "medium-right" && sweepB == null),
+  sweepA ? `${sweepA.id} then ${sweepB && sweepB.id}` : "null"
+);
+
+check("game imports track.js?v=196+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 196);
+check("game imports engine.js?v=55+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 55);
+check("game imports codriver.js?v=34+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 34);
+check("cache-bust chain", cacheOk && Number(gameV) >= 461, `main=${mainV} game=${gameV}`);
+
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "navigator says easy/medium/hard/hairpin left or right, or jump"}`);
 process.exit(fail ? 1 : 0);

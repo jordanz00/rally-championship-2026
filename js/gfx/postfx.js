@@ -1,18 +1,18 @@
 /**
- * Photoreal post stack — bloom, colour grade, vignette (60 Hz budget).
+ * Photoreal post stack — bloom, AO, colour grade, vignette (60 Hz budget).
  *
- * WHO THIS IS FOR: the race / title render path (Sprint 23–24).
- * WHAT IT DOES: scene → RT, cheap quarter-res bloom, then a single composite
- *   with grade + vignette. Quality auto-scales so control lag cannot return.
+ * WHO THIS IS FOR: the race / title render path (Sprint 23–24, cinema ground).
+ * WHAT IT DOES: scene → RT with depth, half-res SSAO, cheap quarter-res bloom,
+ *   then a single composite with grade + vignette. Quality auto-scales so
+ *   control lag cannot return.
  * HOW IT CONNECTS: RallyGame creates PhotoRealPost; _render / _onResize drive it.
  *
- * Sprint 24: FXAA/sharpen off by default (MSAA/canvas AA is enough), bloom at
- * 1/4 res with one separable pair, and a 'low' path that skips bloom entirely
- * when frame time climbs.
+ * Sprint 24: FXAA/sharpen off by default, bloom at 1/4 res with one separable
+ * pair, and a 'low' path that skips bloom and AO when frame time climbs.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=142";
+import { VISUAL } from "../config.js?v=148";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -47,11 +47,71 @@ void main() {
 }
 `;
 
+const AO_FRAG = /* glsl */ `
+precision mediump float;
+uniform sampler2D tDepth;
+uniform vec2 texel;
+uniform float cameraNear;
+uniform float cameraFar;
+uniform float proj00;
+uniform float proj11;
+uniform float aoRadius;
+uniform float aoBias;
+varying vec2 vUv;
+
+float perspectiveDepthToViewZ(float invClipZ, float near, float far) {
+  return (near * far) / ((far - near) * invClipZ - far);
+}
+
+vec3 viewPos(vec2 uv) {
+  float d = texture2D(tDepth, uv).x;
+  float viewZ = perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+  vec2 ndc = uv * 2.0 - 1.0;
+  float w = -viewZ;
+  return vec3(ndc.x * w / max(proj00, 1e-4), ndc.y * w / max(proj11, 1e-4), viewZ);
+}
+
+void main() {
+  float depth = texture2D(tDepth, vUv).x;
+  if (depth > 0.999) {
+    gl_FragColor = vec4(1.0);
+    return;
+  }
+  vec3 origin = viewPos(vUv);
+  float dist = max(8.0, -origin.z);
+  vec2 scale = (aoRadius / dist) * vec2(1.0, proj00 / max(proj11, 1e-4));
+  vec2 k[8];
+  k[0] = vec2( 1.0,  0.0);
+  k[1] = vec2(-1.0,  0.0);
+  k[2] = vec2( 0.0,  1.0);
+  k[3] = vec2( 0.0, -1.0);
+  k[4] = vec2( 0.707,  0.707);
+  k[5] = vec2(-0.707,  0.707);
+  k[6] = vec2( 0.707, -0.707);
+  k[7] = vec2(-0.707, -0.707);
+  float occ = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec2 uv = clamp(vUv + k[i] * scale, texel, 1.0 - texel);
+    float sampleD = texture2D(tDepth, uv).x;
+    if (sampleD > 0.999) continue;
+    vec3 other = viewPos(uv);
+    float dz = other.z - origin.z;
+    float range = 1.0 - smoothstep(0.0, aoRadius * 2.4, abs(dz));
+    occ += step(aoBias, dz) * range;
+  }
+  float ao = 1.0 - occ / 8.0;
+  ao = mix(1.0, ao, 0.92);
+  gl_FragColor = vec4(ao, ao, ao, 1.0);
+}
+`;
+
 const COMPOSITE_FRAG = /* glsl */ `
 precision mediump float;
 uniform sampler2D tDiffuse;
 uniform sampler2D tBloom;
+uniform sampler2D tAO;
 uniform float bloomStrength;
+uniform float aoStrength;
 uniform float vignette;
 uniform float contrast;
 uniform float saturation;
@@ -69,6 +129,10 @@ float hash(vec2 p) {
 
 void main() {
   vec3 color = texture2D(tDiffuse, vUv).rgb;
+  if (aoStrength > 0.001) {
+    float ao = texture2D(tAO, vUv).r;
+    color *= mix(1.0, ao, aoStrength);
+  }
   if (bloomStrength > 0.001) {
     color += texture2D(tBloom, vUv).rgb * bloomStrength;
   }
@@ -116,6 +180,8 @@ export class PhotoRealPost {
     /** @type {THREE.WebGLRenderTarget|null} */
     this.sceneRT = null;
     /** @type {THREE.WebGLRenderTarget|null} */
+    this.aoRT = null;
+    /** @type {THREE.WebGLRenderTarget|null} */
     this.brightRT = null;
     /** @type {THREE.WebGLRenderTarget|null} */
     this.blurA = null;
@@ -127,6 +193,10 @@ export class PhotoRealPost {
     this._quad.frustumCulled = false;
     this._scene = new THREE.Scene();
     this._scene.add(this._quad);
+
+    const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    white.needsUpdate = true;
+    this._whiteTex = white;
 
     this._brightMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -152,11 +222,30 @@ export class PhotoRealPost {
       depthWrite: false,
       toneMapped: false,
     });
+    this._aoMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDepth: { value: null },
+        texel: { value: new THREE.Vector2(1, 1) },
+        cameraNear: { value: 0.2 },
+        cameraFar: { value: 1400 },
+        proj00: { value: 1 },
+        proj11: { value: 1 },
+        aoRadius: { value: VISUAL.aoRadius ?? 1.35 },
+        aoBias: { value: 0.045 },
+      },
+      vertexShader: VERT,
+      fragmentShader: AO_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
     this._compMat = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: null },
         tBloom: { value: null },
+        tAO: { value: white },
         bloomStrength: { value: VISUAL.bloomStrength ?? 0.28 },
+        aoStrength: { value: VISUAL.aoStrength ?? 0 },
         vignette: { value: VISUAL.vignette ?? 0.85 },
         contrast: { value: VISUAL.gradeContrast ?? 1.1 },
         saturation: { value: VISUAL.gradeSaturation ?? 1.06 },
@@ -192,6 +281,7 @@ export class PhotoRealPost {
     this.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
     const u = this._compMat.uniforms;
     u.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
+    u.aoStrength.value = VISUAL.aoStrength ?? 0.55;
     u.vignette.value = VISUAL.vignette ?? 0.85;
     u.contrast.value = VISUAL.gradeContrast ?? 1.1;
     u.saturation.value = VISUAL.gradeSaturation ?? 1.06;
@@ -199,6 +289,7 @@ export class PhotoRealPost {
     u.grain.value = VISUAL.filmGrain ?? 0;
     u.highlightRolloff.value = VISUAL.highlightRolloff ?? 0.1;
     this._brightMat.uniforms.threshold.value = VISUAL.bloomThreshold ?? 0.72;
+    this._aoMat.uniforms.aoRadius.value = VISUAL.aoRadius ?? 1.35;
   }
 
   /**
@@ -213,6 +304,9 @@ export class PhotoRealPost {
     this._w = w;
     this._h = h;
     this._disposeTargets();
+    const depth = new THREE.DepthTexture(w, h);
+    depth.format = THREE.DepthFormat;
+    depth.type = THREE.UnsignedIntType;
     const opts = {
       type: THREE.UnsignedByteType,
       format: THREE.RGBAFormat,
@@ -220,12 +314,22 @@ export class PhotoRealPost {
       depthBuffer: true,
       stencilBuffer: false,
       samples: 0,
+      depthTexture: depth,
     };
     this.sceneRT = new THREE.WebGLRenderTarget(w, h, opts);
-    // Quarter-res bloom — the big Sprint 24 win vs half-res ×4 blurs.
+    const aw = Math.max(1, w >> 1);
+    const ah = Math.max(1, h >> 1);
+    const aoOpts = {
+      type: THREE.UnsignedByteType,
+      format: THREE.RGBAFormat,
+      colorSpace: THREE.NoColorSpace,
+      depthBuffer: false,
+      stencilBuffer: false,
+    };
+    this.aoRT = new THREE.WebGLRenderTarget(aw, ah, aoOpts);
     const bw = Math.max(1, w >> 2);
     const bh = Math.max(1, h >> 2);
-    const bloomOpts = { ...opts, depthBuffer: false };
+    const bloomOpts = { ...aoOpts };
     this.brightRT = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurA = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurB = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
@@ -246,15 +350,29 @@ export class PhotoRealPost {
     const prevAuto = r.autoClear;
     r.autoClear = true;
     const q = this.quality;
+    const titlePad = !!this._titleShowroom;
+    const useAo =
+      !titlePad &&
+      q !== "low" &&
+      (VISUAL.aoStrength ?? 0) > 0.001 &&
+      this.aoRT &&
+      this.sceneRT.depthTexture;
 
-    // Low: grade/vignette only — one RT + one blit. Keeps feel when GPU is hot.
+    r.setRenderTarget(this.sceneRT);
+    r.clear();
+    r.render(scene, camera);
+
+    if (useAo) {
+      this._prepAo(camera);
+      this._blitDepth(this.aoRT, this._aoMat);
+    }
+
     if (q === "low") {
-      r.setRenderTarget(this.sceneRT);
-      r.clear();
-      r.render(scene, camera);
       this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
       this._compMat.uniforms.tBloom.value = this.sceneRT.texture;
+      this._compMat.uniforms.tAO.value = this._whiteTex;
       this._compMat.uniforms.bloomStrength.value = 0;
+      this._compMat.uniforms.aoStrength.value = 0;
       this._compMat.uniforms.grain.value = 0;
       this._compMat.uniforms.time.value = performance.now() * 0.001;
       this._quad.material = this._compMat;
@@ -262,29 +380,32 @@ export class PhotoRealPost {
       r.clear();
       r.render(this._scene, this._cam);
       this._compMat.uniforms.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
+      this._compMat.uniforms.aoStrength.value = VISUAL.aoStrength ?? 0.55;
       r.autoClear = prevAuto;
       return;
     }
-
-    r.setRenderTarget(this.sceneRT);
-    r.clear();
-    r.render(scene, camera);
 
     this._blit(this.sceneRT.texture, this.brightRT, this._brightMat);
 
     const texel = this._blurMat.uniforms.texel;
     texel.value.set(1 / this.blurA.width, 1 / this.blurA.height);
-    // One separable pair (was four blits) — enough for a soft sun bloom.
     this._blurMat.uniforms.direction.value.set(1, 0);
     this._blit(this.brightRT.texture, this.blurA, this._blurMat);
     this._blurMat.uniforms.direction.value.set(0, 1);
     this._blit(this.blurA.texture, this.blurB, this._blurMat);
 
-    const bloomAmt = (VISUAL.bloomStrength ?? 0.28) * (q === "high" ? 1 : 0.85);
+    const bloomAmt = titlePad
+      ? 0.18
+      : (VISUAL.bloomStrength ?? 0.28) * (q === "high" ? 1 : 0.85);
     this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
     this._compMat.uniforms.tBloom.value = this.blurB.texture;
+    this._compMat.uniforms.tAO.value = useAo ? this.aoRT.texture : this._whiteTex;
     this._compMat.uniforms.bloomStrength.value = bloomAmt;
-    this._compMat.uniforms.grain.value = q === "low" ? 0 : VISUAL.filmGrain ?? 0;
+    this._compMat.uniforms.aoStrength.value = useAo ? VISUAL.aoStrength ?? 0.55 : 0;
+    this._compMat.uniforms.grain.value = titlePad ? 0 : VISUAL.filmGrain ?? 0;
+    if (titlePad && this._compMat.uniforms.vignette) {
+      this._compMat.uniforms.vignette.value = 0.48;
+    }
     this._compMat.uniforms.time.value = performance.now() * 0.001;
     this._quad.material = this._compMat;
     r.setRenderTarget(null);
@@ -292,6 +413,20 @@ export class PhotoRealPost {
     r.render(this._scene, this._cam);
 
     r.autoClear = prevAuto;
+  }
+
+  /**
+   * @param {THREE.Camera} camera
+   */
+  _prepAo(camera) {
+    const u = this._aoMat.uniforms;
+    u.tDepth.value = this.sceneRT.depthTexture;
+    u.texel.value.set(1 / this.aoRT.width, 1 / this.aoRT.height);
+    u.cameraNear.value = camera.near;
+    u.cameraFar.value = camera.far;
+    const e = camera.projectionMatrix.elements;
+    u.proj00.value = e[0];
+    u.proj11.value = e[5];
   }
 
   /**
@@ -307,19 +442,33 @@ export class PhotoRealPost {
     this.renderer.render(this._scene, this._cam);
   }
 
+  /**
+   * @param {THREE.WebGLRenderTarget} target
+   * @param {THREE.ShaderMaterial} mat
+   */
+  _blitDepth(target, mat) {
+    this._quad.material = mat;
+    this.renderer.setRenderTarget(target);
+    this.renderer.clear();
+    this.renderer.render(this._scene, this._cam);
+  }
+
   _disposeTargets() {
     this.sceneRT?.dispose();
+    this.aoRT?.dispose();
     this.brightRT?.dispose();
     this.blurA?.dispose();
     this.blurB?.dispose();
-    this.sceneRT = this.brightRT = this.blurA = this.blurB = null;
+    this.sceneRT = this.aoRT = this.brightRT = this.blurA = this.blurB = null;
   }
 
   dispose() {
     this._disposeTargets();
     this._brightMat.dispose();
     this._blurMat.dispose();
+    this._aoMat.dispose();
     this._compMat.dispose();
+    this._whiteTex.dispose();
     this._quad.geometry.dispose();
   }
 }

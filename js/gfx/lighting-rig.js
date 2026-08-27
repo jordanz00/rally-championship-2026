@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=138";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=148";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -119,7 +119,8 @@ export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
 }
 
 /**
- * Tight ortho shadow frustum — higher texel density on the driving patch.
+ * Tight ortho shadow frustum — higher texel density on the driving patch
+ * while still covering chase-cam mid-ground (GFX.shadowExtentRace).
  *
  * @param {THREE.DirectionalLight} sun
  * @param {number} [extent]

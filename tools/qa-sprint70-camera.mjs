@@ -92,8 +92,18 @@ check(
     /this\.renderer\.compile\(this\.scene, this\._mirrorCam\)/.test(game)
 );
 check(
+  "drift chase stays readable (yaw→travel, capped outside)",
+  /slideYawBlend:\s*0\.6/.test(config) &&
+    /yawStiffnessSlide:\s*1[456]/.test(config) &&
+    /slideCamOut:\s*0\.1[0-9]/.test(config) &&
+    /slideLookAhead:\s*[3-5]\./.test(config) &&
+    /slideKickMax:\s*0\.0[3-5]/.test(config) &&
+    /slideYawBlend/.test(game) &&
+    /slideLookAhead/.test(game)
+);
+check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 378 && /celica\.js\?v=118/.test(game) && /config\.js\?v=132/.test(game),
+  cacheOk && Number(gameV) >= 463 && /config\.js\?v=147/.test(game),
   `main=${mainV} game=${gameV}`
 );
 

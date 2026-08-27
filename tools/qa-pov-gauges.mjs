@@ -128,8 +128,16 @@ async function live() {
     await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "game" });
     await waitFor(
       cdp,
-      `const m = window.game && window.game.playerMesh; return m && m.userData && m.userData.speedNeedle ? 1 : null;`,
-      { timeout: 45000, label: "player car with POV needles" }
+      `
+        const g = window.game;
+        if (!g) return null;
+        try {
+          if (typeof g._promotePlayerCar === "function") g._promotePlayerCar();
+        } catch (err) { /* GLB not ready yet */ }
+        const m = g.playerMesh;
+        return m && m.userData && m.userData.speedNeedle ? 1 : null;
+      `,
+      { timeout: 60000, label: "player car with POV needles" }
     );
     const sample = await evaluate(cdp, `
       const START = Math.PI * 0.75;
