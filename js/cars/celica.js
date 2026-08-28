@@ -1628,13 +1628,20 @@ const ACKERMANN = 0.12;
  * @param {number[]} spinArr
  * @param {number} steer
  * @param {number} [chassisRoll=0] vehicle.roll, radians
+ * @param {number[]} [wheelY] per-wheel suspension offset (metres, + = hub down)
  */
-export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0) {
+export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   for (let i = 0; i < wheels.length; i++) {
     const w = wheels[i];
     if (!w || !w.quaternion) continue;
     const data = w.userData || {};
+    if (data.restPosY == null && w.position) data.restPosY = w.position.y;
+    if (wheelY && wheelY[i] != null && data.restPosY != null) {
+      w.position.y = data.restPosY - wheelY[i];
+    } else if (data.restPosY != null) {
+      w.position.y = data.restPosY;
+    }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;
     let steerY = 0;

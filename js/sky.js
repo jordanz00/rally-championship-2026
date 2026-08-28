@@ -45,7 +45,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=148";
+import { VISUAL } from "./config.js?v=153";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
@@ -54,12 +54,12 @@ export const CLOUD_BUDGET = {
   technique: "planet-shell-raymarch",
   maxViewSteps: 16,
   cinemaViewSteps: 16,
-  mediumViewSteps: 10,
+  mediumViewSteps: 12,
   lowViewSteps: 6,
   minViewSteps: 4,
   maxLightSteps: 2,
   notes:
-    "16x2 high / 10x2 medium / 6x1 low / 4x1 min. Stable step centres (no temporal dither). Chord capped at CLOUD_MAX_SPAN so grazing rays cannot saturate. Early-out below the horizon and when transmittance < 0.02.",
+    "16x2 high / 12x2 medium / 6x1 low / 4x1 min. Stable step centres (no temporal dither). Chord capped at CLOUD_MAX_SPAN so grazing rays cannot saturate. Early-out below the horizon and when transmittance < 0.02.",
 };
 
 /**
@@ -74,7 +74,7 @@ export const CLOUD_BUDGET = {
  * `cover` is a floor on the sky fraction; LIGHTING.cloudCover wins when higher.
  */
 export const STAGE_CLOUD_PALETTES = {
-  desert: { lit: 0xfff6ec, dark: 0x96a5ba, absorb: 3.1, silver: 0.85, cover: 0.2 },
+  desert: { lit: 0xfff8f0, dark: 0x8ea0b8, absorb: 2.85, silver: 0.88, cover: 0.18 },
   forest: { lit: 0xf9fcff, dark: 0x74849c, absorb: 3.4, silver: 0.74, cover: 0.28 },
   mountain: { lit: 0xf8fbff, dark: 0x6f849e, absorb: 3.0, silver: 0.9, cover: 0.22 },
   lakeside: { lit: 0xf4fafd, dark: 0x76889c, absorb: 3.3, silver: 0.78, cover: 0.26 },

@@ -8,7 +8,8 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=148";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=153";
+import { roadMicroHeight } from "./road-micro.js?v=1";
 import {
   shadowGeometry,
   shadowMaterial,
@@ -28,8 +29,8 @@ import {
 } from "../gfx/pbr.js?v=27";
 import { paintedTexture } from "../gfx/saturn.js?v=1";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=10";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, FOREST_TREE_KINDS, FOREST_CARD_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=23";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=13";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, FOREST_TREE_KINDS, FOREST_CARD_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=24";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=14";
 import { pickPaceNote } from "./pace-call.mjs?v=3";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
@@ -335,6 +336,13 @@ export class Track {
         const land = piece.land || 24;
         const dropFast = Math.min(11, Math.max(8, gap * 0.4));
         const flyover = Math.max(10, gap - dropFast + 4);
+        // Authored throw profile — Safari vs teaching hop must not share one arc.
+        const jumpThrow =
+          Math.max(0.45, rise / 3.2) * Math.max(0.55, gap / 18) * Math.max(0.7, drop / 2.4);
+        const jumpLip = Math.max(
+          0.4,
+          (rise / Math.max(ramp, 8)) * (8 / Math.max(lip, 4)) * (1 + drop * 0.04)
+        );
         const easeInSine = (t) => 1 - Math.cos((t * Math.PI) / 2);
         const pushPhase = (len, dyTotal, kind, ease) => {
           const step = kind === "ramp" ? 1.05 : 1.35;
@@ -356,6 +364,9 @@ export class Track {
               tunnel: false,
               jump: air || kind === "land",
               jumpKind: kind,
+              jumpThrow,
+              jumpLip,
+              jumpDrop: drop,
             });
           }
         };
@@ -2172,9 +2183,14 @@ export class Track {
 
     const edge = (p) => {
       const half = p.width * 0.5;
-      const y = p.y + ROAD_DECK;
+      const jk = p.jumpKind || null;
+      const microL = roadMicroHeight(p.dist, half, p.surface, jk, !!p.tunnel);
+      const microR = roadMicroHeight(p.dist, -half, p.surface, jk, !!p.tunnel);
+      const yL = p.y + ROAD_DECK + microL;
+      const yR = p.y + ROAD_DECK + microR;
       return {
-        y,
+        yL,
+        yR,
         lx: p.x + p.nx * half,
         lz: p.z + p.nz * half,
         rx: p.x - p.nx * half,
@@ -2211,10 +2227,10 @@ export class Track {
       const v1 = q.dist * vScale;
       const tintP = p.tunnel ? 0x7a6e62 : roadTintHex(blendP.from, blendP.to, blendP.mix);
       const tintQ = q.tunnel ? 0x7a6e62 : roadTintHex(blendQ.from, blendQ.to, blendQ.mix);
-      vert(rb, e.lx, e.y, e.lz, tintP, 0, v0);
-      vert(rb, e.rx, e.y, e.rz, tintP, 1, v0);
-      vert(rb, f.lx, f.y, f.lz, tintQ, 0, v1);
-      vert(rb, f.rx, f.y, f.rz, tintQ, 1, v1);
+      vert(rb, e.lx, e.yL, e.lz, tintP, 0, v0);
+      vert(rb, e.rx, e.yR, e.rz, tintP, 1, v0);
+      vert(rb, f.lx, f.yL, f.lz, tintQ, 0, v1);
+      vert(rb, f.rx, f.yR, f.rz, tintQ, 1, v1);
       quad(rb);
 
       // Skirt: the strip of loose ground that tucks the ribbon into the land
@@ -2228,10 +2244,10 @@ export class Track {
       // underside (backfaces) the moment the camera sits a few centimetres low.
       if (inUnderpass) {
         const yDown = 0.12;
-        vert(rb, e.rx, e.y - yDown, e.rz, tintP, 1, v0);
-        vert(rb, e.lx, e.y - yDown, e.lz, tintP, 0, v0);
-        vert(rb, f.rx, f.y - yDown, f.rz, tintQ, 1, v1);
-        vert(rb, f.lx, f.y - yDown, f.lz, tintQ, 0, v1);
+        vert(rb, e.rx, e.yR - yDown, e.rz, tintP, 1, v0);
+        vert(rb, e.lx, e.yL - yDown, e.lz, tintP, 0, v0);
+        vert(rb, f.rx, f.yR - yDown, f.rz, tintQ, 1, v1);
+        vert(rb, f.lx, f.yL - yDown, f.lz, tintQ, 0, v1);
         quad(rb);
       }
       const atLandmark = !!(p.landmark || q.landmark);
@@ -2563,6 +2579,7 @@ export class Track {
     const desertSpires = [];
     const bushes = [];
     const cacti = [];
+    const cactiShort = [];
     const pine = [];
     const cedar = [];
     const oak = [];
@@ -2596,7 +2613,7 @@ export class Track {
       if (p.jump || p.jumpWash) continue;
       const chunk = this._chunkOfDist(p.dist);
       for (const side of [-1, 1]) {
-        if (def.scenery !== "forest" && def.scenery !== "lakeside" && rng() > 0.62) continue;
+        if (def.scenery !== "forest" && def.scenery !== "lakeside" && rng() > 0.58) continue;
         if (forest && rng() > 0.94) continue;
         const spread = def.scenery === "desert" ? 18 : def.scenery === "forest" ? 24 : 12;
         // Sprint 26b: stages 2–4 keep a wide clear shoulder — 5.2 m used to put
@@ -2620,9 +2637,9 @@ export class Track {
 
         if (def.scenery === "desert") {
           const pick = rng();
-          if (pick < 0.4) {
+          const cactusShort = useGlb && !!propGeometry("cactus_short");
+          if (pick < 0.34) {
             if (!this._driveClear(px, pz, 1.4)) continue;
-            // GLB cactus is footed at y=0; procedural stem was centred (+1.55).
             cacti.push({
               c: chunk,
               x: px,
@@ -2632,7 +2649,18 @@ export class Track {
               ry: rng() * 6,
             });
             this._bumpNearRoad(px, pz, 0.9);
-          } else if (pick < 0.72) {
+          } else if (pick < 0.48 && cactusShort) {
+            if (!this._driveClear(px, pz, 1.0)) continue;
+            cactiShort.push({
+              c: chunk,
+              x: px,
+              y: py,
+              z: pz,
+              s: 0.65 + rng() * 0.55,
+              ry: rng() * 6,
+            });
+            this._bumpNearRoad(px, pz, 0.65);
+          } else if (pick < 0.74) {
             const s = 0.9 + rng() * 1.8;
             if (!this._driveClear(px, pz, Math.max(1.6, s * 0.75))) continue;
             const half = p.width * 0.5;
@@ -2945,6 +2973,10 @@ export class Track {
       this._addInstances(cactusStem, propNatureMaterial("cactus_tall"), cacti, { castShadow: true });
       this._bumpPoses(cacti, 0.45);
     }
+    if (cactiShort.length) {
+      this._addHdNature("cactus_short", cactiShort, { castShadow: true });
+      this._bumpPoses(cactiShort, 0.38);
+    }
 
     // Barriers: visual posts only. Hard colliders here used to build a sliding
     // wall along the verge and blocked legitimate off-road runoff. Sit past
@@ -2984,6 +3016,8 @@ export class Track {
       this._addSafariHerd(rng);
       this._addDesertDriftLandmarks();
       this._addDesertTumbleweeds(rng);
+      this._addDesertRoadsideGallery(rng);
+      this._addDesertHorizonAcacia(rng);
     }
     if (def.scenery === "mountain") {
       this._addVillage(rng);
@@ -3051,6 +3085,7 @@ export class Track {
     for (let i = 0; i < kept.length; i++) list.push(kept[i]);
     this.corridorViolations = dropped;
     this._assertDriveCorridor(dropped);
+    this._scrubCollidersOnRibbonSamples();
   }
 
   /**
@@ -3107,6 +3142,119 @@ export class Track {
   }
 
   /**
+   * Interpolate ribbon pose at an along-track distance (for corridor sampling).
+   * @param {number} dist
+   * @returns {{x:number,z:number,y:number,heading:number,width:number,dist:number}|null}
+   */
+  _ribbonPoseAt(dist) {
+    const pts = this.points;
+    if (!pts.length) return null;
+    if (dist <= pts[0].dist) return pts[0];
+    const last = pts[pts.length - 1];
+    if (dist >= last.dist) return last;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (dist < a.dist || dist > b.dist) continue;
+      const t = (dist - a.dist) / Math.max(1e-6, b.dist - a.dist);
+      let dh = b.heading - a.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      return {
+        x: a.x + (b.x - a.x) * t,
+        z: a.z + (b.z - a.z) * t,
+        y: a.y + (b.y - a.y) * t,
+        heading: a.heading + dh * t,
+        width: a.width + (b.width - a.width) * t,
+        dist,
+      };
+    }
+    return last;
+  }
+
+  /**
+   * True when a solid would block the car OBB centred on a ribbon sample.
+   * Mirrors collide.js wall/sphere rules so scrub matches runtime authority.
+   * @param {object} c collider
+   * @param {number} px
+   * @param {number} pz
+   * @param {number} heading
+   */
+  _colliderBlocksSample(c, px, pz, heading) {
+    const fx = Math.sin(heading);
+    const fz = Math.cos(heading);
+    const rx = fz;
+    const rz = -fx;
+    const HL = 2.35;
+    const HW = 0.95;
+    const WB = 2.4;
+    if (c.kind === "wall") {
+      const nx = c.nx;
+      const nz = c.nz;
+      const dx = px - c.x;
+      const dz = pz - c.z;
+      const along = dx * c.tx + dz * c.tz;
+      if (along > c.halfLen + HL || along < -c.halfLen - HL) return false;
+      const ext =
+        HL * Math.abs(fx * nx + fz * nz) + HW * Math.abs(rx * nx + rz * nz);
+      const dist = dx * nx + dz * nz;
+      const overlap = ext - dist;
+      if (overlap <= 0) return false;
+      if (dist < -((c.depth || WB) + ext)) return false;
+      return true;
+    }
+    const dx = px - c.x;
+    const dz = pz - c.z;
+    const r = c.r || 0.5;
+    const ext =
+      HL * Math.abs(fx) + HW * Math.abs(rx) + r;
+    return Math.hypot(dx, dz) < ext + 0.15;
+  }
+
+  /**
+   * Drop wall/sphere colliders that block the painted lane on the post-tunnel
+   * mud hairpin (~1737 m). Point tests miss props whose origin sits on a
+   * folded arm while the mesh spans the inner apex of the -62° corner.
+   */
+  _scrubCollidersOnRibbonSamples() {
+    const runs = this._tunnels;
+    if (!runs || !runs.length) return;
+    const tunEnd = runs[0].endDist;
+    const bands = [
+      { dist0: tunEnd + 130, dist1: tunEnd + 200, step: 1.2 },
+      { dist0: tunEnd - 36, dist1: tunEnd + 48, step: 2.0 },
+    ];
+    const list = this.colliders;
+    if (!list || !list.length) return;
+    const drop = new Set();
+    for (let b = 0; b < bands.length; b++) {
+      const band = bands[b];
+      for (let d = band.dist0; d <= band.dist1; d += band.step) {
+        const pose = this._ribbonPoseAt(d);
+        if (!pose) continue;
+        for (let i = 0; i < list.length; i++) {
+          if (drop.has(i)) continue;
+          const c = list[i];
+          if (Math.hypot(c.x - pose.x, c.z - pose.z) > 42) continue;
+          if (this._colliderBlocksSample(c, pose.x, pose.z, pose.heading)) {
+            drop.add(i);
+          }
+        }
+      }
+    }
+    if (!drop.size) return;
+    const kept = [];
+    for (let i = 0; i < list.length; i++) {
+      if (!drop.has(i)) kept.push(list[i]);
+    }
+    list.length = 0;
+    for (let i = 0; i < kept.length; i++) list.push(kept[i]);
+    if (typeof console !== "undefined" && console.info) {
+      console.info(`[corridor] ribbon-sample scrub dropped ${drop.size} collider(s) on mud band`);
+    }
+  }
+
+  /**
    * Remove or tuck visual env geometry that still invades the drive corridor.
    * Collider scrub alone left meshes on the paint — the car drove through sand
    * banks and bush canopies with no matching solid.
@@ -3159,6 +3307,7 @@ export class Track {
     }
     this._scrubInstancedCorridor();
     this._scrubBridgeGroups();
+    this._scrubRoadwayColliders();
   }
 
   /**
@@ -3226,9 +3375,9 @@ export class Track {
     }
     if (!samples.length) return;
     const farTrees = scenery === "forest" ? 420 : scenery === "lakeside" ? 220 : scenery === "mountain" ? 140 : 0;
-    const farRocks = scenery === "desert" ? 110 : scenery === "mountain" ? 140 : 36;
-    const farCacti = scenery === "desert" ? 80 : 0;
-    const farBush = scenery === "desert" ? 60 : scenery === "forest" ? 85 : 48;
+    const farRocks = scenery === "desert" ? 145 : scenery === "mountain" ? 140 : 36;
+    const farCacti = scenery === "desert" ? 105 : 0;
+    const farBush = scenery === "desert" ? 82 : scenery === "forest" ? 85 : 48;
 
     const scatter = (count, minOff, maxOff, push) => {
       for (let n = 0; n < count; n++) {
@@ -3647,11 +3796,7 @@ export class Track {
    * merged into one geometry so a whole herd is two draw calls.
    */
   _addSafariHerd(rng) {
-    const hide = new THREE.MeshLambertMaterial({ color: 0x4a4238, flatShading: true });
-    const stripe = new THREE.MeshLambertMaterial({ color: 0xe4dccc, flatShading: true });
-    const tan = new THREE.MeshLambertMaterial({ color: 0xc4a060, flatShading: true });
     const kinds = ["animal-zebra", "animal-elephant", "animal-gazelle"];
-    const mats = [stripe, hide, tan];
     /** @type {Array<Array<object>>} one bag per animal kind */
     const bags = [[], [], []];
     const n = Math.min(30, Math.max(10, (this.points.length / 46) | 0));
@@ -3682,10 +3827,123 @@ export class Track {
       }
     }
     for (let i = 0; i < 3; i++) {
-      const geo = this._propGeo(kinds[i], i === 0 ? animalGeometry() : null);
-      if (!geo || !bags[i].length) continue;
-      this._addInstances(geo, mats[i], bags[i], { castShadow: true });
+      if (bags[i].length) this._addHdNature(kinds[i], bags[i], { castShadow: true });
     }
+  }
+
+  /**
+   * Desert rally gallery — tape barriers, posts, and tire stacks at landmarks
+   * so the stage reads as a WRC spectator event, not an empty dune field.
+   * @param {() => number} rng
+   */
+  _addDesertRoadsideGallery(rng) {
+    const postMat = worldPropMaterial({ color: 0x707880, roughness: 0.72, metalness: 0.18 });
+    const tapeRed = worldPropMaterial({ color: 0xc83028, roughness: 0.78, metalness: 0.02 });
+    const tapeWhite = worldPropMaterial({ color: 0xf0ece4, roughness: 0.76, metalness: 0.02 });
+    const tireMat = worldPropMaterial({ color: 0x181818, roughness: 0.94, metalness: 0.04 });
+    const postGeo = new THREE.CylinderGeometry(0.06, 0.08, 1.15, 6);
+    const tapeGeo = new THREE.BoxGeometry(0.14, 0.22, 1.0);
+    const tireGeo = new THREE.TorusGeometry(0.42, 0.14, 8, 16);
+    const posts = [];
+    const redTape = [];
+    const whiteTape = [];
+    const tires = [];
+
+    for (let i = 6; i < this.points.length - 4; i += 1) {
+      const p = this.points[i];
+      if (p.tunnel || p.underpass) continue;
+      const landmark = !!p.landmark;
+      const gallery = landmark || i % 28 === 0;
+      if (!gallery) continue;
+      if (rng() > (landmark ? 0.92 : 0.55)) continue;
+
+      const prev = this.points[Math.max(0, i - 4)];
+      let dh = p.heading - prev.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      const outside = dh > 0 ? -1 : 1;
+      const chunk = this._chunkOfDist(p.dist);
+      const span = landmark ? 7 : 3;
+      const step = landmark ? 1.05 : 1.35;
+
+      for (let k = -span; k <= span; k++) {
+        const j = Math.max(0, Math.min(this.points.length - 1, i + k));
+        const q = this.points[j];
+        const off = q.width * 0.5 + ROAD_VERGE + 2.4 + Math.abs(k) * 0.08;
+        const bx = q.x + q.nx * outside * off;
+        const bz = q.z + q.nz * outside * off;
+        if (!this._ribbonClear(bx, bz, 0.85)) continue;
+        const gy = this._groundHeight(bx, bz, "desert");
+        posts.push({ c: chunk, x: bx, y: gy + 0.58, z: bz, s: 1, ry: q.heading + outside * 0.08 });
+        const tapeY = gy + 0.82;
+        const alt = Math.floor((k + span) / step) % 2 === 0;
+        if (alt) {
+          redTape.push({ c: chunk, x: bx, y: tapeY, z: bz, sx: 1, sy: 1, sz: 1, ry: q.heading + outside * 0.08 });
+        } else {
+          whiteTape.push({ c: chunk, x: bx, y: tapeY, z: bz, sx: 1, sy: 1, sz: 1, ry: q.heading + outside * 0.08 });
+        }
+      }
+
+      if (landmark) {
+        const q = p;
+        const off = q.width * 0.5 + ROAD_VERGE + 3.2;
+        const bx = q.x + q.nx * outside * off;
+        const bz = q.z + q.nz * outside * off;
+        const gy = this._groundHeight(bx, bz, "desert");
+        for (let t = 0; t < 4; t++) {
+          tires.push({
+            c: chunk,
+            x: bx + q.nx * outside * (t * 0.35 - 0.5),
+            y: gy + 0.14 + t * 0.28,
+            z: bz + q.nz * outside * (t * 0.35 - 0.5),
+            s: 0.95,
+            ry: q.heading + (rng() - 0.5) * 0.2,
+            rx: Math.PI * 0.5,
+          });
+        }
+      }
+    }
+
+    if (posts.length) this._addInstances(postGeo, postMat, posts, { castShadow: true, cameraFade: true });
+    if (redTape.length) this._addInstances(tapeGeo, tapeRed, redTape, { cameraFade: true });
+    if (whiteTape.length) this._addInstances(tapeGeo, tapeWhite, whiteTape, { cameraFade: true });
+    if (tires.length) this._addInstances(tireGeo, tireMat, tires, { castShadow: true, cameraFade: true });
+  }
+
+  /**
+   * Flat-topped acacia silhouettes on the desert horizon — depth without forest pack cost.
+   * @param {() => number} rng
+   */
+  _addDesertHorizonAcacia(rng) {
+    if ((VISUAL.tier || 0) < 4) return;
+    const geo = crownGeometry();
+    const mat = foliageMaterial("acacia");
+    const trees = [];
+    const n = 55 + ((rng() * 40) | 0);
+    for (let k = 0; k < n; k++) {
+      const p = this.points[(4 + k * 17) % this.points.length];
+      if (!p || p.tunnel) continue;
+      const side = k % 2 === 0 ? 1 : -1;
+      const off = 95 + rng() * 130;
+      const along = (rng() - 0.5) * 28;
+      const fx = Math.sin(p.heading);
+      const fz = Math.cos(p.heading);
+      const x = p.x + p.nx * side * off + fx * along;
+      const z = p.z + p.nz * side * off + fz * along;
+      if (!this._driveClear(x, z, 4.5)) continue;
+      const y = this._groundHeight(x, z, "desert");
+      trees.push({
+        c: this._chunkOfDist(p.dist),
+        x,
+        y: y + 3.2,
+        z,
+        sx: 5.5 + rng() * 4.5,
+        sy: 3.2 + rng() * 2.8,
+        sz: 5.5 + rng() * 4.5,
+        ry: rng() * 6,
+      });
+    }
+    if (trees.length) this._addInstances(geo, mat, trees, { receiveShadow: false, cameraFade: true });
   }
 
   /**
@@ -3956,13 +4214,19 @@ export class Track {
         });
       }
       // Post-tunnel mud band — coarse land tris folded berms through the tight
-      // -62° corner (~1747 m) after the bore exit.
+      // -62° corner (~1737 m) after the bore exit.
       if (this._tunnels && this._tunnels.length) {
         const tunEnd = this._tunnels[0].endDist;
         this._landmarkFlats.push({
-          dist0: tunEnd - 24,
-          dist1: tunEnd + 300,
-          lateral: 64,
+          dist0: tunEnd - 48,
+          dist1: tunEnd + 320,
+          lateral: 72,
+        });
+        // Inner-apex wash on the -62° mud hairpin (1720–1764 m).
+        this._landmarkFlats.push({
+          dist0: tunEnd + 130,
+          dist1: tunEnd + 200,
+          lateral: 80,
         });
       }
     }
@@ -4571,7 +4835,7 @@ export class Track {
       if (this._inUnderpassCorridor(p.x, p.z)) continue;
       const { outside, turn } = this._curveOutsideAt(i, 7);
       if (turn < GENTLE_LO || turn > GENTLE_HI) continue;
-      if (rng() > 0.58) continue;
+      if (rng() > 0.48) continue;
       // Beyond desert trench bed so dunes/scrub never sit in the cut.
       const trenchOff = Math.max(this._trenchWidth(p.width), p.width * 0.5 + 16);
       const off = trenchOff + 1.5 + rng() * 12;
@@ -6418,6 +6682,7 @@ export class Track {
       }
     });
     this._scrubTunnelPortalDrive(g, p);
+    this._scrubPortalEmbankmentCorridor(g);
     this.group.add(g);
   }
 
@@ -6450,6 +6715,32 @@ export class Track {
       if (Math.abs(cx) - halfW < clearHalf && top > -0.35) {
         doomed.push(obj);
       }
+    });
+    for (let i = 0; i < doomed.length; i++) {
+      const obj = doomed[i];
+      if (obj.parent) obj.parent.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+    }
+  }
+
+  /**
+   * World-space corridor scrub for tunnel portal wings — local AABB misses
+   * embankment blocks that still span the exit apron on the mud approach.
+   * @param {THREE.Group} g
+   */
+  _scrubPortalEmbankmentCorridor(g) {
+    g.updateMatrixWorld(true);
+    const doomed = [];
+    g.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      child.updateWorldMatrix(true, false);
+      const box = new THREE.Box3().setFromObject(child);
+      const cx = (box.min.x + box.max.x) * 0.5;
+      const cz = (box.min.z + box.max.z) * 0.5;
+      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5;
+      const midY = (box.min.y + box.max.y) * 0.5;
+      const halfH = (box.max.y - box.min.y) * 0.5;
+      if (this._laneKeepout(cx, cz, r, midY, halfH)) doomed.push(child);
     });
     for (let i = 0; i < doomed.length; i++) {
       const obj = doomed[i];
@@ -6648,11 +6939,11 @@ export class Track {
 
     const desert = def.scenery === "desert";
     const forest = def.scenery === "forest";
-    const step = desert ? 14 : forest ? 34 : 12;
-    const chance = desert ? 0.48 : forest ? 0.22 : 0.44;
-    const standOff = ROAD_VERGE + 2.6;
-    /** Instanced bipeds — body + 2 arm layers each; keep under ~280 draw calls. */
-    const maxPoses = desert ? 96 : forest ? 40 : 88;
+    const step = desert ? 10 : forest ? 34 : 12;
+    const chance = desert ? 0.58 : forest ? 0.22 : 0.44;
+    const standOff = ROAD_VERGE + 2.4;
+    /** Instanced bipeds — body + 2 arm layers each; keep under draw budget. */
+    const maxPoses = desert ? 128 : forest ? 40 : 88;
     const poses = [];
     let kindIdx = 0;
     for (let i = 8; i < this.points.length && poses.length < maxPoses; i++) {
@@ -6673,27 +6964,31 @@ export class Track {
         while (dh < -Math.PI) dh += Math.PI * 2;
         side = dh > 0 ? 1 : -1;
       }
-      const n = landmark ? 2 + ((rng() * 2) | 0) : 1 + ((rng() * 3) | 0);
+      const n = landmark ? 3 + ((rng() * 5) | 0) : 1 + ((rng() * 3) | 0);
       const chunk = Math.min(this._chunkCount - 1, Math.max(0, Math.floor(p.dist / CHUNK_LEN)));
       const fx = Math.sin(p.heading);
       const fz = Math.cos(p.heading);
-      for (let k = 0; k < n && poses.length < maxPoses; k++) {
-        const lat = p.width * 0.5 + standOff + k * 0.55 + rng() * 0.45;
-        const along = (rng() - 0.5) * 2.2;
-        const x = p.x + p.nx * side * lat + fx * along;
-        const z = p.z + p.nz * side * lat + fz * along;
-        if (!this._ribbonClear(x, z, 1.1)) continue;
-        const kind = kinds[kindIdx++ % kinds.length];
-        poses.push({
-          x,
-          y: this._groundHeight(x, z, def.scenery),
-          z,
-          s: 0.92 + rng() * 0.18,
-          ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.45,
-          c: chunk,
-          kind,
-          phase: (i * 0.41 + k * 1.7 + rng()) % (Math.PI * 2),
-        });
+      const rowDepth = landmark ? 2 : 1;
+      for (let row = 0; row < rowDepth && poses.length < maxPoses; row++) {
+        for (let k = 0; k < n && poses.length < maxPoses; k++) {
+          const lat = p.width * 0.5 + standOff + row * 1.15 + k * 0.52 + rng() * 0.38;
+          const along = (rng() - 0.5) * (landmark ? 3.6 : 2.2);
+          const x = p.x + p.nx * side * lat + fx * along;
+          const z = p.z + p.nz * side * lat + fz * along;
+          if (!this._ribbonClear(x, z, 1.1)) continue;
+          const kind = kinds[kindIdx++ % kinds.length];
+          const gy = this._groundHeight(x, z, def.scenery);
+          poses.push({
+            x,
+            y: gy + (landmark ? 0.12 : 0) + row * 0.06,
+            z,
+            s: 0.94 + rng() * 0.16,
+            ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.38,
+            c: chunk,
+            kind,
+            phase: (i * 0.41 + k * 1.7 + row * 2.3 + rng()) % (Math.PI * 2),
+          });
+        }
       }
     }
     if (!poses.length) return;
@@ -6997,6 +7292,10 @@ export class Track {
     const tunnel = !!(useB ? b.tunnel : a.tunnel);
     const jumpKind = (useB ? b.jumpKind : a.jumpKind) || null;
     const jump = !!(useB ? b.jump : a.jump);
+    const jtA = a.jumpThrow != null ? a.jumpThrow : 1;
+    const jtB = b.jumpThrow != null ? b.jumpThrow : 1;
+    const jlA = a.jumpLip != null ? a.jumpLip : 1;
+    const jlB = b.jumpLip != null ? b.jumpLip : 1;
     const distAlong = a.dist + (b.dist - a.dist) * t;
     const blend = this._surfaceBlend(distAlong, surface);
     if (!onRoad && !tunnel) {
@@ -7004,8 +7303,12 @@ export class Track {
       if (extra > 1.2) surface = this.offroad;
       else if (extra > 0.2) surface = this.offroad === "sand" ? "sand" : "grass";
     }
+    const micro =
+      onRoad || tunnel
+        ? roadMicroHeight(distAlong, lateral, blend.id, jumpKind, tunnel)
+        : 0;
     const r = out || {};
-    r.height = y + ROAD_DECK;
+    r.height = y + ROAD_DECK + micro;
     r.normalY = 1;
     r.surface = onRoad || tunnel ? blend.id : surface;
     r.surfFrom = onRoad || tunnel ? blend.from : surface;
@@ -7021,6 +7324,12 @@ export class Track {
     r.tunnel = tunnel;
     r.jump = jump;
     r.jumpKind = jumpKind;
+    r.jumpThrow = jtA + (jtB - jtA) * t;
+    r.jumpLip = jlA + (jlB - jlA) * t;
+    r.jumpDrop =
+      (a.jumpDrop != null ? a.jumpDrop : 2.6) +
+      ((b.jumpDrop != null ? b.jumpDrop : 2.6) - (a.jumpDrop != null ? a.jumpDrop : 2.6)) * t;
+    r.roadMicro = micro;
     return r;
   }
 
@@ -7562,6 +7871,13 @@ function fillSample(out, a, b, t, d) {
   out.tunnel = !!(t > 0.5 ? b.tunnel : a.tunnel);
   out.jump = !!(t > 0.5 ? b.jump : a.jump);
   out.jumpKind = (t > 0.5 ? b.jumpKind : a.jumpKind) || null;
+  const jtA = a.jumpThrow != null ? a.jumpThrow : 1;
+  const jtB = b.jumpThrow != null ? b.jumpThrow : 1;
+  const jlA = a.jumpLip != null ? a.jumpLip : 1;
+  const jlB = b.jumpLip != null ? b.jumpLip : 1;
+  out.jumpThrow = jtA + (jtB - jtA) * t;
+  out.jumpLip = jlA + (jlB - jlA) * t;
+  out.jumpDrop = (a.jumpDrop != null ? a.jumpDrop : 2.6) + ((b.jumpDrop != null ? b.jumpDrop : 2.6) - (a.jumpDrop != null ? a.jumpDrop : 2.6)) * t;
   out.landmark = !!(a.landmark || b.landmark);
   out.sweep = !!(a.sweep || b.sweep);
   out.dist = d;

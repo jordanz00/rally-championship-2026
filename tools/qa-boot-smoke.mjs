@@ -101,7 +101,7 @@ async function main() {
   try {
     /* ---------------- 1. page loads ---------------- */
     await step("page loads over http", async () => {
-      await goto(cdp, `${server.origin}/index.html`);
+      await goto(cdp, `${server.origin}/index.html?perf=medium`);
       const title = await evaluate(cdp, `return document.title;`);
       assert(title && title.length > 0, "document has no title — the HTML did not parse");
       return `title: "${title}"`;
@@ -385,7 +385,7 @@ async function main() {
     // via the other modes. Criterion 4 asks that a course can be chosen, so a
     // fresh load walks that path too.
     await step("reload → PRACTICE → car → SELECT COURSE → countdown", async () => {
-      await goto(cdp, `${server.origin}/index.html`);
+      await goto(cdp, `${server.origin}/index.html?perf=medium`);
       await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 15000, label: "game to reconstruct after reload" });
       // Keyboard this time, so both Start paths are covered.
       await pressKey(cdp, "Enter");

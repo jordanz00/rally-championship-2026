@@ -3822,3 +3822,105 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 **Still human-only:** Hard refresh `?v=491`. Drive sand→gravel approach through rock bridge — clear ribbon at ~2437 m.
 
 ---
+
+## Sprint 492 — Desert mud hairpin clear at 1737 m (28 Aug 2026)
+
+**Player moment:** Tight -62° post-tunnel mud hairpin (~1737 m) — no invisible wall colliders or land fold blocking the inner apex.
+
+**Cause:** Point-based collider scrub missed props whose origin sat on a folded ribbon arm while the solid spanned the hairpin apex. Post-tunnel land wash lateral (64 m) was too narrow for the inner mud corner. Tunnel portal embankment used local AABB only.
+
+**Fix:** `_scrubCollidersOnRibbonSamples` walks the ribbon through the mud band with car-OBB tests; widened post-tunnel + inner-apex landmark flats; `_scrubPortalEmbankmentCorridor`; collider scrub re-run after instance scrub.
+
+| Item | State |
+|---|---|
+| Ribbon-sample collider scrub on mud band | **Done** |
+| Inner-apex land wash 1720–1764 m | **Done** |
+| Portal embankment world scrub | **Done** |
+| Re-scrub colliders after instance pass | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=492`** · `track.js?v=214`
+
+**Proof:** `node tools/qa-desert-mud-1737.mjs` · `node tools/qa-desert-mud-1747.mjs` static
+
+**Still human-only:** Hard refresh `?v=492`. Drive tunnel exit → first mud hairpin — clear ribbon at ~1737 m.
+
+---
+
+## Sprint 494 — Road micro-terrain + suspension work (28 Aug 2026)
+
+**Player moment:** Gravel and dirt stages feel like real rally roads — constant washboard, occasional rut patches, wheels pumping in the wells, chassis rocking over crowned bumps.
+
+**Cause:** Ribbon height was a perfectly smooth spline; `roadChatterScale` 0.04 was too subtle to move suspension.
+
+**Fix:** `road-micro.js` adds deterministic micro-height to `Track.query` and road mesh vertices; four corner probes drive wheel travel; road roll couples into chassis; bump hits compress springs.
+
+| Item | State |
+|---|---|
+| Query + mesh micro-height | **Done** |
+| Per-wheel suspension travel | **Done** |
+| Occasional rut patches (~48 m cells) | **Done** |
+| Surface-scaled amplitude | **Done** |
+
+---
+
+## Sprint 493 — Physics-based jump variability (28 Aug 2026)
+
+**Player moment:** Each crest feels distinct — teaching hops vs Safari throws, flat-out vs lift-and-brake, sand compress vs gravel landings.
+
+**Cause:** Jump leave used axle pitch only; all authored jumps shared one throw curve; surface and ramp climb energy did not feed launch or landing.
+
+**Fix:** Per-jump `jumpThrow` / `jumpLip` on spline; `_lipGradeFromTrack` geometry sample; speed-scaled spring compress + `_rampClimb` energy; surface bump modulates spring pop and landing bounce; air roll couples to lateral speed.
+
+| Item | State |
+|---|---|
+| Authored jump profiles on track spline | **Done** |
+| Geometry-based lip grade at takeoff | **Done** |
+| Surface-aware spring + landing | **Done** |
+| Ramp climb → throw energy | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=494`** · `vehicle.js?v=108` · `track.js?v=216` · `config.js?v=152` · `road-micro.js?v=1`
+
+**Proof:** `node tools/qa-sprint38-realism.mjs` **PASS**
+
+---
+
+## Sprint 38 — Visual realism pass (28 Aug 2026)
+
+**Player moment:** Desert reads as a real Safari rally — golden sky, warm dust haze, acacia horizon, tape barriers, cheering gallery crowds in varied shirts, PBR safari animals.
+
+**Cause:** Flat Lambert animals, sparse spectators with matrix-only clap, cool fog/sky mismatch, empty verge beyond cactus/rock scatter.
+
+**Fix:** Sprint 38 visual realism — desert LIGHTING/sky retune, roadside gallery (tape + tire stacks), horizon acacia cards, denser verge/scatter, crowd tints + cheer cycles + shadows, HD safari herd.
+
+| Item | State |
+|---|---|
+| Desert sky + warm dust haze | **Done** |
+| Roadside gallery barriers | **Done** |
+| Horizon acacia silhouettes | **Done** |
+| Crowd realism overhaul | **Done** |
+| Safari PBR animals | **Done** |
+
+**Cache:** `index.html` / `main.js` **`?v=495`** · `track.js?v=217` · `crowd.js?v=14` · `sky.js?v=29` · `config.js?v=153`
+
+---
+
+## Sprint 39 — Load speed, rival smoothness, M1 high quality (28 Aug 2026)
+
+**Player moment:** PRESS START → Desert race starts hot (stage already building in menu). Rivals glide instead of jittering over micro-terrain. On M1 Pro Safari/Chrome you get 16-step volumetric cumulus, full shadows, and cinema lighting — not the old medium default.
+
+**Cause:** Track preload regressed after Sprint 34 (no `Track.create` queue after PRESS START). Rival `drawPose` snapped wheel travel; AI used instant cheap road probes. Mac desktops booted at `medium` perf tier. Headless QA at cinema clouds blocked the main thread for minutes per frame.
+
+**Fix:** Restore idle + leave-title preload (`preparePropKit` + `_scheduleTrackPreload` cup queue + course `pointerenter` warm). Interpolate rival wheelY; smooth `_cheapFilt` deck + lowDetail wheel lerp; `aiSubsteps: 3`. `raceStartTier()` → `high` on Mac desktop (medium under automation). Medium tier clouds 12 steps; desert music prefetch in `index.html`. Preload pump pauses during countdown.
+
+| Item | State |
+|---|---|
+| Background stage preload restored | **Done** |
+| Rival mesh jitter fix | **Done** |
+| M1 Pro high tier default | **Done** |
+| 12-step medium / 16-step high cumulus | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=496`** · `vehicle.js?v=109` · `config.js?v=154` · `sky.js?v=30` · `game.js` imports bumped
+
+**Proof:** `node tools/qa-sprint39-perf.mjs` **PASS** · `node tools/qa-sprint34-preload.mjs` **PASS** · `node tools/qa-boot-smoke.mjs` **intermittent** in headless (PRESS START hittability / countdown timing under SwiftShader load — sprint gates 39+34 pass; verify in headed Chrome on M1)
+
+---

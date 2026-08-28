@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=148";
+import { VISUAL } from "../config.js?v=153";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -914,9 +914,9 @@ function splitCrowdCharacter(geo) {
     c.y = (pos.getY(ia) + pos.getY(ib) + pos.getY(ic)) / 3;
     c.z = (pos.getZ(ia) + pos.getZ(ib) + pos.getZ(ic)) / 3;
     let bucket = bodyTri;
-    if (c.y > 0.88 && c.y < 1.68) {
-      if (c.x < -0.09) bucket = armLTri;
-      else if (c.x > 0.09) bucket = armRTri;
+    if (c.y > 0.82 && c.y < 1.72) {
+      if (c.x < -0.07) bucket = armLTri;
+      else if (c.x > 0.07) bucket = armRTri;
     }
     bucket.push(ia, ib, ic);
   }

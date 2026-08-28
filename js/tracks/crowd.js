@@ -3,14 +3,18 @@
  *
  * WHO THIS IS FOR: Desert, Lakeside, and sparse Forest gallery sections.
  * WHAT IT DOES: instances character-*.glb bipeds from the prop kit with a
- *   shared skin/clothing atlas; splits arms for raised clap/cheer as the car
- *   passes; drives body bob + lean from race time and proximity.
+ *   shared skin/clothing atlas; per-instance warm tints; splits arms for
+ *   wave/clap/overhead cheer as the car passes; body bob, lean, and knee
+ *   squash sell a low-poly but human read.
  * HOW IT CONNECTS: Track._addSpectators() builds a CrowdField; Track.update()
  *   and RallyAudio consume crowd points for Doppler beds.
+ *
+ * Sprint 38 realism: richer cheer cycles, skin/clothing variety, shadows on
+ * near gallery rows, and torso lean toward the racing line.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts } from "./prop-kit.js?v=23";
+import { propCharacterParts } from "./prop-kit.js?v=24";
 
 /** Authored biped spectators — assets/props/character-*.glb */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -26,6 +30,14 @@ export const CROWD_CHARACTER_KINDS = Object.freeze([
   "character-female-d",
   "character-female-e",
   "character-female-f",
+]);
+
+/** Per-instance spectator tints — warm skin + rally shirt reads on the atlas. */
+const CROWD_TINTS = Object.freeze([
+  0xf2c8a8, 0xe8b898, 0xd8a880, 0xc89870, 0xb88860,
+  0xffd8b8, 0xf0c0a0, 0xe0b090,
+  0xf0e8e0, 0xe8dcc8, 0xd8ccb8,
+  0xe85040, 0x3068c8, 0x208848, 0xf0c030, 0x802040,
 ]);
 
 /** Shared crowd atlas (skin + clothes). Loaded once. */
@@ -48,7 +60,7 @@ function crowdColormap() {
     });
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.flipY = false;
-    tex.anisotropy = 12;
+    tex.anisotropy = 16;
     tex.generateMipmaps = true;
     CROWD_MAP = tex;
   } catch {
@@ -65,9 +77,9 @@ function crowdMaterial() {
   return new THREE.MeshStandardMaterial({
     map: map || null,
     color: 0xffffff,
-    roughness: 0.72,
-    metalness: 0.04,
-    envMapIntensity: 0.42,
+    roughness: 0.62,
+    metalness: 0.02,
+    envMapIntensity: 0.48,
     flatShading: false,
     vertexColors: false,
     fog: true,
@@ -83,13 +95,25 @@ export function availableCrowdKinds() {
 }
 
 /**
+ * Cheer style from pose phase — clap, wave, or overhead pump.
+ * @param {number} phase
+ * @returns {0|1|2}
+ */
+function cheerStyle(phase) {
+  const bucket = ((phase * 0.37) % 1 + 1) % 1;
+  if (bucket < 0.34) return 0;
+  if (bucket < 0.68) return 1;
+  return 2;
+}
+
+/**
  * One stage crowd: instanced textured bipeds with cheer motion.
  * Requires prop-kit character GLBs — does not build primitive humans.
  */
 export class CrowdField {
   /**
    * @param {THREE.Group} group track root
-   * @param {Array<{x:number,y:number,z:number,ry:number,s?:number,c?:number,phase?:number,kind?:string}>} poses
+   * @param {Array<{x:number,y:number,z:number,ry:number,s?:number,c?:number,phase?:number,kind?:string,tint?:number}>} poses
    * @param {(mesh:THREE.Object3D, chunk:number)=>void} registerChunk
    */
   constructor(group, poses, registerChunk) {
@@ -118,6 +142,7 @@ export class CrowdField {
       if (!p.kind || !propCharacterParts(p.kind)) {
         p.kind = kinds[i % kinds.length];
       }
+      if (p.tint == null) p.tint = CROWD_TINTS[i % CROWD_TINTS.length];
     }
 
     const bodyMat = crowdMaterial();
@@ -145,8 +170,8 @@ export class CrowdField {
       if (!parts || !parts.body) continue;
 
       const body = new THREE.InstancedMesh(parts.body, bodyMat, list.length);
-      body.castShadow = false;
-      body.receiveShadow = false;
+      body.castShadow = true;
+      body.receiveShadow = true;
       body.userData.crowd = true;
       body.userData.crowdPoses = list;
       body.userData.crowdGlb = true;
@@ -156,30 +181,41 @@ export class CrowdField {
       let armR = null;
       if (parts.armL) {
         armL = new THREE.InstancedMesh(parts.armL, bodyMat, list.length);
-        armL.castShadow = false;
+        armL.castShadow = true;
+        armL.receiveShadow = true;
         armL.userData.crowd = true;
         armL.userData.crowdPoses = list;
       }
       if (parts.armR) {
         armR = new THREE.InstancedMesh(parts.armR, bodyMat, list.length);
-        armR.castShadow = false;
+        armR.castShadow = true;
+        armR.receiveShadow = true;
         armR.userData.crowd = true;
         armR.userData.crowdPoses = list;
       }
 
-      const tint = new THREE.Color(1, 1, 1);
+      const tintCol = new THREE.Color();
       for (let i = 0; i < list.length; i++) {
         const p = list[i];
         if (!p.phase) p.phase = (i * 0.73 + (p.x || 0) * 0.11) % (Math.PI * 2);
-        body.setColorAt(i, tint);
-        this._writeBody(body, i, p, 0, 0, 0, 0);
-        if (armL) this._writeArm(armL, i, p, -1, parts.shoulderL, 0, 0, 0, 0);
-        if (armR) this._writeArm(armR, i, p, 1, parts.shoulderR, 0, 0, 0, 0);
+        tintCol.setHex(p.tint != null ? p.tint : 0xffffff);
+        body.setColorAt(i, tintCol);
+        if (armL) armL.setColorAt(i, tintCol);
+        if (armR) armR.setColorAt(i, tintCol);
+        this._writeBody(body, i, p, 0, 0, 0, 0, 0);
+        if (armL) this._writeArm(armL, i, p, -1, parts.shoulderL, 0, 0, 0, 0, 0);
+        if (armR) this._writeArm(armR, i, p, 1, parts.shoulderR, 0, 0, 0, 0, 0);
       }
       body.instanceMatrix.needsUpdate = true;
       if (body.instanceColor) body.instanceColor.needsUpdate = true;
-      if (armL) armL.instanceMatrix.needsUpdate = true;
-      if (armR) armR.instanceMatrix.needsUpdate = true;
+      if (armL) {
+        armL.instanceMatrix.needsUpdate = true;
+        if (armL.instanceColor) armL.instanceColor.needsUpdate = true;
+      }
+      if (armR) {
+        armR.instanceMatrix.needsUpdate = true;
+        if (armR.instanceColor) armR.instanceColor.needsUpdate = true;
+      }
 
       registerChunk(body, chunk);
       group.add(body);
@@ -206,16 +242,25 @@ export class CrowdField {
    * @param {number} sway
    * @param {number} cheer
    * @param {number} timeSec
+   * @param {number} leanToward
    */
-  _writeBody(mesh, i, p, bob, sway, cheer, timeSec) {
+  _writeBody(mesh, i, p, bob, sway, cheer, timeSec, leanToward) {
     const d = this._dummy;
     const s = p.s || 1;
-    const lean = cheer * 0.18;
-    const hop = bob * 0.08 + cheer * 0.06;
+    const style = cheerStyle(p.phase || 0);
+    const jump = cheer > 0.55 ? Math.max(0, Math.sin(timeSec * 7.2 + (p.phase || 0)) * (cheer - 0.45)) * 0.14 : 0;
+    const lean = cheer * 0.22 + leanToward * 0.12;
+    const hop = bob * 0.1 + cheer * 0.08 + jump;
+    const knee = cheer > 0.35 ? 0.97 - cheer * 0.06 : 1;
     d.position.set(p.x, p.y + hop, p.z);
-    d.rotation.set(sway * 0.06 - lean, p.ry || 0, sway * 0.04);
-    const pulse = 1 + bob * 0.02 + cheer * 0.025;
-    d.scale.set(s * pulse, s * (1 + bob * 0.03 + cheer * 0.04), s * pulse);
+    d.rotation.order = "YXZ";
+    d.rotation.set(
+      sway * 0.07 - lean + leanToward * 0.08,
+      p.ry || 0,
+      sway * 0.05 + leanToward * 0.04
+    );
+    const pulse = 1 + bob * 0.025 + cheer * 0.03;
+    d.scale.set(s * pulse, s * (knee + bob * 0.04 + cheer * 0.05), s * pulse);
     d.updateMatrix();
     mesh.setMatrixAt(i, d.matrix);
   }
@@ -230,8 +275,9 @@ export class CrowdField {
    * @param {number} sway
    * @param {number} cheer
    * @param {number} timeSec
+   * @param {number} style
    */
-  _writeArm(mesh, i, p, side, shoulder, bob, sway, cheer, timeSec) {
+  _writeArm(mesh, i, p, side, shoulder, bob, sway, cheer, timeSec, style) {
     const d = this._dummy;
     const s = p.s || 1;
     const ry = p.ry || 0;
@@ -240,19 +286,34 @@ export class CrowdField {
     const lx = shoulder.x * s;
     const ly = shoulder.y * s;
     const lz = shoulder.z * s;
-    const hop = bob * 0.08 + cheer * 0.06;
+    const hop = bob * 0.1 + cheer * 0.08;
     const wx = p.x + lx * cos - lz * sin;
     const wz = p.z + lx * sin + lz * cos;
     const wy = p.y + ly * s + hop;
 
     const phase = p.phase || 0;
-    const clap = Math.sin(timeSec * 8.5 + phase * 1.7) * cheer * 0.42;
-    const rest = -0.55;
-    const raise = rest + cheer * 2.85;
+    const clap = Math.sin(timeSec * 9.2 + phase * 1.9) * cheer * 0.48;
+    const wave = Math.sin(timeSec * 4.6 + phase * 0.8) * 0.35;
+    const rest = -0.52;
+    let raise = rest;
+    let roll = sway * 0.06 * side;
+    let yawOff = 0;
+
+    if (style === 0) {
+      raise = rest + cheer * 2.95 + clap;
+      roll += side * cheer * 0.18;
+    } else if (style === 1) {
+      const waveSide = side > 0 ? 1 : 0.35;
+      raise = rest + cheer * (side > 0 ? 3.35 : 1.4) * waveSide + wave * cheer;
+      yawOff = side * cheer * 0.22;
+    } else {
+      raise = rest + cheer * 3.25 + Math.abs(clap) * 0.35;
+      roll += side * 0.12;
+    }
 
     d.position.set(wx, wy, wz);
     d.rotation.order = "YXZ";
-    d.rotation.set(raise + clap, ry, sway * 0.05 * side);
+    d.rotation.set(raise + clap * 0.35, ry + yawOff, roll);
     d.scale.set(s, s, s);
     d.updateMatrix();
     mesh.setMatrixAt(i, d.matrix);
@@ -266,9 +327,6 @@ export class CrowdField {
    */
   update(timeSec, playerPos, playerSpeed) {
     if (!this._bodies.length || !playerPos) return;
-    this._animSkip = (this._animSkip || 0) + 1;
-    if (this._animSkip % 2 !== 0) return;
-    const nearBoost = Math.min(1, Math.max(0, (playerSpeed - 6) / 36));
 
     for (let b = 0; b < this._bodies.length; b++) {
       const body = this._bodies[b];
@@ -278,26 +336,33 @@ export class CrowdField {
       const list = body.userData.crowdPoses;
       if (!list || !body.visible) continue;
 
+      let anyNear = false;
       for (let i = 0; i < list.length; i++) {
         const p = list[i];
         const dx = p.x - playerPos.x;
         const dz = p.z - playerPos.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist > 85) continue;
-        const prox = dist < 62 ? 1 - dist / 62 : 0;
+        if (dist > 95) continue;
+        anyNear = true;
+        const prox = dist < 68 ? 1 - dist / 68 : 0;
+        const nearBoost = Math.min(1, Math.max(0, (playerSpeed - 4) / 32));
         const phase = p.phase || 0;
-        const cheerWave = 0.5 + 0.5 * Math.sin(timeSec * 3.6 + phase * 1.3);
-        const idleWave = 0.25 + 0.25 * Math.sin(timeSec * 1.4 + phase);
-        const cheer = (cheerWave * prox + idleWave * 0.35) * (0.45 + nearBoost * 0.55);
-        const bob = Math.sin(timeSec * 6.8 + phase) * (0.2 + cheer * 0.85);
-        const sway = Math.sin(timeSec * 2.3 + phase) * (0.12 + prox * 0.4);
-        this._writeBody(body, i, p, bob, sway, cheer, timeSec);
-        if (armL && rig) this._writeArm(armL, i, p, -1, rig.shoulderL, bob, sway, cheer, timeSec);
-        if (armR && rig) this._writeArm(armR, i, p, 1, rig.shoulderR, bob, sway, cheer, timeSec);
+        const cheerWave = 0.55 + 0.45 * Math.sin(timeSec * 4.2 + phase * 1.4);
+        const idleWave = 0.28 + 0.22 * Math.sin(timeSec * 1.6 + phase);
+        const cheer = (cheerWave * prox + idleWave * 0.42) * (0.5 + nearBoost * 0.5);
+        const bob = Math.sin(timeSec * 7.4 + phase) * (0.25 + cheer * 0.95);
+        const sway = Math.sin(timeSec * 2.6 + phase) * (0.14 + prox * 0.45);
+        const leanToward = prox * nearBoost * 0.65;
+        const style = cheerStyle(phase);
+        this._writeBody(body, i, p, bob, sway, cheer, timeSec, leanToward);
+        if (armL && rig) this._writeArm(armL, i, p, -1, rig.shoulderL, bob, sway, cheer, timeSec, style);
+        if (armR && rig) this._writeArm(armR, i, p, 1, rig.shoulderR, bob, sway, cheer, timeSec, style);
       }
-      body.instanceMatrix.needsUpdate = true;
-      if (armL) armL.instanceMatrix.needsUpdate = true;
-      if (armR) armR.instanceMatrix.needsUpdate = true;
+      if (anyNear) {
+        body.instanceMatrix.needsUpdate = true;
+        if (armL) armL.instanceMatrix.needsUpdate = true;
+        if (armR) armR.instanceMatrix.needsUpdate = true;
+      }
     }
   }
 

@@ -252,72 +252,55 @@ export const COLORS = {
 export const LIGHTING = {
   desert: {
     /**
-     * Sprint 30 cinema Desert — warm sand bounce, clear key sun, soft dust haze.
+     * Sprint 30 cinema Desert — Sprint 38 realism retune: golden Safari key, warm dust haze.
      * Tuned for ACES (not arcade Reinhard punch).
      */
     skyGradient: [
-      [0.0, "#6a8498"],
-      [0.38, "#8eaccc"],
-      [0.5, "#b8cce0"],
-      [0.62, "#4a96d4"],
-      [0.8, "#1e6eb8"],
-      [1.0, "#0c4a98"],
+      [0.0, "#7a8ea0"],
+      [0.35, "#9eb4cc"],
+      [0.5, "#c8d8ea"],
+      [0.62, "#58a0dc"],
+      [0.78, "#2880c8"],
+      [1.0, "#0c4898"],
     ],
-    skyZenith: 0x0c4a98,
-    skyHorizon: 0xb8cce0,
-    skyTurbidity: 2.2,
-    skyRayleigh: 1.18,
-    skyMie: 0.0042,
-    skyMieG: 0.78,
-    skyExposure: 1.08,
-    skyAtmoBlend: 0.84,
-    sunSkyBoost: 1.05,
-    sunBloom: 0.92,
-    zenithBoost: 0.34,
-    groundBounceMix: 0.12,
-    // cloudCover is a SKY FRACTION since the 2026-08 sky rewrite. The old field
-    // saturated, so authored values had drifted upward chasing an effect they
-    // could not produce; 0.55 on the new scale is heavy overcast, which is not
-    // what a Safari stage wants. 0.30 is scattered cumulus with open blue.
-    cloudCover: 0.3,
-    cloudScale: 1.95,
-    horizonGlow: 0xd8c8b0,
-    horizonStrength: 0.22,
-    dustStrength: 0.2,
-    wind: [1.8, 0, 0.6],
-    /**
-     * WARM dust haze, not blue-grey.
-     *
-     * This was 0xb8c4d0 — a cool overcast-temperate haze — on a stage whose
-     * ground is warm sand. Distance therefore went cold while the foreground
-     * stayed orange, which reads as two unrelated images stitched at the
-     * skyline and is a large part of why Desert looked flat and washed out.
-     * Dust in a desert scatters warm. The sky shader now converges its horizon
-     * onto exactly this colour, so sky, haze and distant terrain agree by
-     * construction rather than by eye.
-     */
-    fog: 0xd0bfa2,
-    // Mid-field haze (was 360 — skyline never read; 110 milked the start grid).
-    fogNear: 180,
-    fogFar: 1080,
-    hemiSky: 0x8eb4e0,
-    hemiGround: 0xc4a070,
-    // Key owns form. Fill/hemi only keep shade readable — not a second sun.
-    hemi: 0.58,
-    sun: 0xffeccd,
-    sunKelvin: 5350,
-    sunInt: 2.88,
-    sunDir: [0.58, 0.66, 0.36],
-    rimSky: 0xa8c8f0,
-    rimInt: 0.38,
-    fill: 0x90b0d0,
-    fillInt: 0.2,
-    ambient: 0xa8b4c0,
+    skyZenith: 0x0c4898,
+    skyHorizon: 0xc8d8ea,
+    skyTurbidity: 2.45,
+    skyRayleigh: 1.22,
+    skyMie: 0.0048,
+    skyMieG: 0.79,
+    skyExposure: 1.1,
+    skyAtmoBlend: 0.86,
+    sunSkyBoost: 1.08,
+    sunBloom: 0.98,
+    zenithBoost: 0.38,
+    groundBounceMix: 0.14,
+    cloudCover: 0.24,
+    cloudScale: 2.05,
+    horizonGlow: 0xe8d4b8,
+    horizonStrength: 0.28,
+    dustStrength: 0.28,
+    wind: [2.1, 0, 0.75],
+    fog: 0xd4c4a8,
+    fogNear: 165,
+    fogFar: 1180,
+    hemiSky: 0x94b8e0,
+    hemiGround: 0xc8a068,
+    hemi: 0.6,
+    sun: 0xfff0d8,
+    sunKelvin: 5450,
+    sunInt: 3.05,
+    sunDir: [0.56, 0.68, 0.38],
+    rimSky: 0xb0d0f0,
+    rimInt: 0.42,
+    fill: 0x98b8d8,
+    fillInt: 0.22,
+    ambient: 0xa8b8c8,
     ambientInt: 0.1,
-    exposure: 1.08,
-    gradeWarmth: 0.12,
-    skyBack: 0x2e7eb8,
-    worldEnv: 1.16,
+    exposure: 1.1,
+    gradeWarmth: 0.16,
+    skyBack: 0x3088c0,
+    worldEnv: 1.22,
   },
   forest: {
     /**
@@ -625,7 +608,7 @@ export const SURFACES = {
     bumpSteer: 0.4,
     roll: 0.014,
     sink: 0,
-    bump: 0.01,
+    bump: 0.016,
     dust: 0,
     speedScale: 1.0,
     driftEase: 0.88,
@@ -649,7 +632,7 @@ export const SURFACES = {
     bumpSteer: 0.85,
     roll: 0.026,
     sink: 0.014,
-    bump: 0.038,
+    bump: 0.052,
     dust: 0.85,
     speedScale: 0.94,
     driftEase: 1.42,
@@ -672,7 +655,7 @@ export const SURFACES = {
     bumpSteer: 0.95,
     roll: 0.03,
     sink: 0.022,
-    bump: 0.044,
+    bump: 0.056,
     dust: 1.0,
     speedScale: 0.9,
     driftEase: 1.34,
@@ -696,7 +679,7 @@ export const SURFACES = {
     bumpSteer: 1.05,
     roll: 0.02,
     sink: 0.008,
-    bump: 0.048,
+    bump: 0.062,
     dust: 0,
     speedScale: 0.95,
     driftEase: 0.9,
@@ -799,8 +782,8 @@ export const SURFACES = {
 export const HANDLING = {
   /** Tire substeps for the player. Four keeps 240 Hz tire relaxation stable. */
   substeps: 4,
-  /** Opponents run half the tire resolution — the pack is the perf budget. */
-  aiSubsteps: 2,
+  /** Opponents — three substeps keeps pack suspension smooth without player cost. */
+  aiSubsteps: 3,
   brakeTorqueFront: 3400,
   brakeTorqueRear: 2300,
   /**
@@ -927,8 +910,13 @@ export const HANDLING = {
    * Chassis stability — follow the axle-plane deck, filter only ribbon noise.
    * Player and AI share the planted hull; rivals still use cheap road probes.
    */
-  roadChatterScale: 0.04,
-  deckFollowRate: 55,
+  /** Residual HF bobble on top of query micro-terrain (main unevenness is in Track.query). */
+  roadChatterScale: 0.12,
+  /** Lateral road camber from left/right wheel height (radians scale). */
+  roadRollGain: 0.92,
+  /** Max wheel hub travel into/out of the well (metres). */
+  wheelTravelMax: 0.088,
+  deckFollowRate: 62,
   /** Direct deck plant rate (1/s) — replaces spring bobble for the player. */
   groundPlantRate: 46,
   groundSpringHz: 28,
@@ -1069,8 +1057,20 @@ export const JUMP = {
    * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
    * Variation is state at the lip — speed, attitude, compress, line — never RNG.
    */
-  lipGrain: 0.11,
+  lipGrain: 0.14,
   inheritPitch: 0.85,
+  /** How much authored jumpThrow (rise×gap) scales leave velocity. */
+  jumpScaleInfluence: 0.48,
+  /** Extra throw from sampled lip grade vs axle pitch alone. */
+  lipGradeInfluence: 0.42,
+  /** Surface bump → spring pop (sand/mud compress more than gravel). */
+  surfaceSpringGain: 4.2,
+  /** Surface bump → landing bounce / unsettle. */
+  surfaceLandGain: 3.6,
+  /** Climb rate stored on the ramp converted to leave energy. */
+  climbThrowGain: 0.58,
+  /** Lateral speed couples into air roll (off-line takeoffs). */
+  airCrossCouple: 0.18,
   airRollMax: 0.36,
   airRollDamp: 1.15,
   landBounce: 0.32,

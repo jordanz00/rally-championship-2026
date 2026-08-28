@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=149";
+import { JUMP } from "../config.js?v=151";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -26,14 +26,30 @@ function lerp(a, b, t) {
 }
 
 /**
- * Tiny lip roughness from distance + lateral. Same line = same grain.
+ * Tiny lip roughness from distance + lateral + speed. Same line = same grain.
  * @param {number} dist
  * @param {number} lat
+ * @param {number} [speed]
  */
-function lipGrain(dist, lat) {
+function lipGrain(dist, lat, speed = 0) {
   const d = Number(dist) || 0;
   const l = Number(lat) || 0;
-  return Math.sin(d * 0.37 + l * 0.9) * 0.62 + Math.sin(d * 1.17 + l * 2.4) * 0.38;
+  const spd = Math.max(0, Number(speed) || 0);
+  const base =
+    Math.sin(d * 0.37 + l * 0.9) * 0.62 + Math.sin(d * 1.17 + l * 2.4) * 0.38;
+  const fast = clamp(spd / 28, 0, 1);
+  return base * (0.82 + fast * 0.38);
+}
+
+/** Surface bump → spring pop and landing sink (passed from vehicle). */
+function surfaceSpringMod(surfaceBump) {
+  const b = Math.max(0, Number(surfaceBump) || 0);
+  return 1 + b * (JUMP.surfaceSpringGain != null ? JUMP.surfaceSpringGain : 4.2);
+}
+
+function surfaceLandMod(surfaceBump) {
+  const b = Math.max(0, Number(surfaceBump) || 0);
+  return 1 + b * (JUMP.surfaceLandGain != null ? JUMP.surfaceLandGain : 3.6);
 }
 
 export class JumpModel {
@@ -82,17 +98,27 @@ export class JumpModel {
    * @param {number} rawVelY
    * @param {number} grade
    * @param {number} springBoost
-   * @param {{pitchRate?:number, roll?:number, rollRate?:number, yawRate?:number, lateral?:number, speed?:number, throttle?:number, brake?:number, dist?:number}} [body]
+   * @param {{pitchRate?:number, roll?:number, rollRate?:number, yawRate?:number, lateral?:number, speed?:number, throttle?:number, brake?:number, dist?:number, jumpThrow?:number, jumpLip?:number, surfaceBump?:number, lipGrade?:number}} [body]
    */
   launch(rawVelY, grade, springBoost = 0, body = {}) {
     const credit = clamp(this.technique, 0, 1);
-    this.launchGrade = grade;
-    const grain = lipGrain(body.dist, body.lateral) * (JUMP.lipGrain != null ? JUMP.lipGrain : 0.07);
+    const lipGrade = Number.isFinite(body.lipGrade) ? body.lipGrade : grade;
+    this.launchGrade = lipGrade;
+    const grain =
+      lipGrain(body.dist, body.lateral, body.speed) *
+      (JUMP.lipGrain != null ? JUMP.lipGrain : 0.07);
     const spd = Math.max(0, Number(body.speed) || 0);
+    const jumpScale = clamp(Number(body.jumpThrow) || 1, 0.45, 2.4);
+    const jumpLip = clamp(Number(body.jumpLip) || 1, 0.4, 2.6);
+    const scaleIn = JUMP.jumpScaleInfluence != null ? JUMP.jumpScaleInfluence : 0.48;
+    const lipIn = JUMP.lipGradeInfluence != null ? JUMP.lipGradeInfluence : 0.42;
+    const surfMod = surfaceSpringMod(body.surfaceBump);
     const flatBoost = JUMP.flatOutLaunchBoost != null ? JUMP.flatOutLaunchBoost : 1.14;
-    let vy = Math.max(0, rawVelY) + Math.max(0, springBoost);
+    let vy = Math.max(0, rawVelY) + Math.max(0, springBoost) * surfMod;
     vy *= lerp(flatBoost, JUMP.liftLaunchCut, credit);
-    vy *= 1 + grain;
+    vy *= 1 + grain * jumpLip;
+    vy *= lerp(1, jumpScale, scaleIn);
+    vy *= 1 + Math.max(0, lipGrade - grade) * lipIn * jumpLip;
     const heightScale =
       Math.max(0.05, JUMP.launchHeightScale ?? 1) *
       Math.max(0.05, this.aiHeightScale ?? 1);
@@ -100,20 +126,30 @@ export class JumpModel {
     const maxVy = (JUMP.maxLaunchVy || 10.8) * Math.sqrt(Math.max(0.05, this.aiHeightScale ?? 1));
     vy = clamp(Math.max(0, vy), JUMP.minLaunchVy || 0, maxVy);
 
-    const fromGrade = grade * (0.42 + 0.58 * (1 - credit));
+    const fromGrade = lipGrade * (0.42 + 0.58 * (1 - credit)) * jumpLip;
     this.noseUp = fromGrade - JUMP.liftNoseDrop * credit;
     this.noseUp = clamp(this.noseUp, -JUMP.airPitchMax, JUMP.airPitchMax);
     const inherit = JUMP.inheritPitch != null ? JUMP.inheritPitch : 0.72;
     const fromBody = Number(body.pitchRate) || 0;
     const pedal = (clamp(body.throttle, 0, 1) - clamp(body.brake, 0, 1)) * 1.05;
-    this.noseUpRate = fromBody * inherit + (grade - this.noseUp) * 2.4 + pedal + grain * 1.6;
+    this.noseUpRate =
+      fromBody * inherit +
+      (lipGrade - this.noseUp) * (2.2 + jumpLip * 0.35) +
+      pedal +
+      grain * 1.6 * jumpLip;
     this.noseUpRate = clamp(this.noseUpRate, -2.8, 2.8);
 
     const lat = Number(body.lateral) || 0;
     const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
-    this.roll = clamp((Number(body.roll) || 0) * 0.72 + lat * 0.048, -rollMax, rollMax);
+    this.roll = clamp(
+      (Number(body.roll) || 0) * 0.72 + lat * (0.048 + spd * 0.00035),
+      -rollMax,
+      rollMax
+    );
     this.rollRate = clamp(
-      (Number(body.rollRate) || 0) * 0.58 + lat * spd * 0.014 + grain * 0.7,
+      (Number(body.rollRate) || 0) * 0.58 +
+        lat * spd * 0.014 * jumpLip +
+        grain * 0.7 * jumpLip,
       -2.1,
       2.1
     );
@@ -125,7 +161,7 @@ export class JumpModel {
    * @param {number} dt
    * @param {number} throttle
    * @param {number} brake
-   * @param {{yawRate?:number, speed?:number}} [extra]
+   * @param {{yawRate?:number, speed?:number, vLat?:number}} [extra]
    */
   air(dt, throttle, brake, extra = {}) {
     const cmd =
@@ -134,7 +170,8 @@ export class JumpModel {
     const I = Math.max(0.4, JUMP.airPitchInertia || 1.45);
     const damp = Math.max(0.4, JUMP.airPitchDamp || 1.85);
     const aoa = this.noseUp;
-    const aero = -aoa * 1.45;
+    const spd = Math.max(0, Number(extra.speed) || 0);
+    const aero = -aoa * (1.35 + spd * 0.012);
     this.noseUpRate += ((torque + aero) / I) * dt;
     this.noseUpRate *= Math.exp(-damp * dt);
     this.noseUp += this.noseUpRate * dt;
@@ -146,7 +183,9 @@ export class JumpModel {
     const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
     const rollDamp = JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.55;
     const yaw = Number(extra.yawRate) || 0;
-    this.rollRate += yaw * 0.22 * dt;
+    const vLat = Number(extra.vLat) || 0;
+    const cross = JUMP.airCrossCouple != null ? JUMP.airCrossCouple : 0.18;
+    this.rollRate += (yaw * 0.22 + vLat * cross * 0.04) * dt;
     this.rollRate *= Math.exp(-rollDamp * dt);
     this.roll += this.rollRate * dt;
     this.roll = clamp(this.roll, -rollMax, rollMax);
@@ -184,9 +223,10 @@ export class JumpModel {
   /**
    * @param {number} fallSpeed
    * @param {number} speed
+   * @param {{surfaceBump?:number, jumpDrop?:number}} [ctx]
    * @returns {{scrub:number, upsetYaw:number, upset:number, bounce:number}}
    */
-  land(fallSpeed, speed) {
+  land(fallSpeed, speed, ctx = {}) {
     const path = Math.atan2(Math.max(0, -fallSpeed), Math.max(6, speed));
     const signed = this.noseUp - path;
     const full = Math.max(0.05, JUMP.mismatchFull);
@@ -195,9 +235,11 @@ export class JumpModel {
     const bad = Math.max(tailFirst, noseFirst);
     const impact = clamp(Math.max(0, -fallSpeed) / 14, 0, 1);
     this.lastLanding = bad;
-    const upset = tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact;
+    const landMod = surfaceLandMod(ctx.surfaceBump);
+    const dropMod = clamp((Number(ctx.jumpDrop) || 2.6) / 2.6, 0.65, 1.55);
+    const upset = (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) * landMod;
     this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
-    const bounceAmp = JUMP.landBounce != null ? JUMP.landBounce : 0.24;
+    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.24) * landMod * dropMod;
     const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 4.4;
     const bounce =
       Math.max(0, -fallSpeed) > need
@@ -207,11 +249,13 @@ export class JumpModel {
     this.rollRate *= 0.62;
     this.technique = 0;
     const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.7 + 0.3 * impact);
+    const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight);
+    const scrub = lerp(scrubBase, scrubBase * 0.92, clamp(landMod - 1, 0, 0.35));
     return {
-      scrub: lerp(JUMP.flatScrub, JUMP.worstScrub, weight),
+      scrub,
       upsetYaw: upset * JUMP.landUpsetYaw + this.roll * 0.9,
       upset,
-      bounce: Math.min(2.4, bounce),
+      bounce: Math.min(2.8 * dropMod, bounce),
     };
   }
 

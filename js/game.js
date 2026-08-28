@@ -20,27 +20,27 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=150";
+} from "./config.js?v=154";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=106";
+import { Vehicle } from "./physics/vehicle.js?v=109";
 import { getSurface } from "./physics/surfaces.js?v=48";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=64";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=136";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=213";
-import { preparePropKit, prefetchPropKit, loadTitleRocks } from "./tracks/prop-kit.js?v=23";
-import { Opponent } from "./ai.js?v=130";
+import { Track } from "./tracks/track.js?v=217";
+import { preparePropKit, prefetchPropKit, loadTitleRocks } from "./tracks/prop-kit.js?v=24";
+import { Opponent } from "./ai.js?v=131";
 import { RallyAudio } from "./audio/engine.js?v=56";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=35";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=32";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=56";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=45";
-import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=28";
+import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=30";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=27";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=10";
 import { PhotoRealPost } from "./gfx/postfx.js?v=16";
-import { createPerfTier } from "./gfx/perf-tier.js?v=9";
+import { createPerfTier } from "./gfx/perf-tier.js?v=10";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -79,6 +79,29 @@ function yieldFrame() {
  * showAllChunks pass turned a 0.6 s mid-race hitch into a multi-second load.
  */
 const PRECOMPILE_BUDGET_MS = 400;
+
+/**
+ * Opening perf tier — M1 Pro / Apple Silicon desktops start at high (16-step clouds,
+ * full shadows). Phones stay low. `?perf=high|medium|low|min|integrated` overrides.
+ * @returns {"high"|"medium"|"low"|"min"}
+ */
+function raceStartTier() {
+  if (isPhonePlay()) return "low";
+  try {
+    const q = new URLSearchParams(globalThis.location?.search || "");
+    const perf = q.get("perf");
+    if (perf === "high" || perf === "medium" || perf === "low" || perf === "min") return perf;
+    if (perf === "integrated") return "medium";
+  } catch {
+    /* ignore */
+  }
+  const ua = navigator.userAgent || "";
+  const macDesktop = /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
+  // Headless CDP uses SwiftShader — cinema clouds stall the loop below 1 fps.
+  if (macDesktop && navigator.webdriver) return "medium";
+  if (macDesktop && (window.devicePixelRatio || 1) <= 2) return "high";
+  return "medium";
+}
 
 /**
  * Seconds of warning the co-driver aims to give. Ibrahim's calls were useful
@@ -892,12 +915,12 @@ export class RallyGame {
         if (this._preloadToken === token) this._preloadToken = null;
         this._preloadPromise = null;
         // Continue the queue during title/menu/result and mid-race lookahead.
+        // Never during countdown — 3-2-1 needs the main thread for presents.
         if (
           this.state === "title" ||
           this.state === "menu" ||
           this.state === "result" ||
           this.state === "race" ||
-          this.state === "countdown" ||
           this.state === "loading"
         ) {
           queueMicrotask(() => this._pumpPreloadQueue());
@@ -1007,6 +1030,10 @@ export class RallyGame {
       btn.addEventListener("click", () => {
         this.courseId = btn.dataset.course;
         this._beginRace(this.courseId);
+      });
+      btn.addEventListener("pointerenter", () => {
+        const id = btn.dataset.course;
+        if (id && COURSES[id]) this._scheduleTrackPreload(id, { priority: true });
       });
     });
     document.querySelectorAll("[data-car]").forEach((btn) => {
@@ -1128,6 +1155,12 @@ export class RallyGame {
     }
     this._markShowroomLive();
     showScreen("screen-menu", { instant: true });
+    requestAnimationFrame(() => {
+      this._scheduleTrackPreload(this.courseId || "desert", { priority: true });
+      for (const id of COURSE_ORDER) {
+        if (id !== (this.courseId || "desert")) this._scheduleTrackPreload(id);
+      }
+    });
     this._idleWarmAfterTitle();
   }
 
@@ -1145,13 +1178,19 @@ export class RallyGame {
     later(80, () => {
       if (!this.renderer) this._bootGfx();
     });
+    later(400, () => {
+      preparePropKit("desert").catch((err) => console.warn("[warm] prop kit parse", err));
+    });
     later(900, () => {
-      prefetchPropKit().catch((err) => console.warn("[warm] prop kit", err));
+      prefetchPropKit().catch((err) => console.warn("[warm] prop kit fetch", err));
     });
     later(1400, () => this._prefetchStageBytes(false));
-    // Do NOT prepareCelica() here. Parsing three hero GLBs (Stratos ~8 MB)
-    // on the same main thread as Desert Track.create wedges the loading screen
-    // past a minute. Cars unlock from rival LODs; heroes warm in `_loadTrackAsync`.
+    later(600, () => {
+      this._scheduleTrackPreload("desert", { priority: true });
+      for (const id of COURSE_ORDER) {
+        if (id !== "desert") this._scheduleTrackPreload(id);
+      }
+    });
     later(2800, () => {
       if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
     });
@@ -2233,7 +2272,7 @@ export class RallyGame {
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
-    this.perfTier = createPerfTier(GFX, { startTier: isPhonePlay() ? "low" : "medium" });
+    this.perfTier = createPerfTier(GFX, { startTier: raceStartTier() });
     this._applyQualityTier(this.perfTier.current());
 
     this._precompileStage();
@@ -2368,7 +2407,7 @@ export class RallyGame {
           // the first corner starts on a tier the machine never earned.
           if (!settling && !onTitle) {
             if (!this.perfTier) {
-              this.perfTier = createPerfTier(GFX, { startTier: isPhonePlay() ? "low" : "medium" });
+              this.perfTier = createPerfTier(GFX, { startTier: raceStartTier() });
             }
             const t = this.perfTier.tick(presentDelta);
             if (t.changed) this._applyQualityTier(t);
@@ -2858,7 +2897,7 @@ export class RallyGame {
     const d = p.drawPose(alpha);
     this.playerMesh.position.set(d.x, d.y, d.z);
     this.playerMesh.rotation.set(d.pitch, d.yaw, d.roll, "YXZ");
-    applyWheelPose(this.playerMesh.userData.wheels || [], d.spin, d.steer, d.roll);
+    applyWheelPose(this.playerMesh.userData.wheels || [], d.spin, d.steer, d.roll, d.wheelY);
     const braking = p.brake > 0.08 || p.handbrake > 0.28;
     if (this.playerMesh.userData.brakeOn !== braking) {
       this.playerMesh.userData.brakeOn = braking;
@@ -4057,31 +4096,35 @@ export class RallyGame {
     this._fadeBlockingPack(chase, dt);
     // Mirror / cube must see a solid pack. Ghost after those captures.
     this._paintBlockingPack(0);
-    this._renderMirror();
+    const countdownSettling = this.state === "countdown";
+    if (!countdownSettling) this._renderMirror();
     // Cube / mirror captures first. They must not bake the sun shadow map
     // while the car is hidden, or the pad shadow strobes.
     if (onPad) this._updateTitleReflections();
-    else this._updateReflections();
+    else if (!countdownSettling) this._updateReflections();
     this._paintBlockingPack(1);
     const settling =
-      this.state === "countdown" ||
+      countdownSettling ||
       this.state === "loading" ||
       (this._raceWarmFrames || 0) > 0;
     // Settling frames must bake every frame or the grid shadow pops in. On the
     // pad one hero car needs it rarely. In a race the quality scaler owns it.
-    const every = settling
-      ? 1
-      : onPad
-        ? 4
-        : Math.max(1, this._qualityShadowEvery || GFX.shadowEvery | 0 || 1);
+    // Countdown skips mirror/post so 3-2-1-GO never blocks on a cinema pass.
+    const every = countdownSettling
+      ? 6
+      : settling
+        ? 1
+        : onPad
+          ? 4
+          : Math.max(1, this._qualityShadowEvery || GFX.shadowEvery | 0 || 1);
     this._shadowTick = (this._shadowTick || 0) + 1;
     if (this.renderer.shadowMap.enabled) {
       this.renderer.shadowMap.needsUpdate = this._shadowTick % every === 0;
     }
     const prevMask = this.camera.layers.mask;
     this.camera.layers.set(0);
-    if (this.post && this.post.enabled) this.post.render(this.scene, this.camera);
-    else this.renderer.render(this.scene, this.camera);
+    if (countdownSettling || !this.post || !this.post.enabled) this.renderer.render(this.scene, this.camera);
+    else this.post.render(this.scene, this.camera);
     this.camera.layers.mask = prevMask;
     this._renderPovHudOverlay();
   }
