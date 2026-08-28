@@ -44,10 +44,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT } from "../config.js?v=148";
+import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT } from "../config.js?v=149";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=48";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=41";
-import { JumpModel } from "./jump.js?v=16";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=44";
+import { JumpModel } from "./jump.js?v=17";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -495,6 +495,14 @@ export class Vehicle {
     this.lastLandUpset = 0;
     /** Air time at last touchdown (seconds) — soft hop vs long float. */
     this.lastAirTime = 0;
+    /**
+     * Seconds of post-landing attitude settle. While > 0 the chassis keeps
+     * residual air pitch/roll + impact squash instead of snapping upright.
+     */
+    this._landSettle = 0;
+    this._landPitchOff = 0;
+    this._landRollOff = 0;
+    this._landSquash = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -666,6 +674,10 @@ export class Vehicle {
     this.lastImpact = 0;
     this.lastLandUpset = 0;
     this.lastAirTime = 0;
+    this._landSettle = 0;
+    this._landPitchOff = 0;
+    this._landRollOff = 0;
+    this._landSquash = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -735,11 +747,14 @@ export class Vehicle {
    * One fixed physics step.
    *
    * Pipeline (every tick, in this order):
-   *   input → accel/steer → velocity integrate → XZ position
-   *        → road query → Y integrate / sweep collision → resolve
-   *        → confirmOnRoad → mesh follows drawPose(physics)
-   * Nothing after confirmOnRoad may write physics Y except car-car, which
-   * calls confirmOnRoad again.
+   *   input → integrate velocity → proposed XZ
+   *        → road / jump / Y
+   *        → bounceOffRoad
+   *        → glanceObstacles (TOI sweep → resolve → penetration correct)
+   *        → if deeply embedded: restore last-safe XZ (never a map teleport)
+   *        → attitude / plant → confirmOnRoad → stash safe pose
+   * Physics owns position; the mesh only follows drawPose() after the step.
+   * Collision strips only into-surface velocity — never freezes the car.
    *
    * ROAD PROBE BUDGET: three Track.query calls per step for the player
    * (front axle, rear axle, chassis centre). While a jump pad is live we
@@ -938,6 +953,33 @@ export class Vehicle {
     if (this.onGround) {
       bounceOffRoad(this, q2, track);
       glanceObstacles(this, track);
+      if (this._envDeep && this._hasGoodPose) {
+        // Impossible state: still deep in a solid after TOI + correction.
+        // Restore last validated XZ — never a hard-coded map coordinate.
+        this._noteGlitch("env-embed", {
+          x: this.position.x,
+          z: this.position.z,
+          speed: this.speed,
+          goodProgress: this._goodProgress,
+        });
+        const spd = Math.hypot(this.velocity.x, this.velocity.z);
+        this.position.x = this._goodX;
+        this.position.z = this._goodZ;
+        this.yaw = this._goodYaw;
+        const fx = Math.sin(this.yaw);
+        const fz = Math.cos(this.yaw);
+        this.velocity.x = fx * spd * 0.88;
+        this.velocity.z = fz * spd * 0.88;
+        this._envDeep = false;
+        this._envIntersect = false;
+      } else if (this._envIntersect) {
+        this._noteGlitch("env-intersect", {
+          x: this.position.x,
+          z: this.position.z,
+          yaw: this.yaw,
+          speed: this.speed,
+        });
+      }
       this._unstick(dt, track, q2);
     }
 
@@ -1147,6 +1189,10 @@ export class Vehicle {
           brake: this.brake,
           dist: q2.dist,
         });
+        this._landSettle = 0;
+        this._landPitchOff = 0;
+        this._landRollOff = 0;
+        this._landSquash = 0;
         this._climbVel = 0;
         this._groundVy = 0;
         this._rampThrow = 0;
@@ -1213,7 +1259,7 @@ export class Vehicle {
         this.position.y = plantDeck;
         this._deckFilt = plantDeck;
         this._deckSmoothY = plantDeck;
-        if (this._landLock > 0) this._snapPitchToRoad(axles);
+        if (this._landLock > 0 && this._landSettle <= 0) this._snapPitchToRoad(axles);
       } else if (this.position.y < plantDeck) {
         this.position.y = plantDeck;
       } else if (this.position.y > plantDeck + GROUND_HOVER_MAX) {
@@ -1258,7 +1304,7 @@ export class Vehicle {
         this._deckFilt = floorY;
         this._landLock = 0.18;
         this._armLandPad(track, q2.dist, floorY);
-        this._snapPitchToRoad(axles);
+        this._beginLandSettle(axles, Math.max(0, -(this._padHitVy != null ? this._padHitVy : this.velY)), this.jump.lastLanding || 0);
         return;
       }
     }
@@ -1286,10 +1332,10 @@ export class Vehicle {
       this._touchDown(fallSpeed, impact, axles);
       this._armLandPad(track, q2.dist, floorY);
       const bounce = this._jumpBounce || 0;
-      // A bounce that keeps leftover air pitch puts the rear through the
-      // pad. Snap first; only hop if we are still clearly above the deck.
-      this._snapPitchToRoad(axles);
-      if (bounce > 0.55 && impact > 4.4 && this._landLock <= 0) {
+      // Keep residual air attitude through the pad — hard snap made every
+      // landing look upright and identical. Wheels still plant via lift.
+      this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
+      if (bounce > 0.55 && impact > (JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 3.8) && this._landLock <= 0) {
         this.velY = Math.min(bounce, 1.5);
         this.onGround = false;
         this._airTime = 0.04;
@@ -2299,6 +2345,7 @@ export class Vehicle {
   /**
    * Origin is the contact patch, so leftover air pitch buries a bumper
    * or lifts the tires. Snap onto the axle plane the instant the pad is under us.
+   * Used for glitch recovery / pit hold — not graded jump landings.
    * @param {ReturnType<Vehicle['_axleRoad']>} [axles]
    */
   _snapPitchToRoad(axles) {
@@ -2314,6 +2361,79 @@ export class Vehicle {
     this._bodyPitch = 0;
     this._bodyPitchRate = 0;
     this._squatSmooth = 0;
+    this._landSettle = 0;
+    this._landPitchOff = 0;
+    this._landRollOff = 0;
+    this._landSquash = 0;
+  }
+
+  /**
+   * Graded landing pose: keep residual air pitch/roll + impact squash, then
+   * decay them. Same lip at different speed/line/pedals leaves a different
+   * settle — not an upright keyframe.
+   * @param {ReturnType<Vehicle['_axleRoad']>} [axles]
+   * @param {number} impact descent rate (m/s)
+   * @param {number} upset 0..1 landing mismatch
+   */
+  _beginLandSettle(axles, impact = 0, upset = 0) {
+    const grade =
+      axles && Number.isFinite(axles.pitch)
+        ? clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX)
+        : this._slope;
+    const roadPitch = -grade;
+    this._slope = grade;
+    this._roadPitch = roadPitch;
+    this._visPitch = roadPitch;
+
+    const pitchMax = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.26;
+    const rollMax = JUMP.landSettleRollMax != null ? JUMP.landSettleRollMax : 0.24;
+    const airPitch = clamp(-(this.jump.noseUp || 0), -0.5, 0.5);
+    const hang = clamp((this.lastAirTime || this._airTime || 0) / 0.9, 0, 1);
+    const strength = clamp(0.28 + upset * 0.62 + hang * 0.38 + clamp(impact / 11, 0, 0.45), 0, 1);
+    this._landPitchOff = clamp(airPitch - roadPitch, -pitchMax, pitchMax) * strength;
+    this._landRollOff = clamp(
+      (this.jump.roll || 0) * (0.4 + strength * 0.6) + (this.roll || 0) * 0.25,
+      -rollMax,
+      rollMax
+    );
+    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.011;
+    this._landSquash = clamp(impact * squashK + upset * 0.045, 0.008, 0.09);
+    const tMin = JUMP.landSettleMin != null ? JUMP.landSettleMin : 0.28;
+    const tMax = JUMP.landSettleMax != null ? JUMP.landSettleMax : 0.92;
+    this._landSettle = clamp(tMin + impact * 0.035 + upset * 0.38 + hang * 0.28, tMin, tMax);
+
+    this.pitch = roadPitch + this._landPitchOff - this._landSquash;
+    this.pitchRate = (this.jump.noseUpRate || 0) * -0.5;
+    this.roll = clamp((this.roll || 0) * 0.35 + this._landRollOff, -rollMax, rollMax);
+    this.rollRate = (this.jump.rollRate || 0) * 0.55;
+    this._bodyPitch = -this._landSquash;
+    this._bodyPitchRate = 0;
+    this._squatSmooth = -this._landSquash;
+  }
+
+  /**
+   * Decay residual landing attitude toward the axle plane.
+   * @param {number} dt
+   */
+  _updateLandSettle(dt) {
+    if (this._landSettle <= 0) {
+      this._landPitchOff = 0;
+      this._landRollOff = 0;
+      this._landSquash = 0;
+      return;
+    }
+    this._landSettle = Math.max(0, this._landSettle - dt);
+    const damp = 2.4 + (1 - clamp(this._landSettle / 0.6, 0, 1)) * 5.5;
+    const k = Math.exp(-damp * dt);
+    this._landPitchOff *= k;
+    this._landRollOff *= k;
+    this._landSquash *= Math.exp(-5.8 * dt);
+    if (this._landSettle <= 0 || Math.abs(this._landPitchOff) + Math.abs(this._landRollOff) + this._landSquash < 0.004) {
+      this._landSettle = 0;
+      this._landPitchOff = 0;
+      this._landRollOff = 0;
+      this._landSquash = 0;
+    }
   }
 
   /**
@@ -2398,12 +2518,21 @@ export class Vehicle {
         ? clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX)
         : 0;
       const roadPitch = -grade;
-      const slack = this._landLock > 0 ? 0.01 : LAND_PITCH_SLACK;
-      this.pitch = clamp(this.pitch, roadPitch - slack, roadPitch + slack);
+      this._roadPitch = roadPitch;
       this._visPitch = roadPitch;
-      this._bodyPitch = clamp(this._bodyPitch, -slack, slack);
-      this._squatSmooth = clamp(this._squatSmooth || 0, -slack, slack);
-      this.pitchRate = 0;
+      this._slope = grade;
+      if (this._landSettle > 0) {
+        // Residual air attitude is intentional — lift below keeps tires planted.
+        const maxOff = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.26;
+        this.pitch = clamp(this.pitch, roadPitch - maxOff, roadPitch + maxOff);
+        this._bodyPitch = clamp(this._bodyPitch, -maxOff, 0.04);
+      } else {
+        const slack = this._landLock > 0 ? 0.01 : LAND_PITCH_SLACK;
+        this.pitch = clamp(this.pitch, roadPitch - slack, roadPitch + slack);
+        this._bodyPitch = clamp(this._bodyPitch, -slack, slack);
+        this._squatSmooth = clamp(this._squatSmooth || 0, -slack, slack);
+        this.pitchRate = 0;
+      }
     }
 
     const L = Math.max(1.6, axles.L || this.spec.wheelbase || 2.55);
@@ -2411,11 +2540,13 @@ export class Vehicle {
     const sinP = Math.sin(this.pitch);
     const frontOff = -half * sinP;
     const rearOff = half * sinP;
+    // While residual air pitch is live, lift harder so axles never poke the deck.
+    const sinkAllow = this._landSettle > 0 ? -0.02 : AXLE_SINK_MAX;
 
     let lift = 0;
     const needLift = (solid, height, off) => {
       if (!solid || !Number.isFinite(height)) return;
-      const need = height - TIRE_PLANT - off - AXLE_SINK_MAX;
+      const need = height - TIRE_PLANT - off - sinkAllow;
       const extra = need - this.position.y;
       if (extra > lift) lift = extra;
     };
@@ -2438,7 +2569,7 @@ export class Vehicle {
         this.onGround = true;
         this._airTime = 0;
         this._landLock = Math.max(this._landLock || 0, 0.16);
-        this._snapPitchToRoad(axles);
+        this._beginLandSettle(axles, Math.max(0, -this.velY), this.jump.lastLanding || 0);
         const deck = this._roadDeckY(axles);
         if (Number.isFinite(deck) && this.position.y < deck) this.position.y = deck;
       }
@@ -2611,6 +2742,7 @@ export class Vehicle {
    * follows lateral g with a hint of rock. In the air the JumpModel owns attitude.
    */
   _updateAttitude(dt) {
+    this._updateLandSettle(dt);
     const s = this.spec;
     const trackW = 0.5 * ((s.trackFront || 1.5) + (s.trackRear || 1.5));
     const kSpringRoll = (trackW * trackW * 0.25) * (s.spring || 32000) * 2;
@@ -2637,6 +2769,9 @@ export class Vehicle {
 
     if (this.onGround) {
       const squatRate = HANDLING.squatSmoothRate != null ? HANDLING.squatSmoothRate : 10;
+      if (this._landSettle > 0) {
+        squatTarget = Math.min(squatTarget, -this._landSquash);
+      }
       this._squatSmooth += (squatTarget - this._squatSmooth) * (1 - Math.exp(-squatRate * dt));
     } else {
       this._squatSmooth *= Math.exp(-8 * dt);
@@ -2647,25 +2782,36 @@ export class Vehicle {
     const iRoll = Math.max(280, s.rollInertia || 480);
     const wnRoll = Math.max(10, Math.sqrt(kRoll / iRoll));
     if (this.onGround) {
-      this._springAxis("roll", rollTarget, dt, wnRoll, 1.08);
+      const settleRoll = this._landSettle > 0 ? this._landRollOff : 0;
+      const wantRoll = clamp(rollTarget + settleRoll, -Math.max(rollMax, 0.24), Math.max(rollMax, 0.24));
+      const wn = this._landSettle > 0 ? wnRoll * 0.52 : wnRoll;
+      const zeta = this._landSettle > 0 ? 0.78 : 1.08;
+      this._springAxis("roll", wantRoll, dt, wn, zeta);
     } else {
-      const wantRoll = clamp(this.jump.roll || 0, -0.22, 0.22);
-      const k = 1 - Math.exp(-6 * dt);
+      const wantRoll = clamp(this.jump.roll || 0, -0.32, 0.32);
+      const k = 1 - Math.exp(-7.5 * dt);
       this.roll += (wantRoll - this.roll) * k;
       this.rollRate = this.jump.rollRate || 0;
     }
 
     if (this.onGround || this._padHitVy != null) {
-      const want = this._visPitch + this._bodyPitch;
-      const k = this._landLock > 0 ? 1 : 1 - Math.exp(-24 * dt);
+      const settleOff =
+        this._landSettle > 0 ? this._landPitchOff - this._landSquash * 0.55 : 0;
+      const want = this._visPitch + this._bodyPitch + settleOff;
+      const k =
+        this._landSettle > 0
+          ? 1 - Math.exp(-6.5 * dt)
+          : this._landLock > 0
+            ? 1 - Math.exp(-14 * dt)
+            : 1 - Math.exp(-24 * dt);
       this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {
       // Three.js Rx: + = nose down, JumpModel is + = nose up. Show the attitude
       // the driver actually commanded, so lifting and braking LOOKS like the
       // nose dropping.
-      const flight = clamp(-this.jump.noseUp, -0.44, 0.44);
-      const blend = 1 - Math.exp(-8 * dt);
+      const flight = clamp(-this.jump.noseUp, -0.55, 0.55);
+      const blend = 1 - Math.exp(-9 * dt);
       this.pitch += (flight - this.pitch) * blend;
       this.pitchRate = this.jump.noseUpRate * -1.05 + (flight - this.pitch) * 2.8;
     }

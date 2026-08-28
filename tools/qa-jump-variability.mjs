@@ -41,12 +41,14 @@ check("spring pop scales with approach speed", /clamp\(vx \/ 24, 0\.12, 1\.35\)/
 check("air applies attitude drag", /airLongDrag/.test(jump) && /airLongDrag\(dt\)/.test(vehicle));
 check("gravity hangs on nose-up and dives on nose-down", /aeroDive/.test(jump) && /aeroDive/.test(config));
 check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /noseFirst/.test(jump));
-check("bounce can fire on a tail-first hit", /bounce > 0\.55 && impact > 4\.4/.test(vehicle));
+check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle\(/.test(vehicle) && /_landSettle/.test(vehicle) && /landSettleMin/.test(config));
+check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
+check("bounce can fire on a hard mismatched hit", /bounce > 0\.55 && impact >/.test(vehicle));
 check("JUMP.launchHeightScale is not the old 0.28 squash", !/launchHeightScale:\s*0\.28/.test(config));
-check("game imports vehicle.js?v=101+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 101);
-check("cache-bust chain", cacheOk && Number(gameV) >= 460, `main=${mainV} game=${gameV}`);
+check("game imports vehicle.js?v=103+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 103);
+check("cache-bust chain", cacheOk && Number(gameV) >= 479, `main=${mainV} game=${gameV}`);
 
-const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=15";
+const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=17";
 let modelOk = false;
 try {
   const mod = await import(jumpUrl);

@@ -562,15 +562,20 @@ export const TUNNEL = {
   fogNear: 32,
   fogFar: 320,
   /** Exposure multiplier at full shade. */
-  exposureBoost: 1.18,
+  exposureBoost: 1.22,
   /** Lens emissive when headlights are fully on. */
-  headEmissive: 18,
-  /** SpotLight beam intensity per lamp. */
-  headBeam: 520,
-  headBeamDistance: 148,
-  headBeamAngle: Math.PI / 9.2,
-  headBeamPenumbra: 0.55,
-  headBeamDecay: 1.15,
+  headEmissive: 34,
+  /**
+   * SpotLight beam intensity per lamp (physical). Must punch the bore once
+   * the key sun is killed — 520 read as a glow, not a road light.
+   */
+  headBeam: 1280,
+  headBeamDistance: 175,
+  headBeamAngle: Math.PI / 7.8,
+  headBeamPenumbra: 0.48,
+  headBeamDecay: 0.95,
+  /** Extra headlight gain once tunnel shade is committed (player only). */
+  headBeamTunnelBoost: 1.35,
 };
 
 /**
@@ -1014,13 +1019,13 @@ export const JUMP = {
    * throttle keeps the wheels driving and the nose up; braking spins them
    * down and the reaction torque tips the nose over.
    */
-  airPitchUp: 0.3,
-  airPitchDown: 0.34,
-  airPitchRate: 5.8,
-  airPitchMax: 0.46,
+  airPitchUp: 0.38,
+  airPitchDown: 0.42,
+  airPitchRate: 6.8,
+  airPitchMax: 0.55,
   /** In-air pitch inertia — lower = snappier rotation, higher = floaty tumble risk. */
-  airPitchInertia: 1.45,
-  airPitchDamp: 1.85,
+  airPitchInertia: 1.28,
+  airPitchDamp: 1.45,
   /**
    * Nose-high aero lift. Modest hang at speed — large values flatten the apex
    * into a float then a late drop (reads as a hop).
@@ -1064,12 +1069,24 @@ export const JUMP = {
    * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
    * Variation is state at the lip — speed, attitude, compress, line — never RNG.
    */
-  lipGrain: 0.07,
-  inheritPitch: 0.72,
-  airRollMax: 0.28,
-  airRollDamp: 1.55,
-  landBounce: 0.24,
-  landBounceImpact: 4.4,
+  lipGrain: 0.11,
+  inheritPitch: 0.85,
+  airRollMax: 0.36,
+  airRollDamp: 1.15,
+  landBounce: 0.32,
+  landBounceImpact: 3.8,
+  /**
+   * After touchdown, residual air attitude + impact squash settle over this
+   * window (seconds). Hard zero-snap made every landing look upright/identical.
+   */
+  landSettleMin: 0.28,
+  landSettleMax: 0.92,
+  /** Extra Three.js pitch (rad) allowed while settle is live. */
+  landSettlePitchMax: 0.2,
+  /** Extra roll (rad) carried through the settle rock. */
+  landSettleRollMax: 0.2,
+  /** Nose-down squash (rad) per m/s of impact. */
+  landImpactSquash: 0.011,
 };
 
 /**

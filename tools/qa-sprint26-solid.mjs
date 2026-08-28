@@ -30,9 +30,14 @@ const collide = read("js/physics/collide.js");
 const track = read("js/tracks/track.js");
 
 check(
-  "full depenetration",
-  /Full separation/.test(collide) && /pass < 2/.test(collide),
-  "glanceObstacles must fully separate over 2 passes"
+  "contact resolve strips into-surface velocity only",
+  /Resolve velocity against the normal/.test(collide) && /PLAYER_ENV_PUSH/.test(collide),
+  "applyGlance must not zero longitudinal speed"
+);
+check(
+  "TOI sweep + penetration correction",
+  /earliest time-of-impact/.test(collide) && /correctEnvPenetration/.test(collide),
+  "path collision, not endpoint-only"
 );
 check(
   "_bumpNearRoad helper",

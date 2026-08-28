@@ -109,6 +109,12 @@ const STREAM_FAR = 1200;
 
 /** Minimum clear strip beyond the painted edge — no props on the driven line. */
 const ROAD_VERGE = 8.2;
+/**
+ * Collision-safe corridor past the painted edge (m). Car half-width (~0.95) +
+ * nose/tail slack so no env solid can sit where the chassis drives.
+ * Visual props may still dress the verge; physics spheres must clear THIS.
+ */
+const ROAD_COLLIDER_CLEAR = 3.8;
 /** Extra clearance for tall forest pack trees (canopy radius at scale). */
 const FOREST_TREE_CLEAR = 8.6;
 
@@ -150,6 +156,10 @@ export class Track {
     this.points = [];
     this.length = 0;
     this.colliders = [];
+    /** Colliders scrubbed from the roadway safety corridor (build audit). */
+    this.corridorViolations = [];
+    /** When true, overlapping corridor after scrub throws (QA / debug). */
+    this.strictCorridor = false;
     /** @type {{startDist:number,endDist:number}[]} */
     this._tunnels = [];
     /** Wall-lamp world positions for the fixed PointLight pool. */
@@ -2981,12 +2991,85 @@ export class Track {
   }
 
   /**
-   * Drop any obstacle colliders that landed on the painted ribbon — a last
-   * guard so glancing bumps never fire mid-lane after a bad plant.
+   * Drop obstacle colliders that invade the drive corridor (painted lane +
+   * car-footprint safety). Visual meshes may stay for scenery; physics solids
+   * must never overlap the roadway buffer. Fail-loud when strictCorridor is on.
    */
   _scrubRoadwayColliders() {
     const list = this.colliders;
-    if (!list || !list.length) return;
+    if (!list || !list.length) {
+      this.corridorViolations = [];
+      return;
+    }
+    const kept = [];
+    const dropped = [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (c.kind === "wall") {
+        kept.push(c);
+        continue;
+      }
+      const r = c.r || 0.5;
+      const road = this._nearestRoad(c.x, c.z);
+      const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+      // World-space sphere vs corridor — not the prop's origin alone.
+      if (over - r >= ROAD_COLLIDER_CLEAR) {
+        kept.push(c);
+      } else {
+        dropped.push({
+          x: c.x,
+          z: c.z,
+          r,
+          over,
+          clear: ROAD_COLLIDER_CLEAR,
+          along: road.along,
+        });
+      }
+    }
+    list.length = 0;
+    for (let i = 0; i < kept.length; i++) list.push(kept[i]);
+    this.corridorViolations = dropped;
+    this._assertDriveCorridor(dropped);
+  }
+
+  /**
+   * Asset-level invariant: after scrub, no sphere collider may still sit in
+   * the roadway safety corridor. Development / QA can set `strictCorridor`
+   * (or `globalThis.__RALLY_STRICT_CORRIDOR__`) to throw instead of log.
+   * @param {Array<{x:number,z:number,r:number,over:number}>} [alreadyDropped]
+   */
+  _assertDriveCorridor(alreadyDropped) {
+    const list = this.colliders || [];
+    const bad = [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (c.kind === "wall") continue;
+      const r = c.r || 0.5;
+      const road = this._nearestRoad(c.x, c.z);
+      const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+      if (over - r < ROAD_COLLIDER_CLEAR) {
+        bad.push({ x: c.x, z: c.z, r, over, along: road.along });
+      }
+    }
+    if (!bad.length) {
+      if (alreadyDropped && alreadyDropped.length && typeof console !== "undefined" && console.info) {
+        console.info(
+          `[corridor] scrubbed ${alreadyDropped.length} collider(s) from roadway safety zone`
+        );
+      }
+      return;
+    }
+    const sample = bad[0];
+    const msg =
+      `Invalid track: collider overlaps roadway corridor ` +
+      `(x=${sample.x.toFixed(1)} z=${sample.z.toFixed(1)} r=${sample.r.toFixed(2)} ` +
+      `over=${sample.over.toFixed(2)} need≥${ROAD_COLLIDER_CLEAR})`;
+    const strict =
+      this.strictCorridor === true ||
+      (typeof globalThis !== "undefined" && globalThis.__RALLY_STRICT_CORRIDOR__ === true);
+    if (strict) throw new Error(msg);
+    if (typeof console !== "undefined" && console.error) console.error(msg, bad.slice(0, 8));
+    // Belt: drop any survivors that somehow remained.
     let w = 0;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
@@ -2997,8 +3080,7 @@ export class Track {
       const r = c.r || 0.5;
       const road = this._nearestRoad(c.x, c.z);
       const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-      // Drop colliders whose sphere overlaps painted asphalt on ANY nearby arm.
-      if (over - r >= 0.15) list[w++] = c;
+      if (over - r >= ROAD_COLLIDER_CLEAR) list[w++] = c;
     }
     list.length = w;
   }
@@ -5120,7 +5202,8 @@ export class Track {
   _laneKeepout(x, z, r, y) {
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-    if (over - r >= 0.85) return false;
+    // Strip visual instances that invade the collision-safe corridor (+ small pad).
+    if (over - r >= ROAD_COLLIDER_CLEAR + 0.35) return false;
     if (y != null && Number.isFinite(road.roadY) && y > road.roadY + ROAD_DECK + 2.5) {
       return false;
     }
@@ -6820,13 +6903,23 @@ export class Track {
   }
 
   /**
-   * Visual props that cars should glance off, not embed in.
+   * Register an opaque env solid. Never on the roadway corridor — origin off
+   * the paint is not enough if the radius reaches the drive path. Tunnel /
+   * underpass linings use `_wallFace` instead.
    * @param {number} x
    * @param {number} z
    * @param {number} r
+   * @param {number} [knownOver] precomputed edge clearance (skip a second query)
    */
-  _bump(x, z, r) {
-    this.colliders.push({ x, z, r });
+  _bump(x, z, r, knownOver = null) {
+    const rad = Math.max(0.05, Number(r) || 0.5);
+    let over = knownOver;
+    if (over == null || !Number.isFinite(over)) {
+      const road = this._nearestRoad(x, z);
+      over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+    }
+    if (over - rad < ROAD_COLLIDER_CLEAR) return;
+    this.colliders.push({ x, z, r: rad });
   }
 
   /**
@@ -6864,7 +6957,7 @@ export class Track {
 
   /**
    * Register a solid collider only when the prop sits near the driven line
-   * (and never on the painted ribbon). Far wilderness stays visual-only.
+   * (and never on the roadway corridor). Far wilderness stays visual-only.
    * @param {number} x
    * @param {number} z
    * @param {number} r
@@ -6874,8 +6967,7 @@ export class Track {
     const road = this._nearestRoad(x, z);
     if (road.dist > maxDist) return;
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-    if (over - r < 1.15) return;
-    this._bump(x, z, r);
+    this._bump(x, z, r, over);
   }
 
   /**

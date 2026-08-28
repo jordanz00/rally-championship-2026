@@ -129,7 +129,12 @@ check(
 );
 check("samePit uses scanned land dist, not a 36 m window", /_landPadEndDist/.test(vehicle) && !/< 36/.test(vehicle));
 check("_scanLandPad returns the land run end", /return \{ y, dist: foundAt, end: endAt \}/.test(vehicle));
-check("air pitch snaps onto the axle plane on the pad", /_snapPitchToRoad\(axles\)/.test(vehicle));
+check("air pitch snaps onto the axle plane on glitch/plant", /_snapPitchToRoad\(axles\)/.test(vehicle));
+check("graded landings use attitude settle, not upright snap", /_beginLandSettle\(/.test(vehicle));
+check(
+  "chassis stay-on-road still active",
+  /_keepChassisOnRoad\(axles, pit\)/.test(vehicle) && /const LAND_PITCH_SLACK/.test(vehicle)
+);
 check("next lip is not blocked by the previous land lock", /holdThisPit/.test(vehicle));
 check("air under a solid deck plants onGround", /solidDeck/.test(vehicle) && /sameTakeoff/.test(vehicle));
 check("pad stays armed on the landing strip", /kind !== "land" && this\._landPadArmed/.test(vehicle));

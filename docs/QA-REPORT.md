@@ -3544,7 +3544,166 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 
 ---
 
+## Sprint — Variable jump air / land settle (27 Aug 2026)
 
+**Player moment:** Hit Desert's hop, then the pair. Each jump pitches and rolls differently from speed, lip, line, and pedals. After landing the car rocks and squashes then settles — it does not snap upright like a keyframe.
+
+**Cause:** Graded JumpModel air existed, but every pad touch called `_snapPitchToRoad` and `_landLock` forced `k=1` pitch blend + ±0.01 rad clamp. Residual air attitude was erased the frame you landed.
+
+**Fix:** `_beginLandSettle` keeps residual pitch/roll + impact squash for 0.28–0.92 s. Land-lock no longer wipes settle. Air pitch/roll envelope widened. Glitch/plant paths still hard-snap.
+
+| Item | State |
+|---|---|
+| Per-jump residual land attitude | **Done** |
+| Impact squash + roll rock | **Done** |
+| Wider air pitch/roll / lip grain | **Done** |
+| Road plant / clip guards retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=479`** · `vehicle.js?v=103` · `jump.js?v=17` · `config.js?v=149`
+
+**Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint68-jump-land.mjs`
+
+**Still human-only:** Hard refresh `?v=479`. Take Desert jump 1 flat-out, then jump 2 lift-brake, then jump 3 off-line — each leave and land should look different.
+
+---
+
+## Sprint — Roadway safety corridor (27 Aug 2026)
+
+**Player moment:** Drive any stage. Rocks, trees, and berms stay out of the drive path. The car glances on its full footprint (not a centre point). Fast hits do not tunnel through a rock between physics frames.
+
+**Cause:** Colliders were scrubbed only 0.15 m past paint; plant used 1.15 m. Env hits used a centre sphere (`CAR_RADIUS`). Discrete end-of-step tests missed thin solids at speed. Build silently dropped bad colliders with no assert.
+
+**Fix:** Shared `ROAD_COLLIDER_CLEAR` (2.2 m = car half-width + safety). Scrub + `_bumpNearRoad` + lane keep-out share it. `_assertDriveCorridor` logs / throws when `strictCorridor` or `__RALLY_STRICT_CORRIDOR__`. Rocks use car OBB + swept prev→current XZ. Residual env∩car notes a glitch and re-resolves.
+
+| Item | State |
+|---|---|
+| Roadway exclusion zone for solids | **Done** |
+| Visual vs collision (scrub solids, keep visuals) | **Done** |
+| Car footprint OBB env hits | **Done** |
+| Swept movement test | **Done** |
+| Fail-loud corridor assert (strict flag) | **Done** |
+| Runtime env∩car invariant | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=480`** · `track.js?v=207` · `collide.js?v=42` · `vehicle.js?v=104`
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
+
+**Still human-only:** Hard refresh `?v=480`. Clip a Desert shoulder rock with the nose — glance before the body embeds.
+
+---
+
+## Sprint — Contact-only env collision (27 Aug 2026)
+
+**Player moment:** Hit a berm or rock at speed. The car scrapes and keeps going. It does not freeze, teleport, or lose all forward speed. Physics still owns the pose; the mesh only follows.
+
+**Cause:** `applyGlance` scrubbed whole velocity and blended toward a low "keep" heading (player blend 0.38). Stacked 2-pass resolves + a second `glanceObstacles` on residual overlap stopped the car. Large inside-OBB overlaps shoved metres and fought `_guardXZ`.
+
+**Fix:** One authority path — swept contact → push capped (`PLAYER_ENV_PUSH` 0.45) + slop → strip **only** into-normal velocity. No isotropic scrub, no heading blend freeze. Diagnostic `_envIntersect` no longer re-resolves.
+
+| Item | State |
+|---|---|
+| Normal-only velocity resolve | **Done** |
+| Cap env push (no teleport shove) | **Done** |
+| Remove stacked second glance | **Done** |
+| Keep corridor scrub / OBB sweep | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=481`** · `collide.js?v=43` · `vehicle.js?v=105`
+
+**Proof:** `node tools/qa-sprint26-solid.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-jump-variability.mjs`
+
+**Still human-only:** Hard refresh `?v=481`. Clip a Desert rock at race speed — you should keep rolling past, not stop dead.
+
+---
+
+## Sprint — Phys authority / TOI sweep (27 Aug 2026)
+
+**Player moment:** Hitch the frame near Desert jump 3 or clip a berm at speed. The car stays finite, on the road, and moving. Mesh never invents its own pose.
+
+**Cause:** Endpoint-only deepest-overlap sampling could leave the car past the first contact after a long Δx. Residual embed was flagged but not corrected. Competing writers were already mostly gone (`_syncPlayerMesh` ← `drawPose`).
+
+**Fix:** TOI sweep rewinds to first contact along prev→proposed XZ, then contact resolve, then `correctEnvPenetration`. Deep embed restores **last-safe XZ** (not a map teleport). Fixed-dt accumulator unchanged. Corridor solids unchanged.
+
+| Item | State |
+|---|---|
+| Physics-authoritative mesh sync | **Verified** |
+| TOI path sweep (not endpoint-only) | **Done** |
+| Penetration correction pass | **Done** |
+| Deep-embed → last-safe XZ | **Done** |
+| `tools/qa-phys-authority.mjs` | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=482`** · `collide.js?v=44` · `vehicle.js?v=106`
+
+**Proof:** `node tools/qa-phys-authority.mjs` · `node tools/qa-sprint26-solid.mjs` · `node tools/qa-env-clip.mjs`
+
+**Still human-only:** Hard refresh `?v=482`. Drive Desert jump 2→3 with a brief tab hitch — no bury, no freeze.
+
+---
+
+## Sprint — Tunnel headlight punch (27 Aug 2026)
+
+**Player moment:** Enter the Desert tunnel. Player headlights light the roadway ahead — not a faint lens glow in a dark bore.
+
+**Cause:** `TUNNEL.headBeam` was 520 with soft falloff; once the key sun was killed the beams read as emissive paint, not road light.
+
+**Fix:** Beam 1280, wider/longer cone, lower decay, brighter lens emissive, +35% tunnel boost when shade is committed.
+
+| Item | State |
+|---|---|
+| Stronger player head beams in tunnel | **Done** |
+| Lens emissive readable | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=483`** · `config.js?v=150` · `celica.js?v=135`
+
+**Proof:** code contract — `TUNNEL.headBeam >= 1000` · `setHeadlights(..., { tunnelBoost })`
+
+**Still human-only:** Hard refresh `?v=483`. Drive into the Desert tunnel — asphalt ahead should read lit by the car.
+
+---
+
+## Sprint — Zero env solids on roadway (27 Aug 2026)
+
+**Player moment:** Drive any stage on the painted lane. No rock, berm, tree, or post collider sits in the drive path. Glances only happen off the corridor.
+
+**Cause:** Raw `_bump()` registered solids without a corridor test; only `_bumpNearRoad` + end scrub enforced keep-out. Clearance was 2.2 m — still tight for chassis footprint.
+
+**Fix:** Every env sphere goes through `_bump`, which refuses `over - r < ROAD_COLLIDER_CLEAR` (**3.8 m**). Scrub + assert remain as belt. Walls stay `_wallFace` only.
+
+| Item | State |
+|---|---|
+| `_bump` corridor gate | **Done** |
+| `ROAD_COLLIDER_CLEAR` 3.8 m | **Done** |
+| Scrub / assert retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=484`** · `track.js?v=208`
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
+
+**Still human-only:** Hard refresh `?v=484`. Full-throttle Desert centreline — no invisible hits on paint.
+
+---
+
+## Sprint — Roadway corridor closed + garage singleton fix (27 Aug 2026)
+
+**Player moment:** Drive any stage on paint. No env solid in the 3.8 m roadway corridor. Championship / practice actually reaches the grid (rivals spawn).
+
+**Cause:** Corridor gate was in place but headed proof was blocked — `ai.js` imported `celica.js?v=134` while `game.js` used `?v=136`, so ES modules created **two garage singletons**. LOD warm filled one; `createRivalCar` read the empty other and threw. Desert boot never finished → corridor probes timed out.
+
+**Fix:** Align `ai.js` → `celica.js?v=136` / `config.js?v=150`. `_bump` still refuses corridor invasion (optional precomputed `knownOver`). `prepareCar` no longer nulls a warm template after a failed hero re-parse. Cache bump `track.js?v=209`.
+
+| Item | State |
+|---|---|
+| `_bump` / scrub / `ROAD_COLLIDER_CLEAR` 3.8 m | **Done** |
+| Garage singleton aligned (ai ↔ game) | **Done** |
+| Desert headed: 334 colliders clear of corridor | **PASS** |
+| All-course env-clip headed | **PASS** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=485`** · `track.js?v=209` · `celica.js?v=136` · `ai.js?v=130`
+
+**Proof:** `node tools/qa-desert-clip.mjs` **PASS** · `node tools/qa-env-clip.mjs` **PASS** (desert/forest/mountain/lakeside; 0 corridor solids)
+
+**Still human-only:** Hard refresh `?v=485`. Desert centreline — no invisible hits on paint.
+
+---
 
 # Sprint — Cinema title / SELECT MODE showroom (27 Aug 2026)
 

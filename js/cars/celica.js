@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=148";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=150";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=27";
 
 const GARAGE = {
@@ -258,6 +258,15 @@ async function prepareCar(id) {
   await tryRivalGltf(id);
   if (await tryLocalGltf(id)) return;
   if (await tryCachedGltf(id)) return;
+  // Keep any title/hero mesh already warm. Nulling here wiped the only
+  // template after a failed re-parse and left createRivalCar with an empty garage.
+  if (templates[id] || rivalTemplates[id]) {
+    console.warn(
+      `[garage] ${id}: hero re-load missed; keeping warm template ` +
+        `(hero=${!!templates[id]} lod=${!!rivalTemplates[id]})`
+    );
+    return;
+  }
   console.warn(
     `[garage] ${id}: no GLB found, using loaded high-quality cars only. ` +
       `Expected one of: ${(GARAGE[id] || {}).urls?.join(", ")}`
@@ -3600,10 +3609,10 @@ function attachHeadBeams(root) {
     const spot = new THREE.SpotLight(
       0xfff6e4,
       0,
-      TUNNEL.headBeamDistance || 148,
-      TUNNEL.headBeamAngle || Math.PI / 9.2,
-      TUNNEL.headBeamPenumbra != null ? TUNNEL.headBeamPenumbra : 0.55,
-      TUNNEL.headBeamDecay != null ? TUNNEL.headBeamDecay : 1.15
+      TUNNEL.headBeamDistance || 175,
+      TUNNEL.headBeamAngle || Math.PI / 7.8,
+      TUNNEL.headBeamPenumbra != null ? TUNNEL.headBeamPenumbra : 0.48,
+      TUNNEL.headBeamDecay != null ? TUNNEL.headBeamDecay : 0.95
     );
     spot.position.copy(o);
     spot.castShadow = false;
@@ -3621,12 +3630,21 @@ function attachHeadBeams(root) {
  * Tunnel lamps. `on` may be 0–1 for a fade.
  * @param {THREE.Object3D} root
  * @param {boolean|number} on
+ * @param {{tunnelBoost?:number}} [opts] extra beam gain inside the bore
  */
-export function setHeadlights(root, on) {
+export function setHeadlights(root, on, opts = {}) {
   if (!root) return;
   const t = typeof on === "number" ? Math.max(0, Math.min(1, on)) : on ? 1 : 0;
-  const emit = TUNNEL.headEmissive != null ? TUNNEL.headEmissive : 18;
-  const beamInt = TUNNEL.headBeam != null ? TUNNEL.headBeam : 520;
+  const emit = TUNNEL.headEmissive != null ? TUNNEL.headEmissive : 34;
+  const beamInt = TUNNEL.headBeam != null ? TUNNEL.headBeam : 1280;
+  const boost =
+    opts.tunnelBoost != null
+      ? opts.tunnelBoost
+      : t > 0.55
+        ? TUNNEL.headBeamTunnelBoost != null
+          ? TUNNEL.headBeamTunnelBoost
+          : 1.35
+        : 1;
   const lamps = root.userData.headlights;
   if (lamps) {
     const body = t > 0.05 ? 0xfff9ee : 0x8a9098;
@@ -3637,20 +3655,25 @@ export function setHeadlights(root, on) {
         const mat = mats[m];
         if (!mat) continue;
         if (mesh.userData.headDummy || mesh.userData.headEmitter) {
-          mat.emissiveIntensity = 0.18 + t * emit;
+          mat.emissiveIntensity = 0.18 + t * emit * Math.min(1.15, boost);
           if (mat.color) mat.color.setHex(body);
           if (mat.emissive) mat.emissive.setHex(t > 0.05 ? 0xfff4d4 : 0x445055);
         } else {
-          mat.emissiveIntensity = t * emit;
+          mat.emissiveIntensity = t * emit * Math.min(1.15, boost);
         }
       }
     }
   }
   const beams = root.userData.headBeams;
   if (beams) {
+    const intensity = t * beamInt * boost;
     for (let i = 0; i < beams.length; i++) {
-      beams[i].intensity = t * beamInt;
+      beams[i].intensity = intensity;
       beams[i].visible = true;
+      if (TUNNEL.headBeamDistance != null) beams[i].distance = TUNNEL.headBeamDistance;
+      if (TUNNEL.headBeamAngle != null) beams[i].angle = TUNNEL.headBeamAngle;
+      if (TUNNEL.headBeamPenumbra != null) beams[i].penumbra = TUNNEL.headBeamPenumbra;
+      if (TUNNEL.headBeamDecay != null) beams[i].decay = TUNNEL.headBeamDecay;
     }
   }
 }

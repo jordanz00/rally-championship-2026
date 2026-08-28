@@ -20,22 +20,22 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=148";
+} from "./config.js?v=150";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=102";
+import { Vehicle } from "./physics/vehicle.js?v=106";
 import { getSurface } from "./physics/surfaces.js?v=48";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=64";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=134";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=136";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=206";
+import { Track } from "./tracks/track.js?v=209";
 import { preparePropKit, prefetchPropKit, loadTitleRocks } from "./tracks/prop-kit.js?v=23";
-import { Opponent } from "./ai.js?v=129";
+import { Opponent } from "./ai.js?v=130";
 import { RallyAudio } from "./audio/engine.js?v=55";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=34";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=31";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=56";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=41";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=44";
 import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=28";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=27";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=10";
@@ -3518,7 +3518,16 @@ export class RallyGame {
       this.scene.fog.far = L.fogFar * (1 - t) + tf * t;
     }
 
-    if (this.playerMesh) setHeadlights(this.playerMesh, Math.min(1, t * 1.35));
+    if (this.playerMesh) {
+      const headOn = Math.min(1, t * 1.55);
+      const boost =
+        t > 0.35
+          ? TUNNEL.headBeamTunnelBoost != null
+            ? TUNNEL.headBeamTunnelBoost
+            : 1.35
+          : 1;
+      setHeadlights(this.playerMesh, headOn, { tunnelBoost: boost });
+    }
   }
 
   /**

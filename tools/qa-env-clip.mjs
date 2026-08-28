@@ -62,19 +62,37 @@ check(
   "AABB larger than the plant centre"
 );
 check(
-  "colliders whose sphere overlaps asphalt are scrubbed",
-  /over - r >= 0\.15/.test(trackSrc),
-  "_scrubRoadwayColliders uses minOver across nearby arms"
+  "every env sphere bump refuses the roadway corridor",
+  /_bump\(x, z, r[\s\S]*?\{[\s\S]*?over - rad < ROAD_COLLIDER_CLEAR/.test(trackSrc) &&
+    /ROAD_COLLIDER_CLEAR = 3\.8/.test(trackSrc),
+  "_bump is the single gate — no mid-lane solids"
 );
 check(
-  "near-road bumps reject asphalt overlap",
-  /over - r < 1\.15/.test(trackSrc),
-  "_bumpNearRoad uses minOver across nearby arms"
+  "colliders whose sphere overlaps the drive corridor are scrubbed",
+  /ROAD_COLLIDER_CLEAR/.test(trackSrc) &&
+    /_assertDriveCorridor/.test(trackSrc) &&
+    /over - r >= ROAD_COLLIDER_CLEAR/.test(trackSrc),
+  "_scrubRoadwayColliders + fail-loud corridor assert"
 );
 check(
-  "opaque env still fully depenetrates",
-  /pass < 2/.test(collideSrc) && /must not be penetrable/.test(collideSrc),
-  "glanceObstacles"
+  "near-road bumps share _bump corridor gate",
+  /_bumpNearRoad[\s\S]*?this\._bump\(x, z, r,\s*over\)/.test(trackSrc),
+  "_bumpNearRoad does not bypass roadway clear"
+);
+check(
+  "env rocks hit the car OBB footprint, not a centre sphere",
+  /circleVsCarObb/.test(collideSrc) && /sweepSteps/.test(collideSrc),
+  "OBB + swept prev→current XZ"
+);
+check(
+  "runtime env∩car invariant is noted",
+  /_envIntersect/.test(collideSrc),
+  "glanceObstacles flags residual overlap"
+);
+check(
+  "opaque env uses TOI sweep then penetration correct",
+  /earliest time-of-impact/.test(collideSrc) && /correctEnvPenetration/.test(collideSrc),
+  "glanceObstacles — path collision, not endpoint-only"
 );
 check(
   "mountain trench chase flattened to 48 m",
@@ -191,8 +209,10 @@ const PROBE_JS = `const g = window.game;
         if (c.kind === "wall") continue;
         const road = track._nearestRoad(c.x, c.z);
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-        if (over - (c.r || 0.5) < 0.15) onLane += 1;
+        // Match ROAD_COLLIDER_CLEAR — zero env solids in the drive corridor.
+        if (over - (c.r || 0.5) < 3.8) onLane += 1;
       }
+      const corridorScrubbed = (track.corridorViolations && track.corridorViolations.length) || 0;
       let meshHits = 0;
       let worstMesh = -99;
       let instHits = 0;
@@ -248,6 +268,7 @@ const PROBE_JS = `const g = window.game;
         worstVerge,
         colliders: colliders.length,
         onLane,
+        corridorScrubbed,
         meshHits,
         worstMesh,
         instHits,
@@ -330,9 +351,12 @@ async function main() {
         `  ok  ${id} verge land below deck+0.35 m (worst ${probe.worstVerge.toFixed(2)} m)`
       );
       if (probe.onLane > 0) {
-        throw new Error(`${id}: ${probe.onLane} collider(s) overlap the painted lane`);
+        throw new Error(`${id}: ${probe.onLane} collider(s) invade the roadway safety corridor`);
       }
-      console.log(`  ok  ${id} ${probe.colliders} colliders, none on painted asphalt`);
+      console.log(
+        `  ok  ${id} ${probe.colliders} colliders clear of drive corridor` +
+          (probe.corridorScrubbed ? ` (scrubbed ${probe.corridorScrubbed} at build)` : "")
+      );
       if (probe.meshHits > 0) {
         throw new Error(
           `${id}: land mesh verts on the ribbon at ${probe.meshHits}; worst ${probe.worstMesh.toFixed(2)} m`

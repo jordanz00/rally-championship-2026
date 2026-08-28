@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=148";
+import { JUMP } from "../config.js?v=149";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -203,8 +203,8 @@ export class JumpModel {
       Math.max(0, -fallSpeed) > need
         ? Math.max(0, -fallSpeed) * bounceAmp * (0.04 + tailFirst * 0.96)
         : 0;
-    this.noseUpRate *= 0.22;
-    this.rollRate *= 0.38;
+    this.noseUpRate *= 0.55;
+    this.rollRate *= 0.62;
     this.technique = 0;
     const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.7 + 0.3 * impact);
     return {

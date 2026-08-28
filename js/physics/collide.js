@@ -29,6 +29,16 @@ const CAR_RADIUS = 1.15;
  */
 const MAX_PUSH = 3;
 /**
+ * Player env depenetration cap (m). A contact nudge — never a metres-long
+ * shove that fights `_guardXZ` and freezes the car against a rock.
+ */
+const PLAYER_ENV_PUSH = 0.45;
+const AI_ENV_PUSH = 0.85;
+const PLAYER_WALL_PUSH = 0.85;
+const AI_WALL_PUSH = 1.2;
+/** Extra separation so we do not leave the OBB kissing the solid. */
+const CONTACT_SLOP = 0.02;
+/**
  * Fallback lining thickness (m) for a wall collider built without an explicit
  * `depth`. A wall face is a slab with a back, not an infinite half-space — see
  * the wall branch of glanceObstacles.
@@ -347,8 +357,58 @@ function projectBox(v, axis) {
 }
 
 /**
- * Kill speed into a hit normal, keep some along-track roll. Shared by sphere
- * rocks and planar tunnel walls.
+ * Closest-point depenetration of a circle (rock/tree) against the car OBB.
+ * Uses the full chassis footprint — not a centre sphere — so a nose clip
+ * registers before the rock sits inside the body.
+ * @returns {{overlap:number, nx:number, nz:number}|null}
+ */
+function circleVsCarObb(cx, cz, cr, px, pz, fx, fz, rx, rz) {
+  const dx = cx - px;
+  const dz = cz - pz;
+  const localLat = dx * rx + dz * rz;
+  const localLong = dx * fx + dz * fz;
+  const qLat = Math.max(-HALF_WIDTH, Math.min(HALF_WIDTH, localLat));
+  const qLong = Math.max(-HALF_LENGTH, Math.min(HALF_LENGTH, localLong));
+  const inside = qLat === localLat && qLong === localLong;
+  if (inside) {
+    let nx = px - cx;
+    let nz = pz - cz;
+    let d = Math.hypot(nx, nz);
+    if (d < 1e-4) {
+      const roomLat = HALF_WIDTH - Math.abs(localLat);
+      const roomLong = HALF_LENGTH - Math.abs(localLong);
+      if (roomLat < roomLong) {
+        nx = localLat >= 0 ? rx : -rx;
+        nz = localLat >= 0 ? rz : -rz;
+      } else {
+        nx = localLong >= 0 ? fx : -fx;
+        nz = localLong >= 0 ? fz : -fz;
+      }
+      d = 1;
+    } else {
+      nx /= d;
+      nz /= d;
+    }
+    const penLat = HALF_WIDTH - Math.abs(localLat) + cr;
+    const penLong = HALF_LENGTH - Math.abs(localLong) + cr;
+    // Cap — an unbounded "inside" overlap was a multi-metre shove that stopped the car.
+    return { overlap: Math.min(0.55, Math.min(penLat, penLong)), nx, nz };
+  }
+  const closestX = px + rx * qLat + fx * qLong;
+  const closestZ = pz + rz * qLat + fz * qLong;
+  const ox = closestX - cx;
+  const oz = closestZ - cz;
+  const d = Math.hypot(ox, oz) || 0.0001;
+  const overlap = cr - d;
+  if (overlap <= 0) return null;
+  return { overlap, nx: ox / d, nz: oz / d };
+}
+
+/**
+ * Contact resolve: separate along the hit normal, then strip only the velocity
+ * component going into the surface. Never zero the whole velocity — a wall at
+ * 40 m/s must remain ~40 m/s along the wall.
+ *
  * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yawRate?:number, hitWall?:number, ai?:boolean}} v
  * @param {number} nx
  * @param {number} nz
@@ -357,107 +417,198 @@ function projectBox(v, axis) {
  * @param {number} fx
  * @param {number} fz
  * @param {number} fast
+ * @param {{wall?:boolean}} [opts]
  */
-function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast) {
-  // Full separation — opaque environment must not be penetrable. Capped:
-  // depenetration is a nudge out of a solid, so it can never exceed a car
-  // length. Without this, any collider that reports a bad overlap becomes a
-  // teleport (a tunnel wall face flung the car 573 m off Desert after jump 3).
-  const push = Math.min(overlap, MAX_PUSH) * (pass === 0 ? 1.05 : 1.01);
+function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
+  if (!(overlap > 0) || !Number.isFinite(nx) || !Number.isFinite(nz)) return;
+  const nLen = Math.hypot(nx, nz) || 1;
+  nx /= nLen;
+  nz /= nLen;
+  const wall = !!opts.wall;
+  const cap = wall
+    ? v.ai
+      ? AI_WALL_PUSH
+      : PLAYER_WALL_PUSH
+    : v.ai
+      ? AI_ENV_PUSH
+      : PLAYER_ENV_PUSH;
+  const push = Math.min(overlap + CONTACT_SLOP, cap) * (pass === 0 ? 1 : 0.9);
   v.position.x += nx * push;
   v.position.z += nz * push;
+
+  // Resolve velocity against the normal — keep tangential / along-track speed.
   const vn = v.velocity.x * nx + v.velocity.z * nz;
   if (vn < 0) {
     v.velocity.x -= vn * nx;
     v.velocity.z -= vn * nz;
-    const scrub = v.ai ? (pass === 0 ? 0.05 : 0.02) : pass === 0 ? 0.08 : 0.04;
-    v.velocity.x *= 1 - scrub;
-    v.velocity.z *= 1 - scrub;
-    const along = v.velocity.x * fx + v.velocity.z * fz;
-    const spd = Math.hypot(v.velocity.x, v.velocity.z);
-    const keep = Math.max(along, spd * (v.ai ? 0.62 : 0.55), v.ai ? 6 : 4);
-    const blend = v.ai ? 0.72 : 0.38;
-    v.velocity.x = v.velocity.x * (1 - blend) + fx * keep * blend;
-    v.velocity.z = v.velocity.z * (1 - blend) + fz * keep * blend;
-    v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.65 + push * 0.45);
+    if (v.ai) {
+      const along = v.velocity.x * fx + v.velocity.z * fz;
+      if (along < 6) {
+        v.velocity.x += fx * (6 - along) * 0.35;
+        v.velocity.z += fz * (6 - along) * 0.35;
+      }
+    } else {
+      const tx = -nz;
+      const tz = nx;
+      const vt = v.velocity.x * tx + v.velocity.z * tz;
+      v.velocity.x -= tx * vt * 0.035;
+      v.velocity.z -= tz * vt * 0.035;
+    }
+    v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.55 + push * 0.35);
     v.hitNx = nx;
     v.hitNz = nz;
-    if (v.ai && keep < 7) {
-      v.velocity.x += fx * 4.5;
-      v.velocity.z += fz * 4.5;
-    }
   }
   if (v.yawRate != null) {
     const past = nx * fz - nz * fx;
-    v.yawRate += past * 0.04 * fast;
+    v.yawRate += past * 0.028 * fast;
   }
+  void MAX_PUSH;
 }
 
 /**
- * Glance off trees, rocks, houses — never embed through opaque solids.
- * Tunnel / underpass sides are planar slabs (`kind: "wall"`) so the hit
- * matches the visible inner face instead of a sphere sitting in the rock.
+ * Wall slab overlap at a world XZ (same rules as glance wall branch).
+ * @returns {{overlap:number, nx:number, nz:number}|null}
+ */
+function wallHitAt(c, px, pz, fx, fz, rx, rz) {
+  const nx = c.nx;
+  const nz = c.nz;
+  const dx = px - c.x;
+  const dz = pz - c.z;
+  const along = dx * c.tx + dz * c.tz;
+  if (along > c.halfLen + HALF_LENGTH || along < -c.halfLen - HALF_LENGTH) return null;
+  const ext =
+    HALF_LENGTH * Math.abs(fx * nx + fz * nz) + HALF_WIDTH * Math.abs(rx * nx + rz * nz);
+  const dist = dx * nx + dz * nz;
+  const overlap = ext - dist;
+  if (overlap <= 0) return null;
+  if (dist < -((c.depth || WALL_BACK) + ext)) return null;
+  return { overlap, nx, nz };
+}
+
+/**
+ * Env solids authority:
+ *   proposed XZ → TOI sweep (path, not endpoint) → contact resolve
+ *   → penetration correction → validity flag for caller.
  *
- * Sprint 26c: full depenetration (was 0.55× and let cars tunnel through rock /
- * berms at speed). Still AM3-friendly: kill inward speed, scrub a little, roll
- * past — no crash-out, no wall-skating lock.
- *
- * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, speed:number, yawRate?:number, hitWall?:number}} v
- * @param {{colliders: Array<{x:number,z:number,r?:number,kind?:string,nx?:number,nz?:number,tx?:number,tz?:number,halfLen?:number}>}} track
+ * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, speed:number, yawRate?:number, hitWall?:number, _prevX?:number, _prevZ?:number, _envIntersect?:boolean, _envDeep?:boolean}} v
+ * @param {{colliders: Array<{x:number,z:number,r?:number,kind?:string,nx?:number,nz?:number,tx?:number,tz?:number,halfLen?:number,depth?:number}>}} track
  */
 export function glanceObstacles(v, track) {
   const list = track.colliders;
-  if (!list || !list.length) return;
+  if (!list || !list.length) {
+    v._envIntersect = false;
+    v._envDeep = false;
+    return;
+  }
   const fx = Math.sin(v.yaw);
   const fz = Math.cos(v.yaw);
   const rx = fz;
   const rz = -fx;
   const fast = 1 / (1 + Math.max(0, v.speed || 0) * 0.045);
-  // Two passes so a fast frame that sinks deep still ends outside the solid.
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < list.length; i++) {
-      const c = list[i];
+  const x0 = Number.isFinite(v._prevX) ? v._prevX : v.position.x;
+  const z0 = Number.isFinite(v._prevZ) ? v._prevZ : v.position.z;
+  const x1 = v.position.x;
+  const z1 = v.position.z;
+  const move = Math.hypot(x1 - x0, z1 - z0);
+  // Finer samples when the step is long — tunneling is a large-Δt / large-Δx bug.
+  const sweepSteps = Math.min(14, Math.max(1, Math.ceil(move / 0.4)));
+  v._envIntersect = false;
+  v._envDeep = false;
+
+  // --- Pass A: earliest time-of-impact along the path (not deepest at the end).
+  let toi = null;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    for (let s = 0; s <= sweepSteps; s++) {
+      const t = s / sweepSteps;
+      const px = x0 + (x1 - x0) * t;
+      const pz = z0 + (z1 - z0) * t;
+      let hit = null;
+      let wall = false;
       if (c.kind === "wall") {
-        const nx = c.nx;
-        const nz = c.nz;
-        const dx = v.position.x - c.x;
-        const dz = v.position.z - c.z;
-        const along = dx * c.tx + dz * c.tz;
-        if (along > c.halfLen + HALF_LENGTH || along < -c.halfLen - HALF_LENGTH) continue;
-        // Car OBB extent along the wall normal — body side, not the enclosing
-        // circle, so a parallel scrape meets the visible lining.
-        const ext =
-          HALF_LENGTH * Math.abs(fx * nx + fz * nz) + HALF_WIDTH * Math.abs(rx * nx + rz * nz);
-        const dist = dx * nx + dz * nz;
-        const overlap = ext - dist;
-        if (overlap <= 0) continue;
-        // `dist` is unbounded below, so this face is only a *slab* if we say
-        // so. `along` limits the wall's length but nothing limited its depth:
-        // a car merely behind the lining — off-course, or on the far side of a
-        // tunnel whose arm curves back over its own approach — computed
-        // overlap = ext + (hundreds of metres) and was flung exactly that far
-        // along the normal in one step. On Desert that strip crosses the
-        // jump-3 landing, which is the teleport-into-the-tunnel bug.
-        //
-        // The bound is the lining's real thickness plus the chassis extent, so
-        // a car genuinely buried in the rock is still pushed out (a blanket
-        // 2 m let it tunnel clean through a 5.2 m portal pier) while one that
-        // is simply somewhere else in the world is ignored.
-        if (dist < -((c.depth || WALL_BACK) + ext)) continue;
-        applyGlance(v, nx, nz, overlap, pass, fx, fz, fast);
-        continue;
+        hit = wallHitAt(c, px, pz, fx, fz, rx, rz);
+        wall = true;
+      } else {
+        hit = circleVsCarObb(c.x, c.z, c.r || 0.5, px, pz, fx, fz, rx, rz);
       }
-      const dx = v.position.x - c.x;
-      const dz = v.position.z - c.z;
-      const d = Math.hypot(dx, dz) || 0.0001;
-      const min = CAR_RADIUS + c.r;
-      const overlap = min - d;
-      if (overlap <= 0) continue;
-      const nx = dx / d;
-      const nz = dz / d;
-      applyGlance(v, nx, nz, overlap, pass, fx, fz, fast);
+      if (!hit || hit.overlap <= 0) continue;
+      if (!toi || t < toi.t - 1e-6 || (Math.abs(t - toi.t) < 1e-6 && hit.overlap > toi.overlap)) {
+        toi = { t, overlap: hit.overlap, nx: hit.nx, nz: hit.nz, wall };
+      }
+      break; // first contact along this collider's samples
     }
   }
+  if (toi) {
+    // Rewind to the contact — do not leave the car past the solid.
+    const placeT = Math.max(0, toi.t - 0.02);
+    v.position.x = x0 + (x1 - x0) * placeT;
+    v.position.z = z0 + (z1 - z0) * placeT;
+    applyGlance(v, toi.nx, toi.nz, toi.overlap, 0, fx, fz, fast, { wall: toi.wall });
+  }
+
+  // --- Pass B: residual contacts at the resolved pose (walls + nearby rocks).
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    if (c.kind === "wall") {
+      const hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
+      if (hit) applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: true });
+      continue;
+    }
+    const hit = circleVsCarObb(
+      c.x,
+      c.z,
+      c.r || 0.5,
+      v.position.x,
+      v.position.z,
+      fx,
+      fz,
+      rx,
+      rz
+    );
+    if (hit && hit.overlap > 0.02) {
+      applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: false });
+    }
+  }
+
+  correctEnvPenetration(v, track);
+}
+
+/**
+ * Final hard boundary: if the car is still inside a solid after the sweep
+ * resolve, nudge out once. Does not zero velocity.
+ *
+ * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, yawRate?:number, hitWall?:number, ai?:boolean, _envIntersect?:boolean, _envDeep?:boolean}} v
+ * @param {{colliders: Array<object>}} track
+ */
+export function correctEnvPenetration(v, track) {
+  const list = track.colliders;
+  if (!list || !list.length) {
+    v._envIntersect = false;
+    v._envDeep = false;
+    return;
+  }
+  const fx = Math.sin(v.yaw);
+  const fz = Math.cos(v.yaw);
+  const rx = fz;
+  const rz = -fx;
+  const fast = 1;
+  let worst = 0;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    let hit = null;
+    let wall = false;
+    if (c.kind === "wall") {
+      hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
+      wall = true;
+    } else {
+      hit = circleVsCarObb(c.x, c.z, c.r || 0.5, v.position.x, v.position.z, fx, fz, rx, rz);
+    }
+    if (!hit || hit.overlap <= 0.02) continue;
+    if (hit.overlap > worst) worst = hit.overlap;
+    applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall });
+  }
+  v._envIntersect = worst > 0.12;
+  v._envDeep = worst > 0.32;
 }
 
 /**

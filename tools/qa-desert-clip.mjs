@@ -268,7 +268,7 @@ async function main() {
         if (c.kind === "wall") continue;
         const road = track._nearestRoad(c.x, c.z);
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-        if (over - (c.r || 0.5) < 0.15) onLane += 1;
+        if (over - (c.r || 0.5) < 3.8) onLane += 1;
       }
       // Portal grounding proof:
       // 1) Cut formula raises beside the bore (folded arms make world samples noisy).
@@ -374,9 +374,9 @@ async function main() {
     }
     console.log(`  ok  verge land below deck+0.35 m (worst ${probe.worstVerge.toFixed(2)} m)`);
     if (probe.onLane > 0) {
-      throw new Error(`${probe.onLane} collider(s) overlap the painted lane`);
+      throw new Error(`${probe.onLane} collider(s) invade the roadway safety corridor`);
     }
-    console.log(`  ok  ${probe.colliders} colliders, none on painted asphalt`);
+    console.log(`  ok  ${probe.colliders} colliders, clear of drive corridor`);
     if (probe.meshHits > 0) {
       throw new Error(
         `land mesh verts on the ribbon at ${probe.meshHits} sample(s); worst ${probe.worstMesh.toFixed(2)} m`
