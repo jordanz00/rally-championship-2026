@@ -3061,6 +3061,8 @@ export class Track {
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
       if (c.kind === "wall") {
+        // Tunnel linings sit just outside the paint (over ≈ 0.25). Never drop
+        // them here — ribbon-sample scrub owns mud-apron wall leftovers.
         kept.push(c);
         continue;
       }
@@ -3213,34 +3215,62 @@ export class Track {
 
   /**
    * Drop wall/sphere colliders that block the painted lane on the post-tunnel
-   * mud hairpin (~1737 m). Point tests miss props whose origin sits on a
-   * folded arm while the mesh spans the inner apex of the -62° corner.
+   * mud act (~1545–1820 m). The -62° hairpin exit sits near 1737 m — centerline
+   * samples alone miss solids on the inner apex and far-side verge.
    */
   _scrubCollidersOnRibbonSamples() {
     const runs = this._tunnels;
     if (!runs || !runs.length) return;
     const tunEnd = runs[0].endDist;
+    // Full mud act: tunnel apron through both mud corners and the sand handoff.
     const bands = [
-      { dist0: tunEnd + 130, dist1: tunEnd + 200, step: 1.2 },
-      { dist0: tunEnd - 36, dist1: tunEnd + 48, step: 2.0 },
+      { dist0: tunEnd - 24, dist1: tunEnd + 280, step: 1.0 },
+      { dist0: tunEnd + 120, dist1: tunEnd + 220, step: 0.65 },
     ];
     const list = this.colliders;
     if (!list || !list.length) return;
     const drop = new Set();
+    const laterals = [-0.42, -0.28, -0.14, 0, 0.14, 0.28, 0.42];
     for (let b = 0; b < bands.length; b++) {
       const band = bands[b];
       for (let d = band.dist0; d <= band.dist1; d += band.step) {
         const pose = this._ribbonPoseAt(d);
         if (!pose) continue;
-        for (let i = 0; i < list.length; i++) {
-          if (drop.has(i)) continue;
-          const c = list[i];
-          if (Math.hypot(c.x - pose.x, c.z - pose.z) > 42) continue;
-          if (this._colliderBlocksSample(c, pose.x, pose.z, pose.heading)) {
-            drop.add(i);
+        const half = (pose.width || 11) * 0.5;
+        // Prefer authored ribbon normals when the sample lands on a spline point.
+        let nx = Math.cos(pose.heading);
+        let nz = -Math.sin(pose.heading);
+        const pin = this._nearestPointAtDist(d);
+        if (pin && Number.isFinite(pin.nx) && Number.isFinite(pin.nz)) {
+          nx = pin.nx;
+          nz = pin.nz;
+        }
+        for (let li = 0; li < laterals.length; li++) {
+          const lat = laterals[li] * half * 2;
+          const sx = pose.x + nx * lat;
+          const sz = pose.z + nz * lat;
+          for (let i = 0; i < list.length; i++) {
+            if (drop.has(i)) continue;
+            const c = list[i];
+            if (Math.hypot(c.x - sx, c.z - sz) > 55) continue;
+            if (this._colliderBlocksSample(c, sx, sz, pose.heading)) {
+              drop.add(i);
+            }
           }
         }
       }
+    }
+    // Also drop any wall whose face sits inside / on the mud ribbon corridor
+    // even if the OBB test barely missed (long slabs / folded opposite arms).
+    // Tunnel linings live at over ≈ +0.25 — only strip faces on or inside paint.
+    for (let i = 0; i < list.length; i++) {
+      if (drop.has(i)) continue;
+      const c = list[i];
+      if (c.kind !== "wall") continue;
+      const road = this._nearestRoad(c.x, c.z);
+      if (road.along < tunEnd - 30 || road.along > tunEnd + 290) continue;
+      const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+      if (over < 0.05) drop.add(i);
     }
     if (!drop.size) return;
     const kept = [];
@@ -3252,6 +3282,26 @@ export class Track {
     if (typeof console !== "undefined" && console.info) {
       console.info(`[corridor] ribbon-sample scrub dropped ${drop.size} collider(s) on mud band`);
     }
+  }
+
+  /**
+   * Nearest spline sample to an along-track distance (for ribbon normals).
+   * @param {number} dist
+   * @returns {object|null}
+   */
+  _nearestPointAtDist(dist) {
+    const pts = this.points;
+    if (!pts || !pts.length) return null;
+    let best = pts[0];
+    let bd = Math.abs(best.dist - dist);
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.abs(pts[i].dist - dist);
+      if (d < bd) {
+        bd = d;
+        best = pts[i];
+      }
+    }
+    return best;
   }
 
   /**
@@ -4213,8 +4263,8 @@ export class Track {
           lateral: 64,
         });
       }
-      // Post-tunnel mud band — coarse land tris folded berms through the tight
-      // -62° corner (~1737 m) after the bore exit.
+      // Post-tunnel mud band — coarse land tris folded berms through both mud
+      // corners and the ~1737 m -62° exit apron.
       if (this._tunnels && this._tunnels.length) {
         const tunEnd = this._tunnels[0].endDist;
         this._landmarkFlats.push({
@@ -4222,11 +4272,11 @@ export class Track {
           dist1: tunEnd + 320,
           lateral: 72,
         });
-        // Inner-apex wash on the -62° mud hairpin (1720–1764 m).
+        // Inner-apex + exit wash on the -62° mud hairpin (~1687–1760 m).
         this._landmarkFlats.push({
-          dist0: tunEnd + 130,
-          dist1: tunEnd + 200,
-          lateral: 80,
+          dist0: tunEnd + 120,
+          dist1: tunEnd + 230,
+          lateral: 96,
         });
       }
     }
