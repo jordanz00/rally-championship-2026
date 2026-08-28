@@ -32,7 +32,7 @@ const MAX_PUSH = 3;
  * Player env depenetration cap (m). A contact nudge — never a metres-long
  * shove that fights `_guardXZ` and freezes the car against a rock.
  */
-const PLAYER_ENV_PUSH = 0.45;
+const PLAYER_ENV_PUSH = 0.58;
 const AI_ENV_PUSH = 0.85;
 const PLAYER_WALL_PUSH = 0.85;
 const AI_WALL_PUSH = 1.2;
@@ -392,7 +392,7 @@ function circleVsCarObb(cx, cz, cr, px, pz, fx, fz, rx, rz) {
     const penLat = HALF_WIDTH - Math.abs(localLat) + cr;
     const penLong = HALF_LENGTH - Math.abs(localLong) + cr;
     // Cap — an unbounded "inside" overlap was a multi-metre shove that stopped the car.
-    return { overlap: Math.min(0.55, Math.min(penLat, penLong)), nx, nz };
+    return { overlap: Math.min(0.78, Math.min(penLat, penLong)), nx, nz };
   }
   const closestX = px + rx * qLat + fx * qLong;
   const closestZ = pz + rz * qLat + fz * qLong;
@@ -587,25 +587,30 @@ export function correctEnvPenetration(v, track) {
     v._envDeep = false;
     return;
   }
-  const fx = Math.sin(v.yaw);
-  const fz = Math.cos(v.yaw);
-  const rx = fz;
-  const rz = -fx;
-  const fast = 1;
+  const passes = v.ai ? 1 : 3;
   let worst = 0;
-  for (let i = 0; i < list.length; i++) {
-    const c = list[i];
-    let hit = null;
-    let wall = false;
-    if (c.kind === "wall") {
-      hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
-      wall = true;
-    } else {
-      hit = circleVsCarObb(c.x, c.z, c.r || 0.5, v.position.x, v.position.z, fx, fz, rx, rz);
+  for (let pass = 0; pass < passes; pass++) {
+    const fx = Math.sin(v.yaw);
+    const fz = Math.cos(v.yaw);
+    const rx = fz;
+    const rz = -fx;
+    const fast = 1;
+    worst = 0;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      let hit = null;
+      let wall = false;
+      if (c.kind === "wall") {
+        hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
+        wall = true;
+      } else {
+        hit = circleVsCarObb(c.x, c.z, c.r || 0.5, v.position.x, v.position.z, fx, fz, rx, rz);
+      }
+      if (!hit || hit.overlap <= 0.02) continue;
+      if (hit.overlap > worst) worst = hit.overlap;
+      applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall });
     }
-    if (!hit || hit.overlap <= 0.02) continue;
-    if (hit.overlap > worst) worst = hit.overlap;
-    applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall });
+    if (worst <= 0.12) break;
   }
   v._envIntersect = worst > 0.12;
   v._envDeep = worst > 0.32;

@@ -126,6 +126,18 @@ check(
   "last-line keep-out before InstancedMesh"
 );
 check(
+  "visual env geometry is scrubbed from the drive corridor",
+  /_scrubRoadwayVisuals\s*\(/.test(trackSrc) &&
+    /envLand/.test(trackSrc) &&
+    /ROAD_COLLIDER_CLEAR \+ 0\.2/.test(trackSrc),
+  "land tuck + envProp cull after collider scrub"
+);
+check(
+  "stripDrive uses lane keepout not ribbon-only",
+  /stripDrive[\s\S]*?_laneKeepout\(p\.x, p\.z, r/.test(trackSrc),
+  "canopy footprint must respect corridor"
+);
+check(
   "prop strip is past a GLB rock radius",
   /ROAD_VERGE = 8\.2/.test(trackSrc) && /FOREST_TREE_CLEAR = 8\.6/.test(trackSrc),
   "canopy / boulder bounds must not sit on the painted lane"

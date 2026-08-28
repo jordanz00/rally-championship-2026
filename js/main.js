@@ -5,7 +5,7 @@
  * WHAT IT DOES: boots the 60 Hz Saturn-style rally game.
  */
 
-import { RallyGame } from "./game.js?v=485";
+import { RallyGame } from "./game.js?v=486";
 
 function boot() {
   if (window.game) return;

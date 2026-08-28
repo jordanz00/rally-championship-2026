@@ -61,7 +61,7 @@ check("penetration correction after sweep", /export function correctEnvPenetrati
 check("contact resolve is normal-only", /Resolve velocity against the normal/.test(collide));
 check("deep embed restores last-safe XZ", /_envDeep/.test(vehicle) && /_goodX/.test(vehicle));
 check("roadway corridor scrub for solids", /ROAD_COLLIDER_CLEAR/.test(track) && /_assertDriveCorridor/.test(track));
-check("game imports collide.js?v=44+", Number((game.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 44);
+check("game imports collide.js?v=45+", Number((game.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 45);
 check("cache-bust chain", cacheOk && Number(gameV) >= 482, `main=${mainV} game=${gameV}`);
 
 if (fail) {

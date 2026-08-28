@@ -46,7 +46,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT } from "../config.js?v=149";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=48";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=44";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=45";
 import { JumpModel } from "./jump.js?v=17";
 
 const TMP = {

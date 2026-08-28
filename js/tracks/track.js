@@ -238,6 +238,7 @@ export class Track {
       this._addTracksideSignage(def);
     }
     this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals();
     upgradeWorld(this.group);
     upgradeWorldMaterials(this.group);
     armCameraFade(this.group);
@@ -258,6 +259,7 @@ export class Track {
       this._addTracksideSignage(def);
     }
     this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals();
     upgradeWorld(this.group);
     upgradeWorldMaterials(this.group);
     armCameraFade(this.group);
@@ -1128,7 +1130,7 @@ export class Track {
         // the exit apron and through the car.
         const refusePad = tunnelCut
           ? Math.max(ROAD_VERGE + 4.5, 14)
-          : (this._landCell || 12) * 2.05;
+          : ROAD_COLLIDER_CLEAR + Math.max(this._landCell || 12, 10) * 0.35;
         const overPaint = near.minOver < refusePad;
         if (overPaint) {
           const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
@@ -1141,6 +1143,9 @@ export class Track {
           ) {
             h = Math.min(h, near.roadY - bedDrop);
           }
+        }
+        if (near.minOver < ROAD_COLLIDER_CLEAR + 0.25) {
+          h = Math.min(h, near.roadY - ROAD_DECK - 0.14);
         }
       }
       pos.setY(i, h);
@@ -2258,6 +2263,9 @@ export class Track {
         if (inTunnel || inUnderpass || atJump) return edgeY - 0.14;
         // Long sand skirts on tight hairpins fold into camera-blocking slabs.
         if (atLandmark) return edgeY - 0.24;
+        const road = this._nearestRoad(lx, lz);
+        const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+        if (over < ROAD_COLLIDER_CLEAR + 0.35) return edgeY - 0.38;
         const gy = this._groundHeight(lx, lz, scenery);
         // Outer skirt must tuck under the ribbon, never rise onto the asphalt.
         return Math.min(gy, edgeY - 0.12);
@@ -2834,13 +2842,17 @@ export class Track {
     }));
 
     // Foliage: pack trees first (Stage 2/3), then species bags for other biomes.
-    // Strip any pose that still sits on the drive ribbon (canopy / bank clip).
+    // Strip any pose whose mesh footprint invades the drive corridor.
     const stripDrive = (bag, foot) => {
       if (!bag || !bag.length) return;
       let w = 0;
       for (let i = 0; i < bag.length; i++) {
         const p = bag[i];
-        if (p && this._ribbonClear(p.x, p.z, foot)) bag[w++] = p;
+        if (!p) continue;
+        const span = p.s != null ? p.s : Math.max(p.sx || 1, p.sz || 1, p.sy || 1, 0.7);
+        const r = Math.max(foot, span * 0.55);
+        if (this._laneKeepout(p.x, p.z, r, p.y)) continue;
+        bag[w++] = p;
       }
       bag.length = w;
     };
@@ -2917,9 +2929,13 @@ export class Track {
     } else if (rocks.length) {
       console.warn("[scenery] rock GLB missing — skip primitive rocks");
     }
-    if (desertSpires.length) this._addHdNature("rock_tallA", desertSpires, { castShadow: true });
+    if (desertSpires.length) {
+      this._addHdNature("rock_tallA", desertSpires, { castShadow: true });
+      this._bumpPoses(desertSpires, 0.58);
+    }
     if (glbBush && bushGeo) {
       this._addInstances(bushGeo, propNatureMaterial("plant_bushDetailed"), bushes);
+      this._bumpPoses(bushes, 0.48);
     }
     if (glbCactus && cactusStem) {
       this._addInstances(cactusStem, propNatureMaterial("cactus_tall"), cacti, { castShadow: true });
@@ -2987,6 +3003,7 @@ export class Track {
     }
     this._addSpectators(rng, def);
     this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals();
     if (onProgress) onProgress(1);
   }
 
@@ -3083,6 +3100,59 @@ export class Track {
       if (over - r >= ROAD_COLLIDER_CLEAR) list[w++] = c;
     }
     list.length = w;
+  }
+
+  /**
+   * Remove or tuck visual env geometry that still invades the drive corridor.
+   * Collider scrub alone left meshes on the paint — the car drove through sand
+   * banks and bush canopies with no matching solid.
+   */
+  _scrubRoadwayVisuals() {
+    const world = new THREE.Vector3();
+    const inv = new THREE.Matrix4();
+    const doomed = [];
+    this.group.traverse((obj) => {
+      if (!obj.isMesh || !obj.geometry) return;
+      const attr = obj.geometry.attributes.position;
+      if (!attr) return;
+      if (obj.userData.envLand) {
+        obj.updateMatrixWorld(true);
+        inv.copy(obj.matrixWorld).invert();
+        let changed = false;
+        for (let i = 0; i < attr.count; i++) {
+          world.fromBufferAttribute(attr, i);
+          world.applyMatrix4(obj.matrixWorld);
+          const road = this._nearestRoad(world.x, world.z);
+          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+          if (over >= ROAD_COLLIDER_CLEAR + 0.2) continue;
+          const floor = road.roadY - ROAD_DECK - 0.14;
+          if (world.y <= floor + 0.04) continue;
+          world.y = floor;
+          world.applyMatrix4(inv);
+          attr.setXYZ(i, world.x, world.y, world.z);
+          changed = true;
+        }
+        if (changed) {
+          attr.needsUpdate = true;
+          obj.geometry.computeVertexNormals();
+        }
+        return;
+      }
+      if (obj.isInstancedMesh || obj.userData.tunnelPortal) return;
+      if (!obj.userData.envProp) return;
+      obj.updateMatrixWorld(true);
+      if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+      const box = obj.geometry.boundingBox.clone().applyMatrix4(obj.matrixWorld);
+      const cx = (box.min.x + box.max.x) * 0.5;
+      const cz = (box.min.z + box.max.z) * 0.5;
+      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5;
+      if (this._laneKeepout(cx, cz, r, box.min.y)) doomed.push(obj);
+    });
+    for (let i = 0; i < doomed.length; i++) {
+      const obj = doomed[i];
+      if (obj.parent) obj.parent.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+    }
   }
 
   /**
@@ -3435,8 +3505,8 @@ export class Track {
       sz: w * 0.28 * this._contactShadowScale(),
       ry: yaw,
     });
-    if (near) this._bumpNearRoad(x, z, broad ? 0.95 : 0.78);
-    else this._bumpNearRoad(x, z, 0.85);
+    if (near) this._bumpNearRoad(x, z, Math.max(broad ? 1.15 : 0.95, w * 0.44));
+    else this._bumpNearRoad(x, z, Math.max(0.95, w * 0.38));
   }
 
   /**
@@ -4873,7 +4943,7 @@ export class Track {
           sz: 2.8,
           ry: q.heading + outside * 0.16,
         });
-        this._bump(bx, bz, Math.max(1.35, span * 0.48));
+        this._bump(bx, bz, Math.max(span * 0.62, 2.0));
         if (k % 4 === 0) {
           shards.push({
             c: chunk,
@@ -5202,8 +5272,8 @@ export class Track {
   _laneKeepout(x, z, r, y) {
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-    // Strip visual instances that invade the collision-safe corridor (+ small pad).
-    if (over - r >= ROAD_COLLIDER_CLEAR + 0.35) return false;
+    // Strip visual instances that invade the collision-safe corridor.
+    if (over - r >= ROAD_COLLIDER_CLEAR) return false;
     if (y != null && Number.isFinite(road.roadY) && y > road.roadY + ROAD_DECK + 2.5) {
       return false;
     }
@@ -5221,8 +5291,8 @@ export class Track {
     for (let i = 0; i < poses.length; i++) {
       const p = poses[i];
       if (!p) continue;
-      const span = p.s != null ? p.s : Math.max(p.sx || 1, p.sz || 1, 0.7);
-      const r = Math.max(0.55, span * 0.48);
+      const span = p.s != null ? p.s : Math.max(p.sx || 1, p.sz || 1, p.sy || 1, 0.7);
+      const r = Math.max(0.65, span * 0.55);
       if (this._laneKeepout(p.x, p.z, r, p.y)) continue;
       kept.push(p);
     }
@@ -6285,13 +6355,19 @@ export class Track {
         }
       }
     }
-    this._addInstances(new THREE.BoxGeometry(1, 1, 1), rock, masses, {
-      castShadow: true,
-      receiveShadow: false,
-      cameraFade: true,
-    });
-    if (shards.length) {
-      this._addInstances(cliffShardGeometry(), rockDark, shards, {
+    const massesKept = this._stripLanePoses(masses);
+    const shardsKept = this._stripLanePoses(shards);
+    this._bumpPoses(massesKept, 0.55);
+    this._bumpPoses(shardsKept, 0.5);
+    if (massesKept.length) {
+      this._addInstances(new THREE.BoxGeometry(1, 1, 1), rock, massesKept, {
+        castShadow: true,
+        receiveShadow: false,
+        cameraFade: true,
+      });
+    }
+    if (shardsKept.length) {
+      this._addInstances(cliffShardGeometry(), rockDark, shardsKept, {
         castShadow: true,
         receiveShadow: false,
         cameraFade: true,

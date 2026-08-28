@@ -3705,6 +3705,29 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 
 ---
 
+## Sprint — Visual corridor scrub + env block (28 Aug 2026)
+
+**Player moment:** Drive the painted lane. No sand banks, bush canopies, or berm meshes clip through the car hull. Off-shoulder props still block when touched.
+
+**Cause:** Collider scrub removed physics solids but **kept visuals** on the corridor. `stripDrive` used ribbon verge (8 m+) not mesh footprint — canopies overhung paint with no solid. Land tiles and road skirts interpolated dunes above deck. Tree/berm colliders undersized mesh extent. Depenetration capped at 0.45 m with single pass.
+
+**Fix:** `_scrubRoadwayVisuals()` tucks land verts and culls envProp meshes in corridor. `stripDrive` / `_stripLanePoses` use `_laneKeepout` with 0.55× mesh span. Hard land floor under `ROAD_COLLIDER_CLEAR`. Skirts force tuck in corridor. Larger tree/berm bumps; bushes/spires/tunnel masses get `_bumpPoses`. Player depenetration: 3 passes, 0.58 m push, 0.78 m inside cap.
+
+| Item | State |
+|---|---|
+| Visual + collider corridor aligned | **Done** |
+| Land/skirt tuck on paint | **Done** |
+| Mesh-sized colliders near road | **Done** |
+| Stronger embedded resolve | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=486`** · `track.js?v=210` · `collide.js?v=45`
+
+**Proof:** `node tools/qa-desert-clip.mjs` **PASS** · `node tools/qa-env-clip.mjs` static **PASS**
+
+**Still human-only:** Hard refresh `?v=486`. Full-throttle Desert/Mountain centreline — no hull clip through sand or props on paint.
+
+---
+
 # Sprint — Cinema title / SELECT MODE showroom (27 Aug 2026)
 
 **Player moment:** Open the game. The attract pad and SELECT MODE feel like a cinema showroom — wet asphalt, sculpted key/rim, golden horizon clouds, lacquer and chrome answering the sky — not a flat blue disc behind a dark menu wash.
