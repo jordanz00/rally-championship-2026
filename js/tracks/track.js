@@ -1363,8 +1363,16 @@ export class Track {
     const forest = scenery === "forest";
     const drop = mountain ? 1.2 : scenery === "lakeside" ? 0.9 : 1.15;
     if (desert) {
+      // Land wash only — never pull the driven ribbon (or kerb skirts) down to
+      // the underpass trench floor; that read as clipping through the arch deck.
       const underFloor = this._underpassFloorY(x, z);
-      if (underFloor != null) return underFloor;
+      if (underFloor != null) {
+        const clearance = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+        if (clearance < ROAD_VERGE + 1.2) {
+          return Math.min(roadY - drop, underFloor);
+        }
+        return underFloor;
+      }
       // Portal mouths first — a folded lower arm must not own the hillside
       // under the gate. Never raise over painted asphalt or the drive verge.
       const clearance = near.minOver != null ? near.minOver : dist - roadW * 0.5;
@@ -2189,6 +2197,8 @@ export class Track {
       const yL = p.y + ROAD_DECK + microL;
       const yR = p.y + ROAD_DECK + microR;
       return {
+        // Centre deck — skirts / legacy callers. Never undefined (NaN verts).
+        y: 0.5 * (yL + yR),
         yL,
         yR,
         lx: p.x + p.nx * half,
@@ -2313,15 +2323,15 @@ export class Track {
       const kb = plainBucket(kerb, chunk);
       const hexP = mixHex(kerbHexFor(blendP.from, p.dist, p.tunnel), kerbHexFor(blendP.to, p.dist, p.tunnel), blendP.mix);
       const hexQ = mixHex(kerbHexFor(blendQ.from, q.dist, q.tunnel), kerbHexFor(blendQ.to, q.dist, q.tunnel), blendQ.mix);
-      vert(kb, e.lx, e.y + 0.02, e.lz, hexP);
-      vert(kb, e.lx + p.nx * kerbW, e.y + 0.05, e.lz + p.nz * kerbW, hexP);
-      vert(kb, f.lx, f.y + 0.02, f.lz, hexQ);
-      vert(kb, f.lx + q.nx * kerbW, f.y + 0.05, f.lz + q.nz * kerbW, hexQ);
+      vert(kb, e.lx, e.yL + 0.02, e.lz, hexP);
+      vert(kb, e.lx + p.nx * kerbW, e.yL + 0.05, e.lz + p.nz * kerbW, hexP);
+      vert(kb, f.lx, f.yL + 0.02, f.lz, hexQ);
+      vert(kb, f.lx + q.nx * kerbW, f.yL + 0.05, f.lz + q.nz * kerbW, hexQ);
       quad(kb);
-      vert(kb, e.rx, e.y + 0.02, e.rz, hexP);
-      vert(kb, e.rx - p.nx * kerbW, e.y + 0.05, e.rz - p.nz * kerbW, hexP);
-      vert(kb, f.rx, f.y + 0.02, f.rz, hexQ);
-      vert(kb, f.rx - q.nx * kerbW, f.y + 0.05, f.rz - q.nz * kerbW, hexQ);
+      vert(kb, e.rx, e.yR + 0.02, e.rz, hexP);
+      vert(kb, e.rx - p.nx * kerbW, e.yR + 0.05, e.rz - p.nz * kerbW, hexP);
+      vert(kb, f.rx, f.yR + 0.02, f.rz, hexQ);
+      vert(kb, f.rx - q.nx * kerbW, f.yR + 0.05, f.rz - q.nz * kerbW, hexQ);
       quad(kb);
     }
 
@@ -4812,7 +4822,25 @@ export class Track {
       const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5;
       const midY = (box.min.y + box.max.y) * 0.5;
       const halfH = (box.max.y - box.min.y) * 0.5;
-      if (this._laneKeepout(cx, cz, r, midY, halfH)) doomed.push(child);
+      if (this._laneKeepout(cx, cz, r, midY, halfH)) {
+        doomed.push(child);
+        return;
+      }
+      // Corner samples — large mouth blocks can sit off-centre while a corner
+      // still spans the painted lane at ~2441 m.
+      const corners = [
+        [box.min.x, box.min.z],
+        [box.min.x, box.max.z],
+        [box.max.x, box.min.z],
+        [box.max.x, box.max.z],
+      ];
+      for (let i = 0; i < corners.length; i++) {
+        const [x, z] = corners[i];
+        if (this._laneKeepout(x, z, Math.max(0.8, r * 0.22), midY, halfH)) {
+          doomed.push(child);
+          break;
+        }
+      }
     });
     for (let i = 0; i < doomed.length; i++) {
       const m = doomed[i];

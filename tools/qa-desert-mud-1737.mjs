@@ -36,7 +36,7 @@ check("mud hairpin exit land wash", /tunEnd \+ 120/.test(trackSrc) && /lateral: 
 check("post-tunnel wash widened", /tunEnd - 48/.test(trackSrc) && /lateral: 72/.test(trackSrc));
 check("portal embankment world scrub", /_scrubPortalEmbankmentCorridor\s*\(/.test(trackSrc));
 check("visual scrub re-runs collider scrub", /_scrubInstancedCorridor[\s\S]*_scrubRoadwayColliders/.test(trackSrc));
-check("game imports track.js?v=218+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 218);
+check("game imports track.js?v=219+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 219);
 
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache-bust v497+", cacheOk && Number(gameV) >= 497, `v=${gameV}`);

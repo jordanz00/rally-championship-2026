@@ -3946,3 +3946,25 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 **Still human-only:** Hard refresh `?v=497`. Drive tunnel → mud corners → ~1737 m exit — clear ribbon.
 
 ---
+
+## Sprint 498 — Desert bridge deck NaN clip at 2441 m (28 Aug 2026)
+
+**Player moment:** Drive under the finale rock arch (~2437–2441 m). The car stays on the sand ribbon — no clipping through skirts, kerbs, or arch mouth rock.
+
+**Cause:** Road-micro changed `edge()` to return `yL`/`yR` only. Skirt and kerb builders still read `e.y` / `f.y` → **undefined → NaN vertices** on every road segment (worst at the underpass where an extra underside quad is authored). Bridge mouth blocks could also survive centre-only keepout while a corner spanned the lane.
+
+**Fix:** Restore finite `edge().y = 0.5*(yL+yR)`; kerbs use `yL`/`yR`; bridge corridor scrub tests AABB corners; underpass land wash no longer pulls the painted ribbon to the trench floor.
+
+| Item | State |
+|---|---|
+| Finite road skirt/kerb heights | **Done** |
+| Bridge corner keepout scrub | **Done** |
+| Underpass groundHeight on-paint guard | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=498`** · `track.js?v=219`
+
+**Proof:** `node tools/qa-desert-bridge-2437.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=498`. Drive sand→gravel through the rock bridge at ~2441 m.
+
+---
