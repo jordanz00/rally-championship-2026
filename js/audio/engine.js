@@ -112,6 +112,7 @@ export class RallyAudio {
     this._navBooted = false;
     /** @type {AudioBufferSourceNode|null} */
     this._navSrc = null;
+    this._navPlayingKey = "";
     /** Start-grid 3-2-1-GO — separate so a late pace decode cannot cut GO. */
     this._countSrc = null;
     /** @type {CrowdVoice|null} */
@@ -337,7 +338,7 @@ export class RallyAudio {
     if (this._navBooted || !this.ctx) return;
     this._navBooted = true;
     for (const key of NAV_CLIPS) {
-      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=3`).then((buf) => {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=4`).then((buf) => {
         this._navClips[key] = buf;
       });
     }
@@ -354,6 +355,8 @@ export class RallyAudio {
     const buf = this._navClips[key];
     if (!buf || !this._navGain) return false;
     this._kickContext();
+    // Same line already playing — do not restart every frame while the clip loads.
+    if (this._navSrc && this._navPlayingKey === key) return true;
     if (this._navSrc) {
       try {
         this._navSrc.stop();
@@ -362,7 +365,13 @@ export class RallyAudio {
       }
       this._navSrc = null;
     }
+    this._navPlayingKey = key;
     this._navSrc = playClip(this.ctx, this._navGain, buf, { gain: 1 });
+    if (this._navSrc) {
+      this._navSrc.onended = () => {
+        if (this._navPlayingKey === key) this._navPlayingKey = "";
+      };
+    }
     return !!this._navSrc;
   }
 

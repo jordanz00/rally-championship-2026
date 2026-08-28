@@ -42,17 +42,10 @@ use Sega’s Saturn engine or tire samples.
 
 Navigator / co-driver
   assets/sfx/nav/*.mp3
-  Turn grades (easy / medium / hard / hairpin L/R): original spoken lines
-  that say those words, matching left vs right. Render:
-  `tools/build-nav-grade-vo.sh` (macOS Daniel + radio EQ). Not the Freesound
-  1–5 number notes.
-  Jump + countdown: SentientMattress, “Rally Co-Driver Pacenote Cues”
-          Freesound 833028, CC BY 4.0
-          https://freesound.org/people/SentientMattress/sounds/833028/
-  Sliced to first utterance. Required attribution for those clips:
-  SentientMattress / Freesound, CC BY 4.0.
-  Do not feed the SentientMattress voice into a generative model
-  (author request).
+  All spoken lines (turn grades, jump, start-grid 3-2-1-GO): original
+  spoken lines rendered with macOS `say` (Daniel, en_GB) and the same radio
+  EQ chain via `tools/build-nav-grade-vo.sh`. One voice for the full pack.
+  See assets/sfx/nav/ATTRIBUTION.txt for clip list.
 
 Crowd beds (clap / cheer)
   Synthesised in js/audio/crowd.js at runtime — no third-party sample.

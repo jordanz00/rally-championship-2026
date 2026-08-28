@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Render spoken easy / medium / hard / hairpin L+R navigator calls.
-# These say those words (not WRC 1–5). Jump stays the recorded pack clip.
+# Render all navigator VO with one voice + radio EQ (turn grades, jump, countdown).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/assets/sfx/nav"
@@ -26,5 +25,10 @@ render hard-left "hard left"
 render hard-right "hard right"
 render hairpin-left "hairpin left"
 render hairpin-right "hairpin right"
+render jump "jump"
+render count-3 "three"
+render count-2 "two"
+render count-1 "one"
+render count-go "go"
 
-echo "wrote 8 grade calls in $OUT"
+echo "wrote 13 navigator clips in $OUT (${VOICE})"

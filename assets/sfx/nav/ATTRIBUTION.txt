@@ -1,13 +1,10 @@
-Navigator clips
+Navigator clips — single voice pack
 
-Turn grades (easy / medium / hard / hairpin, left and right)
-  Spoken lines for this game: the co-driver says those words, matching the
-  corner side. Rendered with macOS `say` (Daniel, en_GB) and a radio EQ.
-  Rebuild: `tools/build-nav-grade-vo.sh`
+All spoken lines (turn grades, jump, start-grid countdown) are rendered with
+macOS `say` (Daniel, en_GB) and the same radio EQ chain.
 
-Jump and start-grid countdown (jump / count-3 / count-2 / count-1 / count-go)
-  SentientMattress, “Rally Co-Driver Pacenote Cues”
-  Freesound 833028, CC BY 4.0
-  https://freesound.org/people/SentientMattress/sounds/833028/
-  Sliced to first utterance. Do not feed this voice into a generative model
-  (author request).
+Rebuild: `tools/build-nav-grade-vo.sh`
+
+Turn grades: easy / medium / hard / hairpin, left and right
+Jump: "jump"
+Countdown: "three" / "two" / "one" / "go"

@@ -42,16 +42,16 @@ check("HUD 3 fires with countBeep(3) when the screen is up", /flashMessage\("3"\
 check("HUD 2/1 cross the remaining-time ticks", /flashMessage\("2"\)/.test(game) && /flashMessage\("1"\)/.test(game));
 check("GO! and countGo on the same tick", /flashMessage\("GO!"\)/.test(game) && /countGo\(\)/.test(game));
 check("countdown holds under the load fade", /_countHold/.test(game));
-check("SentientMattress countdown attribution", /833028/.test(attr) && /3 \/ 2 \/ 1 \/ GO/.test(attr));
-check("nav ATTRIBUTION names countdown slices", /5-4-3-2-1-GO/.test(navAttr) || /start-grid/.test(navAttr));
+check("Daniel unified nav voice attribution", /Daniel/.test(navAttr) && /countdown|start-grid|three/i.test(navAttr));
+check("nav ATTRIBUTION names countdown slices", /5-4-3-2-1-GO/.test(navAttr) || /start-grid/.test(navAttr) || /Countdown:/.test(navAttr));
 
 for (const key of COUNT) {
   const file = path.join(ROOT, "assets/sfx/nav", `${key}.mp3`);
   const st = fs.existsSync(file) ? fs.statSync(file) : null;
-  check(`clip ${key}.mp3`, !!(st && st.size > 7000), st ? `${st.size} bytes` : "missing");
+  check(`clip ${key}.mp3`, !!(st && st.size > 4000), st ? `${st.size} bytes` : "missing");
 }
 
-check("game imports engine.js?v=51+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 51);
+check("game imports engine.js?v=56+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 56);
 check("cache-bust chain", cacheOk && Number(gameV) >= 407, `main=${mainV} game=${gameV}`);
 
 console.log(
