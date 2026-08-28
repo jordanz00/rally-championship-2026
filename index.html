@@ -19,7 +19,7 @@
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=34" />
+    <link rel="stylesheet" href="css/game.css?v=35" />
     <!-- Splash: title bed + hero Celica so the showroom is ready on first paint. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="preload" href="assets/celica/gt4.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
@@ -236,6 +236,10 @@
           </div>
           <canvas id="gauge-rpm" width="280" height="280"></canvas>
         </div>
+        <div class="hud-distance" id="hud-distance" aria-live="polite">
+          <span class="label">DIST</span>
+          <strong id="hud-distance-val">0 m</strong>
+        </div>
         <div class="hud-bottom">
           <div class="speed-block">
             <span id="hud-speed">000</span>
@@ -280,6 +284,10 @@
 
       <section id="screen-paused" class="screen">
         <h2>PAUSED</h2>
+        <p class="pause-distance">
+          <span class="label">DISTANCE</span>
+          <strong id="pause-distance">0 m</strong>
+        </p>
         <div class="vol-stack">
           <label class="vol-row">
             <span>MUSIC <strong id="vol-music-val">100</strong></span>
@@ -325,6 +333,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=486"></script>
+    <script type="module" src="js/main.js?v=487"></script>
   </body>
 </html>

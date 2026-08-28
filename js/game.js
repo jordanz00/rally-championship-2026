@@ -33,7 +33,7 @@ import { Opponent } from "./ai.js?v=130";
 import { RallyAudio } from "./audio/engine.js?v=55";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=34";
-import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=31";
+import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=32";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=56";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=45";
 import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=28";
@@ -233,6 +233,7 @@ export class RallyGame {
       pace: "",
       trans: "AT",
       onGround: true,
+      progressM: 0,
     };
 
     this._bindVolume();
@@ -2499,6 +2500,7 @@ export class RallyGame {
       h.pace = "";
       h.trans = this.player.autoTrans ? "AT" : "MT";
       h.onGround = true;
+      h.progressM = this.player ? this.player.progress : 0;
       h.dt = dt;
       this.hud.update(h);
       // Keep the grid planted — do not let chase cam drift in from the last stage.
@@ -2515,6 +2517,7 @@ export class RallyGame {
 
     if (this.input.pause) {
       this.state = "paused";
+      this.hud.setPauseDistance(this.player.progress, this.courseId);
       showScreen("screen-paused");
       return;
     }
@@ -2642,6 +2645,7 @@ export class RallyGame {
     h.gripUsed = this.player.gripUsed();
     h.slidePct = this.player.slidePct();
     h.drifting = this.player.drifting;
+    h.progressM = this.player.progress;
     h.dt = dt;
     this.hud.update(h);
     this.ghostRecorder.tick(dt, this.player);

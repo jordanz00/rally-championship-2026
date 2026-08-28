@@ -25,6 +25,8 @@ export class Hud {
     this.minimap = document.getElementById("minimap");
     this.miniCtx = this.minimap ? this.minimap.getContext("2d") : null;
     this.fps = document.getElementById("hud-fps");
+    this.distance = document.getElementById("hud-distance-val");
+    this.pauseDistance = document.getElementById("pause-distance");
     this._debugHud = isDebugHud();
     if (this.fps) this.fps.hidden = !this._debugHud;
     this.pace = document.getElementById("hud-pace");
@@ -155,6 +157,12 @@ export class Hud {
       if (this.clusterTrans) this.clusterTrans.textContent = this._trans;
     }
 
+    const distTxt = formatDistance(s.progressM);
+    if (this.distance && this._distTxt !== distTxt) {
+      this._distTxt = distTxt;
+      this.distance.textContent = distTxt;
+    }
+
     if (this.gripFill) {
       const grip = clamp01(s.gripUsed != null ? s.gripUsed : 0);
       const remain = 1 - grip;
@@ -199,6 +207,16 @@ export class Hud {
     requestAnimationFrame(() => {
       if (this.flash) this.flash.classList.add("show");
     });
+  }
+
+  /**
+   * Freeze the along-track distance on the pause sheet for bug reports.
+   * @param {number} progressM metres along the spline
+   * @param {string} [courseId]
+   */
+  setPauseDistance(progressM, courseId = "") {
+    const txt = pauseDistanceLabel(progressM, courseId);
+    if (this.pauseDistance) this.pauseDistance.textContent = txt;
   }
 
   drawMinimap(track, player, opponents) {
@@ -504,6 +522,23 @@ export function formatTime(sec) {
 
 export function formatClock(sec) {
   return formatTime(sec);
+}
+
+/**
+ * Along-track distance for clip reports — integer metres from the start line.
+ * @param {number} m
+ * @returns {string}
+ */
+export function formatDistance(m) {
+  const n = Math.max(0, Math.round(Number(m) || 0));
+  return `${n} m`;
+}
+
+/** Pause menu line: course id + distance. */
+function pauseDistanceLabel(progressM, courseId) {
+  const dist = formatDistance(progressM);
+  const id = String(courseId || "").trim();
+  return id ? `${id.toUpperCase()} · ${dist}` : dist;
 }
 
 function ordinal(n) {
