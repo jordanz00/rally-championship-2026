@@ -36,8 +36,10 @@ console.log("static");
 
 check("instanced corridor scrub", /_scrubInstancedCorridor\s*\(/.test(trackSrc));
 check("lane keepout uses prop base Y", /_laneKeepout\(x, z, r, y, halfH/.test(trackSrc));
-check("post-tunnel mud wash", /tunEnd - 24/.test(trackSrc) && /tunEnd \+ 300/.test(trackSrc));
+check("post-tunnel mud wash", /tunEnd - 48/.test(trackSrc) && /tunEnd \+ 320/.test(trackSrc));
+check("mud hairpin inner-apex wash", /tunEnd \+ 120/.test(trackSrc) && /lateral: 96/.test(trackSrc));
 check("desert land refuse widened", /desert \? 0\.55 : 0\.35/.test(trackSrc));
+check("full-width mud ribbon scrub", /tunEnd \+ 280/.test(trackSrc) && /laterals = \[/.test(trackSrc));
 
 if (fail) {
   console.log(`\nFAIL  ·  ${fail} static check(s)`);

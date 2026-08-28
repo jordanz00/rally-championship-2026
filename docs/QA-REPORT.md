@@ -3924,3 +3924,25 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 **Proof:** `node tools/qa-sprint39-perf.mjs` **PASS** · `node tools/qa-sprint34-preload.mjs` **PASS** · `node tools/qa-boot-smoke.mjs` **intermittent** in headless (PRESS START hittability / countdown timing under SwiftShader load — sprint gates 39+34 pass; verify in headed Chrome on M1)
 
 ---
+
+## Sprint 497 — Desert mud exit clear at 1737 m (28 Aug 2026)
+
+**Player moment:** Exit the -62° post-tunnel mud hairpin (~1737 m). The full lane is open — no invisible wall that stops the car dead.
+
+**Cause:** Ribbon collider scrub only sampled the **centerline** on a narrow band. Solids on the inner apex / far verge (and folded opposite-arm walls) still blocked the drive path. Land wash lateral (80 m) was also short for the hairpin exit apron.
+
+**Fix:** Full mud-act scrub (`tunEnd−24` → `+280`) with **seven lateral samples** across the ribbon; drop wall faces that sit on/inside the mud paint; widen exit land wash to `tunEnd+120…+230` at lateral 96 m.
+
+| Item | State |
+|---|---|
+| Full-width ribbon collider scrub | **Done** |
+| Mud-act band covers 1737 m exit | **Done** |
+| Wider land wash on hairpin exit | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=497`** · `track.js?v=218`
+
+**Proof:** `node tools/qa-desert-mud-1737.mjs` **PASS** · `node tools/qa-desert-mud-1747.mjs` static **PASS**
+
+**Still human-only:** Hard refresh `?v=497`. Drive tunnel → mud corners → ~1737 m exit — clear ribbon.
+
+---
