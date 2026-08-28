@@ -29,6 +29,7 @@ console.log(`JUMP VARIABILITY  ·  ${new Date().toISOString()}\n`);
 const jump = read("js/physics/jump.js");
 const vehicle = read("js/physics/vehicle.js");
 const config = read("js/config.js");
+const track = read("js/tracks/track.js");
 const game = read("js/game.js");
 const main = read("js/main.js");
 const index = read("index.html");
@@ -38,6 +39,10 @@ check("no Math.random in jump model", !/Math\.random/.test(jump));
 check("takeoff is speed × sin(grade), no 0.4 speed floor", /vx \* Math\.sin\(launchGrade\)/.test(vehicle) && !/clamp\(vx \/ 26, 0\.4/.test(vehicle));
 check("no 0.75 loft floor on ballistic leave", !/\(0\.75 \+ speedN \* 0\.35\)/.test(vehicle));
 check("spring pop scales with approach speed", /clamp\(vx \/ 24, 0\.12, 1\.35\)/.test(vehicle));
+check("authored jump profile on spline", /jumpThrow/.test(track) && /jumpLip/.test(track));
+check("launch uses jumpThrow and lip grade", /jumpThrow: q2\.jumpThrow/.test(vehicle) && /lipGrade/.test(vehicle));
+check("surface bump modulates spring and landing", /surfaceBump/.test(jump) && /surfaceSpringGain/.test(config));
+check("ramp climb energy joins leave", /climbThrowGain/.test(config) && /_rampClimb/.test(vehicle));
 check("air applies attitude drag", /airLongDrag/.test(jump) && /airLongDrag\(dt\)/.test(vehicle));
 check("gravity hangs on nose-up and dives on nose-down", /aeroDive/.test(jump) && /aeroDive/.test(config));
 check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /noseFirst/.test(jump));
@@ -45,10 +50,10 @@ check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle
 check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
 check("bounce can fire on a hard mismatched hit", /bounce > 0\.55 && impact >/.test(vehicle));
 check("JUMP.launchHeightScale is not the old 0.28 squash", !/launchHeightScale:\s*0\.28/.test(config));
-check("game imports vehicle.js?v=103+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 103);
-check("cache-bust chain", cacheOk && Number(gameV) >= 479, `main=${mainV} game=${gameV}`);
+check("game imports vehicle.js?v=107+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 107);
+check("cache-bust chain", cacheOk && Number(gameV) >= 493, `main=${mainV} game=${gameV}`);
 
-const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=17";
+const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=18";
 let modelOk = false;
 try {
   const mod = await import(jumpUrl);
@@ -62,6 +67,12 @@ try {
   hop.reset();
   hop.technique = 0;
   const steep = hop.launch(32 * Math.sin(0.18) * 0.8, 0.18, 0.8, { speed: 32, dist: 140, lateral: 0 });
+  hop.reset();
+  hop.technique = 0;
+  const big = hop.launch(32 * Math.sin(0.18) * 0.8, 0.18, 0.8, { speed: 32, dist: 140, lateral: 0, jumpThrow: 1.65, jumpLip: 1.3 });
+  hop.reset();
+  hop.technique = 0;
+  const small = hop.launch(32 * Math.sin(0.18) * 0.8, 0.18, 0.8, { speed: 32, dist: 140, lateral: 0, jumpThrow: 0.72, jumpLip: 0.85 });
   hop.reset();
   hop.technique = 1;
   const lifted = hop.launch(32 * Math.sin(0.18) * 0.8, 0.18, 0.8, { speed: 32, dist: 140, lateral: 0, brake: 1 });
@@ -78,6 +89,7 @@ try {
 
   check("fast lip throws higher than a crawl", fast > slow * 1.35, `slow=${slow.toFixed(2)} fast=${fast.toFixed(2)}`);
   check("steep lip throws higher than a shallow one", steep > fast * 1.08, `shallow=${fast.toFixed(2)} steep=${steep.toFixed(2)}`);
+  check("Safari-scale jump throws higher than teaching hop", big > small * 1.12, `small=${small.toFixed(2)} big=${big.toFixed(2)}`);
   check("lift-and-brake leaves lower than flat-out", lifted < steep * 0.92, `flat=${steep.toFixed(2)} lift=${lifted.toFixed(2)}`);
   check("nose-up hangs (g < 1) and nose-down dives (g > 1)", hangG < 0.98 && diveG > 1.02, `hang=${hangG.toFixed(3)} dive=${diveG.toFixed(3)}`);
   check("tail-first bounces more than a nose plant", tail.bounce > nose.bounce + 0.35, `tail=${tail.bounce.toFixed(2)} nose=${nose.bounce.toFixed(2)}`);

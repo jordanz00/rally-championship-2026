@@ -550,7 +550,7 @@ export class Opponent {
     const d = this.vehicle.drawPose(alpha);
     this.mesh.position.set(d.x, d.y, d.z);
     this.mesh.rotation.set(d.pitch, d.yaw, d.roll, "YXZ");
-    applyWheelPose(this.mesh.userData.wheels || [], d.spin, d.steer, d.roll);
+    applyWheelPose(this.mesh.userData.wheels || [], d.spin, d.steer, d.roll, d.wheelY);
     const braking = this.vehicle.brake > 0.08 || this.vehicle.handbrake > 0.28;
     if (this.mesh.userData.brakeOn !== braking) {
       this.mesh.userData.brakeOn = braking;
