@@ -1130,7 +1130,7 @@ export class Track {
         // the exit apron and through the car.
         const refusePad = tunnelCut
           ? Math.max(ROAD_VERGE + 4.5, 14)
-          : ROAD_COLLIDER_CLEAR + Math.max(this._landCell || 12, 10) * 0.35;
+          : ROAD_COLLIDER_CLEAR + Math.max(this._landCell || 12, 10) * (desert ? 0.55 : 0.35);
         const overPaint = near.minOver < refusePad;
         if (overPaint) {
           const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
@@ -1396,6 +1396,9 @@ export class Track {
     const flatBed = (bed) => {
       const flats = this._landmarkFlats;
       if (!flats || !flats.length) return null;
+      // Tunnel approach must keep the authored ridge — jump-3 wash used to
+      // plane the climb back to bed and leave the portal floating at 1258 m.
+      if (this._tunnelAlong(along || 0) > 0.08) return null;
       const flatReach = Math.max(roadW * 0.5 + 36, this._trenchWidth(roadW) + 12);
       for (let fi = 0; fi < flats.length; fi++) {
         const run = flats[fi];
@@ -2851,7 +2854,8 @@ export class Track {
         if (!p) continue;
         const span = p.s != null ? p.s : Math.max(p.sx || 1, p.sz || 1, p.sy || 1, 0.7);
         const r = Math.max(foot, span * 0.55);
-        if (this._laneKeepout(p.x, p.z, r, p.y)) continue;
+        const halfH = p.sy != null ? Math.abs(p.sy) * 0.5 : span * 0.5;
+        if (this._laneKeepout(p.x, p.z, r, p.y, halfH)) continue;
         bag[w++] = p;
       }
       bag.length = w;
@@ -3153,6 +3157,62 @@ export class Track {
       if (obj.parent) obj.parent.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
     }
+    this._scrubInstancedCorridor();
+    this._scrubBridgeGroups();
+  }
+
+  /**
+   * Remove non-instanced rock-bridge hills whose world AABB still spans asphalt.
+   */
+  _scrubBridgeGroups() {
+    const doomed = [];
+    this.group.traverse((obj) => {
+      if (!obj.isGroup || !obj.userData.desertBridge) return;
+      this._scrubBridgeDriveCorridor(obj);
+    });
+    void doomed;
+  }
+
+  /**
+   * Drop instanced env props whose footprint still invades the drive corridor.
+   * Centre-only tests let tall embankment boxes read as "overhead" while their
+   * base sat on the mud ribbon (~1747 m post-tunnel).
+   */
+  _scrubInstancedCorridor() {
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const m = new THREE.Matrix4();
+    this.group.traverse((obj) => {
+      if (!obj.isInstancedMesh || obj.userData.tunnelPortal) return;
+      if (!obj.userData.envProp) return;
+      const arr = obj.instanceMatrix.array;
+      const n = obj.count;
+      let w = 0;
+      for (let i = 0; i < n; i++) {
+        const o = i * 16;
+        m.fromArray(arr, o);
+        m.decompose(pos, quat, scl);
+        const r = Math.max(0.65, Math.max(Math.abs(scl.x), Math.abs(scl.y), Math.abs(scl.z)) * 0.55);
+        const halfH = Math.abs(scl.y) * 0.5;
+        if (this._laneKeepout(pos.x, pos.z, r, pos.y, halfH)) continue;
+        if (w !== i) {
+          for (let k = 0; k < 16; k++) arr[w * 16 + k] = arr[o + k];
+          if (obj.instanceColor) {
+            const ca = obj.instanceColor.array;
+            ca[w * 3] = ca[i * 3];
+            ca[w * 3 + 1] = ca[i * 3 + 1];
+            ca[w * 3 + 2] = ca[i * 3 + 2];
+          }
+        }
+        w += 1;
+      }
+      if (w < n) {
+        obj.count = w;
+        obj.instanceMatrix.needsUpdate = true;
+        if (obj.instanceColor) obj.instanceColor.needsUpdate = true;
+      }
+    });
   }
 
   /**
@@ -3885,9 +3945,23 @@ export class Track {
         prevK = k;
       }
       if (gap3 != null) {
+        let flatEnd = gap3 + 340;
+        if (this._tunnels && this._tunnels.length) {
+          flatEnd = Math.min(flatEnd, this._tunnels[0].startDist - 32);
+        }
         this._landmarkFlats.push({
           dist0: gap3 - 24,
-          dist1: gap3 + 340,
+          dist1: flatEnd,
+          lateral: 64,
+        });
+      }
+      // Post-tunnel mud band — coarse land tris folded berms through the tight
+      // -62° corner (~1747 m) after the bore exit.
+      if (this._tunnels && this._tunnels.length) {
+        const tunEnd = this._tunnels[0].endDist;
+        this._landmarkFlats.push({
+          dist0: tunEnd - 24,
+          dist1: tunEnd + 300,
           lateral: 64,
         });
       }
@@ -4033,6 +4107,7 @@ export class Track {
   _inLandmarkFlat(along, dist, roadW) {
     const flats = this._landmarkFlats;
     if (!flats || !flats.length) return false;
+    if (this._tunnelAlong(along) > 0.08) return false;
     const flatReach = Math.max(roadW * 0.5 + 36, this._trenchWidth(roadW) + 12);
     for (let i = 0; i < flats.length; i++) {
       const run = flats[i];
@@ -4287,6 +4362,9 @@ export class Track {
       m.castShadow = true;
       m.receiveShadow = true;
       m.userData.cameraFade = !!fade;
+      if (!fade && Math.abs(x) >= clearHalfW - 0.5 && y <= openH + 0.5) {
+        m.userData.bridgeLining = true;
+      }
       g.add(m);
       return m;
     };
@@ -4322,7 +4400,7 @@ export class Track {
           z,
           rockDark
         );
-        addBlock(18, 20, 16, side * (clearHalfW + 16), 9.6, zSign * (clearHalfD + 14), rock, true);
+        addBlock(18, 20, 16, side * (clearHalfW + 22), 9.6, zSign * (clearHalfD + 20), rock, true);
       }
       addBlock(span + 4, lintelH + 2, mouthD, 0, openH + (lintelH + 2) * 0.5, z, rock);
     }
@@ -4335,6 +4413,7 @@ export class Track {
     g.traverse((obj) => {
       if (obj.isMesh) obj.userData.desertBridge = true;
     });
+    this._scrubBridgeDriveCorridor(g);
     this.group.add(g);
 
     const fx = Math.sin(p.heading);
@@ -4397,6 +4476,34 @@ export class Track {
     }
     for (let i = 0; i < doomed.length; i++) {
       g.remove(doomed[i]);
+    }
+  }
+
+  /**
+   * World-space corridor scrub for the finale rock bridge — local portal AABB
+   * misses mouth blocks whose corners sit outside the prism but still span the
+   * painted lane at ~2437 m on the sand→gravel approach.
+   * @param {THREE.Group} g
+   */
+  _scrubBridgeDriveCorridor(g) {
+    g.updateMatrixWorld(true);
+    const doomed = [];
+    g.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      if (child.userData.bridgeLining) return;
+      child.updateWorldMatrix(true, false);
+      const box = new THREE.Box3().setFromObject(child);
+      const cx = (box.min.x + box.max.x) * 0.5;
+      const cz = (box.min.z + box.max.z) * 0.5;
+      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5;
+      const midY = (box.min.y + box.max.y) * 0.5;
+      const halfH = (box.max.y - box.min.y) * 0.5;
+      if (this._laneKeepout(cx, cz, r, midY, halfH)) doomed.push(child);
+    });
+    for (let i = 0; i < doomed.length; i++) {
+      const m = doomed[i];
+      if (m.parent) m.parent.remove(m);
+      if (m.geometry) m.geometry.dispose();
     }
   }
 
@@ -4943,7 +5050,6 @@ export class Track {
           sz: 2.8,
           ry: q.heading + outside * 0.16,
         });
-        this._bump(bx, bz, Math.max(span * 0.62, 2.0));
         if (k % 4 === 0) {
           shards.push({
             c: chunk,
@@ -4955,15 +5061,24 @@ export class Track {
             ry: q.heading,
             rz: outside * 0.2,
           });
-          this._bump(bx + q.nx * outside * 1.8, bz + q.nz * outside * 1.8, 0.85);
         }
       }
     }
-    if (berms.length) {
-      this._addInstances(box, rock, berms, { castShadow: true, cameraFade: true });
+    const bermsKept = this._stripLanePoses(berms);
+    const shardsKept = this._stripLanePoses(shards);
+    for (let i = 0; i < bermsKept.length; i++) {
+      const b = bermsKept[i];
+      this._bump(b.x, b.z, Math.max((b.sx || 3.8) * 0.62, 2.0));
     }
-    if (shards.length) {
-      this._addInstances(shardGeo, rockDark, shards, { castShadow: true, cameraFade: true });
+    for (let i = 0; i < shardsKept.length; i++) {
+      const s = shardsKept[i];
+      this._bump(s.x, s.z, 0.85);
+    }
+    if (bermsKept.length) {
+      this._addInstances(box, rock, bermsKept, { castShadow: true, cameraFade: true });
+    }
+    if (shardsKept.length) {
+      this._addInstances(shardGeo, rockDark, shardsKept, { castShadow: true, cameraFade: true });
     }
   }
 
@@ -5268,13 +5383,15 @@ export class Track {
    * @param {number} z
    * @param {number} r
    * @param {number} [y]
+   * @param {number} [halfH] vertical half-extent — tall props only skip keepout when the base clears the deck
    */
-  _laneKeepout(x, z, r, y) {
+  _laneKeepout(x, z, r, y, halfH = 0) {
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
     // Strip visual instances that invade the collision-safe corridor.
     if (over - r >= ROAD_COLLIDER_CLEAR) return false;
-    if (y != null && Number.isFinite(road.roadY) && y > road.roadY + ROAD_DECK + 2.5) {
+    const bottom = y != null && halfH > 0 ? y - halfH : y;
+    if (bottom != null && Number.isFinite(road.roadY) && bottom > road.roadY + ROAD_DECK + 2.5) {
       return false;
     }
     return true;
@@ -5293,7 +5410,8 @@ export class Track {
       if (!p) continue;
       const span = p.s != null ? p.s : Math.max(p.sx || 1, p.sz || 1, p.sy || 1, 0.7);
       const r = Math.max(0.65, span * 0.55);
-      if (this._laneKeepout(p.x, p.z, r, p.y)) continue;
+      const halfH = p.sy != null ? Math.abs(p.sy) * 0.5 : span * 0.5;
+      if (this._laneKeepout(p.x, p.z, r, p.y, halfH)) continue;
       kept.push(p);
     }
     return kept;
@@ -5735,7 +5853,7 @@ export class Track {
   _tunnelAlong(along) {
     const runs = this._tunnels;
     if (!runs || !runs.length) return 0;
-    const enter = 130;
+    const enter = 160;
     const exit = 95;
     let best = 0;
     for (let i = 0; i < runs.length; i++) {
@@ -5783,6 +5901,55 @@ export class Track {
       };
     }
     return best;
+  }
+
+  /**
+   * Ground Y for tunnel mouth / ridge props — always uses the bore neighbor,
+   * not a folded Desert arm that would read flat sand under the portal.
+   * @param {number} x
+   * @param {number} z
+   * @returns {number}
+   */
+  _tunnelTerrainY(x, z) {
+    const drop = 1.15;
+    const mouthY = this._tunnelMouthCutY(x, z, drop);
+    if (mouthY != null) return mouthY;
+    const tun = this._tunnelNeighbor(x, z);
+    if (tun) {
+      const clearance = tun.dist - tun.roadW * 0.5;
+      if (tun.tunnel && tun.dist < tun.roadW * 0.5 + 14) return tun.roadY - drop;
+      if (clearance > ROAD_VERGE + 2.4) {
+        const cut = this._tunnelCutHeight(tun.along, tun.dist, tun.roadW, tun.roadY - drop);
+        if (cut != null) return cut;
+      }
+      return tun.roadY - drop;
+    }
+    return this._groundHeight(x, z, "desert");
+  }
+
+  /**
+   * Lowest terrain sample around a portal mouth for footing depth.
+   * @param {{x:number,y:number,z:number,heading:number,width:number}} p
+   * @param {number} outward
+   * @returns {number}
+   */
+  _portalFootingY(p, outward) {
+    const fx = Math.sin(p.heading);
+    const fz = Math.cos(p.heading);
+    const half = p.width * 0.5;
+    const clear = half + ROAD_VERGE + 1.6;
+    let minY = Infinity;
+    for (const side of [-1, 1]) {
+      for (const along of [2, 8, 16, 26, 34]) {
+        for (const lat of [clear + 4, clear + 12, clear + 22, clear + 30]) {
+          const hx = p.x + p.nx * side * lat + fx * outward * along;
+          const hz = p.z + p.nz * side * lat + fz * outward * along;
+          const gy = this._tunnelTerrainY(hx, hz);
+          if (gy < minY) minY = gy;
+        }
+      }
+    }
+    return Number.isFinite(minY) ? minY : p.y - 1.15;
   }
 
   /**
@@ -5854,8 +6021,8 @@ export class Track {
     if (env <= 0.02) return 0;
     // Zero through the drive verge so land tris cannot fold rock onto asphalt.
     const verge = roadW * 0.5 + ROAD_VERGE + 1.2;
-    const peakAt = 24;
-    const fallAt = 95;
+    const peakAt = 26;
+    const fallAt = 98;
     let lat = 0;
     if (dist <= verge) lat = 0;
     else if (dist < peakAt) lat = smoothstep((dist - verge) / Math.max(1, peakAt - verge));
@@ -5864,7 +6031,7 @@ export class Track {
     const jagged = 0.86 + 0.14 * Math.sin(along * 0.055 + dist * 0.04);
     // Embankment / escarpment height — tall enough to bury the portal, not a
     // skyscraper dune that reads as a prop on flat sand.
-    return env * lat * 26 * jagged;
+    return env * lat * 32 * jagged;
   }
 
   /**
@@ -5945,31 +6112,42 @@ export class Track {
     if (end <= start) return;
     const pts = this.points;
     const boreMap = tunnelBoreStriationMap();
-    const rock = new THREE.MeshLambertMaterial({
+    const rock = new THREE.MeshStandardMaterial({
       color: 0x9a8a6e,
+      roughness: 0.9,
+      metalness: 0.02,
       flatShading: true,
       side: THREE.FrontSide,
       map: boreMap || null,
     });
-    const rockDark = new THREE.MeshLambertMaterial({
+    const rockDark = new THREE.MeshStandardMaterial({
       color: 0x5a5040,
+      roughness: 0.94,
+      metalness: 0.01,
       flatShading: true,
       side: THREE.FrontSide,
       map: boreMap || null,
     });
-    // Exterior cut is baked — Lambert + the follow shadow map paints a 20 m
-    // portal as a black box in open desert (same failure as the Mountain cliff).
-    const rockSun = new THREE.MeshBasicMaterial({
+    const rockSun = new THREE.MeshStandardMaterial({
       color: 0xc4ae84,
+      roughness: 0.88,
+      metalness: 0.02,
       side: THREE.FrontSide,
       map: boreMap || null,
     });
-    const rockSunDark = new THREE.MeshBasicMaterial({
+    const rockSunDark = new THREE.MeshStandardMaterial({
       color: 0x8a7358,
+      roughness: 0.92,
+      metalness: 0.01,
       side: THREE.FrontSide,
       map: boreMap || null,
     });
-    const vault = new THREE.MeshLambertMaterial({ color: 0x4a4034, flatShading: true });
+    const vault = new THREE.MeshStandardMaterial({
+      color: 0x4a4034,
+      roughness: 0.96,
+      metalness: 0,
+      flatShading: true,
+    });
     // Basic so the bulbs stay lit even when the car is still outside the mouth.
     const lampMat = new THREE.MeshBasicMaterial({
       color: 0xfff0c0,
@@ -5977,6 +6155,8 @@ export class Track {
 
     this._addTunnelPortal(pts[start], -1, rockSun, rockSunDark);
     this._addTunnelPortal(pts[end], 1, rockSun, rockSunDark);
+    this._addTunnelMouthEmbankment(pts[start], -1, rockSun, rockSunDark);
+    this._addTunnelMouthEmbankment(pts[end], 1, rockSun, rockSunDark);
     this._addTunnelMountain(start, end, rockSun, rockSunDark);
 
     const n = end - start + 1;
@@ -6149,11 +6329,14 @@ export class Track {
     const postD = 4.2;
     // Clear half-width of the drive tube — every prop sits outside this.
     const clear = half + ROAD_VERGE + 1.6;
+    const footingY = this._portalFootingY(p, outward);
+    const toeGap = Math.max(0, p.y - 1.15 - footingY);
+    const bedExtra = Math.min(14, toeGap + 2.8);
     // Grounding slab under the shoulders only — buried fully below the deck.
     // A full-width slab with top above Y0 used to punch through the exit apron.
     for (const side of [-1, 1]) {
-      const bed = new THREE.Mesh(new THREE.BoxGeometry(22, 6, 28), rockDark);
-      bed.position.set(side * (clear + 10), -3.4, outward * 8);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(22, 6 + bedExtra, 28), rockDark);
+      bed.position.set(side * (clear + 10), -3.4 - bedExtra * 0.5, outward * 8);
       bed.receiveShadow = false;
       g.add(bed);
     }
@@ -6276,6 +6459,77 @@ export class Track {
   }
 
   /**
+   * Terrain-following fill from the hillside up to the portal wings so the
+   * mouth reads as a cut through rock, not a tube on flat sand.
+   * @param {{x:number,y:number,z:number,heading:number,width:number,dist:number,nx:number,nz:number}} p
+   * @param {number} outward
+   * @param {THREE.Material} rock
+   * @param {THREE.Material} rockDark
+   */
+  _addTunnelMouthEmbankment(p, outward, rock, rockDark) {
+    const fx = Math.sin(p.heading);
+    const fz = Math.cos(p.heading);
+    const half = p.width * 0.5;
+    const clear = half + ROAD_VERGE + 1.6;
+    const chunk = this._chunkOfDist(p.dist);
+    const masses = [];
+    const shards = [];
+    for (const side of [-1, 1]) {
+      for (let along = 0; along <= 36; along += 4) {
+        for (let lat = clear + 2; lat <= clear + 34; lat += 5) {
+          const hx = p.x + p.nx * side * lat + fx * outward * along;
+          const hz = p.z + p.nz * side * lat + fz * outward * along;
+          if (!this._ribbonClear(hx, hz, 3.0)) continue;
+          const gy = this._tunnelTerrainY(hx, hz);
+          const target = p.y + 2.4;
+          const h = target - gy;
+          if (h < 2.8) continue;
+          masses.push({
+            c: chunk,
+            x: hx,
+            y: gy + h * 0.46,
+            z: hz,
+            sx: 6.5 + lat * 0.05 + along * 0.04,
+            sy: h,
+            sz: 5.5 + along * 0.14,
+            ry: p.heading + side * 0.07,
+          });
+          if (along % 8 === 0 && lat <= clear + 20) {
+            shards.push({
+              c: chunk,
+              x: hx + p.nx * side * 1.6,
+              y: gy + 0.45,
+              z: hz + fz * outward * 0.6,
+              s: 1.5 + (along % 5) * 0.35,
+              rx: along * 0.08,
+              ry: lat * 0.05,
+              rz: side * 0.22,
+            });
+          }
+        }
+      }
+    }
+    const massesKept = this._stripLanePoses(masses);
+    const shardsKept = this._stripLanePoses(shards);
+    this._bumpPoses(massesKept, 0.42);
+    this._bumpPoses(shardsKept, 0.38);
+    if (massesKept.length) {
+      this._addInstances(new THREE.BoxGeometry(1, 1, 1), rock, massesKept, {
+        castShadow: true,
+        receiveShadow: true,
+        cameraFade: true,
+      });
+    }
+    if (shardsKept.length) {
+      this._addInstances(cliffShardGeometry(), rockDark, shardsKept, {
+        castShadow: true,
+        receiveShadow: false,
+        cameraFade: true,
+      });
+    }
+  }
+
+  /**
    * Shoulder rock along the buried run so the tube reads as a cut through a
    * ridge, not a free-standing corridor in open desert.
    * @param {number} start
@@ -6297,7 +6551,7 @@ export class Track {
         const off = half + 15.5 + Math.sin(i * 0.7 + side) * 2.2;
         const hx = p.x + p.nx * side * off;
         const hz = p.z + p.nz * side * off;
-        const gy = this._groundHeight(hx, hz, "desert");
+        const gy = this._tunnelTerrainY(hx, hz);
         if (!this._ribbonClear(hx, hz, 4.2)) continue;
         const h = 11 + Math.abs(Math.sin(i * 0.51 + side)) * 7;
         // Sit the mass ON the ridge (gy), not floating above washed sand.
@@ -6339,7 +6593,7 @@ export class Track {
           const lat = half + 11 + along * 0.22;
           const hx = p.x + p.nx * side * lat + fx * outward * along;
           const hz = p.z + p.nz * side * lat + fz * outward * along;
-          const gy = this._groundHeight(hx, hz, "desert");
+          const gy = this._tunnelTerrainY(hx, hz);
           if (!this._ribbonClear(hx, hz, 3.6)) continue;
           const h = 8 + along * 0.28;
           masses.push({

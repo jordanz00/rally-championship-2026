@@ -108,8 +108,18 @@ check(
 );
 check(
   "desert tunnel cutting preserves ridge under portal",
-  /_tunnelCutHeight/.test(trackSrc) && /_inTunnelCut/.test(trackSrc),
+  /_tunnelCutHeight/.test(trackSrc) && /_inTunnelCut/.test(trackSrc) && /_tunnelTerrainY/.test(trackSrc),
   "landmark wash used to plane the tunnel hill to bed — floating portal"
+);
+check(
+  "jump-3 wash stops before tunnel climb",
+  /flatEnd = Math\.min\(flatEnd, this\._tunnels\[0\]\.startDist - 32\)/.test(trackSrc),
+  "340 m flat after jump 3 washed the tunnel approach at 1258 m"
+);
+check(
+  "landmark flat skipped on tunnel approach",
+  /_tunnelAlong\(along/.test(trackSrc) && /> 0\.08\) return null/.test(trackSrc),
+  "flatBed must not plane the authored tunnel ridge"
 );
 check(
   "land tiles keep tunnel cut (skip wash / chase flatten)",

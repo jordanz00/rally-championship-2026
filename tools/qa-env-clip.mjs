@@ -129,7 +129,8 @@ check(
   "visual env geometry is scrubbed from the drive corridor",
   /_scrubRoadwayVisuals\s*\(/.test(trackSrc) &&
     /envLand/.test(trackSrc) &&
-    /ROAD_COLLIDER_CLEAR \+ 0\.2/.test(trackSrc),
+    /ROAD_COLLIDER_CLEAR \+ 0\.2/.test(trackSrc) &&
+    /_scrubInstancedCorridor/.test(trackSrc),
   "land tuck + envProp cull after collider scrub"
 );
 check(

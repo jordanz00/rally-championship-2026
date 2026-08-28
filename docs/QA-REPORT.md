@@ -3752,3 +3752,73 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 **Still human-only:** Hard refresh `?v=470`. Judge lacquer on PRESS START and on SELECT MODE — pad reflections, rim light on the silhouette, sky depth behind the rocks.
 
 ---
+
+## Sprint 489 — Desert tunnel mouth grounded at climb (28 Aug 2026)
+
+**Player moment:** Desert ~1258 m — climb into the Stage 1 tunnel. The portal and hillside read as a sandstone cut through a ridge, not a floating tube on flat sand.
+
+**Cause:** Jump-3 landmark wash (`gap3 + 340 m`) planed the climb back to bed while the ribbon rose with `dy`. Folded Desert arms owned lateral ground samples beside the mouth, so `_groundHeight` returned low sand under high portal geometry.
+
+**Fix:** Stop landmark wash when `_tunnelAlong > 0.08`; cap jump-3 flat before tunnel start. `_tunnelTerrainY` / `_portalFootingY` force bore-neighbor height for props. Mouth embankment fill + deeper portal footings. PBR `MeshStandardMaterial` + bore striation on tunnel exterior.
+
+| Item | State |
+|---|---|
+| Jump-3 flat ends before tunnel climb | **Done** |
+| Tunnel approach keeps authored ridge | **Done** |
+| Portal footing + embankment fill | **Done** |
+| PBR tunnel exterior materials | **Done** |
+| Static desert-clip contracts | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=489`** · `track.js?v=211`
+
+**Proof:** `node tools/qa-desert-clip.mjs` static **PASS**
+
+**Still human-only:** Hard refresh `?v=489`. Drive Desert jump 3 → climb (~1258 m) → tunnel mouth — embankment meets rock, no floating portal.
+
+---
+
+## Sprint 490 — Desert mud ribbon clear at 1747 m (28 Aug 2026)
+
+**Player moment:** Post-tunnel mud hairpin (~1747 m) — the full road width is drivable. No sand berms / embankment boxes filling the lane that the car clips through.
+
+**Cause:** Tall instanced props used centre-Y for keepout, so embankment fill read as "overhead" while the base sat on the ribbon. Coarse land tris in the mud band could still fold through the tight -62° corner. Instanced meshes were never corridor-scrubbed.
+
+**Fix:** `_laneKeepout` tests prop base Y; `_scrubInstancedCorridor` compacts invading instances; post-tunnel mud landmark wash; wider desert land refuse pad.
+
+| Item | State |
+|---|---|
+| Instanced env corridor scrub | **Done** |
+| Tall prop keepout uses base Y | **Done** |
+| Post-tunnel mud land wash | **Done** |
+| Static + headed mud-band probe | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=490`** · `track.js?v=212`
+
+**Proof:** `node tools/qa-desert-mud-1747.mjs` · `node tools/qa-env-clip.mjs` static
+
+**Still human-only:** Hard refresh `?v=490`. Drive tunnel exit → mud corners — clear ribbon at ~1747 m.
+
+---
+
+## Sprint 491 — Desert rock-bridge approach clear at 2437 m (28 Aug 2026)
+
+**Player moment:** Sand→gravel straight before the finale gravel hairpins (~2437 m) — car no longer clips through rock-bridge mouth blocks or drift berms on the painted lane.
+
+**Cause:** `_scrubBridgePortalMeshes` only tested local portal AABB; mouth approach blocks whose corners sat outside the prism still spanned the drive corridor in world space. Drift berms called `_bump()` before `_stripLanePoses`, leaving orphan colliders on the ribbon. Bridge groups were excluded from `_scrubRoadwayVisuals`.
+
+**Fix:** `_scrubBridgeDriveCorridor` world-space lane keepout; `_scrubBridgeGroups` at build end; mouth blocks pushed to `clearHalfW + 22` / `clearHalfD + 20`; drift berm bumps deferred until after lane strip.
+
+| Item | State |
+|---|---|
+| World-space bridge corridor scrub | **Done** |
+| Bridge groups in roadway visual scrub | **Done** |
+| Mouth blocks pushed away from lane | **Done** |
+| Drift berm colliders after lane strip | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=491`** · `track.js?v=213`
+
+**Proof:** `node tools/qa-desert-bridge-2437.mjs` · `node tools/qa-desert-bridge-portal.mjs` static
+
+**Still human-only:** Hard refresh `?v=491`. Drive sand→gravel approach through rock bridge — clear ribbon at ~2437 m.
+
+---
