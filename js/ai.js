@@ -24,8 +24,8 @@
 
 import { Vehicle } from "./physics/vehicle.js?v=116";
 import { getSurface } from "./physics/surfaces.js?v=50";
-import { AI, CARS } from "./config.js?v=163";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=142";
+import { AI, CARS } from "./config.js?v=164";
+import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=143";
 
 const G = 9.81;
 
