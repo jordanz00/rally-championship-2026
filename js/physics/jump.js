@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=151";
+import { JUMP } from "../config.js?v=163";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -193,8 +193,8 @@ export class JumpModel {
   }
 
   /**
-   * Forward-speed keep while airborne. Nose-up presents more area and shortens
-   * the jump; a dive keeps more speed and arrives sooner.
+   * Forward-speed keep while airborne. Near-ballistic coast — nose-up trims a
+   * little, dive keeps almost all of it. Must NOT dump a fifth of speed mid-hang.
    * @param {number} dt
    * @returns {number} multiplier to apply to longitudinal speed
    */
@@ -202,8 +202,9 @@ export class JumpModel {
     const maxP = JUMP.airPitchMax || 0.46;
     const up = clamp(this.noseUp / maxP, 0, 1);
     const down = clamp(-this.noseUp / maxP, 0, 1);
-    const k = JUMP.airNoseDrag != null ? JUMP.airNoseDrag : 0.58;
-    return Math.max(0.84, 1 - dt * (0.01 + up * k - down * 0.1));
+    const base = JUMP.airBaseDrag != null ? JUMP.airBaseDrag : 0.002;
+    const k = JUMP.airNoseDrag != null ? JUMP.airNoseDrag : 0.14;
+    return Math.max(0.985, 1 - dt * (base + up * k - down * 0.08));
   }
 
   /**
@@ -239,14 +240,16 @@ export class JumpModel {
     const dropMod = clamp((Number(ctx.jumpDrop) || 2.6) / 2.6, 0.65, 1.55);
     const upset = (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) * landMod;
     this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
-    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.24) * landMod * dropMod;
-    const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 4.4;
+    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod;
+    const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
     const bounce =
       Math.max(0, -fallSpeed) > need
         ? Math.max(0, -fallSpeed) * bounceAmp * (0.04 + tailFirst * 0.96)
         : 0;
-    this.noseUpRate *= 0.55;
-    this.rollRate *= 0.62;
+    // Keep some tumble rate into the vehicle settle spring — hard rate kills
+    // made every land look like an upright keyframe the frame after contact.
+    this.noseUpRate *= 0.72;
+    this.rollRate *= 0.78;
     this.technique = 0;
     const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.7 + 0.3 * impact);
     const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight);

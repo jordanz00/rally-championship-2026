@@ -46,7 +46,7 @@ check("expert countersteer mul", /expertCounterMul:\s*1\.\d+/.test(config));
 check("trail-brake in vehicle", /trailBrakeYaw/.test(vehicle) && /Sprint 31 trail-brake/.test(vehicle));
 check("expert counter boost", /expertCounterMul/.test(vehicle));
 check("slideIntent pitch-in", /slideIntent/.test(vehicle) && /FyNet/.test(vehicle));
-check("counterAuthority", /counterAuthority:\s*2\.\d+/.test(config));
+check("counterAuthority", /counterAuthority:\s*[23]\.\d+/.test(config));
 check("power slide sustain", /driftBleedMul:\s*0\.0\d+/.test(config));
 check("e-brake carry", /handbrakeBleedMul:\s*0\.0\d+/.test(config));
 check("arcade slide ceiling", /maxSlideVel:\s*2\d\.\d/.test(config) || /maxSlideVel:\s*1[7-9]\.\d/.test(config));

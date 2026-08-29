@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=148";
+import { VISUAL } from "../config.js?v=163";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -329,6 +329,67 @@ export function water() {
     flatShading: false,
   });
   mat.userData.kind = "water";
+  mat.userData.lockEnv = true;
+  return mat;
+}
+
+/**
+ * Cascading waterfall sheet — vertical foam streaks that scroll downward.
+ * Cheap MeshStandard + painted map; no realtime refraction.
+ * @returns {THREE.MeshStandardMaterial}
+ */
+export function waterfall() {
+  const map = paintedTexture(
+    "waterfall-cascade",
+    (g, w, h) => {
+      g.fillStyle = "#3a6a7c";
+      g.fillRect(0, 0, w, h);
+      for (let x = 0; x < w; x++) {
+        const band = 0.55 + 0.45 * Math.sin(x * 0.38) * Math.sin(x * 0.11 + 1.3);
+        const r = Math.round(70 + band * 90);
+        const grn = Math.round(130 + band * 90);
+        const b = Math.round(150 + band * 80);
+        g.fillStyle = `rgba(${r},${grn},${b},${0.55 + band * 0.35})`;
+        g.fillRect(x, 0, 1, h);
+      }
+      g.fillStyle = "rgba(230,245,255,0.55)";
+      for (let i = 0; i < 22; i++) {
+        const x = ((i * 37) % (w - 6)) + 2;
+        const tw = 1 + (i % 3);
+        g.fillRect(x, 0, tw, h);
+      }
+      g.fillStyle = "rgba(255,255,255,0.28)";
+      for (let i = 0; i < 40; i++) {
+        const x = (i * 53) % w;
+        const y = (i * 29) % h;
+        g.fillRect(x, y, 2, 8 + (i % 5));
+      }
+      // Soft foam at the “top” of the UV (source lip).
+      const grad = g.createLinearGradient(0, 0, 0, h * 0.22);
+      grad.addColorStop(0, "rgba(255,255,255,0.75)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h * 0.22);
+    },
+    { w: 128, h: 256, repeat: [2.4, 1.6] }
+  );
+  if (map) {
+    map.wrapS = THREE.RepeatWrapping;
+    map.wrapT = THREE.RepeatWrapping;
+  }
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xd8f0fa,
+    map: map || null,
+    transparent: true,
+    opacity: 0.82,
+    roughness: 0.12,
+    metalness: 0.35,
+    envMapIntensity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    flatShading: false,
+  });
+  mat.userData.kind = "waterfall";
   mat.userData.lockEnv = true;
   return mat;
 }

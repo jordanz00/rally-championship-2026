@@ -65,6 +65,15 @@ check(
 );
 
 check(
+  "rearview lens is a cabin mirror (narrow VFOV, long enough far)",
+  /mirrorFov:\s*26/.test(read("js/config.js")) &&
+    /mirrorFar:\s*200/.test(read("js/config.js")) &&
+    /_mirrorLens\(\)/.test(game) &&
+    /track\.update\(this\.player\.position, this\._mirrorCam\.position/.test(game),
+  "FOV~26° (~70° H at 384×120); far 200 m; stream against rear lens"
+);
+
+check(
   "rearview RT is allocated, asserted, and rebuilt on context loss",
   /_ensureMirrorRT\(\)/.test(game) &&
     /_bindMirrorContext\(\)/.test(game) &&
@@ -114,7 +123,7 @@ check(
 );
 check(
   "cache bust main↔game",
-  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 378,
+  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 504,
   `game=${gameV && gameV[1]} main=${mainV && mainV[1]}`
 );
 

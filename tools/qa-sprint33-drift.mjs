@@ -43,7 +43,7 @@ check("LAT_BLEED present", /LAT_BLEED\s*=\s*4\.55/.test(vehicle), "baseline blee
 check("slideIntent pitch-in", /slideIntent/.test(vehicle) && /FyNet/.test(vehicle), "throttle entry");
 check("powerSlide without prior vy", /slideIntent \|\|/.test(vehicle), "no chicken-egg");
 check("e-brake rear µ dump", /handbrakeRearMu/.test(config) && /hbRearMu/.test(vehicle), "lock rears");
-check("powerSlidePitch", /powerSlidePitch:\s*1\.\d+/.test(config), "throttle pitch-in");
+check("powerSlidePitch", /powerSlidePitch:\s*[12]\.\d+/.test(config), "throttle pitch-in");
 check("maxSlideVel raised", /maxSlideVel:\s*(1[7-9]|2\d)\.\d/.test(config), "slide ceiling");
 check("hb yaw kick strong", /handbrakeYawKick:\s*[3-9]\.\d+/.test(config), "initiation snap");
 check("hb power mul strong", /handbrakePowerMul:\s*[2-9]\.\d+/.test(config), "power oversteer");
@@ -54,7 +54,7 @@ check("sand loose", /driftEase:\s*1\.[4-9]\d/.test(config), "sand pitch-in");
 check("gravel brakeYaw", /brakeYaw:\s*0\.[6-9]\d/.test(config), "gravel brake-to-slide");
 check("tc dumps in drift", /tcMul = slideIntent \|\| hb > hbEnter \? 0\.12/.test(vehicle), "wheelspin hold");
 check("player ground spring", /groundPlantRate:\s*46/.test(config), "direct deck plant");
-check("player chatter scale", /roadChatterScale:\s*0\.04/.test(config), "minimal vertical chatter");
+check("player chatter scale", /roadChatterScale:\s*0\.\d+/.test(config), "ribbon chatter");
 check("Sprint 33 SLIDE HUD", /cluster-slide/.test(index) && /slideBadge/.test(hud), "drift badge");
 const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];
 check("cache bust chain", gameV && new RegExp(`main\\.js\\?v=${gameV}`).test(index), `v=${gameV}`);

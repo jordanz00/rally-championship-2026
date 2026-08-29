@@ -106,6 +106,18 @@ check(
   "dispose+realloc on a screen change is a visible hitch"
 );
 check("low tier uses the integrated atlas size", /integratedShadowMap/.test(perf));
+check(
+  "high tier skips every other sun bake",
+  /id: "high"[\s\S]{0,220}?shadowEvery:\s*[2-9]/.test(perf),
+  "shadowEvery:1 at high was the measured ~37 ms fixed floor on M1"
+);
+const gfxBlock = (config.match(/export const GFX = \{([\s\S]*?)\n\};/) || [])[1] || "";
+const raceSm = Number((gfxBlock.match(/^\s*shadowMap:\s*(\d+)/m) || [])[1]);
+check(
+  `race default shadow atlas is ${raceSm} (<= 2048)`,
+  raceSm > 0 && raceSm <= 2048,
+  "4096² PCFSoft every present was GPU-bound before any scaling"
+);
 
 console.log("\ncloud raymarch cap (Sprint 69 volume preserved)");
 check("CLOUD_BUDGET still exported", /export const CLOUD_BUDGET/.test(sky));
@@ -145,7 +157,11 @@ check(
 console.log("\npost stack cap");
 check("bloom stays quarter res", /w >> 2/.test(post));
 check("post exposes three quality steps", /setQuality/.test(post) && /"low"/.test(post));
-check("low path skips bloom entirely", /grade\/vignette only/.test(post));
+check(
+  "low path skips bloom entirely",
+  /if \(q === "low"\)[\s\S]{0,280}?bloomStrength\.value = 0/.test(post),
+  "low must zero bloom so the scaler can actually buy frame time"
+);
 
 console.log("\nno compile on camera switch (C)");
 check(

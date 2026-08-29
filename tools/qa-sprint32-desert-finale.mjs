@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * qa-sprint32-desert-finale.mjs — Desert finale underpass clearance gate.
+ * qa-sprint32-desert-finale.mjs — Desert finale gate (Sprint 524: rock bridge CUT).
+ *
+ * The floating arch remnant was worse than absence. Prove the player path no
+ * longer spawns the bridge or opens an underpass land trench.
  *
  * RUN: node tools/qa-sprint32-desert-finale.mjs
  */
@@ -32,30 +35,39 @@ const courses = read("js/tracks/courses.js");
 const game = read("js/game.js");
 const main = read("js/main.js");
 const index = read("index.html");
-const compact = track.replace(/\s+/g, " ");
 
-check("underpass corridor helper", /_inUnderpassCorridor/.test(track), "world XZ corridor");
-check("underpass marked pre-mesh", /_markDesertUnderpassCorridors/.test(track), "before land/road");
-check("road skirt suppressed", /inUnderpass.*skirtReach/.test(compact), "tunnel-style tuck");
-check("land tile underpass clamp", /desert && this\._inUnderpassCorridor/.test(track), "terrain flat");
-check("desert rock bridge", /_addDesertRockBridge/.test(track), "finale arch");
-check("world underpass prism", /_underpassPrisms/.test(track), "XZ prism under arch");
-check("shared portal helper", /_desertBridgePortal/.test(track), "mesh + land use one hole");
-check("underpass floor uses bridge Y", /_underpassFloorY/.test(track), "not nearest-road Y");
-check("bridge portal refuse", /overlapsPortalX && overlapsPortalZ && overlapsPortalY/.test(compact), "no solid in hole");
-check("bridge portal scrub", /_scrubBridgePortalMeshes/.test(track), "drop invading rubble");
-check("drive clear corridors", /_markDriveClearCorridors/.test(track), "forest/mountain land wash");
-check("bridge clearance headroom", /openH: 11\.2/.test(track), "driveable arch height");
-check("bridge portal depth", /clearHalfD: 20/.test(track), "deep enough tunnel");
-check("approach placement", /while \(j > 2 && this\.points\[j\]\.surface === "gravel"\) j -= 1/.test(track), "sand→gravel approach");
-check("underpass wall faces", /_wallFace\(wx, wz/.test(track), "finale lining matches the mesh");
+const heroStart = track.indexOf("_addDesertHeroLandmark() {");
+const heroSlice = heroStart >= 0 ? track.slice(heroStart, heroStart + 280) : "";
+const markStart = track.indexOf("_markDesertUnderpassCorridors() {");
+const markSlice = markStart >= 0 ? track.slice(Math.max(0, markStart - 420), markStart + 220) : "";
+const bridgeStart = track.indexOf("_addDesertRockBridge(p, rock, rockDark");
+const bridgeSlice = bridgeStart >= 0 ? track.slice(bridgeStart, bridgeStart + 380) : "";
+
+check(
+  "desert hero landmark does not spawn bridge",
+  /Intentionally empty/.test(heroSlice) && !/this\._addDesertRockBridge\(/.test(heroSlice),
+  "hero must not call _addDesertRockBridge"
+);
+check(
+  "desert rock bridge builder is a no-op stub",
+  /Cut from player path/.test(bridgeSlice) && !/this\.group\.add\(g\)/.test(bridgeSlice),
+  "stub must not add a desertBridge group"
+);
+check(
+  "underpass corridors not marked for missing arch",
+  /CUT \(Sprint 524\)/.test(markSlice) &&
+    !/pt\.underpass = true/.test(markSlice) &&
+    !/_underpassRuns\.push/.test(markSlice),
+  "no underpass trench for a removed bridge"
+);
+check("underpass helpers still loadable", /_inUnderpassCorridor/.test(track) && /_underpassFloorY/.test(track), "keep scrub APIs");
 check("desert drift berms", /_addDesertDriftLandmarks/.test(track), "outside berms");
 check("act 6 sweep flag", /radius: 145.*sweep: true/.test(courses.replace(/\s+/g, " ")), "sweeper marked");
-check("cache bust track.js", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 186, "game → track");
+check("cache bust track.js", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 232, "game → track");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
-check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 524, `main=${mainV} game=${gameV}`);
 
 console.log(
-  `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Sprint 32 desert finale armed"}`
+  `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Desert finale rock bridge cut"}`
 );
 process.exit(fail ? 1 : 0);

@@ -52,12 +52,12 @@ def main() -> None:
     OUT_HD.mkdir(parents=True, exist_ok=True)
     img = Image.new("RGB", (SIZE, SIZE), (40, 40, 42))
 
-    # Skin tones — row 0 (4 tones)
+    # Skin tones — row 0 (4 panels; diverse light→deep so UV picks vary)
     skins = [
-        (232, 190, 160),
-        (210, 160, 128),
-        (168, 118, 88),
-        (96, 64, 48),
+        (242, 205, 178),  # fair / cool
+        (220, 168, 132),  # light-medium warm
+        (168, 118, 88),   # medium-deep
+        (92, 58, 42),     # deep
     ]
     for i, c in enumerate(skins):
         panel(img, (i * 256, 0, i * 256 + 256, 256), c, 10 + i)

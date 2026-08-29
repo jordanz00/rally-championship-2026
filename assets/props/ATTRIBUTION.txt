@@ -3,9 +3,13 @@ Trackside props — Forest HD + crowd bipeds (Aug 2026)
 Forest Stage 2 trees: assets/props/low_poly_forest_tree_pack.glb
   (Sketchfab "Low Poly Forest Tree Pack" — trunk/canopy pairs + atlas backdrop cards).
 Forest bushes / legacy nature: Blender meshes + leaf/bark albedo.
-Crowd spectators: original low-poly biped humans (character-*.glb), UV-mapped to
-assets/props/Textures/hd/crowd_atlas.png (also copied to colormap.png).
-No primitive cylinder/sphere people on the live player path.
+
+Crowd spectators: densified biped humans (character-*.glb), built by
+tools/build-crowd-humans.py — male/female × adult/tall/teen/elder/stocky/child
+profiles, UV-mapped to assets/props/Textures/hd/crowd_atlas.png
+(also copied to colormap.png). Authored body + cheer-arm meshes (crowd-body /
+crowd-arm-l / crowd-arm-r). No primitive cylinder/sphere people on the live
+player path. Atlas regenerated via tools/gen-crowd-atlas.py.
 
 Spectators previously used Kenney Mini Characters (CC0) — backups under
 assets/props/_lowpoly_backup/. Kenney license files retained for animals / prior art.

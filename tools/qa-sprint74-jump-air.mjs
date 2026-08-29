@@ -35,18 +35,19 @@ const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check("no Math.random in jump model", !/Math\.random/.test(jump));
-check("lipGrain is a function of dist + lateral", /function lipGrain\(dist, lat\)/.test(jump));
+check("lipGrain is a function of dist + lateral", /function lipGrain\(dist, lat/.test(jump));
 check("launch inherits chassis pitch/roll/line", /launch\(rawVelY, grade, springBoost = 0, body = \{\}\)/.test(jump));
 check("air integrates roll inertia", /this\.roll \+= this\.rollRate \* dt/.test(jump));
-check("land can bounce instead of glue", /bounce: Math\.min\(2\.4, bounce\)/.test(jump));
+check("land can bounce instead of glue", /bounce: Math\.min\(2\.8 \* dropMod, bounce\)/.test(jump));
 check("vehicle passes takeoff body state", /pitchRate: -\(this\.pitchRate \|\| 0\)/.test(vehicle));
 check("air roll is not sprung to zero", /wantRoll = clamp\(this\.jump\.roll/.test(vehicle));
 check("graded landings settle residual attitude", /_beginLandSettle\(/.test(vehicle));
+check("overdamped land compress spring", /_seedLandCompress\(/.test(vehicle) && /landCompressZeta/.test(config));
 check("ribbon clamp still on", /_keepOnRibbon\(/.test(vehicle) && /_clampToRoadDeck\(/.test(vehicle));
 check("JUMP.lipGrain exists", /lipGrain:\s*0\.\d+/.test(config));
 check("JUMP.landSettleMin exists", /landSettleMin:\s*0\.\d+/.test(config));
-check("game imports jump via vehicle.js?v>=103", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 103);
-check("cache-bust chain", cacheOk && Number(gameV) >= 479, `main=${mainV} game=${gameV}`);
+check("game imports jump via vehicle.js?v>=110", /vehicle\.js\?v=(\d+)/.test(game) && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 110);
+check("cache-bust chain", cacheOk && Number(gameV) >= 500, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "jumps are rigid-body air"}`);
 process.exit(fail ? 1 : 0);

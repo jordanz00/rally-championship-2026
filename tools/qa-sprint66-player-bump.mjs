@@ -60,6 +60,12 @@ check(
   /PLAYER_RIVAL_SIDESTEP\s*=\s*0\.4/.test(collide) && /_aiPassT\s*=\s*0\.7/.test(collide)
 );
 check(
+  "pass / sidestep is one-shot while _aiPassT is hot",
+  /_aiPassT \|\| 0\) <= 0\.04/.test(collide) &&
+    /Re-firing AI_PASS_LATERAL/.test(collide) &&
+    /One sidestep per rub/.test(collide)
+);
+check(
   "AI-AI pack path is unchanged",
   /AI_PASS_LATERAL\s*=\s*0\.55/.test(collide) && /AI_SEPARATE\s*=\s*0\.55/.test(collide)
 );

@@ -3,10 +3,10 @@
  *
  * WHO THIS IS FOR: Track scenery that used to be box/cone stand-ins (crowds,
  *   Safari animals, Desert cactus/rocks, Forest trees, Alpine tents/houses).
- * WHAT IT DOES: loads HD Blender nature props + densified Kenney spectators from
- *   assets/props/ once, merges each into a grounded BufferGeometry, preserves
+ * WHAT IT DOES: loads HD Blender nature props + densified biped spectators from
+ *   assets/props/ once, merges nature into grounded BufferGeometry, preserves
  *   UVs, paints bark/canopy vertex colours, and exposes textured materials for
- *   InstancedMesh placement.
+ *   InstancedMesh placement. Character GLBs keep authored body + cheer arms.
  * HOW IT CONNECTS: Track calls preparePropKit(scenery) so Desert does not
  *   wait on the forest pack or alpine houses. propGeometry(kind) /
  *   propNatureMaterial(kind) when planting.
@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=153";
+import { VISUAL } from "../config.js?v=163";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -25,7 +25,7 @@ import { VISUAL } from "../config.js?v=153";
  * @type {readonly string[]}
  */
 export const PROP_KINDS = Object.freeze([
-  // Spectators — Kenney Mini Characters (CC0), same family as Poly Pizza People
+  // Spectators — densified biped pack (adult/tall/teen/elder/stocky/child × sex)
   "character-male-a",
   "character-male-b",
   "character-male-c",
@@ -168,21 +168,22 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "15";
+const KIT_ASSET_V = "16";
 
-const CROWD_FOUR = Object.freeze([
-  "character-male-a",
-  "character-male-b",
-  "character-female-a",
-  "character-female-b",
-]);
-const CROWD_SIX = Object.freeze([
+/** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
+const CROWD_ALL = Object.freeze([
   "character-male-a",
   "character-male-b",
   "character-male-c",
+  "character-male-d",
+  "character-male-e",
+  "character-male-f",
   "character-female-a",
   "character-female-b",
   "character-female-c",
+  "character-female-d",
+  "character-female-e",
+  "character-female-f",
 ]);
 const DESERT_NATURE = Object.freeze([
   "animal-zebra",
@@ -347,9 +348,10 @@ export function propNatureMaterial(kind) {
  */
 export function kindsForScenery(scenery) {
   const s = scenery || "desert";
-  if (s === "forest" || s === "lakeside") return CROWD_SIX.concat(FOREST_NATURE);
-  if (s === "mountain") return CROWD_SIX.concat(MOUNTAIN_NATURE);
-  return CROWD_FOUR.concat(DESERT_NATURE);
+  // Mountain never plants spectators — skip the 12 character GLBs.
+  if (s === "mountain") return MOUNTAIN_NATURE;
+  if (s === "forest" || s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE);
+  return CROWD_ALL.concat(DESERT_NATURE);
 }
 
 function getKitLoader() {
@@ -385,10 +387,10 @@ function ensureKind(kind) {
       }
       const geo = extractPropGeometry(root, kind);
       CACHE[kind] = geo;
-      if (kind.startsWith("character-") && geo) {
-        CHAR_PARTS[kind] = splitCrowdCharacter(geo);
-      } else if (kind.startsWith("character-")) {
-        CHAR_PARTS[kind] = null;
+      if (kind.startsWith("character-")) {
+        // Prefer authored body + cheer arms from the densified biped GLB.
+        CHAR_PARTS[kind] = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
+        if (CHAR_PARTS[kind]?.body) CACHE[kind] = CHAR_PARTS[kind].body;
       }
     } catch (err) {
       console.warn(`[prop-kit] missing or failed: ${url}`, err);
@@ -407,7 +409,13 @@ function loadSceneryKit(scenery) {
   if (sceneryLoads[key]) return sceneryLoads[key];
   sceneryLoads[key] = (async () => {
     await loadNatureTextures();
-    await Promise.all(kindsForScenery(key).map(ensureKind));
+    const kinds = kindsForScenery(key);
+    // Yield between batches so PRESS START / CDP stay live while parsing bipeds.
+    const BATCH = 3;
+    for (let i = 0; i < kinds.length; i += BATCH) {
+      await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
+      await new Promise((r) => setTimeout(r, 0));
+    }
     if (key === "forest" || key === "mountain") {
       if (!forestPackPromise) forestPackPromise = loadForestTreePack(getKitLoader(), KIT_ASSET_V);
       await forestPackPromise;
@@ -453,41 +461,93 @@ export function prefetchPropKit(scenery) {
 
 const TITLE_ROCK_KINDS = Object.freeze(["rock_largeA", "rock_largeB", "rock_tallA", "rock_smallA"]);
 
+/** Warm sandstone tints — match the title sand apron, not grey Kenney plastic. */
+const TITLE_ROCK_TINTS = Object.freeze([
+  0xc9b08a, // pale dune
+  0xb8966c, // ochre
+  0xa6855c, // iron stain
+  0xd2bc98, // sun-bleached
+  0x9a7a55, // cool shadow face
+]);
+
 /** @type {Promise<Record<string, THREE.Object3D>>|null} */
 let titleRockPromise = null;
 
 /**
- * Four Kenney rock GLBs for the title showroom. Does not load the full
- * spectator / forest kit — that stays on PRESS START idle.
+ * Replace Kenney flat rock paint with the HD rock albedo + PBR so the title
+ * pad reads as natural stone, not plastic toys.
+ *
+ * @param {THREE.Object3D} root
+ * @param {number} [variant=0] tint index
+ */
+export function styleTitleRock(root, variant = 0) {
+  if (!root) return;
+  const tint = TITLE_ROCK_TINTS[((variant | 0) % TITLE_ROCK_TINTS.length + TITLE_ROCK_TINTS.length) % TITLE_ROCK_TINTS.length];
+  const map = ROCK_TEX
+    ? (() => {
+        const t = ROCK_TEX.clone();
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = Math.max(4, ROCK_TEX.anisotropy || 4);
+        // Slight UV scale variety so clones do not tile as one sheet.
+        const u = 1.15 + (variant % 5) * 0.12;
+        t.repeat.set(u, u * 0.92);
+        t.offset.set((variant * 0.17) % 1, (variant * 0.11) % 1);
+        t.needsUpdate = true;
+        return t;
+      })()
+    : null;
+
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const prev = o.material;
+    const mat = new THREE.MeshStandardMaterial({
+      map,
+      color: tint,
+      roughness: 0.93,
+      metalness: 0.02,
+      envMapIntensity: 0.42,
+      flatShading: false,
+      fog: true,
+    });
+    if (map) {
+      // Albedo as soft bump — no separate normal map ships with the kit.
+      mat.bumpMap = map;
+      mat.bumpScale = 0.42;
+    }
+    mat.userData.titleRock = true;
+    o.material = mat;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    if (prev && prev !== mat && !prev.userData?.shared) {
+      try {
+        prev.dispose?.();
+      } catch {
+        /* shared Kenney mat */
+      }
+    }
+  });
+}
+
+/**
+ * Four Kenney rock GLBs for the title showroom, dressed with HD rock albedo.
+ * Does not load the full spectator / forest kit — that stays on PRESS START.
  *
  * @returns {Promise<Record<string, THREE.Object3D>>}
  */
 export function loadTitleRocks() {
   if (titleRockPromise) return titleRockPromise;
   titleRockPromise = (async () => {
+    await loadNatureTextures();
     const loader = new GLTFLoader();
     /** @type {Record<string, THREE.Object3D>} */
     const out = {};
     await Promise.all(
       TITLE_ROCK_KINDS.map(async (kind) => {
         try {
-          const gltf = await loader.loadAsync(`assets/props/${kind}.glb?v=15`);
+          const gltf = await loader.loadAsync(`assets/props/${kind}.glb?v=16`);
           const root = (gltf.scene || gltf.scenes[0]).clone(true);
-          root.traverse((o) => {
-            if (!o.isMesh) return;
-            o.castShadow = true;
-            o.receiveShadow = true;
-            const mats = Array.isArray(o.material) ? o.material : [o.material];
-            for (const m of mats) {
-              if (!m) continue;
-              if (m.map) {
-                m.map.colorSpace = THREE.SRGBColorSpace;
-                m.map.anisotropy = 4;
-              }
-              m.envMapIntensity = 0.32;
-              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.84);
-            }
-          });
+          styleTitleRock(root, TITLE_ROCK_KINDS.indexOf(kind));
           root.name = `title-${kind}`;
           out[kind] = root;
         } catch (err) {
@@ -879,6 +939,80 @@ function extractPropGeometry(root, kind) {
 }
 
 /**
+ * Prefer authored crowd-body / crowd-arm-l / crowd-arm-r from densified biped GLBs.
+ * Falls back to null so ensureKind can centroid-split a merged mesh.
+ *
+ * @param {THREE.Object3D} root
+ * @param {string} kind
+ * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}}|null}
+ */
+function extractCrowdCharacterParts(root, kind) {
+  root.updateMatrixWorld(true);
+  /** @type {THREE.BufferGeometry|null} */
+  let bodyGeo = null;
+  /** @type {THREE.BufferGeometry|null} */
+  let armLGeo = null;
+  /** @type {THREE.BufferGeometry|null} */
+  let armRGeo = null;
+
+  root.traverse((obj) => {
+    if ((!obj.isMesh && !obj.isSkinnedMesh) || !obj.geometry) return;
+    const n = String(obj.name || "").toLowerCase();
+    const cloned = obj.geometry.clone();
+    cloned.applyMatrix4(obj.matrixWorld);
+    const part = normalizeForMerge(cloned, "character", kind);
+    cloned.dispose();
+    if (/arm[-_]?l|armleft|crowd-arm-l/.test(n)) armLGeo = part;
+    else if (/arm[-_]?r|armright|crowd-arm-r/.test(n)) armRGeo = part;
+    else if (/body|torso|crowd-body|character/.test(n) || !bodyGeo) bodyGeo = part;
+  });
+
+  if (!bodyGeo) {
+    if (armLGeo) armLGeo.dispose();
+    if (armRGeo) armRGeo.dispose();
+    return null;
+  }
+
+  // Shared footing — preserve authored height (child/teen/adult/elder).
+  bodyGeo.computeBoundingBox();
+  const box = bodyGeo.boundingBox;
+  if (!box) {
+    bodyGeo.dispose();
+    return null;
+  }
+  const cx = (box.min.x + box.max.x) * 0.5;
+  const cz = (box.min.z + box.max.z) * 0.5;
+  const dy = -box.min.y;
+  bodyGeo.translate(-cx, dy, -cz);
+  if (armLGeo) armLGeo.translate(-cx, dy, -cz);
+  if (armRGeo) armRGeo.translate(-cx, dy, -cz);
+
+  bodyGeo.computeBoundingBox();
+  bodyGeo.computeBoundingSphere();
+  bodyGeo.userData.shared = true;
+  bodyGeo.userData.propKind = kind;
+
+  const shoulderL = armLGeo ? shoulderPivot(armLGeo, -1) : { x: -0.34, y: 1.38, z: 0 };
+  const shoulderR = armRGeo ? shoulderPivot(armRGeo, 1) : { x: 0.34, y: 1.38, z: 0 };
+  if (armLGeo) {
+    repivotToShoulder(armLGeo, shoulderL);
+    armLGeo.userData.shared = true;
+  }
+  if (armRGeo) {
+    repivotToShoulder(armRGeo, shoulderR);
+    armRGeo.userData.shared = true;
+  }
+
+  return {
+    body: bodyGeo,
+    armL: armLGeo,
+    armR: armRGeo,
+    shoulderL,
+    shoulderR,
+  };
+}
+
+/**
  * Split a merged biped GLB into a torso/legs body plus pivoted arms for cheer.
  * Triangles are bucketed by centroid — arms sit on the sides above the waist.
  *
@@ -1187,7 +1321,8 @@ function applyKindScale(geo, kind) {
  * @returns {number|null}
  */
 function targetHeightForKind(kind, currentHeight) {
-  if (kind.startsWith("character-")) return SCALE.character;
+  // Densified bipeds are authored at age-correct heights — do not stretch kids to 1.7 m.
+  if (kind.startsWith("character-")) return null;
   if (kind === "animal-zebra") return SCALE.zebra;
   if (kind === "animal-elephant") return SCALE.elephant;
   if (kind === "animal-gazelle") return SCALE.gazelle;

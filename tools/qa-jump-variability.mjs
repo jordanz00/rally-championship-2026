@@ -44,16 +44,27 @@ check("launch uses jumpThrow and lip grade", /jumpThrow: q2\.jumpThrow/.test(veh
 check("surface bump modulates spring and landing", /surfaceBump/.test(jump) && /surfaceSpringGain/.test(config));
 check("ramp climb energy joins leave", /climbThrowGain/.test(config) && /_rampClimb/.test(vehicle));
 check("air applies attitude drag", /airLongDrag/.test(jump) && /airLongDrag\(dt\)/.test(vehicle));
+check(
+  "air keeps momentum (soft nose drag, not 0.84 stall floor)",
+  /airBaseDrag/.test(config) &&
+    /airNoseDrag:\s*0\.14/.test(config) &&
+    /Math\.max\(0\.985/.test(jump) &&
+    /airLatBleed/.test(vehicle) &&
+    !/vy \*= 1 - 2\.1 \* dt/.test(vehicle)
+);
 check("gravity hangs on nose-up and dives on nose-down", /aeroDive/.test(jump) && /aeroDive/.test(config));
 check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /noseFirst/.test(jump));
 check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle\(/.test(vehicle) && /_landSettle/.test(vehicle) && /landSettleMin/.test(config));
 check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
-check("bounce can fire on a hard mismatched hit", /bounce > 0\.55 && impact >/.test(vehicle));
+check("overdamped land compress spring", /_seedLandCompress\(/.test(vehicle) && /landCompressWn/.test(config) && /landCompressZeta/.test(config));
+check("pad hit absorbs vel into spring", /landVelAbsorb/.test(config) && /_seedLandCompress\(-this\.velY/.test(vehicle));
+check("soft re-air only on severe bounce", /landReairMin/.test(config) && /bounce > reairMin && impact > bounceNeed/.test(vehicle));
 check("JUMP.launchHeightScale is not the old 0.28 squash", !/launchHeightScale:\s*0\.28/.test(config));
-check("game imports vehicle.js?v=107+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 107);
-check("cache-bust chain", cacheOk && Number(gameV) >= 493, `main=${mainV} game=${gameV}`);
+check("land SFX armed via _noteLandImpact", /_noteLandImpact\(/.test(vehicle) && /landThump\(/.test(game));
+check("game imports vehicle.js?v=112+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 112);
+check("cache-bust chain", cacheOk && Number(gameV) >= 522, `main=${mainV} game=${gameV}`);
 
-const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=18";
+const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=20";
 let modelOk = false;
 try {
   const mod = await import(jumpUrl);
@@ -87,6 +98,13 @@ try {
   hop.noseUp = -0.36;
   const nose = hop.land(-8, 32);
 
+  // 0.6 s lofted hang must keep most forward speed (old drag kept ~0.55).
+  hop.reset();
+  hop.noseUp = 0.5;
+  let keep = 1;
+  const dt = 1 / 60;
+  for (let i = 0; i < 36; i++) keep *= hop.airLongDrag(dt);
+
   check("fast lip throws higher than a crawl", fast > slow * 1.35, `slow=${slow.toFixed(2)} fast=${fast.toFixed(2)}`);
   check("steep lip throws higher than a shallow one", steep > fast * 1.08, `shallow=${fast.toFixed(2)} steep=${steep.toFixed(2)}`);
   check("Safari-scale jump throws higher than teaching hop", big > small * 1.12, `small=${small.toFixed(2)} big=${big.toFixed(2)}`);
@@ -94,6 +112,7 @@ try {
   check("nose-up hangs (g < 1) and nose-down dives (g > 1)", hangG < 0.98 && diveG > 1.02, `hang=${hangG.toFixed(3)} dive=${diveG.toFixed(3)}`);
   check("tail-first bounces more than a nose plant", tail.bounce > nose.bounce + 0.35, `tail=${tail.bounce.toFixed(2)} nose=${nose.bounce.toFixed(2)}`);
   check("nose plant scrubs more speed", nose.scrub < tail.scrub, `tail=${tail.scrub.toFixed(3)} nose=${nose.scrub.toFixed(3)}`);
+  check("0.6s lofted hang keeps ≥90% speed", keep >= 0.9, `keep=${keep.toFixed(3)}`);
   modelOk = true;
 } catch (err) {
   check("JumpModel numeric import", false, err && err.message ? err.message : String(err));

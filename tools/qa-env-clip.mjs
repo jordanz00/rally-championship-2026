@@ -106,19 +106,19 @@ check(
 );
 check(
   "desert skirt is a short tuck, not an 8 m slab",
-  /desert \? 2\.6/.test(trackSrc) && !/desert \? 8\.2/.test(trackSrc),
-  "long skirts folded sand onto tight gravel corners"
+  /desert \? 3\.8/.test(trackSrc) && !/desert \? 8\.2/.test(trackSrc),
+  "long skirts folded sand onto tight gravel corners; 2.6 left see-under canyon"
 );
 check(
   "every biome skirt is a short tuck",
-  /scenery === "mountain" \? 3\.8/.test(trackSrc) && /scenery === "lakeside" \? 3\.4/.test(trackSrc),
-  "11–12 m skirts folded onto hairpins"
+  /scenery === "mountain" \? 5\.4/.test(trackSrc) && /scenery === "lakeside" \? 3\.4/.test(trackSrc),
+  "11–12 m skirts folded onto hairpins; mountain 5.4 closes bed canyon"
 );
 check(
   "land verts that can own a triangle over asphalt stay a floor",
   (/refusePad/.test(trackSrc) || /minOver < \(this\._landCell \|\| 12\) \* 2\.05/.test(trackSrc)) &&
-    /const drop = mountain \? 1\.2/.test(trackSrc),
-  "final sink under any nearby ribbon"
+    /const drop = mountain \? 0\.28/.test(trackSrc),
+  "mountain bed tuck 0.28 m; refusePad / cell pad keeps land off paint"
 );
 check(
   "lane instances cannot sit on painted asphalt",
@@ -159,6 +159,24 @@ check(
   /barrierOff = ROAD_VERGE \+ 1\.4/.test(trackSrc) &&
     !/width \* 0\.5 \+ 0\.6/.test(trackSrc),
   "Lakeside posts at half+0.6 occupied the kerb"
+);
+check(
+  "env boxes plant toes via _plantBoxY",
+  /_plantBoxY\(/.test(trackSrc) &&
+    /_plantBoxY\(gy, barrierH/.test(trackSrc) &&
+    /_plantBoxY\(gy, bermH/.test(trackSrc),
+  "roadY / gy+half centres floated berms, banks, barriers"
+);
+check(
+  "stage gantry posts extend into verge land",
+  /_addGantry[\s\S]*?_groundHeight\(px, pz, scenery\)/.test(trackSrc) &&
+    /bot = gy - 0\.4/.test(trackSrc),
+  "fixed p.y+2.7 gantry posts floated over washed verge"
+);
+check(
+  "spectator toes bury below land sample",
+  /y: gy - 0\.08 \+ row \* 0\.04/.test(trackSrc),
+  "landmark +0.12 floated biped feet"
 );
 
 if (fail) {
