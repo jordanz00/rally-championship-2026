@@ -28,7 +28,7 @@
  * backwards and the co-driver reads every corner the wrong way.
  */
 
-import { COLORS } from "../config.js?v=148";
+import { COLORS } from "../config.js?v=163";
 
 export const COURSES = {
   /**
@@ -152,56 +152,73 @@ export const COURSES = {
   },
 
   /**
-   * FOREST — wide autumn glades built for slides, not tree-corridor grind.
-   * Shorter lap (~1.35 km): opening sweeps, crest jump, then three committed
-   * drift moments — Glade Bowl, Long Sweep, linked mud hairpins — sprint home.
+   * FOREST — autumn glade rally: speed → brake → drift → exit.
+   * Longer (~1.8 km) and harder than Desert teaching: tight dirt/gravel S,
+   * crest jump, Glade Bowl (waterfall), long gravel sweep, linked mud pins,
+   * autumn corridor, finale gravel commit. Two checkpoints (AM3 budget).
    */
   forest: {
     id: "forest",
     name: "FOREST",
-    subtitle: "MEDIUM  ·  GLADE DRIFTS  ·  AUTUMN CLEARING",
+    subtitle: "MEDIUM  ·  AUTUMN HAIRPINS  ·  WATERFALL CLEARING",
     difficulty: "medium",
     fog: COLORS.fogForest,
     sky: 0x6aa8d4,
     offroad: "grass",
     scenery: "forest",
-    startWidth: 14,
+    startWidth: 13.6,
     startY: 2,
     seed: 37,
     barriers: false,
     pieces: [
-      // --- Act 1: fast opening — open dirt sweeps, room to build speed.
-      { type: "straight", length: 62, surface: "dirt", width: 14.2, dy: 1 },
-      { type: "curve", radius: 78, angle: 46, surface: "dirt", width: 14 },
-      { type: "straight", length: 44, surface: "dirt", width: 13.8 },
-      { type: "curve", radius: 62, angle: -40, surface: "dirt", width: 13.6, surfaceOut: "gravel" },
+      // --- Act 1: linked dirt/gravel S — less rest, sell corridor speed.
+      { type: "straight", length: 48, surface: "dirt", width: 13.8, dy: 1 },
+      { type: "curve", radius: 58, angle: 54, surface: "dirt", width: 13.4 },
+      { type: "straight", length: 26, surface: "dirt", width: 13.2 },
+      { type: "curve", radius: 46, angle: -62, surface: "dirt", width: 12.8, surfaceOut: "gravel" },
+      { type: "straight", length: 22, surface: "gravel", width: 12.8 },
+      { type: "curve", radius: 42, angle: 68, surface: "gravel", width: 12.6 },
+      { type: "straight", length: 28, surface: "gravel", width: 13 },
 
-      // --- Act 2: crest jump + flowing chicane into checkpoint meadow.
-      { type: "straight", length: 38, surface: "gravel", width: 14.2 },
-      { type: "jump", ramp: 14, rise: 2.4, lip: 5, gap: 11, drop: 1.4, land: 30, surface: "gravel", width: 14.6 },
-      { type: "straight", length: 52, surface: "gravel", width: 14.4 },
-      { type: "curve", radius: 102, angle: 26, surface: "gravel", width: 14.2 },
-      { type: "curve", radius: 94, angle: -32, surface: "gravel", width: 14 },
-      { type: "straight", length: 46, surface: "gravel", width: 14, checkpoint: true },
+      // --- Act 2: crest jump + tighter chicane into CP1 meadow.
+      { type: "jump", ramp: 14, rise: 2.4, lip: 5, gap: 11, drop: 1.4, land: 28, surface: "gravel", width: 14 },
+      { type: "straight", length: 32, surface: "gravel", width: 13.6 },
+      { type: "curve", radius: 68, angle: 42, surface: "gravel", width: 13.4 },
+      { type: "curve", radius: 58, angle: -52, surface: "gravel", width: 13.2 },
+      { type: "straight", length: 30, surface: "gravel", width: 13.4, checkpoint: true },
 
-      // --- Act 3: THE GLADE BOWL — clearing opens, wide right hairpin, drift room.
-      { type: "straight", length: 44, surface: "dirt", width: 16.8, dy: -1 },
-      { type: "curve", radius: 48, angle: -172, surface: "dirt", width: 17.5, landmark: true },
-      { type: "straight", length: 40, surface: "dirt", width: 16.2 },
+      // --- Act 3: THE GLADE BOWL — waterfall outside; commit the right hairpin.
+      { type: "straight", length: 34, surface: "dirt", width: 15.8, dy: -1 },
+      { type: "curve", radius: 44, angle: -176, surface: "dirt", width: 16.8, landmark: true },
+      { type: "straight", length: 26, surface: "dirt", width: 15.4 },
 
-      // --- Act 4: THE LONG SWEEP — full-width gravel right, commit to the slide.
-      { type: "curve", radius: 132, angle: -82, surface: "gravel", width: 16.8, dy: -1.2, sweep: true },
-      { type: "straight", length: 38, surface: "gravel", width: 16.4 },
+      // --- Act 4: THE LONG SWEEP — gravel right, hold the slide.
+      { type: "curve", radius: 118, angle: -90, surface: "gravel", width: 15.8, dy: -1.2, sweep: true },
+      { type: "straight", length: 20, surface: "gravel", width: 15.2 },
 
-      // --- Act 5: LINKED HAIRPINS — mud belt, throttle transitions right then left.
-      { type: "straight", length: 22, surface: "gravel", surfaceOut: "mud", width: 15.8 },
-      { type: "curve", radius: 42, angle: -158, surface: "mud", width: 15.2, landmark: true },
-      { type: "straight", length: 28, surface: "mud", width: 15 },
-      { type: "curve", radius: 42, angle: 152, surface: "mud", width: 15.2, landmark: true },
-      { type: "straight", length: 32, surface: "mud", surfaceOut: "dirt", width: 15.6 },
+      // --- Act 5: LINKED MUD HAIRPINS — short gulp, rotate right then left.
+      { type: "straight", length: 14, surface: "gravel", surfaceOut: "mud", width: 14.6 },
+      { type: "curve", radius: 34, angle: -164, surface: "mud", width: 14.2, landmark: true },
+      { type: "straight", length: 16, surface: "mud", width: 14 },
+      { type: "curve", radius: 34, angle: 160, surface: "mud", width: 14.2, landmark: true },
+      { type: "straight", length: 20, surface: "mud", surfaceOut: "gravel", width: 14.4 },
 
-      // --- Act 6: sprint home through the autumn clearing.
-      { type: "straight", length: 86, surface: "dirt", width: 16.2 },
+      // --- Act 6: AUTUMN CORRIDOR — gravel S + dirt pinch; second clock buyback.
+      { type: "curve", radius: 50, angle: 76, surface: "gravel", width: 13.6 },
+      { type: "straight", length: 22, surface: "gravel", width: 13.4 },
+      { type: "curve", radius: 44, angle: -84, surface: "gravel", width: 13.2 },
+      { type: "straight", length: 20, surface: "gravel", surfaceOut: "dirt", width: 13.6 },
+      { type: "curve", radius: 38, angle: 102, surface: "dirt", width: 13.8 },
+      { type: "straight", length: 28, surface: "dirt", width: 14, checkpoint: true },
+
+      // --- Act 7: FINALE — gravel commit hairpin, exit sweeper, autumn sprint.
+      { type: "straight", length: 18, surface: "dirt", surfaceOut: "gravel", width: 14.2 },
+      { type: "curve", radius: 38, angle: -132, surface: "gravel", width: 14.4, landmark: true },
+      { type: "straight", length: 24, surface: "gravel", width: 14.2 },
+      { type: "curve", radius: 52, angle: 78, surface: "gravel", width: 14.4 },
+      { type: "straight", length: 40, surface: "gravel", surfaceOut: "dirt", width: 14.8 },
+      { type: "curve", radius: 64, angle: -44, surface: "dirt", width: 15 },
+      { type: "straight", length: 68, surface: "dirt", width: 15.2 },
     ],
   },
 

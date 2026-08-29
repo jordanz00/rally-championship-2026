@@ -258,23 +258,40 @@ def set_origin_shoulder(obj) -> None:
     bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
 
-def make_human(name: str, seed: int, female: bool = False) -> None:
+# Age / body profiles — all kinds of humans, not one clone army.
+# height: metres after scale; head_mul / limb scalars reshape silhouette.
+PROFILES = {
+    "adult": {"height": 1.70, "head_mul": 1.0, "leg_mul": 1.0, "shoulder_mul": 1.0, "hip_mul": 1.0},
+    "tall": {"height": 1.82, "head_mul": 0.96, "leg_mul": 1.08, "shoulder_mul": 1.04, "hip_mul": 0.98},
+    "stocky": {"height": 1.66, "head_mul": 1.02, "leg_mul": 0.94, "shoulder_mul": 1.14, "hip_mul": 1.12},
+    "teen": {"height": 1.52, "head_mul": 1.12, "leg_mul": 0.96, "shoulder_mul": 0.9, "hip_mul": 0.92},
+    "elder": {"height": 1.60, "head_mul": 1.04, "leg_mul": 0.92, "shoulder_mul": 0.94, "hip_mul": 1.02},
+    "child": {"height": 1.18, "head_mul": 1.28, "leg_mul": 0.88, "shoulder_mul": 0.78, "hip_mul": 0.88},
+}
+
+
+def make_human(name: str, seed: int, female: bool = False, profile: str = "adult") -> None:
     clear_scene()
     rng = random.Random(seed)
     mat = crowd_mat()
+    prof = PROFILES.get(profile, PROFILES["adult"])
 
     skin_i = seed % len(SKIN)
     shirt_i = (seed * 3) % len(SHIRT)
     pants_i = (seed * 5) % len(PANTS)
     hair_i = (seed * 7) % len(HAIR)
 
-    # Proportions
-    shoulder = 0.38 if female else 0.44
-    hip = 0.36 if female else 0.34
+    # Proportions — sex + age profile so galleries read as mixed crowds.
+    shoulder = (0.38 if female else 0.44) * prof["shoulder_mul"]
+    hip = (0.36 if female else 0.34) * prof["hip_mul"]
     torso_d = 0.52 if female else 0.58
-    leg_len = 0.78 if female else 0.82
-    arm_len = 0.52 if female else 0.56
-    head_r = 0.105 if female else 0.112
+    if profile == "child":
+        torso_d *= 0.88
+    elif profile == "elder":
+        torso_d *= 0.94
+    leg_len = (0.78 if female else 0.82) * prof["leg_mul"]
+    arm_len = (0.52 if female else 0.56) * (0.92 if profile == "child" else 1.0)
+    head_r = (0.105 if female else 0.112) * prof["head_mul"]
 
     # Legs (standing)
     for side, sx in (("L", -1), ("R", 1)):
@@ -372,13 +389,16 @@ def make_human(name: str, seed: int, female: bool = False) -> None:
     arm_l_obj = join_meshes(arm_l, mat, "crowd-arm-l") if arm_l else None
     arm_r_obj = join_meshes(arm_r, mat, "crowd-arm-r") if arm_r else None
 
-    subdiv_displace(body, seed, levels=2, strength=0.012)
+    subdiv_displace(body, seed, levels=1, strength=0.014)
     if arm_l_obj:
         subdiv_displace(arm_l_obj, seed + 1, levels=1, strength=0.008)
     if arm_r_obj:
         subdiv_displace(arm_r_obj, seed + 2, levels=1, strength=0.008)
 
-    height_s = scale_to_height(body, 1.64 + (0.0 if female else 0.08) + rng.uniform(-0.03, 0.04))
+    target_h = float(prof["height"]) + rng.uniform(-0.025, 0.025)
+    if female and profile == "adult":
+        target_h -= 0.04
+    height_s = scale_to_height(body, target_h)
     if arm_l_obj:
         apply_scale(arm_l_obj, height_s)
         set_origin_shoulder(arm_l_obj)
@@ -404,7 +424,7 @@ def make_human(name: str, seed: int, female: bool = False) -> None:
     arm_v = (len(arm_l_obj.data.vertices) if arm_l_obj else 0) + (
         len(arm_r_obj.data.vertices) if arm_r_obj else 0
     )
-    print(f"  wrote {name}  body={verts} arm_verts={arm_v}", flush=True)
+    print(f"  wrote {name}  profile={profile} h≈{target_h:.2f} body={verts} arm_verts={arm_v}", flush=True)
 
 
 def remap_joined_uvs(obj, skin_i, shirt_i, pants_i, hair_i) -> None:
@@ -450,19 +470,20 @@ def remap_joined_uvs(obj, skin_i, shirt_i, pants_i, hair_i) -> None:
             )
 
 
+# (filename, seed, female, age/body profile)
 CHARACTERS = [
-    ("character-male-a.glb", 11, False),
-    ("character-male-b.glb", 23, False),
-    ("character-male-c.glb", 37, False),
-    ("character-male-d.glb", 41, False),
-    ("character-male-e.glb", 53, False),
-    ("character-male-f.glb", 67, False),
-    ("character-female-a.glb", 71, True),
-    ("character-female-b.glb", 83, True),
-    ("character-female-c.glb", 97, True),
-    ("character-female-d.glb", 101, True),
-    ("character-female-e.glb", 113, True),
-    ("character-female-f.glb", 127, True),
+    ("character-male-a.glb", 11, False, "adult"),
+    ("character-male-b.glb", 23, False, "tall"),
+    ("character-male-c.glb", 37, False, "teen"),
+    ("character-male-d.glb", 41, False, "elder"),
+    ("character-male-e.glb", 53, False, "stocky"),
+    ("character-male-f.glb", 67, False, "child"),
+    ("character-female-a.glb", 71, True, "adult"),
+    ("character-female-b.glb", 83, True, "tall"),
+    ("character-female-c.glb", 97, True, "teen"),
+    ("character-female-d.glb", 101, True, "elder"),
+    ("character-female-e.glb", 113, True, "child"),
+    ("character-female-f.glb", 127, True, "stocky"),
 ]
 
 
@@ -471,15 +492,15 @@ def main() -> None:
         print("ERROR: run tools/gen-crowd-atlas.py first", file=sys.stderr)
         sys.exit(1)
     BACKUP.mkdir(parents=True, exist_ok=True)
-    for name, _, _ in CHARACTERS:
+    for name, *_rest in CHARACTERS:
         src = PROPS / name
         bak = BACKUP / name
         if src.is_file() and not bak.is_file():
             shutil.copy2(src, bak)
 
-    print("Building realistic crowd bipeds…", flush=True)
-    for name, seed, female in CHARACTERS:
-        make_human(name, seed, female=female)
+    print("Building diverse crowd bipeds (ages / body types)…", flush=True)
+    for name, seed, female, profile in CHARACTERS:
+        make_human(name, seed, female=female, profile=profile)
     print("Crowd humans complete →", PROPS, flush=True)
 
 

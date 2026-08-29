@@ -103,7 +103,7 @@ check(
 );
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 463 && /config\.js\?v=147/.test(game),
+  cacheOk && Number(gameV) >= 504 && /config\.js\?v=15[6-9]|config\.js\?v=1[6-9]\d/.test(game),
   `main=${mainV} game=${gameV}`
 );
 

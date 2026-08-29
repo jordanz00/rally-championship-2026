@@ -173,7 +173,9 @@ function resolvePair(a, b) {
   b.velocity.z += jt * tz * invB;
 
   if (aiPack) {
-    // Trailing car gets a lateral shove + speed restore so packs do not log-jam.
+    // Trailing car gets ONE lateral pass impulse, then soft-separate only.
+    // Re-firing AI_PASS_LATERAL every step while OBBs still kiss thrashed the
+    // mesh ±0.5 m each frame (rival “glitching back and forth”).
     const aAhead = (a.progress || 0) >= (b.progress || 0);
     const rear = aAhead ? b : a;
     const front = aAhead ? a : b;
@@ -185,17 +187,19 @@ function resolvePair(a, b) {
     const rdz = rear.position.z - front.position.z;
     let side = Math.sign(rdx * frx + rdz * frz);
     if (!side) side = rear === a ? 1 : -1;
-    rear.position.x += frx * side * AI_PASS_LATERAL;
-    rear.position.z += frz * side * AI_PASS_LATERAL;
-    const keep = Math.max(
-      AI_PASS_MIN_SPD,
-      Math.hypot(rear.velocity.x, rear.velocity.z) * 0.92,
-      Math.hypot(front.velocity.x, front.velocity.z) * 0.88
-    );
-    rear.velocity.x = ffx * keep + frx * side * 1.8;
-    rear.velocity.z = ffz * keep + frz * side * 1.8;
-    rear._aiPassSide = side;
-    rear._aiPassT = 0.85;
+    if ((rear._aiPassT || 0) <= 0.04) {
+      rear.position.x += frx * side * AI_PASS_LATERAL;
+      rear.position.z += frz * side * AI_PASS_LATERAL;
+      const keep = Math.max(
+        AI_PASS_MIN_SPD,
+        Math.hypot(rear.velocity.x, rear.velocity.z) * 0.92,
+        Math.hypot(front.velocity.x, front.velocity.z) * 0.88
+      );
+      rear.velocity.x = ffx * keep + frx * side * 1.8;
+      rear.velocity.z = ffz * keep + frz * side * 1.8;
+      rear._aiPassSide = side;
+      rear._aiPassT = 0.85;
+    }
     a.yawRate = (a.yawRate || 0) * 0.85;
     b.yawRate = (b.yawRate || 0) * 0.85;
     return;
@@ -278,15 +282,19 @@ function resolvePlayerRival(a, b, hit, dx, dz) {
   const prz = -Math.sin(player.yaw);
   let side = Math.sign(toRx * prx + toRz * prz);
   if (!side) side = 1;
-  rival.position.x += prx * side * PLAYER_RIVAL_SIDESTEP;
-  rival.position.z += prz * side * PLAYER_RIVAL_SIDESTEP;
-  const rfx = Math.sin(rival.yaw);
-  const rfz = Math.cos(rival.yaw);
-  const rAlong = Math.max(8, rival.velocity.x * rfx + rival.velocity.z * rfz);
-  rival.velocity.x = rfx * rAlong + prx * side * 1.4;
-  rival.velocity.z = rfz * rAlong + prz * side * 1.4;
-  rival._aiPassSide = side;
-  rival._aiPassT = 0.7;
+  // One sidestep per rub — repeating it every tick while still overlapping
+  // made the rival body stutter left/right in the chase cam.
+  if ((rival._aiPassT || 0) <= 0.04) {
+    rival.position.x += prx * side * PLAYER_RIVAL_SIDESTEP;
+    rival.position.z += prz * side * PLAYER_RIVAL_SIDESTEP;
+    const rfx = Math.sin(rival.yaw);
+    const rfz = Math.cos(rival.yaw);
+    const rAlong = Math.max(8, rival.velocity.x * rfx + rival.velocity.z * rfz);
+    rival.velocity.x = rfx * rAlong + prx * side * 1.4;
+    rival.velocity.z = rfz * rAlong + prz * side * 1.4;
+    rival._aiPassSide = side;
+    rival._aiPassT = 0.7;
+  }
 
   const glancing = (dx * -Math.cos(player.yaw) + dz * Math.sin(player.yaw)) * YAW_NUDGE;
   player.yawRate = (player.yawRate || 0) - clampYaw(glancing * 0.45);

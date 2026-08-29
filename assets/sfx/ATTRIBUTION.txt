@@ -51,3 +51,15 @@ Crowd beds (clap / cheer)
   Synthesised in js/audio/crowd.js at runtime — no third-party sample.
   Soft noise-burst claps and a band-limited sports-fan wash with manual
   Doppler (playbackRate from closing speed). Not licensed from Sega.
+
+Jump landing thumps
+  Procedural noise buffers in js/audio/engine.js (landSoft / landMid /
+  landHard / landScrape) layered with existing bank samples: overrun.mp3,
+  road-gravel.mp3, skid-asphalt.mp3 (same licenses as above). No new
+  third-party land binary was added.
+
+Powertrain live layers (no new binary)
+  js/audio/powertrain.js layers the licensed idle/load/lift beds with a
+  high-RPM scream pass of the load loop, cylinder-rate pulse, turbo whistle
+  (Celica / Delta), gear-shift overrun chirp, and dynamic EQ. Still the same
+  CC BY-SA / CC0 recordings above — synthesis only.

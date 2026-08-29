@@ -25,7 +25,10 @@
 export const QUALITY_CAPS = {
   /** Never allocate more than this pixel ratio, whatever the display reports. */
   maxPixelRatio: 1.5,
-  /** Sun shadow atlas ceiling (PCFSoft, re-rendered every frame). */
+  /**
+   * Sun shadow atlas ceiling (PCFSoft). Race default is lower (GFX.shadowMap);
+   * this is the hard QA contract — never allocate above it.
+   */
   maxShadowMap: 4096,
   /** Volumetric cloud raymarch ceiling — matches sky.js CLOUD_BUDGET. */
   maxCloudViewSteps: 16,
@@ -90,10 +93,9 @@ function buildLadder(gfx) {
   const minDpr = Math.max(0.6, Math.min(1, gfx.minPixelRatio || 0.75));
   const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 2048);
   // `shadowEvery` is the sun atlas re-render interval in presented frames. The
-  // shadow pass is a second full geometry pass over the visible world, so at 1
-  // it is one of the largest single line items in the frame. Sunlight barely
-  // moves, so re-baking it every other frame is imperceptible on a soft PCF
-  // shadow while returning a large share of the budget.
+  // shadow pass is a second full geometry pass over the visible world. Soft
+  // PCF hides a skipped bake, so high/medium bake every other present — the
+  // #1 fixed cost cut from the Sprint 76/96 ~37 ms floor. Low/min stretch further.
   return [
     {
       id: "high",
@@ -103,37 +105,37 @@ function buildLadder(gfx) {
       post: "high",
       sky: "high",
       mirrorEvery: 1,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "medium",
       floorMs: gfx.integratedFloorMs ?? 18.5,
       dpr: Math.max(minDpr, 0.92),
-      shadow: Math.min(capShadow, 3072),
+      shadow: Math.min(capShadow, 2048),
       post: "balanced",
       sky: "medium",
       mirrorEvery: 2,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "low",
       floorMs: gfx.adaptHighMs ?? 22,
       dpr: Math.max(minDpr, 0.85),
-      shadow: lowShadow,
+      shadow: Math.min(lowShadow, 1536),
       post: "low",
       sky: "low",
       mirrorEvery: 3,
-      shadowEvery: 2,
+      shadowEvery: 3,
     },
     {
       id: "min",
       floorMs: 27,
       dpr: minDpr,
-      shadow: Math.min(lowShadow, 1536),
+      shadow: Math.min(lowShadow, 1024),
       post: "low",
       sky: "min",
       mirrorEvery: 4,
-      shadowEvery: 2,
+      shadowEvery: 4,
     },
   ];
 }

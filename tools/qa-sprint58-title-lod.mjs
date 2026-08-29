@@ -38,14 +38,15 @@ const rivalStart = celica.indexOf("export function createRivalCar");
 const titleSlice = titleStart >= 0 && rivalStart > titleStart ? celica.slice(titleStart, rivalStart) : "";
 
 check(
-  "prepareTitleCar loads hero GLB first (LOD is fallback)",
+  "prepareTitleCar loads rival LOD first (hero is fallback)",
   /export async function prepareTitleCar/.test(celica) &&
-    /await tryLocalGltf\(chassis\)/.test(celica) &&
-    celica.indexOf("await tryLocalGltf(chassis)") < celica.indexOf("await tryRivalGltf(chassis)")
+    /await tryRivalGltf\(chassis\)/.test(celica) &&
+    celica.indexOf("await tryRivalGltf(chassis)") < celica.indexOf("await tryLocalGltf(chassis)")
 );
 check(
-  "createTitleCar prefers hero templates, hides cockpit",
-  /const template =\s*\n\s*templates\[chassis\]/.test(celica) &&
+  "createTitleCar prefers rival LOD templates, hides cockpit",
+  /rivalTemplates\[chassis\]/.test(titleSlice) &&
+    titleSlice.indexOf("rivalTemplates[chassis]") < titleSlice.indexOf("templates[chassis]") &&
     /hideHeavyInterior\(clone\)/.test(celica) &&
     /titleLod = true/.test(titleSlice)
 );
@@ -62,12 +63,12 @@ check(
 check(
   "race promotes LOD to hero before the grid",
   /_promotePlayerCar/.test(game) &&
-    /Loading driver car/.test(game) &&
-    /await prepareHeroCar\(this\.carId\)/.test(game)
+    /Loading cars/.test(game) &&
+    /await Promise\.all\(\[prepareHeroCar\(this\.carId\)/.test(game)
 );
 const celicaV = (game.match(/celica\.js\?v=(\d+)/) || [])[1];
-check("celica.js cache-bust", Number(celicaV) >= 121, `game → celica v=${celicaV}`);
-check("cache-bust chain", cacheOk && Number(gameV) >= 416, `main=${mainV} game=${gameV}`);
+check("celica.js cache-bust", Number(celicaV) >= 141, `game → celica v=${celicaV}`);
+check("cache-bust chain", cacheOk && Number(gameV) >= 528, `main=${mainV} game=${gameV}`);
 
 const hero = path.join(ROOT, "assets/celica/gt4.glb");
 const lod = path.join(ROOT, "assets/celica/rival.glb");

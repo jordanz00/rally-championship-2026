@@ -9,7 +9,7 @@
  *   vehicle.js uses bumpField for yaw kick and roadChatter for tiny HF bobble.
  */
 
-import { SURFACES } from "../config.js?v=152";
+import { SURFACES } from "../config.js?v=163";
 
 /** @param {number} n */
 function hash1(n) {

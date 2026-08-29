@@ -131,6 +131,8 @@ check("samePit uses scanned land dist, not a 36 m window", /_landPadEndDist/.tes
 check("_scanLandPad returns the land run end", /return \{ y, dist: foundAt, end: endAt \}/.test(vehicle));
 check("air pitch snaps onto the axle plane on glitch/plant", /_snapPitchToRoad\(axles\)/.test(vehicle));
 check("graded landings use attitude settle, not upright snap", /_beginLandSettle\(/.test(vehicle));
+check("land spring seeds from impact (no hard vel snap alone)", /_seedLandCompress\(/.test(vehicle) && /landCompressWn/.test(read("js/config.js")));
+check("land spring never extends past ride height", /if \(x < 0\) \{\s*x = 0;\s*v = 0;/.test(vehicle));
 check(
   "chassis stay-on-road still active",
   /_keepChassisOnRoad\(axles, pit\)/.test(vehicle) && /const LAND_PITCH_SLACK/.test(vehicle)

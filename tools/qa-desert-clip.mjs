@@ -88,8 +88,8 @@ check(
 );
 check(
   "desert skirt is a short tuck",
-  /desert \? 2\.6/.test(trackSrc) && !/desert \? 8\.2/.test(trackSrc),
-  "8 m dune skirts folded onto tight gravel corners"
+  /desert \? 3\.8/.test(trackSrc) && !/desert \? 8\.2/.test(trackSrc),
+  "8 m dune skirts folded onto tight gravel corners; 2.6 left see-under canyon"
 );
 check(
   "skirt outer verts cannot rise onto the ribbon",
@@ -137,6 +137,44 @@ check(
     (/_scrubTunnelPortalDrive/.test(trackSrc) || /Grounding slab under the whole mouth/.test(trackSrc)) &&
     /Approach embankment/.test(trackSrc),
   "portal must plant into the hillside, not float as a gate"
+);
+check(
+  "tunnel portal wings plant onto tunnel terrain Y",
+  /plantY\(/.test(trackSrc) &&
+    /_tunnelTerrainY/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
+    /Fill wedge between verge and face/.test(trackSrc),
+  "apron/ramp/wing toes must embed into dunes, not sit at fixed roadY"
+);
+check(
+  "mouth embankment fills thin gaps (no canyon slots)",
+  /gap < 0\.35/.test(trackSrc) &&
+    /along <= 44; along \+= 2\.5/.test(trackSrc) &&
+    /target = p\.y \+ 11\.5/.test(trackSrc) &&
+    /_plantBoxY\(gy, h, 0\.95\)/.test(trackSrc) &&
+    /_buryPortalMeshesToLand/.test(trackSrc),
+  "thin-gap skip + low target left floating lips; bury pass grounds scrub survivors"
+);
+check(
+  "desert sweep berms plant on Act 6 lean wall",
+  /_addDriftSweepBerms\("desert"\)/.test(trackSrc),
+  "Desert sweeper had no outside embankment to lean on"
+);
+check(
+  "desert closed deck underside under washed bed",
+  /inUnderpass \|\| scenery === "mountain" \|\| desert/.test(trackSrc),
+  "FrontSide ribbon showed canyon under Desert land wash"
+);
+check(
+  "shared box plant helper embeds toes below land",
+  /_plantBoxY\(/.test(trackSrc) && /gy \+ sy \* 0\.5 - bury/.test(trackSrc),
+  "roadY-local box centres floated over washed verge beds"
+);
+check(
+  "catch-fence posts plant to groundHeight not roadY",
+  /barrierOff = ROAD_VERGE \+ 1\.4/.test(trackSrc) &&
+    /_plantBoxY\(gy, barrierH/.test(trackSrc) &&
+    !/posts\.push\(\{ x: bx, y: p\.y \+ 0\.4/.test(trackSrc),
+  "p.y+0.4 floated barriers over land wash"
 );
 
 if (fail) {
@@ -344,8 +382,22 @@ async function main() {
             const y = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
             if (y < minY) minY = y;
           }
-          const near = track._nearestRoad(e[12], e[14]);
-          if (minY < near.roadY - 1.2) portalBuried += 1;
+          // Footing vs the portal mouth deck (group.position.y), not a folded
+          // Desert arm that _nearestRoad may pick at a wing's world XZ.
+          let deckY = null;
+          let p = obj.parent;
+          while (p) {
+            if (p.userData && p.userData.tunnelPortal && p.isGroup) {
+              deckY = p.position.y;
+              break;
+            }
+            p = p.parent;
+          }
+          if (deckY == null) {
+            const near = track._nearestRoad(e[12], e[14]);
+            deckY = near.roadY;
+          }
+          if (minY < deckY - 1.2) portalBuried += 1;
         });
       }
       return {

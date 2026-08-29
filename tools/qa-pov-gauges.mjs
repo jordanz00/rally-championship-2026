@@ -100,17 +100,27 @@ check(
   "ST205 / chase layout"
 );
 
+check(
+  "gauges sit behind the steering wheel in cabin depth",
+  /clusterZ = Math\.max\(wheelZ \+ 0\.20/.test(car) &&
+    /povClusterZ/.test(car) &&
+    /povWheelZ/.test(car) &&
+    /depthTest: true/.test(car.slice(car.indexOf("function clusterMat"))) &&
+    !/r\.clearDepth\(\)/.test(game.slice(game.indexOf("_renderPovHudOverlay"))),
+  "eye → wheel → cluster; overlay keeps main depth so the rim occludes discs"
+);
+
 const celicaV = game.match(/celica\.js\?v=(\d+)/);
 const gameV = main.match(/game\.js\?v=(\d+)/);
 const mainV = index.match(/main\.js\?v=(\d+)/);
 check(
-  "cache bust celica.js?v>=111",
-  celicaV && Number(celicaV[1]) >= 111,
+  "cache bust celica.js?v>=139",
+  celicaV && Number(celicaV[1]) >= 139,
   celicaV ? `got ${celicaV[1]}` : "missing"
 );
 check(
   "cache bust main↔game",
-  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 345,
+  gameV && mainV && gameV[1] === mainV[1] && Number(gameV[1]) >= 505,
   `game=${gameV && gameV[1]} main=${mainV && mainV[1]}`
 );
 

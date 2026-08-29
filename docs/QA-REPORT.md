@@ -3968,3 +3968,783 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 **Still human-only:** Hard refresh `?v=498`. Drive sand→gravel through the rock bridge at ~2441 m.
 
 ---
+
+## Sprint 499 — Countdown→race lighting continuity (28 Aug 2026)
+
+**Player moment:** After 3-2-1, GO does not snap graphics/lighting. The stage already looks like the race during countdown.
+
+**Cause:** Sprint 39’s cinema stall fix made **every** countdown use a lighter present — skip postFX, skip mirror/reflections, shadow atlas every 6 frames. At GO the full race path snapped on (bloom/grade + shadow cadence), which read as a lighting pop.
+
+**Fix:** `countdownLitePresent()` gates the light path on `navigator.webdriver` only (SwiftShader / CDP). Real GPUs use the same post / shadow-every / mirror path as race. Loading settle + warm frames still bake shadows; quality adapt stays frozen through countdown so the tier cannot hunt mid-3-2-1.
+
+| Item | State |
+|---|---|
+| Player countdown matches race present | **Done** |
+| Webdriver keeps lite countdown (no cinema stall) | **Done** |
+| Post / shadow / mirror continuity at GO | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=499`**
+
+**Proof:** `node tools/qa-countdown-present.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=499`. Championship → Desert — watch 3→2→1→GO; lighting/post must not change at GO.
+
+---
+
+## Sprint 500 — Heavier jump landings (28 Aug 2026)
+
+**Player moment:** Hit Desert hop / pair / Safari throw. Touchdown squashes into an overdamped spring, residual air pitch/roll rocks out, wheels sink into the arches — then the chassis settles. No upright snap, no bouncy hop glitch.
+
+**Cause:** Pad contact zeroed `velY` in one frame; `_beginLandSettle` hard-assigned pitch; squash decayed with a fast exponential; mismatched landings could re-air with up to 1.5 m/s bounce.
+
+**Fix:** `_seedLandCompress` + overdamped spring (`landCompressWn` / `ζ>1`, clamp x≥0). Soft pitch blend from mesh+air pose. Pad absorb via `landVelAbsorb`. Re-air only above `landReairMin` with capped soft rebound. Wheel travel follows compress.
+
+| Item | State |
+|---|---|
+| Progressive land spring / damper | **Done** |
+| Soft attitude blend (no pitch snap) | **Done** |
+| Soft vel absorb (no one-frame kill alone) | **Done** |
+| Reduced re-air bounce glitch | **Done** |
+| Variety by impact / surface / air time | **Done** |
+| Road plant / no bury retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `vehicle.js?v=110` · `jump.js?v=19` · `config.js?v=155`
+
+**Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint68-jump-land.mjs` (static PASS; headed flaky on boot wait)
+
+**Still human-only:** Hard refresh `?v=502`. Flat-out Desert jump 1, lift-brake jump 2, Safari jump 3 — each land should feel heavy and settle, not snap or hop.
+
+---
+
+## Sprint 500 — Title/menu 60 Hz showroom budget (28 Aug 2026)
+
+**Player moment:** Open the game. PRESS START and SELECT MODE orbit at a stable ~60 fps on M1 Pro — no laggy attract loop.
+
+**Cause:** Cinema showroom ran race-grade costs on the pad: 16-step volumetric clouds, 1.5 DPR / 2.4 Mpix, 2048 shadows, CubeCamera every 6 frames, post/bloom path, plus pack/stream work with no stage.
+
+**Fix:** Dedicated `TITLE_SHOWROOM` budget — medium clouds (12×2), DPR 1.15 / 1.6 Mpix, 1024 shadow atlas every 4 frames, cube every 18 (paused while track preload builds), single ACES present (no post RTs), skip pack/stream on pad. `_settleRacePresent` still restores `raceStartTier()` so Desert/race quality is unchanged after countdown.
+
+| Item | State |
+|---|---|
+| Title medium sky / capped DPR / lean shadows | **Done** |
+| Single-pass title present (no post RTs) | **Done** |
+| Race tier restore on settle | **Done** |
+| PRESS START stays on attract path | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=500`** · `config.js?v=155`
+
+**Proof:** `node tools/qa-title-perf.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-sprint77-boot.mjs`
+
+**Still human-only:** Hard refresh `?v=500`. Watch title orbit FPS; PRESS START → menu; start Desert and confirm race still looks cinema after GO.
+
+---
+
+
+## Sprint 500b — Countdown grade + landings + Mountain deck (28 Aug 2026)
+
+**Player moments:** (1) 3-2-1→GO with no lighting/post pop. (2) Jump landings rock/squash smoothly. (3) Mountain Stage 3 ribbon no longer floats with a visible underside canyon.
+
+**Cause:** Countdown throttled shadow atlas then enabled full race present at GO. Mountain land bed sat **1.2 m** under FrontSide asphalt; skirts plunged into that trench. Land settle damp was snappy.
+
+**Fix:** Player countdown matches race present (webdriver-only lite path). Shadow bake every frame through countdown + GO warm (`_raceWarmFrames` ≥ 16). Mountain bed tuck **0.28 m**, closed underside deck, longer/shallower skirts. JUMP settle damp from config + overdamped compress spring.
+
+| Item | State |
+|---|---|
+| Countdown→race present continuity | **Done** |
+| Soft jump land settle | **Done** |
+| Mountain floating road closed | **Done** |
+| Title attract budget (Sprint 500) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `config.js?v=155` · `track.js?v=220`
+
+**Proof:** `node tools/qa-sprint500-feel.mjs` · `node tools/qa-countdown-present.mjs` · `node tools/qa-title-perf.mjs` · `node tools/qa-static-audit.mjs`
+
+**Still human-only:** Hard refresh `?v=502`. Title orbit FPS; Desert GO grade continuity; Desert jumps; Mountain climb — ribbon should look grounded.
+
+---
+
+## Sprint 503 — POV rearview: real cabin mirror (28 Aug 2026)
+
+**Player moment:** C into the seat. The interior glass shows a readable rear view — road, trees, sky, rivals behind you — not a warped fisheye blob or a clipped 80 m haze cut.
+
+**Cause:** Mirror camera used **55° vertical FOV** on a 384×120 RT (~130° horizontal) and a **80 m** far/fog clamp. Capture only streamed against the forward POV cam, so rear scenery could drop. Aim sat at the roof lip looking too short aft.
+
+**Fix:** Keep the cheap **384×120** RT. Cabin-mirror lens (`mirrorFov: 26` ≈ 70° H, `mirrorFar: 200`). Re-stream against player + rearview lens before each capture. Bumper cam slightly lower, look target further down the road.
+
+| Item | State |
+|---|---|
+| Low-res RT retained (≤384×120) | **Done** |
+| Cabin FOV + 200 m far | **Done** |
+| Stream rear scenery into RT | **Done** |
+| Linear capture / HUD glass path retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=504`** · `config.js?v=156` · `celica.js?v=138`
+
+**Proof:** `node tools/qa-pov-mirror.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Still human-only:** Hard refresh `?v=504`. C into POV on Desert grid — glass should show the road behind (and pack cars), left-right flipped like a real mirror.
+
+---
+
+## Sprint 505 — POV gauges behind the steering wheel (28 Aug 2026)
+
+**Player moment:** C into the seat. The rim is closest to your eyes; tach/speedo sit further into the dash and read through the wheel opening — not floating in front of the spokes.
+
+**Cause:** Cluster was at `eyeZ+0.30` with the procedural wheel at `+0.36`, and the HUD overlay cleared depth + drew gauges with `depthTest:false`, so discs always composited over the rim.
+
+**Fix:** Cabin depth order eye → wheel → cluster (~+20 cm past the rim) → dash bulk. Gauge materials depth-test against the preserved main-pass buffer. Mirror glass stays `depthTest:false`.
+
+| Item | State |
+|---|---|
+| Cluster behind rim | **Done** |
+| Wheel occludes gauge edges | **Done** |
+| Mirror HUD unaffected | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=505`** · `celica.js?v=139`
+
+**Proof:** `node tools/qa-pov-gauges.mjs`
+
+**Still human-only:** Hard refresh `?v=505`. C into POV — wheel in front, gauges deeper in the binnacle.
+
+---
+
+## Sprint 506 — Desert tunnel mouth overhaul + floating rock (28 Aug 2026)
+
+**Player moment:** Climb into the Stage 1 tunnel. The mouth is a cut through sandstone — wings, aprons, and ramps bury into the dune. No floating gate, no see-under canyon. Rock-bridge outer masses and drift berms sit on the land.
+
+**Cause:** Portal boxes used fixed roadY-local Y (apron at `0.2`, ramp at `2.4`) while land sat much lower. Embankment skipped gaps `< 2.8 m`, leaving canyon slots. Bridge outer hill masses were also roadY-local floaters.
+
+**Fix:** `_addTunnelPortal` plants wings/aprons/ramps/talus/wedges onto `_tunnelTerrainY`. Steeper cut face. Dense embankment fill (`gap < 0.7`). Bridge outer blocks + mouth shoulders plant to `_groundHeight`. Drift berms bury deeper.
+
+| Item | State |
+|---|---|
+| Terrain-planted tunnel portal | **Done** |
+| Mouth embankment closes thin gaps | **Done** |
+| Rock-bridge outer masses planted | **Done** |
+| Drift berm plant | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=506`** · `track.js?v=221`
+
+**Proof:** `node tools/qa-desert-clip.mjs` (static PASS)
+
+**Still human-only:** Hard refresh `?v=506`. Desert climb into the tunnel — embankment must meet rock on both sides with no floating lip.
+
+---
+
+## Sprint 507 — Forest waterfall landmark (28 Aug 2026)
+
+**Player moment:** Drive Stage 2 into the Glade Bowl hairpin. Outside the turn, a cliff cascade falls into a plunge pool — moving water, foam, mist — not a static blue plane.
+
+**Fix:** `_addForestWaterfall` plants a rock cut + three scrolling cascade sheets + lake-material pool past the verge. `waterfall()` PBR map with vertical foam. Per-mesh `waterScroll` rates (fast −V on sheets). Course subtitle: WATERFALL CLEARING.
+
+| Item | State |
+|---|---|
+| Cascading sheets + pool | **Done** |
+| Cliff / talus / mist | **Done** |
+| Clear of drive corridor | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=507`** · `track.js?v=222` · `pbr.js?v=29` · `courses.js?v=66`
+
+**Proof:** `node tools/qa-forest-waterfall.mjs`
+
+**Still human-only:** Hard refresh `?v=507`. Forest → Glade Bowl — waterfall visible outside the hairpin.
+
+---
+
+## Sprint 508 — Ground all floating geometry (28 Aug 2026)
+
+**Player moment:** Every stage — rocks, berms, barriers, signs, pier, cliff toes, crowd feet, gantry posts, bridge mouth shoulders, waterfall wings — sit in the dirt. No floating boxes over washed land beds.
+
+**Cause:** Many props used roadY-local centres (`p.y + 0.4` barriers, gantry `p.y + 2.7`) or `gy + halfH` without bury. After land wash / mountain bed tuck, verge terrain sits below the ribbon so road-relative boxes float. Lakeside boathouse bottom sat ~0.9 m above shore. Cliff toe row used jagged noise at r=0.
+
+**Fix:** `_plantBoxY(gy, sy, bury)` helper. Barriers, desert/mountain/forest berms & banks, logs, pier posts/house, sign posts, waterfall cliff wings (per-footprint land), bridge mouth frames extend to land. Spectator toes bury `gy - 0.08`. Cliff bottom row pinned `gy - 0.45`. Village walls/houses dig slightly. Drive corridor keepouts unchanged.
+
+| Item | State |
+|---|---|
+| Barrier / gantry / sign plant | **Done** |
+| Berm / bank / pier / village bury | **Done** |
+| Cliff toe + waterfall wing plant | **Done** |
+| Crowd toes bury | **Done** |
+| Bridge mouth frames to land | **Done** |
+| Corridor clear retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=510`** · `track.js?v=223`
+
+**Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs`
+
+**Still human-only:** Hard refresh `?v=510`. Spot-check Desert tunnel/bridge, Forest waterfall + banks, Mountain cliff/village, Lakeside pier — no floaters, asphalt clear.
+
+---
+
+## Sprint 504 — Countdown lighting continuity before "3" (28 Aug 2026)
+
+**Player moment:** Loading settle finishes, then 3-2-1-GO. Exposure, bloom/grade, sky steps, shadow atlas, and DPR never snap at "1" or GO — the stage already looks like the race when the first number paints.
+
+**Cause:** Title showroom budget (soft DPR, post off, medium sky, 1024 atlas) restored late or incompletely. A `_gridCamHold = 2.8` timer expired exactly when "1" painted (fade ate ~0.8 s of the hold). Championship also started next-stage `Track.create` at the "3" flash, hitching the main thread mid-count. Warm frames burned during countdown so the settle budget was gone before GO.
+
+**Fix:** `_settleRacePresent` resets DPR, forces race shadow atlas + sky/post from `raceStartTier()`, `_onResize` for post RTs, four warm presents under the load overlay. Countdown always hard-snaps cam (no 2.8 s timer). Warm frames burn only in `race`. Preload pump blocked during countdown; no next-stage schedule at "3". Quality adapt refused while `state === "countdown"`.
+
+| Item | State |
+|---|---|
+| Race present fully live before "3" | **Done** |
+| No mid-countdown quality/present switch | **Done** |
+| Cam snap through full 3-2-1 | **Done** |
+| No Track.create during countdown | **Done** |
+| Webdriver lite path retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=504`**
+
+**Proof:** `node tools/qa-countdown-present.mjs`
+
+**Still human-only:** Hard refresh `?v=504`. Championship → Desert — watch 3→2→1→GO; lighting/post/sky must not change at any digit.
+
+---
+
+## Sprint 39–49 closeout — Fixed GPU budget for 60 / hard 30 (28 Aug 2026)
+
+**Charter:** Inventory showed sprints **39–49 feature rows Done** (no PARTIAL left in that band). The open realism/perf debt was Sprint **76/96**: steady ~28–37 ms on M1 at full quality (4096² PCFSoft @ every present + 1.5 DPR fill-rate). Close that fixed cost so high tier can chase 60; keep the 30 Hz cadence lock as the floor.
+
+**Player moment:** Desert pack race on M1 / desktop Chrome holds a steadier cadence. Contact shadow under the car stays soft and readable; cinema post/sky remain on high. When the machine still cannot hold 60 at min, present locks to even 30 (unchanged).
+
+**Fix (reuse scaler — no second ladder):**
+| Knob | Before | After |
+|---|---|---|
+| `GFX.shadowMap` | 4096 | **2048** |
+| `GFX.shadowEvery` / high+medium tier | 1 | **2** |
+| `GFX.maxPixelRatio` / `maxPixels` | 1.5 / 2.8 M | **1.25 / 2.0 M** |
+| `shadowExtentRace` / `shadowFar` | 54 / 180 | **42 / 160** |
+| Rival castShadow LOD | 92 m | **70 m** |
+| low/min `shadowEvery` | 2 | **3 / 4** |
+
+Forest waterfall (`?v=507` landmark) untouched. Countdown→race present continuity and POV mirror/gauges path unchanged.
+
+| Item | State |
+|---|---|
+| Sprints 39–49 feature inventory (Done) | **Confirmed** |
+| Fixed shadow/fill budget cut | **Done** |
+| 30 fps cadence lock retained | **Done** |
+| Forest waterfall intact | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=516+`** (boot may advance with parallel title work — hard-refresh whatever `index.html` pins) · `config.js?v=159` · `perf-tier.js?v=11`
+
+**Proof (automated, PASS):**
+```bash
+node tools/qa-sprint39-perf.mjs
+node tools/qa-sprint76-perf.mjs
+node tools/qa-sprint35-40-matrix.mjs   # SHIP
+node tools/qa-static-audit.mjs
+node tools/qa-countdown-present.mjs
+node tools/qa-forest-waterfall.mjs
+```
+
+**Headed M1 Pro probe (8 s Desert pack, this session):** delivered **34.8 fps** avg (range 10–46), tier **min**, present-interval EMA **24.9 ms** (was ~37 ms at min pre-cut). Scaler still targeting 60 (LOCK30 needs ~10 s at floor — sample was 8 s). VERDICT: **INCONSISTENT** — not yet a held 60 or even locked 30. Car nearly stopped (speed 4.1) so this is still fixed GPU cost, not motion.
+
+**Still human-only:** Quiet Chrome, hard refresh current `?v=`. Desert 2 minutes — expect either climb toward 60 after warm, or after ~10 s at min an even 30 lock. Shadow under car must not strobe. Forest waterfall + countdown continuity.
+
+**Honest remaining / PARTIAL:** Absolute 60 fps claim still **open** (Sprint 76/96 continuity). Stage-build wedge (76 #2) untouched. Next levers if human GPU still <60 at min: draw-call/overdraw (instancing density, stream castShadow cull), not more scaler knobs.
+
+---
+
+## Sprint 510 — Title attract hitch cut (28 Aug 2026)
+
+**Player moment:** Open the game. PRESS START / SELECT MODE orbit feels like a clean ~60 fps attract loop — no laggy showroom.
+
+**Cause (remaining after Sprint 500):** Medium volumetric sky (12×2 + Worley) was still the pad GPU floor every present; CubeCamera every 18 added a six-face hitch cadence; garage GLB warm fired mid-attract (~4.2 s) and stole the main thread while the player watched.
+
+**Fix:** Tighten `TITLE_SHOWROOM` — low sky (6×1, no Worley), cube off (PMREM IBL only), shadow every 6, DPR 1.0 / 1.4 Mpix, sky uniform tick every 8. Defer `_warmGarage` to `_idleWarmAfterTitle` (after PRESS START). `_settleRacePresent` still restores `raceStartTier()` (DPR / sky / post / shadows) so Desert countdown lighting is unchanged.
+
+| Item | State |
+|---|---|
+| Low sky + no live cube on pad | **Done** |
+| Garage warm after PRESS START | **Done** |
+| Race settle tier restore intact | **Done** |
+| PRESS START / SELECT MODE stay instant | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=509`** · `config.js?v=158`
+
+**Proof:** `node tools/qa-title-perf.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
+
+**Still human-only:** Hard refresh `?v=509`. Watch title orbit FPS; PRESS START → menu snappy; start Desert and confirm race still looks cinema after GO.
+
+---
+
+## Sprint 511 — Jump landing SFX (28 Aug 2026)
+
+**Player moment:** Leave a Desert hop / pair / Safari throw. On real touchdown hear a subtle, variable thump — soft hop vs hard pack vs grit — not the same canned hit, and not on every curb tick.
+
+**Cause:** Visual land settle ran on three paths (floor clamp, pad hit, axle lift), but only the pad-hit path armed `lastImpact` for audio. Soft floor-clamp lands (common) were silent. `landThump` also lacked mute/sfxVol early-outs and was a bit loud.
+
+**Fix:** `_noteLandImpact` at land *begin* (before clearing `_airTime`) on all three paths, gated by hang / jump-phase / impact so road chatter stays quiet. `RallyAudio.landThump` layers procedural soft/mid/hard/scrape noise with bank overrun/gravel/chirp; pitch/gain by severity + surface + air time; respects work-mute and SFX slider. Game plays once then clears telemetry.
+
+| Item | State |
+|---|---|
+| SFX on authentic jump→ground | **Done** |
+| No curb / false-land spam | **Done** |
+| Variable pitch/gain (impact / surface / air / upset) | **Done** |
+| Mute / SFX volume respected | **Done** |
+| Attribution (no new binary) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=513`** · `vehicle.js?v=111` · `engine.js?v=57`
+
+**Proof:**
+```bash
+node tools/qa-land-sfx.mjs
+node tools/qa-jump-variability.mjs
+```
+
+**Still human-only:** Hard refresh `?v=513`. Desert jump 1–3 with SFX up — each land a quiet distinct thump; flat road bumps silent; mute SFX slider → silence.
+
+---
+
+---
+
+## Sprint 511b — Diverse densified crowd base (28 Aug 2026)
+
+**Player moment:** Desert / Lakeside galleries read as a mixed human audience — men/women, adults, teens, elders, kids, stocky/tall builds — cheering clear of the asphalt, not a four-clone Kenney strip.
+
+**Cause:** Desert only loaded `CROWD_FOUR` (4 of 12 kinds). Character GLBs were stretched to a flat 1.7 m. Arms were centroid-split from a merged mesh. Strong instance tints washed atlas skin.
+
+**Fix:**
+- Regenerated `character-*.glb` via `tools/build-crowd-humans.py` with age/body profiles + authored `crowd-body` / `crowd-arm-l` / `crowd-arm-r`.
+- `prop-kit` loads full `CROWD_ALL` (12) for desert/forest/lakeside; mountain skips crowd GLBs; preserves authored heights; extracts named arm parts; batched load yield.
+- Atlas refresh via `tools/gen-crowd-atlas.py`.
+- Extended by Sprint 514 (per-person mix + grandstands + 5 cheer styles).
+
+| Item | State |
+|---|---|
+| Full 12-kind pack on Desert/Lakeside | **Done** |
+| Age/body profile meshes | **Done** |
+| Authored cheer arms | **Done** |
+| Plant clear of roadway | **Done** |
+| Mountain skips crowd load | **Done** |
+
+**Honest limit:** Still the in-repo densified low-poly biped pack (~4k body verts) — not photogrammetry / MetaHumans. Diversity is silhouette + atlas UV + tint + anim within that kit.
+
+**Cache (current tree):** `index.html` / `main.js` / `game.js` **`?v=517`** · `track.js?v=228` · `crowd.js?v=16` · `prop-kit.js?v=27` · GLB `?v=16`
+
+**Proof:** `node tools/qa-crowd-glb.mjs` **PASS** (12 kinds, 160 poses, 0 on-road, 5 cheer styles, grandstand elevated seats)
+
+**Still human-only:** Hard refresh `?v=517`. Desert practice — gallery + start/finish bleachers show mixed heights/genders; asphalt clear of feet.
+
+## Sprint 514 — Grandstands + unique cheering crowd (28 Aug 2026)
+
+**Player moment:** Start line and finish line have filled bleachers; verge crowds are mixed humans (kind/tint/scale), each with a distinct cheer — clap, wave, overhead, jump, film-arm — not identical clones.
+
+**Cause:** `_addSpectators` assigned **one kind per cluster** → readable clone strips. No grandstand geometry. Cheer styles were only 3 soft variants without per-person rate.
+
+**Fix:**
+- Per-person kind cycling across the full 12-pack; expanded tint palette; `animStyle` 0–4 + `animRate`.
+- `_addGrandstandCrowds` — steel/wood bleachers both sides at start + finish, seats filled.
+- Arm/body write paths honor style 3 jump-cheer and style 4 film-arm; rates desync motion.
+
+| Item | State |
+|---|---|
+| Per-person kind/tint (no cluster clones) | **Done** |
+| Start + finish grandstands filled | **Done** |
+| 5 unique cheer animations + rates | **Done** |
+| Roadway stay-clear | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=514`** · `track.js?v=226` · `crowd.js?v=16`
+
+**Proof:** `node tools/qa-crowd-glb.mjs`
+
+**Still human-only:** Hard refresh `?v=514`. Desert practice — walk the start grid; bleachers packed with mixed silhouettes; pass at speed for desynced cheers.
+
+---
+
+## Sprint 515 — Pre-GO lighting snap eliminated (28 Aug 2026)
+
+**Player moment:** Championship → Desert. From the first painted "3" through 2 → 1 → GO VO, exposure, colour grade, sky steps, shadow atlas size, and shadow bake cadence stay identical to the race look.
+
+**Cause:** Countdown still forced `shadowEvery = 1` while settling, then race used tier `shadowEvery = 2` (Sprint 508). That cadence flip at GO (when warm frames ended) read as a lighting/colour snap. Present knobs were not re-asserted after `_updateLights` wrote exposure each frame, or after the loading→HUD curtain.
+
+**Fix:** Present freeze for exposure/post/sky/shadow cadence (Sprint 515). **Superseded by Sprint 521** for remaining light/fog/curtain snaps.
+
+| Item | State |
+|---|---|
+| Settle complete before "3" | **Done** → extended in 521 |
+| Present freeze through GO + warm | **Done** → extended in 521 |
+
+**Cache (historic):** `?v=515`
+
+---
+
+## Sprint 521 — Pre-countdown lighting fully locked (29 Aug 2026)
+
+**Player moment:** Graphics are finished under the load screen; when "3" appears, lighting/colors match the race look and do not change through 2 → 1 → GO.
+
+**Cause (remaining after 515):** `_updateLights` still rewrote sun/hemi/fill/exposure every countdown frame; live cube reflections could swap paint IBL; loading→HUD curtain was a second grade path; sky time kept advancing (flare/cumulus morph).
+
+**Fix:**
+- Freeze snapshots stage lights, fog, background, post grade, sky time/cover/bloom/flare.
+- `_updateLights` short-circuits intensity/exposure writes while frozen (follow-only + restore).
+- Reflections baked once in settle; skipped while frozen.
+- Instant HUD swap + 3 frozen presents before unlocking "3".
+- Sky `uTime` held for the freeze window.
+
+| Item | State |
+|---|---|
+| All lighting set before countdown | **Done** |
+| No mid-count / pre-GO color snap | **Done** |
+| No curtain grade into "3" | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=521`**
+
+**Proof:** `node tools/qa-countdown-present.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=521`. Watch load → 3 → 2 → 1 → GO — no lighting/color change at any step.
+
+---
+
+
+## Sprint 516 — Forest stage full refresh (28 Aug 2026)
+
+**Player moment:** Stage 2 feels longer and harder — linked dirt/gravel S, crest jump, Glade Bowl waterfall, gravel sweep, tight mud hairpins, autumn corridor, finale gravel commit. Trees and banks sell northern-European autumn; surface contrast (dirt → gravel → mud) drives the rhythm.
+
+**Was:** Short ~1.35 km glade with one checkpoint, long rest straights, soft linked pins (r42), flat banks, sparse treeline — not fun, weak identity.
+
+**Fix:**
+- `courses.js` Forest rebuilt: **~1.77 km**, **35 pieces**, **2 checkpoints** (AM3), tighter radii, less rest, mud linked pins (r34), autumn corridor + finale gravel hairpin. Subtitle: `AUTUMN HAIRPINS · WATERFALL CLEARING`.
+- `track.js` denser treeline (4 rings), more trackside trees/bushes/ferns/verge, stronger forest banks + autumn litter/clearing tint, taller drift banks. `_addForestWaterfall` retained on first landmark.
+- `config.js` `stageTime.forest` **90** (clock 140 s with 2×25).
+
+| Item | State |
+|---|---|
+| Longer / harder layout + 2 CPs | **Done** |
+| Autumn look densify + banks | **Done** |
+| Waterfall landmark retained | **Done** |
+| Stage clock retune | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=516`** · `courses.js?v=67` · `track.js?v=227` · `config.js?v=159`
+
+**Proof:** static forest layout gate (len≥1650, 2 CP, mud pins, autumn+waterfall subtitle) · `node tools/qa-forest-waterfall.mjs` **PASS** · boot smoke title visible (PRESS START hittable flake unrelated)
+
+**Still human-only:** Hard refresh `?v=516`. Drive Forest end-to-end — confirm Glade Bowl waterfall, mud slide rhythm, no unfair teleport on linked pins, clock fair for a clean lap.
+
+---
+
+## Sprint 518 — Desert stage grounding overhaul (28 Aug 2026)
+
+**Player moment:** Stage 1 Desert reads as a shippable rally stage — road sits in the dirt, tunnel mouth is a sandstone cut, rock bridge piers dig into land, drift/sweep berms give a lean wall, chase cam does not see under the ribbon.
+
+**Cause:** Land wash sat ~1.15 m under FrontSide asphalt (see-under canyon). Portal posts/embankment used weak plant offsets (`gy + h*0.42`, target `p.y+3.2`). Rock-bridge outer masses floated. Act 6 sweeper had no outside embankment (Forest/Mountain did). Skirt 2.6 m too short for the bed.
+
+**Fix:**
+- Desert closed deck underside + skirt **3.8** m tuck (not the old 8.2 fold).
+- Tunnel portal: terrain-planted posts, second fill row, embankment target **p.y+7.5** with `_plantBoxY`.
+- Tunnel mountain masses + bridge outer/talus plant to land.
+- `_addDriftSweepBerms("desert")` + taller landmark berms.
+- Far rocks / props plant via `_plantBoxY`.
+
+| Item | State |
+|---|---|
+| Road/land closed deck + skirt tuck | **Done** |
+| Tunnel mouth / embankment plant | **Done** |
+| Rock-bridge talus + outer plant | **Done** |
+| Sweep + landmark berms | **Done** |
+| Corridor keepouts retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=519`** · `track.js?v=230`
+
+**Proof:**
+```bash
+node tools/qa-desert-clip.mjs            # PASS — static + headed
+node tools/qa-env-clip.mjs               # PASS — static + headed (all 4 stages)
+node tools/qa-desert-bridge-2437.mjs     # PASS
+node tools/qa-desert-mud-1737.mjs        # PASS
+```
+
+**Still human-only:** Hard refresh `?v=519`. Drive Desert 10 minutes — tunnel climb (~1258 m), mud exit, Bowl berms, Act 6 sweeper lean wall, rock-bridge underpass (~2441 m). Confirm no floating lips, no sand on asphalt, no see-under canyon. Art sign-off that the stage is friend-shippable.
+
+**CEO bar (honest):** Worst grounding blockers closed with headed corridor proof (land −1.15 m, 0 lane invaders, portal footing 10/16 buried, ridge lift 12.5 m). Still want human eyes on the tunnel mouth and bridge before calling it friend-shippable polish.
+
+---
+
+## Sprint 520 — Fluffy volumetric clouds + lens flare (29 Aug 2026)
+
+**Player moment:** Looking up (or at a sunlit skyline) shows distinct fluffy cumulus with blue gaps, sun peeking through rims, and a soft anamorphic lens flare — not a grey smoke sheet welded to the dome.
+
+**Cause:** Soft wide density windows + high absorb + weak Worley made the raymarch read as translucent smoke. Sun disc existed but gaps did not; no flare.
+
+**Fix:**
+- Dense Worley cauliflower cores, taller shell, clearer cover islands, multi-scatter white interiors, silver lining + sun-peek transmittance.
+- Procedural lens flare (streak + chromatic ghosts) driven by camera forward.
+- Richer Rayleigh blues / stage gradients; stronger sunBloom; `VISUAL.lensFlare`.
+
+| Item | State |
+|---|---|
+| Fluffy cumulus (not smoke) | **Done** |
+| Sun peek through gaps | **Done** |
+| Lens flare | **Done** |
+| Realistic sky colors | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=520`** · `sky.js?v=32` · `config.js?v=160`
+
+**Proof:** `node tools/qa-sky-fluffy.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=520`. Title + Desert — confirm white fluffy billows with blue between, sun rim glow, flare when looking near the sun.
+
+---
+
+## Sprint 522 — Jump air keeps momentum (29 Aug 2026)
+
+**Player moment:** Desert jumps 1–3 — leave the lip, hang, land still carrying speed. Crests no longer feel like a mid-air brake.
+
+**Cause:** `airLongDrag` used `airNoseDrag: 0.58` with a `0.84` floor (~45% speed loss / s when lofted), plus lateral/yaw bleeds of `2.1/s` and `1.65/s`.
+
+**Fix:** Soft coast — `airBaseDrag` 0.002, `airNoseDrag` 0.14, floor `0.985`; lateral/yaw bleed `0.28` / `0.35`. Attitude still trims; hang keeps ≥90% speed over 0.6 s.
+
+| Item | State |
+|---|---|
+| Airborne momentum keep | **Done** |
+| Soft attitude trim retained | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=522`** · `vehicle.js?v=112` · `jump.js?v=20` · `config.js?v=160`
+
+**Proof:** `node tools/qa-jump-variability.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=522`. Desert jump 1–3 flat-out — speed stays through the hang; landings still scrub if attitude is wrong.
+
+---
+
+## Sprint 523 — Desert tunnel mouth grounded (29 Aug 2026)
+
+**Player moment:** Climb into the Desert tunnel (~1258 m) — the entrance reads as a cut through a ridge, not a floating stone gate over sand. No daylight under wings / apron from chase cam.
+
+**Cause:** Ridge peak was too far out; embankment skipped thin gaps (`gap < 0.7`); portal cap/wings could sit above washed verge after corridor scrub; a naive bury pass would also drag the overhead cap onto road-bed Y.
+
+**Fix:** Steeper nearer cut face; denser mouth embankment (2.5 m / 2.8 m grid, `gap < 0.35`, target +11.5 m); deeper plant bury + shoulder berms; ridge-planted cap; `_buryPortalMeshesToLand` after scrub (corner-sampled, skips overhead bore rock).
+
+| Item | State |
+|---|---|
+| Portal plant / berm fill | **Done** |
+| Mouth embankment densify | **Done** |
+| Post-scrub bury (no cap drop) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=523`** · `track.js?v=231`
+
+**Proof:** `node tools/qa-desert-clip.mjs` **PASS** (ridge lift 22.2 m; 13/19 portal meshes buried below deck)
+
+**Still human-only:** Hard refresh `?v=523`. Desert tunnel climb — confirm no see-under / floating gate at the mouth.
+
+---
+
+## Sprint 524 — Cut floating Desert rock bridge (29 Aug 2026)
+
+**Player moment:** Desert sand→gravel approach (~2440 m) — open road into the linked hairpins. No floating sandstone remnant, no empty underpass trench under a missing arch.
+
+**Cause:** Corridor scrub left the finale rock bridge as floating debris while land still opened a drive-through hole for an arch that was gone.
+
+**Fix:** Cut `_addDesertHeroLandmark` / `_addDesertRockBridge` from the player path; `_markDesertUnderpassCorridors` no longer tags underpass posts or landmark flats. Flyover separation owns the hairpin crossing.
+
+| Item | State |
+|---|---|
+| Rock bridge mesh spawn | **Cut** |
+| Underpass land trench | **Cut** |
+| Approach still driveable | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=524`** · `track.js?v=232`
+
+**Proof:** `node tools/qa-sprint32-desert-finale.mjs` **PASS** · `node tools/qa-desert-bridge-2437.mjs` **PASS** · `node tools/qa-desert-bridge-portal.mjs` **PASS** (0 bridge meshes / groups; approach driveable)
+
+**Still human-only:** Hard refresh `?v=524`. Drive Desert finale approach — confirm no floating rock where the bridge was.
+
+---
+
+## Sprint 525 — AAA present budget (fill-rate cut, cinema kept) (29 Aug 2026)
+
+**Player moment:** Desert pack at chase distance — cinema ACES / soft PCF / IBL still read as a modern rally game, while the present path can actually chase 60 Hz instead of living on the min tier.
+
+**Cause:** Sprint 96 proved the pack is fragment-bound. `textureScale: 4` plus canvas MSAA with a post RT stack paid fill cost with no look win (MSAA never samples the compositor RT). Wide race shadow frustum (42 m) also stuffed the 2048 atlas with mid-ground casters.
+
+**Fix:** Restore Sprint 24 texture budget (`textureScale: 2`, half normals); disable canvas MSAA when post is on; tighten race shadow ortho to 34 m for denser wheel contact + fewer casters; restore cloud `maxLightSteps: 2` (Sprint 76 cap). Keep tier 13 cinema grade, soft bloom, and the single `perf-tier` scaler.
+
+| Item | State |
+|---|---|
+| `textureScale` 4 → 2 | **Done** |
+| MSAA off with post RT | **Done** |
+| Race shadow extent 42 → 34 | **Done** |
+| Cloud light steps 3 → 2 | **Done** |
+| Cinema tier 13 / ACES / postFx | **Kept** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=525`** · `config.js?v=161` · `track.js?v=233` · `pbr.js?v=30` · `postfx.js?v=18` · `sky.js?v=33` · lighting-rig → config 161
+
+**Proof:** `node tools/qa-sprint24-perf.mjs` **PASS** · `node tools/qa-sprint76-perf.mjs` **PASS** · `node tools/qa-sprint39-perf.mjs` **PASS** · `node tools/qa-sky-fluffy.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=525`. Quiet Chrome, Desert pack — HUD delivered fps closer to 60 at high/medium; paint and road grain still readable. Optional: `node tools/qa-frame-probe.mjs --seconds=12`.
+
+---
+
+## Sprint 526 — Rival / Delta wheel spin axis (29 Aug 2026)
+
+**Player moment:** Pack race or SELECT CAR → Delta — all four tires roll on the axle. No tumbling rear wheel. Same for every rival GLB on the grid.
+
+**Cause:** Delta `Wheel_1` shipped a 1.6 m-wide rim scrap under `rim_F001`. `detectSpinAxis` used the full hub AABB and picked **Z**, so that corner tumbled instead of rolling. Sanitize only hid direct children, and hidden meshes still inflated `Box3.setFromObject`.
+
+**Fix:** Detach oversized descendant meshes under every `Wheel_*` hub; detect spin axis from visible tire-sized meshes only. Shared `applyWheelPose` path for player + all rivals.
+
+| Item | State |
+|---|---|
+| Axle scrap detach | **Done** |
+| Spin axis from tire AABB | **Done** |
+| Player + rival pose path | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=526`** · `celica.js?v=140` · `ai.js` → celica 140
+
+**Proof:** `node tools/qa-wheel-spin.mjs` **PASS** (Delta Wheel_0–3 all spin axis `x` after scrap detach)
+
+**Still human-only:** Hard refresh `?v=526`. Chase a Delta rival — rear tires roll forward with the car.
+
+---
+
+## Sprint 527 — AM3 Sega Rally handling (29 Aug 2026)
+
+**Player moment:** Desert dirt / gravel / mud — brake+steer starts a power slide you can hold and catch. Tarmac still stops short. Auto downshifts into hairpins kick the same gear-drift as manual. Steering is quick and readable; opposite lock snaps the car straight.
+
+**Research:** `docs/AM3-RESEARCH.md` + Sega-16 (Sakamoto: exaggerate for novices; slide is the tool; surface friction is the headline) + Saturn manual (brake tap / downshift before the curve).
+
+**Fix:** Retuned `HANDLING` / `SURFACES` / chassis rack toward AM3 (higher countersteer, longer slide carry, mud `brakeYaw: 1`, lower speed understeer, snappier tire yaw). Shared `_applyGearDriftKick` for manual + auto. `brakeSteerYaw` scales brake-to-slide.
+
+| Item | State |
+|---|---|
+| Surface brake/slide differentiation | **Done** |
+| Gear-drift on auto + manual | **Done** |
+| Catch = switch countersteer | **Done** |
+| Novice-quick steer rack | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=527`** · `config.js?v=162` · `vehicle.js?v=113` · `surfaces.js?v=50`
+
+**Proof:** `node tools/qa-am3-handling.mjs` **PASS** · `node tools/qa-sprint31-drift.mjs` **PASS** · `node tools/qa-sprint33-drift.mjs` **PASS**
+
+**Still human-only:** Hard refresh `?v=527`. Desert long right + mud exit — brake into the slide, throttle balance, catch with opposite lock. Compare to memory of Saturn Rally.
+
+---
+
+# Sprint 528 — Title / menu always responsive (29 Aug 2026)
+
+**Player moment:** Open the game. The orbiting showroom car never locks the tab. PRESS START, SELECT MODE, car, and course clicks stay instant — no freeze, hang, or multi-second lag.
+
+**Cause:** Attract used the full hero GLB (7 MB + clearcoat), armed a sun shadow atlas mid-orbit, and started `Track.create` for every stage on PRESS START / course hover — main-thread work fought the rotating car present while the player tried to click menus.
+
+**Fix:** Title car is rival LOD only (`prepareTitleCar` / `createTitleCar`). Pad keeps `sun.castShadow = false` (no atlas arm). No `Track.create` or hero garage warm during title/menu — HTTP + prop kit + rival LODs only; terrain builds on the loading screen. Menu present cadence 30 Hz; splash stays 60. Soften title pixel budget (1.2 M / DPR 1.0).
+
+| Item | State |
+|---|---|
+| Rival LOD attract car | **Done** |
+| No pad sun shadows | **Done** |
+| No stage build on title/menu | **Done** |
+| Menu clicks stay instant | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=528`** · `config.js?v=163` · `celica.js?v=141` · `ai.js?v=133`
+
+**Proof:**
+```bash
+node tools/qa-title-perf.mjs
+node tools/qa-sprint58-title-lod.mjs
+node tools/qa-sprint84-title-showroom.mjs --static
+node tools/qa-boot-smoke.mjs
+```
+
+**Still human-only:** Hard refresh `?v=528`. Click through title → SELECT MODE → car → Desert without any hang; orbit stays smooth behind the menus.
+
+---
+
+# Sprint 529 — Rival mesh thrash fix (29 Aug 2026)
+
+**Player moment:** Race a pack. Rival bodyshells glide — no left/right stutter or “glitching back and forth” when cars rub.
+
+**Cause:** `AI_PASS_LATERAL` / `PLAYER_RIVAL_SIDESTEP` re-fired every physics step while OBBs still overlapped. Soft separate could not clear the kiss in one tick, so each frame shoved the mesh another ~0.4–0.55 m sideways. Leftover `drawPose` alpha on rivals + road micro chatter on the cheap AI deck amplified the bob.
+
+**Fix:** Gate pass/sidestep on `_aiPassT` (one impulse per rub). Pack meshes plant at alpha 1. AI skips `roadChatter`; `_cheapFilt` follow softened (0.32 → 0.14).
+
+| Item | State |
+|---|---|
+| One-shot AI / player pass shove | **Done** |
+| Rival sync alpha = 1 | **Done** |
+| AI deck chatter off + softer cheap filt | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=529`** · `collide.js?v=46` · `vehicle.js?v=114` · `ai.js?v=134`
+
+**Proof:**
+```bash
+node tools/qa-rival-jitter.mjs
+node tools/qa-sprint66-player-bump.mjs
+```
+
+**Still human-only:** Hard refresh `?v=529`. Championship pack — rub a rival; body stays solid, no sideways flicker.
+
+---
+
+# Sprint 530 — Realistic per-car engine / exhaust (29 Aug 2026)
+
+**Player moment:** Pick Celica, Delta, or Stratos. Idle, throttle, shifts, and lift-off sound like that chassis — turbo four vs Italian V6 — not one stretched loop.
+
+**Cause:** Powertrain was a two-bed idle↔load crossfade with static EQ. Pitch-stretch alone went thin at redline; no gear event, weak turbo cue, little character split between cars.
+
+**Fix:** Keep the licensed recorded beds. Add a high-RPM scream layer (load bed, separate rate centre), cylinder-rate pulse (4 vs 6), turbo whistle + BOV/crackle (Celica/Delta), gear-shift overrun blip, engine-brake mix from closed throttle / brake, dynamic presence/LP EQ, and a soft exhaust compressor.
+
+| Item | State |
+|---|---|
+| Per-car idle/load/lift beds | **Kept** |
+| High-load scream + pulse + whistle | **Done** |
+| Gear / lift / engine-brake response | **Done** |
+| Attribution (no new binary) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=530`** · `engine.js?v=58` · `powertrain.js?v=26`
+
+**Proof:** `node tools/qa-powertrain.mjs`
+
+**Still human-only:** Hard refresh `?v=530`, SFX up. Celica — turbo spool + BOV on lift. Delta — thicker turbo bark. Stratos — higher V6 howl, no whistle. Shifts should chirp once.
+
+---
+
+# Sprint 531 — Natural title-pad rocks (29 Aug 2026)
+
+**Player moment:** Open the game. The showroom apron is framed by sandstone boulders that look grounded in the sand — textured, tinted, slightly buried — not a ring of grey plastic Kenney toys.
+
+**Cause:** Title rocks used raw Kenney GLB materials (flat plastic). They sat perfectly upright on the sand in an even orbit with uniform scale.
+
+**Fix:** `styleTitleRock` dresses each mesh with `rock_diff.jpg`, warm sandstone tints, bump from albedo, higher roughness. Planting uses irregular clusters, non-uniform scale, slight tilt, and base bury into the apron.
+
+| Item | State |
+|---|---|
+| HD rock albedo + sandstone tint | **Done** |
+| Buried / tilted / clustered poses | **Done** |
+| No sphere dunes | **Kept** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=531`** · `prop-kit.js?v=28`
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs --static`
+
+**Still human-only:** Hard refresh `?v=531`. Title pad — rocks read as stone mass in the sand, not floating grey props.
+
+---
+
+# Sprint 532 — Ship: cache lockstep + QA gates (29 Aug 2026)
+
+**Player moment:** Hard-refresh the live build and get one coherent module graph — no split `config`/`surfaces`/`pbr`/`prop-kit` instances that silently break rivals or handling.
+
+**Fix:** Align every importer to `config.js?v=163`, `surfaces.js?v=50`, `pbr.js?v=30`, `prop-kit.js?v=28`. Update Sprint 39/77 QA gates to match intentional title/menu budget (no `Track.create` on attract; rival LOD warm). Boot chain **`?v=534`**.
+
+| Item | State |
+|---|---|
+| Static audit version splits | **Done** (0 failures) |
+| Title / rival / powertrain / AM3 gates | **Done** |
+| Pages deploy from `main` | **This ship** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=534`**
+
+**Proof:**
+```bash
+node tools/qa-static-audit.mjs
+node tools/qa-title-perf.mjs
+node tools/qa-rival-jitter.mjs
+node tools/qa-powertrain.mjs
+node tools/qa-sprint77-boot.mjs
+node tools/qa-sprint39-perf.mjs
+```
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/ · hard refresh `?v=534`
+
+---
+

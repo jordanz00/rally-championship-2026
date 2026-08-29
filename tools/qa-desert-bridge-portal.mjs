@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 /**
- * qa-desert-bridge-portal.mjs — prove Stage 1 rock bridge has a drive-through hole.
+ * qa-desert-bridge-portal.mjs — Sprint 524: prove the Desert rock bridge is GONE.
  *
- * Boots Desert practice, finds the desertBridge group, asserts:
- *   1) portal clearance metadata exists
- *   2) no bridge mesh AABB invades the portal prism
- *   3) land under the arch stays near road bed (not a dune wall)
- *   4) car can be spawned on the centerline under the lintel
+ * Former arch scrubbed to floating debris. Player path must not spawn a
+ * desertBridge group or tag underpass posts for a missing hole.
  *
  * RUN: node tools/qa-desert-bridge-portal.mjs
  */
@@ -67,138 +64,59 @@ async function main() {
     const t = g && g.track;
     if (!t || !t.group) return { err: "no track" };
 
-    let bridge = null;
+    let bridgeMeshes = 0;
+    let bridgeGroups = 0;
     t.group.traverse((o) => {
-      if (!bridge && o.userData && o.userData.desertBridge && o.isGroup) bridge = o;
-      if (!bridge && o.userData && o.userData.desertBridge && o.parent && o.parent.userData && o.parent.userData.portal) {
-        bridge = o.parent;
+      if (o.userData && o.userData.desertBridge) {
+        if (o.isGroup) bridgeGroups += 1;
+        if (o.isMesh) bridgeMeshes += 1;
       }
     });
-    if (!bridge) {
-      // Fallback: any group with portal + desertBridge on children
-      t.group.traverse((o) => {
-        if (!bridge && o.userData && o.userData.portal && o.children && o.children.length) bridge = o;
-      });
-    }
-    if (!bridge) return { err: "no desertBridge group" };
 
-    const portal = bridge.userData.portal || {};
-    const openH = portal.openH;
-    const clearHalfW = portal.clearHalfW;
-    const clearHalfD = portal.clearHalfD;
-    if (!(openH > 8) || !(clearHalfW > 4) || !(clearHalfD > 6)) {
-      return { err: "portal meta weak", portal };
-    }
-
-    const invaders = [];
-    for (const child of bridge.children) {
-      if (!child.isMesh) continue;
-      // Bridge children are authored in local space (position + scale).
-      const sx = Math.abs(child.scale.x);
-      const sy = Math.abs(child.scale.y);
-      const sz = Math.abs(child.scale.z);
-      const x0 = child.position.x - sx * 0.5;
-      const x1 = child.position.x + sx * 0.5;
-      const y0 = child.position.y - sy * 0.5;
-      const y1 = child.position.y + sy * 0.5;
-      const z0 = child.position.z - sz * 0.5;
-      const z1 = child.position.z + sz * 0.5;
-      const ox = x0 < clearHalfW - 0.05 && x1 > -(clearHalfW - 0.05);
-      const oz = z0 < clearHalfD - 0.05 && z1 > -(clearHalfD - 0.05);
-      const oy = y0 < openH - 0.15 && y1 > 0.25;
-      if (ox && oz && oy) {
-        invaders.push({
-          x: child.position.x,
-          y: child.position.y,
-          z: child.position.z,
-          sx, sy, sz,
-        });
-      }
-    }
-
-    // Land height under arch vs road bed
     const pin = t._findDesertFinaleBridge && t._findDesertFinaleBridge();
     const p = pin ? t.points[pin.i] : null;
-    const landSamples = [];
-    if (p) {
-      for (const zOff of [-clearHalfD * 0.6, 0, clearHalfD * 0.6]) {
-        const wx = p.x + Math.sin(p.heading) * zOff;
-        const wz = p.z + Math.cos(p.heading) * zOff;
-        const gy = t._groundHeight(wx, wz, "desert");
-        landSamples.push({ zOff, gy, roadY: p.y, delta: gy - p.y });
+    let underpassTagged = 0;
+    if (t.points) {
+      for (let i = 0; i < t.points.length; i++) {
+        if (t.points[i].underpass) underpassTagged += 1;
       }
     }
+    const prisms = (t._underpassPrisms && t._underpassPrisms.length) || 0;
+    const runs = (t._underpassRuns && t._underpassRuns.length) || 0;
 
-    // Spawn car under the lintel and confirm it sits on the deck, not buried.
-    let carY = null;
     let carOk = false;
+    let carY = null;
     if (p && g.player && g.player.spawn) {
       g.player.spawn(t, p.dist, 0);
       carY = g.player.position.y;
       carOk = carY > p.y - 0.5 && carY < p.y + 3.5;
     }
 
-    // Car-sized envelope through the hole — no authored block may contain it.
-    const clipHits = [];
-    if (p) {
-      const half = p.width * 0.5;
-      for (const zOff of [-clearHalfD * 0.65, -clearHalfD * 0.3, 0, clearHalfD * 0.3, clearHalfD * 0.65]) {
-        for (const lat of [0, half * 0.35, -half * 0.35]) {
-          for (const yOff of [0.55, 1.35, 2.15]) {
-            for (const child of bridge.children) {
-              if (!child.isMesh) continue;
-              const hx = Math.abs(child.scale.x) * 0.5;
-              const hy = Math.abs(child.scale.y) * 0.5;
-              const hz = Math.abs(child.scale.z) * 0.5;
-              if (
-                Math.abs(lat - child.position.x) <= hx &&
-                Math.abs(yOff - child.position.y) <= hy &&
-                Math.abs(zOff - child.position.z) <= hz
-              ) {
-                clipHits.push({ yOff, zOff, lat, y: child.position.y });
-              }
-            }
-          }
-        }
-      }
-    }
-
     return {
-      openH,
-      clearHalfW,
-      clearHalfD,
-      meshCount: bridge.children.filter((c) => c.isMesh).length,
-      invaders,
-      clipHits,
-      landSamples,
+      bridgeMeshes,
+      bridgeGroups,
+      underpassTagged,
+      prisms,
+      runs,
+      approachDist: p ? p.dist : null,
       carY,
       carOk,
-      bridgeDist: p ? p.dist : null,
-      underpass: !!(p && p.underpass),
     };
   `);
 
-  console.log(JSON.stringify(snap, null, 2));
-  assert(snap && !snap.err, snap && snap.err ? snap.err : "probe failed");
-  assert(snap.openH >= 8, `openH too low: ${snap.openH}`);
-  assert(snap.clearHalfD >= 15, `clearHalfD too shallow: ${snap.clearHalfD}`);
-  assert(!snap.invaders.length, `meshes invade portal: ${JSON.stringify(snap.invaders)}`);
-  assert(!snap.clipHits.length, `car envelope hits rock: ${JSON.stringify(snap.clipHits)}`);
-  assert(snap.landSamples && snap.landSamples.length, "no land samples");
-  for (const s of snap.landSamples) {
-    assert(s.delta < 0.2, `dune wall under arch: delta=${s.delta} at zOff=${s.zOff}`);
-    assert(s.delta > -2.5, `land collapsed under arch: delta=${s.delta}`);
-  }
-  assert(snap.carOk, `car not driveable under arch (y=${snap.carY})`);
-  assert(snap.underpass, "bridge sample missing underpass flag");
+    console.log(JSON.stringify(snap, null, 2));
+    assert(snap && !snap.err, snap && snap.err ? snap.err : "probe failed");
+    assert(snap.bridgeGroups === 0, `desertBridge group still present (${snap.bridgeGroups})`);
+    assert(snap.bridgeMeshes === 0, `desertBridge meshes still present (${snap.bridgeMeshes})`);
+    assert(snap.underpassTagged === 0, `underpass posts still tagged (${snap.underpassTagged})`);
+    assert(snap.prisms === 0 && snap.runs === 0, `underpass prism/run leftover (${snap.prisms}/${snap.runs})`);
+    assert(snap.carOk, `car not driveable on former approach (y=${snap.carY})`);
 
-  console.log("PASS  Desert rock bridge portal is open");
+    console.log("PASS  Desert rock bridge cut — no floating arch remnant");
     await browser.close();
     server.close();
   } catch (err) {
     console.error("FAIL", err.message || err);
-    // A boot timeout is almost always a thrown module error upstream; without
-    // this the failure looked like an unexplained stage-build wedge.
     try {
       const state = await evaluate(
         cdp,
@@ -207,15 +125,10 @@ async function main() {
         { timeoutMs: 5000 }
       );
       console.error("  game:", JSON.stringify(state));
-    } catch {
-      console.error("  game: unreachable (main thread blocked)");
-    }
-    if (errors && errors.length) {
-      console.error(`  ${errors.length} console error(s):`);
-      for (const e of errors.slice(0, 8)) console.error(`    [${e.type}] ${e.text || e}`);
-    } else console.error("  no console errors captured");
-    await browser.close();
-    server.close();
+      if (errors && errors.length) console.error("  page errors:", errors.slice(0, 8));
+    } catch (_) { /* ignore */ }
+    try { await browser.close(); } catch (_) { /* ignore */ }
+    try { server.close(); } catch (_) { /* ignore */ }
     process.exit(1);
   }
 }

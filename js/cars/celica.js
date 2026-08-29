@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=150";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=27";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=163";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=30";
 
 const GARAGE = {
   celica: {
@@ -185,18 +185,20 @@ export async function prepareCelica(onEach) {
 }
 
 /**
- * Splash attract mesh — hero GLB first so the title car is the race car,
- * not the decimated rival LOD. Falls back to the LOD if the hero is missing.
+ * Splash attract mesh — rival LOD only. The 7 MB hero + clearcoat parse was
+ * freezing PRESS START / SELECT MODE while the orbit car spun. Race still
+ * promotes via prepareHeroCar().
  * @param {string} [id]
  * @returns {Promise<void>}
  */
 export async function prepareTitleCar(id = "celica") {
   const chassis = GARAGE[id] ? id : "celica";
-  if (templates[chassis] || rivalTemplates[chassis]) return;
-  // Let the splash and WebGL pad paint before the 7 MB parse.
+  if (rivalTemplates[chassis] || templates[chassis]) return;
+  // Let the splash and WebGL pad paint before any GLB parse.
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  if (await tryLocalGltf(chassis)) return;
   if (await tryRivalGltf(chassis)) return;
+  // Hero only if the LOD file is missing — never preferred on the pad.
+  if (await tryLocalGltf(chassis)) return;
   await tryCachedGltf(chassis);
 }
 
@@ -402,18 +404,18 @@ export function createPlayerCar(carId = "celica") {
 }
 
 /**
- * Orbit-cam attract car: hero GLB with original livery. Cockpit stays hidden
- * (race still promotes to the pooled driver mesh). Rival LOD is fallback only.
+ * Orbit-cam attract car: rival LOD first so the pad stays light. Hero is
+ * fallback only when the LOD is missing. Cockpit stays hidden; race promotes.
  * @param {string} [carId]
  * @returns {THREE.Group}
  */
 export function createTitleCar(carId = "celica") {
   const chassis = GARAGE[carId] ? carId : "celica";
   const template =
-    templates[chassis] ||
     rivalTemplates[chassis] ||
-    templates.celica ||
-    rivalTemplates.celica;
+    rivalTemplates.celica ||
+    templates[chassis] ||
+    templates.celica;
   if (!template) {
     throw new Error(`[garage] ${chassis}: no hero or LOD GLB for title car`);
   }
@@ -432,8 +434,15 @@ export function createTitleCar(carId = "celica") {
   clone.userData.body = clone;
   clone.userData.carId = chassis;
   clone.userData.titleLod = true;
-  clone.userData.titleHero = !!templates[chassis];
+  clone.userData.titleHero = !rivalTemplates[chassis] && !!templates[chassis];
+  // Pad never bakes a sun atlas — casting shadows here still costs draw setup.
   enableCarShadows(clone);
+  clone.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = false;
+      o.receiveShadow = false;
+    }
+  });
   return clone;
 }
 
@@ -1375,6 +1384,10 @@ function fitToRallyCar(root, spec = {}) {
 /**
  * Drop axle-wide helper meshes so they do not spin with one hub, and remember
  * the tire's axle so pose uses the same spin axis the GLB was modeled on.
+ *
+ * Delta Integrale Wheel_1 ships a 1.6 m-wide rim mesh under `rim_F001`. Leaving
+ * it in the hub AABB made detectSpinAxis pick Z — the tire tumbled instead of
+ * rolling. Hide every oversized descendant, not only direct children.
  */
 function sanitizeGltfWheels(root) {
   root.updateMatrixWorld(true);
@@ -1383,15 +1396,24 @@ function sanitizeGltfWheels(root) {
     if (/^wheel/i.test(obj.name || "")) hubs.push(obj);
   });
   const size = new THREE.Vector3();
+  const box = new THREE.Box3();
   for (let i = 0; i < hubs.length; i++) {
     const hub = hubs[i];
-    const kids = hub.children.slice();
-    for (let k = 0; k < kids.length; k++) {
-      const child = kids[k];
-      new THREE.Box3().setFromObject(child).getSize(size);
-      if (Math.max(size.x, size.y, size.z) > 1.1) {
-        child.visible = false;
-      }
+    const doomed = [];
+    hub.traverse((child) => {
+      if (child === hub || !child.isMesh) return;
+      box.setFromObject(child);
+      box.getSize(size);
+      // Wider than a tire+rim (~0.7 m) — axle scrap, mirrored double-rim, etc.
+      if (Math.max(size.x, size.y, size.z) > 1.05) doomed.push(child);
+    });
+    for (let k = 0; k < doomed.length; k++) {
+      const child = doomed[k];
+      child.visible = false;
+      child.userData.axleScrap = true;
+      // Detach so later AABB / merge passes cannot re-inflate the hub.
+      if (child.parent) child.parent.remove(child);
+      if (child.geometry) child.geometry.dispose();
     }
   }
 }
@@ -1541,6 +1563,8 @@ function tagWheelLayout(root, hubs) {
     root.worldToLocal(p);
     hub.userData.front = p.z >= zMid - 0.05;
     hub.userData.side = p.x >= 0 ? 1 : -1;
+    // Default: same signed axle spin for both sides (mirrored tire meshes).
+    if (hub.userData.spinSign == null) hub.userData.spinSign = 1;
   }
 }
 
@@ -1590,11 +1614,36 @@ function rigWheel(obj) {
 
 /**
  * Tire width is the short axis — that is the axle we spin around.
+ * Prefer visible tire meshes; ignore hidden axle scrap that blew out the AABB.
  * @param {THREE.Object3D} obj
+ * @returns {"x"|"y"|"z"}
  */
 function detectSpinAxis(obj) {
   const size = new THREE.Vector3();
-  new THREE.Box3().setFromObject(obj).getSize(size);
+  const box = new THREE.Box3();
+  const meshBox = new THREE.Box3();
+  let any = false;
+  let tire = null;
+  obj.traverse((c) => {
+    if (!c.isMesh || !c.visible || c.userData.axleScrap) return;
+    if (/tire|tyre/i.test(c.name || "")) tire = c;
+    meshBox.setFromObject(c);
+    meshBox.getSize(size);
+    if (Math.max(size.x, size.y, size.z) > 1.05) return;
+    if (!any) {
+      box.copy(meshBox);
+      any = true;
+    } else {
+      box.union(meshBox);
+    }
+  });
+  if (!any && tire) {
+    box.setFromObject(tire);
+    any = true;
+  }
+  if (!any) box.setFromObject(obj);
+  box.getSize(size);
+  // Rally tire: short lateral axle, roughly circular in the other two.
   if (size.x <= size.y && size.x <= size.z) return "x";
   if (size.y <= size.x && size.y <= size.z) return "y";
   return "z";
@@ -1660,7 +1709,10 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     const hub = spin && spin.isObject3D && spin.rotation ? spin : null;
     if (!hub || hub === w) continue;
     const axis = data.spinAxis || "x";
-    const ang = spinArr[i] || 0;
+    // Mirrored L/R tire meshes share a local +X axle; same signed spin rolls
+    // both sides forward. Only invert when the hub was authored flipped on Z.
+    const sign = data.spinSign != null ? data.spinSign : 1;
+    const ang = (spinArr[i] || 0) * sign;
     hub.rotation.x = axis === "x" ? ang : 0;
     hub.rotation.y = axis === "y" ? ang : 0;
     hub.rotation.z = axis === "z" ? ang : 0;
@@ -4062,10 +4114,11 @@ function buildPovRig(root) {
   const mirrorEyeZ = eyeZ + 0.34;
   // Capture from just behind the bumper looking aft — not from the interior
   // glass, which only sees cabin void / clipped near-plane (black rectangle).
+  // Sit a touch under the roof so the framed band is road + horizon, not sky.
   const mirrorCamX = 0;
-  const mirrorCamY = THREE.MathUtils.clamp(roof - 0.06, eyeY + 0.04, roof + 0.04);
-  const mirrorCamZ = hull.minZ - 0.9;
-  const mirrorLookZ = hull.minZ - Math.max(14, spanZ * 2.2);
+  const mirrorCamY = THREE.MathUtils.clamp(roof - 0.22, eyeY + 0.02, roof - 0.06);
+  const mirrorCamZ = hull.minZ - 0.55;
+  const mirrorLookZ = hull.minZ - Math.max(22, spanZ * 3.4);
   return {
     eyeX,
     eyeY,
@@ -4080,7 +4133,7 @@ function buildPovRig(root) {
     mirrorCamY,
     mirrorCamZ,
     mirrorLookX: 0,
-    mirrorLookY: THREE.MathUtils.clamp(ground + 0.85, ground + 0.45, roof - 0.2),
+    mirrorLookY: THREE.MathUtils.clamp(ground + 1.05, ground + 0.65, roof - 0.28),
     mirrorLookZ,
     spanX,
     spanY,
@@ -4097,7 +4150,12 @@ function buildPovRig(root) {
  */
 export function getPovRig(root) {
   if (!root) return null;
-  if (!root.userData.povRig) root.userData.povRig = buildPovRig(root);
+  // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
+  const POV_RIG_VER = 2;
+  if (!root.userData.povRig || root.userData.povRig._v !== POV_RIG_VER) {
+    root.userData.povRig = buildPovRig(root);
+    root.userData.povRig._v = POV_RIG_VER;
+  }
   return root.userData.povRig;
 }
 
@@ -4319,15 +4377,19 @@ function gaugeFace(kind, maxVal, redFrom) {
 }
 
 /**
- * Cabin HUD mesh: ignore depth, skip ACES, live on the overlay layer.
+ * Cabin HUD mesh: skip ACES, live on the overlay layer.
+ * Gauges use depthTest so the steering wheel can sit in front; mirror glass
+ * keeps depthTest off so the rim never eats the rearview image.
  * @param {THREE.Mesh} mesh
  * @param {number} [order]
+ * @param {{depthTest?: boolean}} [opts]
  */
-function markPovHudMesh(mesh, order) {
+function markPovHudMesh(mesh, order, opts) {
   if (!mesh) return;
   mesh.layers.set(POV_HUD_LAYER);
   mesh.frustumCulled = false;
   mesh.renderOrder = order != null ? order : 20;
+  const wantDepth = !!(opts && opts.depthTest);
   const list = [].concat(mesh.material || []);
   for (let i = 0; i < list.length; i++) {
     const m = list[i];
@@ -4335,7 +4397,7 @@ function markPovHudMesh(mesh, order) {
     m.userData.hud = true;
     m.toneMapped = false;
     m.fog = false;
-    m.depthTest = false;
+    m.depthTest = wantDepth;
     m.depthWrite = false;
     m.transparent = true;
     if (m.opacity == null || m.opacity > 0.98) m.opacity = 1;
@@ -4374,7 +4436,7 @@ function makeNeedle() {
       color: 0xffd200,
       toneMapped: false,
       fog: false,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false,
       transparent: true,
       opacity: 1,
@@ -4382,7 +4444,7 @@ function makeNeedle() {
     })
   );
   needle.position.x = blade * 0.38;
-  markPovHudMesh(needle, 21);
+  markPovHudMesh(needle, 21, { depthTest: true });
   const hubR = r * 0.11;
   const hub = new THREE.Mesh(
     new THREE.CylinderGeometry(hubR, hubR, hubR * 0.7, 10),
@@ -4390,7 +4452,7 @@ function makeNeedle() {
       color: 0x161614,
       toneMapped: false,
       fog: false,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false,
       transparent: true,
       opacity: 1,
@@ -4398,7 +4460,7 @@ function makeNeedle() {
     })
   );
   hub.rotation.x = Math.PI / 2;
-  markPovHudMesh(hub, 22);
+  markPovHudMesh(hub, 22, { depthTest: true });
   pivot.add(needle, hub);
   pivot.rotation.z = -GAUGE_START;
   return pivot;
@@ -4419,7 +4481,7 @@ function makeDial(kind, maxVal, redFrom) {
     new THREE.CircleGeometry(POV_GAUGE_R, 48),
     clusterMat({ map: gaugeFace(kind, maxVal, redFrom) })
   );
-  markPovHudMesh(face, 20);
+  markPovHudMesh(face, 20, { depthTest: true });
   const needle = makeNeedle();
   needle.position.z = 0.004;
   g.add(face, needle);
@@ -4455,26 +4517,36 @@ function attachCockpit(root) {
 
   const cabinW = Math.min(1.38, Math.max(1.12, hull.maxX - hull.minX - 0.22));
   const floorY = hull.minY + 0.28;
-  const dashZ = rig.eyeZ + 0.48;
-  const dashY = rig.eyeY - 0.26;
+  // Depth order toward the nose (+Z): eye → steering wheel → gauges → dash bulk.
+  // Gauges used to sit at eyeZ+0.30 with the wheel at +0.36, so the cluster
+  // floated in front of the rim (and HUD depthTest:false painted over it).
+  const glbWheel = root.userData.steerSpin || root.userData.glbSteerWheel;
+  const wheelZ =
+    glbWheel && Number.isFinite(glbWheel.position.z)
+      ? glbWheel.position.z
+      : rig.eyeZ + 0.40;
+  const clusterZ = Math.max(wheelZ + 0.20, rig.eyeZ + 0.58);
+  // Dash bulk sits past the instruments so depthTest does not bury the discs.
+  const dashZ = clusterZ + 0.22;
+  const dashY = rig.eyeY - 0.28;
 
   const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.04, 1.35), carpet);
   floor.position.set(0, floorY, rig.eyeZ + 0.1);
   floor.userData.cabinFill = true;
   cab.add(floor);
 
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.2, 0.32), plastic);
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.2, 0.28), plastic);
   dash.position.set(0, dashY, dashZ);
   dash.userData.cabinFill = true;
   cab.add(dash);
   const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.05, 0.12), dark);
-  cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.04);
+  cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.02);
   cowl.userData.cabinFill = true;
   cab.add(cowl);
   // Instrument hood — a real cowl over the cluster so the seat reads as a cabin.
-  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.44, 0.045, 0.18), dark);
-  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.16, dashZ - 0.04);
-  binnacleHood.rotation.x = -0.38;
+  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.44, 0.045, 0.16), dark);
+  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.18, clusterZ + 0.04);
+  binnacleHood.rotation.x = -0.32;
   binnacleHood.userData.cabinFill = true;
   cab.add(binnacleHood);
 
@@ -4505,18 +4577,20 @@ function attachCockpit(root) {
   binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
   binnacle.userData.cabinFill = true;
   cluster.add(binnacle);
-  // Sit in front of the dash box (dash near face is ~eyeZ+0.32). Inside the
-  // dash, the opaque cowl wins the main pass and the discs read as black.
-  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.14, rig.eyeZ + 0.30);
+  // Behind the rim, just ahead of the dash near face — read through the wheel.
+  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.12, clusterZ);
   // Face the seated eye so the printed discs are not edge-on or windshield-facing.
   cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cluster.renderOrder = 20;
   cab.add(cluster);
+  root.userData.povWheelZ = wheelZ;
+  root.userData.povClusterZ = clusterZ;
 
   const hasGlbWheel = !!root.userData.glbSteerWheel;
   if (!hasGlbWheel) {
     const column = new THREE.Group();
-    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.28, rig.eyeZ + 0.36);
+    // Closest cabin prop to the lens — gauges sit ~20 cm further into the dash.
+    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.30, wheelZ);
     column.rotation.x = -0.55;
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.04, 12), dark);
     hub.rotation.x = Math.PI / 2;
@@ -4582,7 +4656,7 @@ function cabinMat(color, roughness, metalness, emissive) {
 
 function clusterMat(opts) {
   const mat = new THREE.MeshBasicMaterial({
-    depthTest: false,
+    depthTest: true,
     depthWrite: false,
     fog: false,
     toneMapped: false,
@@ -4593,6 +4667,7 @@ function clusterMat(opts) {
   });
   if (mat.map) mat.color.setHex(0xffffff);
   mat.toneMapped = false;
+  mat.depthTest = true;
   mat.userData.hud = true;
   return mat;
 }

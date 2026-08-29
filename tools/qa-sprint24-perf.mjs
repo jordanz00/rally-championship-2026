@@ -50,7 +50,13 @@ check("low quality path", /quality === \"low\"|q === \"low\"/.test(post), "skip 
 check("adaptive present in loop", /_lastPresentCost/.test(game) && /setQuality/.test(game), "game adapts");
 check("shadow needsUpdate cadence", /shadowMap\.needsUpdate/.test(game), "shadowEvery wired");
 check("MSAA off with post", /antialias:\s*!\(VISUAL\.postFx/.test(game), "no MSAA+post tax");
-check("snappy keyboard steer", /rate = keyTarget[\s\S]{0,80}3[68]/.test(input) || /38 : 42/.test(input), "input rates");
+check(
+  "snappy keyboard steer",
+  /this\._steerAnalog = keyTarget/.test(input) ||
+    /rate = keyTarget[\s\S]{0,80}3[68]/.test(input) ||
+    /38 : 42/.test(input),
+  "instant key steer or legacy ramp rates"
+);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Sprint 24 60fps photoreal budget armed"}`);
 process.exit(fail ? 1 : 0);
