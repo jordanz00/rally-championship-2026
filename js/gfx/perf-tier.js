@@ -31,8 +31,8 @@ export const QUALITY_CAPS = {
    */
   maxShadowMap: 4096,
   /** Volumetric cloud raymarch ceiling — matches sky.js CLOUD_BUDGET. */
-  maxCloudViewSteps: 10,
-  maxCloudLightSteps: 2,
+  maxCloudViewSteps: 16,
+  maxCloudLightSteps: 3,
   /** Rearview render target — readable cabin glass, ~1/4 framebuffer width. */
   maxMirrorW: 384,
   maxMirrorH: 120,
@@ -58,9 +58,11 @@ const PUSH_HOLD = 48;
  * 34.0 ms and 65% of frames over budget — the worst case for feel.
  *
  * WHY NOT TEN SECONDS: Sprint 536 probe showed ~50 fps judder at `min` for the
- * whole sample. Two seconds of evidence is enough to prefer a clean 30.
+ * whole sample. ~0.8 s of evidence (48 presents at 60 Hz) is enough to prefer
+ * a clean 30 — especially once race DPR is raised (Sprint 547).
  */
-const LOCK30_HOLD = 240;
+/** ~0.8 s at 60 Hz — lock before ~50 fps judder settles in as “the race feel”. */
+const LOCK30_HOLD = 48;
 /**
  * Ceiling on a single sample folded into the EMA. A shader compile or a GC
  * pause can present one 1000 ms frame; letting that raw number into the EMA
@@ -101,7 +103,7 @@ function buildLadder(gfx) {
       dpr: 1,
       shadow: capShadow,
       post: "balanced",
-      sky: "medium",
+      sky: "high",
       mirrorEvery: 2,
       shadowEvery: 3,
     },
@@ -250,6 +252,17 @@ export function createPerfTier(gfx, opts = {}) {
         hardFor = 0;
         return { ...ladder[index], changed: true };
       }
+      // Already at min and still missing even a 30 fps free-run — lock cadence
+      // immediately so the player never lives in the 24–60 judder band.
+      if (
+        !lockedHz &&
+        hardFor >= HARD_HOLD &&
+        index >= ladder.length - 1 &&
+        emaMs > lock30Ms
+      ) {
+        lockedHz = 30;
+        hardFor = 0;
+      }
 
       // While locked at 30 Hz the present interval is 33.3 ms by construction,
       // so it no longer says anything about what a frame costs. Grading quality
@@ -286,24 +299,22 @@ export function createPerfTier(gfx, opts = {}) {
         upFor = 0;
       }
 
-      // Spend quality first, then cadence.
-      //
-      // The ladder only classifies cost into a tier — it does not chase a
-      // deadline, so a machine sitting at a steady 24 ms would settle on `low`
-      // and deliver a permanently juddering 41 fps. That was the shipped
-      // behaviour. Instead: once the ladder has reached equilibrium and we are
-      // still over the 60 Hz deadline, step down one more tier; when there is
-      // nothing left to give, halve the cadence and hold it.
+      // Cadence lock. preferLock30 counts over-deadline frames even while the
+      // ladder is still walking down — otherwise DOWN_HOLD resets lock30For
+      // every step and we only lock after already sitting at min.
       const settled = !changed && downFor === 0 && upFor === 0;
-      if (settled && emaMs > deadlineMs) {
+      if (emaMs > deadlineMs) {
         lock30For += 1;
         const atFloor = index >= ladder.length - 1;
-        if (!atFloor && lock30For >= PUSH_HOLD) {
+        const preferLock = !!gfx.preferLock30;
+        if (preferLock && lock30For >= PUSH_HOLD) {
+          lock30For = 0;
+          lockedHz = 30;
+        } else if (settled && !atFloor && lock30For >= PUSH_HOLD) {
           lock30For = 0;
           index += 1;
           changed = true;
-        } else if (atFloor && emaMs > lock30Ms && lock30For >= LOCK30_HOLD) {
-          // Higher bar than deadlineMs — ~54 fps (18 ms) must not sticky-lock 30.
+        } else if (settled && atFloor && emaMs > lock30Ms && lock30For >= LOCK30_HOLD) {
           lock30For = 0;
           lockedHz = 30;
         }
@@ -320,7 +331,9 @@ export function createPerfTier(gfx, opts = {}) {
 
     /**
      * After GPU settle / countdown, forget compile-cost EMA so the stage does
-     * not inherit a sticky 30 Hz lock from shader warm frames.
+     * not inherit a sticky emergency from shader warm frames. When preferLock30
+     * is on, keep a deliberate 30 Hz lock — clearing it after GO re-opened the
+     * ~50 fps judder band (Sprint 547).
      */
     resetCadence() {
       emaMs = 16.5;
@@ -328,7 +341,16 @@ export function createPerfTier(gfx, opts = {}) {
       upFor = 0;
       hardFor = 0;
       lock30For = 0;
-      lockedHz = 0;
+      if (!gfx.preferLock30) lockedHz = 0;
+    },
+
+    /**
+     * Arm an even 30 Hz present cadence at the current quality tier (used when
+     * the race pixel budget prefers clean 30 over chasing 60 down to min).
+     */
+    forceLock30() {
+      lockedHz = 30;
+      lock30For = 0;
     },
 
     /** Metrics for live telemetry export. */

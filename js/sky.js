@@ -23,21 +23,21 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=167";
+import { VISUAL } from "./config.js?v=170";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
  */
 export const CLOUD_BUDGET = {
   technique: "planet-shell-raymarch",
-  maxViewSteps: 10,
-  cinemaViewSteps: 10,
-  mediumViewSteps: 8,
-  lowViewSteps: 5,
-  minViewSteps: 3,
-  maxLightSteps: 2,
+  maxViewSteps: 16,
+  cinemaViewSteps: 16,
+  mediumViewSteps: 12,
+  lowViewSteps: 7,
+  minViewSteps: 4,
+  maxLightSteps: 3,
   notes:
-    "10x2 high / 8x2 medium / 5x1 low / 3x1 min (Sprint 536 M1 budget). Fluffy Worley cores + lens flare. Chord capped at CLOUD_MAX_SPAN. Early-out below horizon / transmittance < 0.02.",
+    "Sprint 548 realism: 16×3 cinema / 12×3 medium / 7×1 low / 4×1 min. PreferLock30 spends GPU on fluffy cumulus instead of chasing 60. Chord capped at CLOUD_MAX_SPAN. Early-out below horizon / transmittance < 0.02.",
 };
 
 /**
@@ -45,11 +45,11 @@ export const CLOUD_BUDGET = {
  * Lower absorb + higher silver = light peeks through thin edges / sun rims.
  */
 export const STAGE_CLOUD_PALETTES = {
-  desert: { lit: 0xfffaf6, dark: 0x7a94b4, absorb: 2.35, silver: 1.08, cover: 0.22 },
-  forest: { lit: 0xf8fcff, dark: 0x6e849e, absorb: 2.65, silver: 0.95, cover: 0.3 },
-  mountain: { lit: 0xf7fbff, dark: 0x6a829c, absorb: 2.45, silver: 1.05, cover: 0.24 },
-  lakeside: { lit: 0xf4fafd, dark: 0x70869c, absorb: 2.55, silver: 0.98, cover: 0.28 },
-  title: { lit: 0xfff6ea, dark: 0x5a708c, absorb: 2.7, silver: 1.1, cover: 0.36 },
+  desert: { lit: 0xfffbf7, dark: 0x6a86a8, absorb: 2.15, silver: 1.22, cover: 0.26 },
+  forest: { lit: 0xf9fcff, dark: 0x647c98, absorb: 2.35, silver: 1.12, cover: 0.34 },
+  mountain: { lit: 0xf8fbff, dark: 0x62809c, absorb: 2.2, silver: 1.18, cover: 0.24 },
+  lakeside: { lit: 0xf5fafd, dark: 0x687e96, absorb: 2.3, silver: 1.1, cover: 0.3 },
+  title: { lit: 0xfff7ec, dark: 0x546c88, absorb: 2.45, silver: 1.2, cover: 0.38 },
 };
 
 const VERT = /* glsl */ `
@@ -96,33 +96,33 @@ uniform float uLensFlare;
 
 varying vec3 vDir;
 
-/* Shell geometry, in units where the planet radius is 8. Slightly thicker shell
-   so cumulus read as tall fluffy towers instead of a thin smoke sheet. */
+/* Shell geometry, in units where the planet radius is 8. Taller shell so
+   cumulus read as towering cauliflower stacks, not a thin smoke sheet. */
 const float PLANET_R = 8.0;
-const float CLOUD_INNER = 8.05;
-const float CLOUD_OUTER = 9.55;
-const int MAX_VIEW = 10;
-const int MAX_LIGHT = 2;
+const float CLOUD_INNER = 8.04;
+const float CLOUD_OUTER = 9.92;
+const int MAX_VIEW = 16;
+const int MAX_LIGHT = 3;
 
 /**
  * Longest chord we will integrate, in shell units.
  */
-const float CLOUD_MAX_SPAN = 3.15;
+const float CLOUD_MAX_SPAN = 3.45;
 
-const float SCATTER_GAIN = 3.55;
+const float SCATTER_GAIN = 3.72;
 
 /**
  * Contrast stretch on the weather field — higher = distinct puff islands with
  * clear blue between (anti-smoke sheet).
  */
-const float WEATHER_CONTRAST = 2.85;
+const float WEATHER_CONTRAST = 3.15;
 
-const float WEATHER_FREQ = 0.72;
-const float BODY_FREQ = 2.15;
-const float DETAIL_FREQ = 5.1;
+const float WEATHER_FREQ = 0.68;
+const float BODY_FREQ = 2.05;
+const float DETAIL_FREQ = 5.4;
 
-const float CLOUD_SUN_GAIN = 0.58;
-const float CLOUD_AMBIENT_GAIN = 0.68;
+const float CLOUD_SUN_GAIN = 0.72;
+const float CLOUD_AMBIENT_GAIN = 0.58;
 
 float hash13(vec3 p3) {
   p3 = fract(p3 * 0.1031);
@@ -267,50 +267,54 @@ float shellH(vec3 p) {
 }
 
 /**
- * Tall fluffy cumulus profile: crisp base, fat mid belly, eroded cauliflower top.
+ * Classic cumulus profile: flat hard base, fat mid belly, eroded cauliflower crown.
  */
 float heightProfile(float h) {
-  float base = smoothstep(0.0, 0.07, h);
-  float belly = smoothstep(0.06, 0.28, h) * (1.0 - smoothstep(0.42, 0.95, h));
-  float crown = 1.0 - smoothstep(0.55, 1.0, h);
-  return base * mix(belly, crown, 0.28) * (0.85 + 0.15 * belly);
+  float base = smoothstep(0.0, 0.045, h);
+  float belly = smoothstep(0.04, 0.22, h) * (1.0 - smoothstep(0.38, 0.88, h));
+  float crown = 1.0 - smoothstep(0.48, 1.0, h);
+  float tower = smoothstep(0.12, 0.55, h) * (1.0 - smoothstep(0.72, 0.98, h));
+  return base * mix(belly, crown, 0.32) * (0.78 + 0.22 * belly) * (0.88 + 0.18 * tower);
 }
 
 /**
- * Fluffy cumulus density — opaque cauliflower cores, soft rims, clear gaps.
- * Weather mask carves islands; Worley + ridged detail sells billows (not smoke).
+ * Photographic cumulus density — opaque cauliflower cores, soft rims, blue gaps.
+ * Weather mask carves islands; multi-scale Worley sells billows (not smoke sheets).
  */
 float cloudDensity(vec3 p, int octaves, bool useWorley) {
   float h = shellH(p);
   float prof = heightProfile(h);
-  if (prof < 0.004) return 0.0;
+  if (prof < 0.003) return 0.0;
 
-  vec3 q = p * (0.52 * uCloudScale);
+  vec3 q = p * (0.48 * uCloudScale);
 
   float w = fbmN(q * WEATHER_FREQ, 3);
   w = clamp((w - 0.5) * WEATHER_CONTRAST + 0.5, 0.0, 1.0);
   // Narrower cover window → distinct puff islands, blue sky between.
-  float thr = mix(0.96, 0.22, clamp(uCloudCover, 0.0, 1.0));
-  float mask = smoothstep(thr, thr + 0.14, w);
-  if (mask < 0.004) return 0.0;
+  float thr = mix(0.97, 0.18, clamp(uCloudCover, 0.0, 1.0));
+  float mask = smoothstep(thr, thr + 0.11, w);
+  if (mask < 0.003) return 0.0;
 
   float body = fbmN(q * BODY_FREQ, octaves);
   if (useWorley) {
-    float cells = worleyPuff(q * BODY_FREQ * 0.85 + vec3(2.2, 0.4, 1.1));
-    float cells2 = worleyPuff(q * BODY_FREQ * 1.55 + vec3(5.1, 1.8, 0.3));
-    body = mix(body, max(cells, cells2 * 0.85), 0.58);
+    float cells = worleyPuff(q * BODY_FREQ * 0.78 + vec3(2.2, 0.4, 1.1));
+    float cells2 = worleyPuff(q * BODY_FREQ * 1.48 + vec3(5.1, 1.8, 0.3));
+    float cells3 = worleyPuff(q * BODY_FREQ * 2.35 + vec3(1.4, 3.7, 2.2));
+    float billow = max(cells, max(cells2 * 0.88, cells3 * 0.62));
+    body = mix(body, billow, 0.68);
   }
   float ridged = 1.0 - abs(fbmN(q * DETAIL_FREQ + vec3(9.1, 2.4, 4.7), max(2, octaves - 1)) * 2.0 - 1.0);
-  float shape = body * 0.48 + ridged * 0.52;
+  float shape = body * 0.42 + ridged * 0.58;
 
-  // Carve cauliflower crowns.
-  shape -= smoothstep(0.38, 1.0, h) * 0.28;
-  // Soft underside fade keeps bases from reading as floating smoke blobs.
-  shape *= 0.72 + 0.28 * smoothstep(0.05, 0.22, h);
+  // Carve cauliflower crowns + overhanging lobes.
+  shape -= smoothstep(0.35, 1.0, h) * 0.34;
+  shape *= 0.68 + 0.32 * smoothstep(0.04, 0.2, h);
+  // Slight lateral "anvil" stretch near the top.
+  shape *= 1.0 - 0.12 * smoothstep(0.55, 0.92, h) * (1.0 - mask);
 
   // Dense cores (pow) + soft edge window — fluffy volume, not grey fog.
-  float core = smoothstep(0.28, 0.52, shape * mask);
-  float d = pow(core, 0.78) * prof;
+  float core = smoothstep(0.24, 0.5, shape * mask);
+  float d = pow(core, 0.72) * prof;
   return clamp(d, 0.0, 1.0);
 }
 
@@ -318,13 +322,13 @@ float cloudDensity(vec3 p, int octaves, bool useWorley) {
  * Optical depth toward the sun — self-shadow for fluffy form.
  */
 float sunOptical(vec3 p, vec3 sunDir, int octaves, bool useWorley) {
-  int lights = int(clamp(uLightSteps, 1.0, 2.0));
+  int lights = int(clamp(uLightSteps, 1.0, 3.0));
   float od = 0.0;
-  float stride = 0.22;
+  float stride = 0.18;
   for (int i = 0; i < MAX_LIGHT; i++) {
     if (i >= lights) break;
-    float t = (float(i) + 0.55) * stride * (1.0 + float(i) * 1.35);
-    od += cloudDensity(p + sunDir * t, max(2, octaves - 1), useWorley && i == 0) * stride * (1.0 + float(i) * 1.25);
+    float t = (float(i) + 0.45) * stride * (1.0 + float(i) * 1.28);
+    od += cloudDensity(p + sunDir * t, max(2, octaves - 1), useWorley && i < 2) * stride * (1.0 + float(i) * 1.15);
   }
   return od;
 }
@@ -355,48 +359,53 @@ vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
   float dt = span / float(steps);
   float t = t0 + dt * 0.5;
 
-  vec3 wind = uWind * uTime * 0.0048;
+  vec3 wind = uWind * uTime * 0.0036;
   float mu = dot(rd, sunDir);
-  float phase = 0.65 * hgPhase(mu, 0.68) + 0.35 * hgPhase(mu, -0.18);
-  phase = clamp(phase, 0.4, 2.6);
+  // Dual-lobe HG — forward silver + mild backscatter for soft fill.
+  float phase = 0.58 * hgPhase(mu, 0.72) + 0.42 * hgPhase(mu, -0.22);
+  phase = clamp(phase, 0.35, 3.1);
 
-  float sigma = max(0.7, uAbsorb);
+  float sigma = max(0.65, uAbsorb);
   float stepComp = clamp(uCloudSteps / 16.0, 0.55, 1.0);
   vec3 scatter = vec3(0.0);
   float trans = 1.0;
 
   for (int i = 0; i < MAX_VIEW; i++) {
-    if (i >= steps || trans < 0.02) break;
+    if (i >= steps || trans < 0.015) break;
     vec3 p = ro + rd * t + wind;
     float dens = cloudDensity(p, octaves, useWorley);
-    if (dens > 0.004) {
+    if (dens > 0.003) {
       float h = shellH(p);
       float stepOd = dens * dt * sigma;
       float beers = exp(-stepOd);
 
       float shadow = sunOptical(p, sunDir, octaves, useWorley);
-      float sunVis = exp(-shadow * sigma * 0.92);
-      float powder = 1.0 - exp(-dens * 6.5);
+      float sunVis = exp(-shadow * sigma * 0.85);
+      float powder = 1.0 - exp(-dens * 8.5);
 
       // Soft white multiple-scatter lift in lit fluff interiors (anti-smoke grey).
-      float ms = dens * (0.22 + 0.45 * sunVis) * (0.35 + 0.65 * h);
+      float ms = dens * (0.28 + 0.52 * sunVis) * (0.3 + 0.7 * h);
 
-      vec3 ambient = mix(uCloudDark, uCloudLit * 0.78, 0.28 + 0.58 * h);
-      ambient += uGroundBounce * (0.75 * (1.0 - h)) * uGroundBounceMix;
+      vec3 ambient = mix(uCloudDark, uCloudLit * 0.82, 0.22 + 0.62 * h);
+      ambient += uGroundBounce * (0.82 * (1.0 - h)) * uGroundBounceMix;
       ambient *= CLOUD_AMBIENT_GAIN * (1.0 + ms);
 
-      vec3 sunTint = mix(vec3(1.0), uSunColor, 0.32);
+      vec3 sunTint = mix(vec3(1.0), uSunColor, 0.38);
       vec3 direct = sunTint * uCloudLit * CLOUD_SUN_GAIN * phase * sunVis
-        * (0.38 + uSilver * powder * 0.95 * stepComp);
+        * (0.32 + uSilver * powder * 1.15 * stepComp);
 
       // Extra silver lining when looking toward the sun through a rim.
-      float rim = powder * pow(max(mu, 0.0), 6.0) * uSilver * 0.55;
+      float rim = powder * pow(max(mu, 0.0), 5.5) * uSilver * 0.72;
       direct += sunTint * uCloudLit * rim * sunVis;
+
+      // Lit top sugar — bright white where sun hits the crown.
+      float sugar = powder * sunVis * smoothstep(0.35, 0.85, h) * uSilver * 0.38;
+      direct += sunTint * uCloudLit * sugar;
 
       vec3 inS = ambient + direct;
       scatter += trans * inS * (1.0 - beers);
       // Soften extinction on thin edges so the sun can peek through gaps.
-      float edgeSoft = mix(0.82, 1.0, dens);
+      float edgeSoft = mix(0.78, 1.0, dens);
       trans *= mix(1.0, beers, edgeSoft);
     }
     t += dt;
@@ -405,12 +414,12 @@ vec4 volumetricClouds(vec3 rd, vec3 sunDir) {
   float alpha = clamp(1.0 - trans, 0.0, 1.0);
 
   // Sun peek: residual transmittance near the disc blooms through the fluff.
-  float peek = pow(max(mu, 0.0), 48.0) * trans * 1.35;
-  scatter += uSunColor * uCloudLit * peek * 0.55;
+  float peek = pow(max(mu, 0.0), 42.0) * trans * 1.55;
+  scatter += uSunColor * uCloudLit * peek * 0.68;
 
-  float haze = smoothstep(0.0, 0.20, rd.y);
-  scatter = mix(uFogColor * alpha, scatter, 0.22 + 0.78 * haze);
-  alpha *= smoothstep(0.0, 0.035, rd.y) * (0.22 + 0.78 * haze);
+  float haze = smoothstep(0.0, 0.18, rd.y);
+  scatter = mix(uFogColor * alpha, scatter, 0.18 + 0.82 * haze);
+  alpha *= smoothstep(0.0, 0.03, rd.y) * (0.18 + 0.82 * haze);
 
   return vec4(scatter, alpha);
 }
@@ -471,20 +480,20 @@ void main() {
 
   float cz = max(rd.y, 0.0);
 
-  // Tight sun disc + warm Mie aureole (sun peeks through cloud gaps later).
+  // Photographic sun disc + warm Mie aureole (sun peeks through cloud gaps later).
   float mu = max(dot(rd, sunDir), 0.0);
   float bloom = max(0.25, uSunBloom);
   vec3 sun = uSunColor * (
-    pow(mu, 6.0) * 0.028 +
-    pow(mu, 64.0) * 0.09 +
-    pow(mu, 400.0) * 0.28 +
-    pow(mu, 2000.0) * 0.55 +
-    pow(mu, 16000.0) * 1.55
+    pow(mu, 5.0) * 0.035 +
+    pow(mu, 48.0) * 0.11 +
+    pow(mu, 280.0) * 0.32 +
+    pow(mu, 1600.0) * 0.62 +
+    pow(mu, 12000.0) * 1.85
   ) * bloom;
   col += sun;
 
-  // Deeper cooler zenith.
-  col *= mix(vec3(1.0), vec3(0.88, 0.94, 1.14), smoothstep(0.32, 1.0, cz) * uZenithBoost);
+  // Deeper cooler zenith — photographic clear-sky blue.
+  col *= mix(vec3(1.0), vec3(0.84, 0.92, 1.18), smoothstep(0.28, 1.0, cz) * uZenithBoost);
 
   if (uDust > 0.001) {
     float dustBand = pow(1.0 - smoothstep(-0.02, 0.28, rd.y), 1.7);
@@ -543,12 +552,12 @@ export function createSky() {
       uCloudDetail: { value: hi ? 5 : 4 },
       uWind: { value: new THREE.Vector3(1.2, 0, 0.4) },
       uCloudSteps: { value: hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps },
-      uLightSteps: { value: 2 },
-      uAbsorb: { value: 2.5 },
-      uSilver: { value: 1.0 },
+      uLightSteps: { value: CLOUD_BUDGET.maxLightSteps },
+      uAbsorb: { value: 2.2 },
+      uSilver: { value: 1.15 },
       uUseWorley: { value: 1 },
-      uMieG: { value: 0.78 },
-      uTurbidity: { value: 1.85 },
+      uMieG: { value: 0.8 },
+      uTurbidity: { value: 1.7 },
       uCamFwd: { value: new THREE.Vector3(0, 0, -1) },
       uLensFlare: { value: 1.0 },
     },
@@ -690,7 +699,7 @@ export function applySky(mesh, L, stageId) {
     const hi = cinemaCloud();
     u.uCloudDetail.value = hi ? 5 : 4;
     u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps;
-    u.uLightSteps.value = 2;
+    u.uLightSteps.value = CLOUD_BUDGET.maxLightSteps;
     u.uUseWorley.value = 1;
   } catch (err) {
     console.warn("applySky failed", err);
@@ -725,13 +734,15 @@ export function setSkyQuality(mesh, perfTier) {
     u.uUseWorley.value = 0;
     if (u.uLensFlare) u.uLensFlare.value = 0;
   } else if (perfTier === "medium") {
-    u.uCloudSteps.value = CLOUD_BUDGET.mediumViewSteps;
-    u.uLightSteps.value = 2;
-    u.uCloudDetail.value = 4;
+    // Race default (preferLock30): spend the 30 Hz budget on fluffy cinema steps.
+    u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps;
+    u.uLightSteps.value = CLOUD_BUDGET.maxLightSteps;
+    u.uCloudDetail.value = hi ? 5 : 4;
     u.uUseWorley.value = 1;
   } else {
+    // high / cinema
     u.uCloudSteps.value = hi ? CLOUD_BUDGET.cinemaViewSteps : CLOUD_BUDGET.mediumViewSteps;
-    u.uLightSteps.value = 2;
+    u.uLightSteps.value = CLOUD_BUDGET.maxLightSteps;
     u.uCloudDetail.value = hi ? 5 : 4;
     u.uUseWorley.value = 1;
   }

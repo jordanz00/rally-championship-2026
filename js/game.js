@@ -20,9 +20,9 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=167";
+} from "./config.js?v=170";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=117";
+import { Vehicle } from "./physics/vehicle.js?v=119";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=144";
@@ -36,11 +36,11 @@ import { CoDriver } from "./audio/codriver.js?v=37";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=32";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=58";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
-import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=36";
+import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=37";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=30";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
 import { PhotoRealPost } from "./gfx/postfx.js?v=19";
-import { createPerfTier } from "./gfx/perf-tier.js?v=16";
+import { createPerfTier } from "./gfx/perf-tier.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -81,8 +81,10 @@ function yieldFrame() {
 const PRECOMPILE_BUDGET_MS = 400;
 
 /**
- * Opening perf tier — M1 Pro / Apple Silicon desktops start at high (16-step clouds,
- * full shadows). Phones stay low. `?perf=high|medium|low|min|integrated` overrides.
+ * Opening perf tier — desktop starts at medium so settle paints shadows + post
+ * before countdown (Sprint 546). Mac `low` left the stage flat until the scaler
+ * climbed after GO, which read as a lighting/graphics snap on the VO. Phones
+ * stay low. `?perf=high|medium|low|min|integrated` overrides.
  * @returns {"high"|"medium"|"low"|"min"}
  */
 function raceStartTier() {
@@ -99,10 +101,9 @@ function raceStartTier() {
   const macDesktop = /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
   // Headless CDP uses SwiftShader — cinema clouds stall the loop below 1 fps.
   if (macDesktop && navigator.webdriver) return "medium";
-  // Sprint 536: M1 Pro headed probe collapsed even from medium → min and still
-  // needed a 30 Hz lock. Start **low** so the first race is playable without a
-  // hitch cascade; `?perf=medium|high` restores the heavier ladder.
-  if (macDesktop) return "low";
+  // Desktop Mac/PC: medium = shadows + grade before "3". Degrade to low/min
+  // only after the race is under way if the machine cannot hold the budget.
+  if (macDesktop) return "medium";
   return "medium";
 }
 
@@ -2251,8 +2252,10 @@ export class RallyGame {
     // Extra presents with the HUD live (still held) so AO/bloom RTs and the
     // first on-screen composite match settle — then unlock 3-2-1.
     this._enforcePresentFreeze();
-    await this._presentFrozenWarms(3);
+    await this._presentFrozenWarms(4);
     if (loadGen !== this._loadGen) return;
+    // Re-snapshot after HUD warms — post uniforms can settle one tick late.
+    if (this.perfTier) this._armPresentFreeze(this.perfTier.current());
     this._enforcePresentFreeze();
     this._countHold = false;
     this._countShown = "3";
@@ -2296,13 +2299,19 @@ export class RallyGame {
     // draws so the first HUD frame already matches race (no snap at "1"/GO).
     this._perfDprScale = isPhonePlay() ? 0.78 : 1;
     this._lastPresentCost = 8;
-    this._raceWarmFrames = 24;
+    this._raceWarmFrames = 48;
     this._shadowTick = 0;
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
     this.perfTier = createPerfTier(GFX, { startTier: raceStartTier() });
     const tier = this.perfTier.current();
+    // Prefer a clean 30 at the start tier over chasing 60 into min while the
+    // raised Sprint 547 pixel budget is live. Arm before warm presents so the
+    // first HUD frame already matches the race cadence.
+    if (GFX.preferLock30 && typeof this.perfTier.forceLock30 === "function") {
+      this.perfTier.forceLock30();
+    }
     // Force atlas size even when growing from title 1024 — scaler alone is
     // monotonic-down and can leave the pad map armed across settle.
     if (tier && tier.shadow) {
@@ -2338,7 +2347,10 @@ export class RallyGame {
       else this.renderer.render(this.scene, this.camera);
     };
     try {
-      // Four warms: atlas alloc + post/AO compile + two stable race frames.
+      // Six warms under the load overlay: atlas + post compile + stable race look
+      // before any HUD / countdown paints.
+      present();
+      present();
       present();
       present();
       present();
@@ -2355,6 +2367,12 @@ export class RallyGame {
     } catch (err) {
       console.warn("Race reflect warm failed", err);
     }
+    // Re-sync grade after warm presents (post RTs / exposure settle), then freeze.
+    if (this.post) {
+      const L = LIGHTING[this.courseId] || LIGHTING.desert;
+      this.post.syncFromConfig(L);
+    }
+    this._updateLights(0);
     // Snapshot race present knobs BEFORE HUD paints "3". Countdown / GO must
     // not flip shadow cadence, post grade, sky steps, lights, fog, or exposure.
     this._armPresentFreeze(tier);
@@ -2771,12 +2789,14 @@ export class RallyGame {
         }
         if (this.countdown <= 0) {
           this.state = "race";
-          // Keep race-present warm + freeze through the first GO frames.
-          this._raceWarmFrames = Math.max(this._raceWarmFrames || 0, 16);
+          // Keep race-present warm + freeze well past the GO VO so the scaler
+          // cannot climb into a richer grade the moment the freeze drops.
+          this._raceWarmFrames = Math.max(this._raceWarmFrames || 0, 48);
           this._enforcePresentFreeze();
           this.hud.flashMessage("GO!");
           this.audio.countGo();
-          this._camSnap = true;
+          // Countdown already hard-snaps the chase — do not re-snap on GO
+          // (that read as a graphics pop with the VO).
         }
       }
       const idle = this.player.spec.idleRpm;
@@ -3310,8 +3330,9 @@ export class RallyGame {
 
     if (landed) {
       const impact = Math.max(Math.abs(p.velY || 0), p.lastImpact || 0);
-      this._camKickY = Math.min(0.28, 0.06 + impact * 0.028);
-      this._camFovKick = Math.min(3.8, 0.9 + impact * 0.18);
+      this._camKickY = Math.min(0.38, 0.08 + impact * 0.036);
+      this._camFovKick = Math.min(5.2, 1.2 + impact * 0.24);
+      this._shake = Math.min(0.22, 0.08 + impact * 0.018);
     }
     const drift = Math.abs(p.driftAngle || 0);
     if (drift > 0.08 && p.speed > 6) {
@@ -3525,10 +3546,16 @@ export class RallyGame {
             Math.min(0.28, drift * 0.45) *
             (CAMERA.slideCamOut != null ? CAMERA.slideCamOut : 0.16)
           : 0;
+      // Airborne: pull back and up so the throw reads; look toward the pad.
+      const air = !p.onGround;
+      const airT = air ? Math.min(1.25, Math.max(0, p._airTime || 0)) : 0;
+      const airLift = air ? Math.min(1.55, 0.42 + airT * 0.85) : 0;
+      const airBack = air ? Math.min(2.1, 0.55 + airT * 1.15) : 0;
+      const airLookDown = air ? Math.min(0.85, 0.22 + airT * 0.45) : 0;
       this._camTarget.set(
-        px - sinY * mode.back + rx * out,
-        py + mode.height - heightDrop,
-        pz - cosY * mode.back + rz * out
+        px - sinY * (mode.back + airBack) + rx * out,
+        py + mode.height - heightDrop + airLift,
+        pz - cosY * (mode.back + airBack) + rz * out
       );
       const geo = this._geoFramingBias();
       let lookSin = sinY;
@@ -3551,7 +3578,7 @@ export class RallyGame {
             : 0;
       this._camLook.set(
         px + lookSin * (mode.lookAhead + geo.lookAhead + slidePush),
-        py + mode.lookY + geo.lookY,
+        py + mode.lookY + geo.lookY - airLookDown,
         pz + lookCos * (mode.lookAhead + geo.lookAhead + slidePush)
       );
     }
@@ -3905,23 +3932,24 @@ export class RallyGame {
     this._qualityShadowEvery = Math.max(1, t.shadowEvery | 0);
     this._qualityTierId = t.id || this._qualityTierId || "medium";
     if (this.post && this.post.setQuality) this.post.setQuality(t.post);
-    // Min / low: skip the whole post RT stack (scene→AO→bloom→composite).
-    // Grade+ACES on the main renderer is enough; the multi-pass was the
-    // remaining M1 floor after shadows were already cut.
+    // High / medium / low keep the grade stack on — turning post on at a tier
+    // climb (Sprint 536 Mac-start-low → medium after GO) was the lighting snap.
+    // Min alone drops to a single ACES present for survival.
     if (this.post) {
-      const wantPost = t.id === "high" || t.id === "medium";
+      const wantPost = t.id !== "min";
       this.post.enabled = wantPost && VISUAL.postFx !== false;
     }
     if (this.sky) setSkyQuality(this.sky, t.sky);
 
-    // Low / min: kill the sun atlas. Even a 768² bake every 4 presents kept
-    // M1 Pro off the 60 Hz deadline after other cuts (Sprint 536 probe).
-    const shadowsWanted = t.id === "high" || t.id === "medium";
+    // High / medium / low keep the sun atlas. Min alone kills shadows — never
+    // flip shadows ON mid-stage after a flat countdown (that was the GO pop).
+    const shadowsWanted = t.id !== "min";
     if (this.renderer) {
       this.renderer.shadowMap.enabled = shadowsWanted;
       if (this.sun) this.sun.castShadow = shadowsWanted;
       if (shadowsWanted) {
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type =
+          t.id === "low" ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
       }
     }
 

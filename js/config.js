@@ -28,12 +28,14 @@ export const INTERNAL_HEIGHT = 900;
  */
 export const GFX = {
   /**
-   * Race — hold 60 on M1 Pro / desktop Chrome (Sprint 536).
-   * Probe at v535: even quality `min` delivered ~50 fps judder on M1 Pro.
-   * Prefer frame time over Retina excess and soft-shadow fill-rate.
+   * Race — sharper stage, 30 fps floor (Sprint 547).
+   * Sprint 536 cut Retina to hold 60; players prefer readable pixels with a
+   * clean lock-to-30 over a soft 1.0× image that still judders. Target 60;
+   * when the machine cannot, present every second vsync (even 30) rather than
+   * free-running below that.
    */
-  maxPixelRatio: 1.0,
-  maxPixels: 1200000,
+  maxPixelRatio: 1.25,
+  maxPixels: 2000000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
   titleMaxPixelRatio: 1.0,
   titleMaxPixels: 1200000,
@@ -93,17 +95,23 @@ export const GFX = {
   adaptFloorMs: 33.3,
   /**
    * Minimum DPR scale the quality ladder may fall to.
-   * 0.55 × maxPixelRatio 1.0 ≈ 0.55 effective — cheap enough that M1 can
-   * chase 60 at `min` instead of juddering at ~50.
+   * 0.5 × maxPixelRatio 1.25 ≈ 0.625 effective at `min` — still enough headroom
+   * to protect the 30 fps floor when the sharper race budget runs hot.
    */
   minPixelRatio: 0.5,
   /**
-   * Present-cadence lock (Sprint 96). If the machine still cannot hold the 60 Hz
-   * target at the cheapest quality tier, stop free-running at ~46 fps with
-   * alternating 16.8/33.7 ms frames and deliberately present every second
-   * vsync instead. A clean 30 reads as smooth; 46 with judder does not.
+   * Present-cadence lock (Sprint 96 / 547). If the machine still cannot hold
+   * the 60 Hz target, stop free-running at ~46 fps with alternating 16.8/33.7 ms
+   * frames and deliberately present every second vsync instead. A clean 30 is
+   * the minimum acceptable cadence.
    */
-  lock30AboveMs: 21,
+  lock30AboveMs: 20,
+  /**
+   * Prefer locking to an even 30 before spending the last quality tiers.
+   * With the Sprint 547 pixel budget, chasing 60 down to `min` looked worse
+   * than medium-quality presents at a steady 30.
+   */
+  preferLock30: true,
   /** Sprint 39 / 536 — integrated GPU / M-series targets. */
   integratedFloorMs: 17.5,
   integratedEmergencyMs: 20,
@@ -273,107 +281,107 @@ export const COLORS = {
 export const LIGHTING = {
   desert: {
     /**
-     * Fluffy cumulus Safari sky — deep zenith blue, warm aureole, clear gaps.
+     * Photographic Safari sky — deep zenith, warm aureole, fluffy cumulus islands.
      */
     skyGradient: [
-      [0.0, "#6a8498"],
-      [0.32, "#9cbcda"],
-      [0.48, "#c8e0f4"],
-      [0.58, "#5aa8e8"],
-      [0.76, "#2a88d8"],
-      [1.0, "#0a3e9a"],
+      [0.0, "#5a7488"],
+      [0.3, "#8cb4d8"],
+      [0.46, "#c4def4"],
+      [0.56, "#4aa0e8"],
+      [0.74, "#1e78d0"],
+      [1.0, "#063888"],
     ],
-    skyZenith: 0x0a3e9a,
-    skyHorizon: 0xc8e0f4,
-    skyTurbidity: 2.05,
-    skyRayleigh: 1.32,
-    skyMie: 0.0042,
-    skyMieG: 0.8,
-    skyExposure: 1.14,
-    skyAtmoBlend: 0.9,
-    sunSkyBoost: 1.12,
-    sunBloom: 1.18,
-    lensFlare: 1.05,
-    zenithBoost: 0.46,
-    groundBounceMix: 0.12,
-    cloudCover: 0.28,
-    cloudScale: 1.85,
-    horizonGlow: 0xecd8b8,
-    horizonStrength: 0.24,
-    dustStrength: 0.22,
-    wind: [2.1, 0, 0.75],
+    skyZenith: 0x063888,
+    skyHorizon: 0xc4def4,
+    skyTurbidity: 1.85,
+    skyRayleigh: 1.42,
+    skyMie: 0.0048,
+    skyMieG: 0.82,
+    skyExposure: 1.16,
+    skyAtmoBlend: 0.94,
+    sunSkyBoost: 1.18,
+    sunBloom: 1.28,
+    lensFlare: 1.12,
+    zenithBoost: 0.52,
+    groundBounceMix: 0.14,
+    cloudCover: 0.32,
+    cloudScale: 1.72,
+    horizonGlow: 0xf0dcc0,
+    horizonStrength: 0.26,
+    dustStrength: 0.18,
+    wind: [1.85, 0, 0.65],
     fog: 0xd4c4a8,
     fogNear: 165,
     fogFar: 1180,
-    hemiSky: 0x94b8e0,
+    hemiSky: 0x8cb4e4,
     hemiGround: 0xc8a068,
-    hemi: 0.6,
-    sun: 0xfff2dc,
-    sunKelvin: 5450,
-    sunInt: 3.05,
-    sunDir: [0.56, 0.68, 0.38],
-    rimSky: 0xb0d0f0,
-    rimInt: 0.42,
-    fill: 0x98b8d8,
-    fillInt: 0.22,
-    ambient: 0xa8b8c8,
+    hemi: 0.62,
+    sun: 0xfff4e0,
+    sunKelvin: 5600,
+    sunInt: 3.25,
+    sunDir: [0.54, 0.72, 0.36],
+    rimSky: 0xb0d4f4,
+    rimInt: 0.46,
+    fill: 0x98bce0,
+    fillInt: 0.24,
+    ambient: 0xa8bcd0,
     ambientInt: 0.1,
-    exposure: 1.1,
-    gradeWarmth: 0.16,
-    skyBack: 0x2e8cd0,
-    worldEnv: 1.22,
+    exposure: 1.12,
+    gradeWarmth: 0.14,
+    skyBack: 0x2488d0,
+    worldEnv: 1.28,
   },
   forest: {
     /**
      * Temperate broken sky — cool zenith, soft white fluff, dappled sun.
      */
     skyGradient: [
-      [0.0, "#5a7890"],
-      [0.36, "#8cb4d0"],
-      [0.5, "#b0d0e8"],
-      [0.62, "#3a98dc"],
-      [0.82, "#1470c0"],
-      [1.0, "#0a4898"],
+      [0.0, "#4e7088"],
+      [0.34, "#82b0d0"],
+      [0.48, "#a8cce8"],
+      [0.6, "#2e90dc"],
+      [0.8, "#0e68b8"],
+      [1.0, "#084088"],
     ],
-    skyZenith: 0x1470b8,
-    skyHorizon: 0xb0d0e8,
-    skyTurbidity: 1.75,
-    skyRayleigh: 1.28,
-    skyMie: 0.0029,
-    skyMieG: 0.77,
-    skyExposure: 1.1,
-    skyAtmoBlend: 0.88,
-    sunSkyBoost: 1.05,
-    sunBloom: 1.05,
-    lensFlare: 0.95,
-    zenithBoost: 0.4,
-    groundBounceMix: 0.1,
-    cloudCover: 0.38,
-    cloudScale: 1.9,
-    horizonGlow: 0xc4d8cc,
-    horizonStrength: 0.16,
+    skyZenith: 0x0e68b8,
+    skyHorizon: 0xa8cce8,
+    skyTurbidity: 1.55,
+    skyRayleigh: 1.36,
+    skyMie: 0.0032,
+    skyMieG: 0.78,
+    skyExposure: 1.12,
+    skyAtmoBlend: 0.92,
+    sunSkyBoost: 1.1,
+    sunBloom: 1.14,
+    lensFlare: 1.0,
+    zenithBoost: 0.46,
+    groundBounceMix: 0.11,
+    cloudCover: 0.4,
+    cloudScale: 1.68,
+    horizonGlow: 0xc8dcd0,
+    horizonStrength: 0.18,
     dustStrength: 0.04,
-    wind: [0.4, 0, -0.9],
+    wind: [0.35, 0, -0.85],
     fog: 0xa0b8cc,
     fogNear: 100,
     fogFar: 980,
-    skyBack: 0x2878c0,
+    skyBack: 0x2274c0,
     hemiSky: 0x8ec4e8,
     hemiGround: 0x4a7840,
     hemi: 0.64,
     sun: 0xfff8e8,
-    sunKelvin: 5400,
-    sunInt: 2.72,
-    sunDir: [0.52, 0.68, 0.4],
+    sunKelvin: 5550,
+    sunInt: 2.9,
+    sunDir: [0.5, 0.72, 0.38],
     rimSky: 0xb0d4f0,
-    rimInt: 0.32,
+    rimInt: 0.36,
     fill: 0x88b0c8,
-    fillInt: 0.22,
+    fillInt: 0.24,
     ambient: 0x88a090,
     ambientInt: 0.14,
     exposure: 1.12,
-    gradeWarmth: 0.06,
-    worldEnv: 1.14,
+    gradeWarmth: 0.05,
+    worldEnv: 1.18,
   },
   mountain: {
     /**
@@ -393,15 +401,15 @@ export const LIGHTING = {
     skyRayleigh: 1.28,
     skyMie: 0.0026,
     skyMieG: 0.74,
-    skyExposure: 1.1,
-    skyAtmoBlend: 0.86,
-    sunSkyBoost: 1.08,
-    sunBloom: 1.08,
-    lensFlare: 1.0,
-    zenithBoost: 0.44,
+    skyExposure: 1.12,
+    skyAtmoBlend: 0.9,
+    sunSkyBoost: 1.12,
+    sunBloom: 1.16,
+    lensFlare: 1.05,
+    zenithBoost: 0.48,
     groundBounceMix: 0.1,
-    cloudCover: 0.3,
-    cloudScale: 1.88,
+    cloudCover: 0.28,
+    cloudScale: 1.65,
     horizonGlow: 0xb8d0e4,
     horizonStrength: 0.16,
     dustStrength: 0.03,
@@ -414,8 +422,8 @@ export const LIGHTING = {
     hemiGround: 0x6a6454,
     hemi: 0.6,
     sun: 0xfffaf5,
-    sunKelvin: 6200,
-    sunInt: 2.95,
+    sunKelvin: 6300,
+    sunInt: 3.1,
     sunDir: [0.62, 0.62, 0.34],
     rimSky: 0xa8d0f8,
     rimInt: 0.36,
@@ -445,15 +453,15 @@ export const LIGHTING = {
     skyRayleigh: 1.26,
     skyMie: 0.004,
     skyMieG: 0.76,
-    skyExposure: 1.08,
-    skyAtmoBlend: 0.86,
-    sunSkyBoost: 1.04,
-    sunBloom: 1.02,
-    lensFlare: 0.92,
-    zenithBoost: 0.36,
-    groundBounceMix: 0.12,
-    cloudCover: 0.34,
-    cloudScale: 1.82,
+    skyExposure: 1.1,
+    skyAtmoBlend: 0.9,
+    sunSkyBoost: 1.08,
+    sunBloom: 1.1,
+    lensFlare: 0.98,
+    zenithBoost: 0.4,
+    groundBounceMix: 0.13,
+    cloudCover: 0.36,
+    cloudScale: 1.7,
     horizonGlow: 0xb0d4e0,
     horizonStrength: 0.22,
     dustStrength: 0.1,
@@ -1024,60 +1032,65 @@ export const JUMP = {
    */
   liftLaunchCut: 0.64,
   /** Flat-out launch bonus (multiplies raw before technique cut). */
-  flatOutLaunchBoost: 1.14,
+  flatOutLaunchBoost: 1.08,
   /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
-  liftNoseDrop: 0.24,
+  liftNoseDrop: 0.18,
   /**
    * Apex height multiplier (h ∝ vy²). High enough that a Safari lip hangs
-   * longer than a teaching hop — not a shared skip, not a floaty hang.
+   * like a real throw — not a stubby hop, not a floaty hang.
    */
-  launchHeightScale: 0.45,
+  launchHeightScale: 0.52,
   /**
    * Extra apex cut for AI / lowDetail pack only (h ∝ vy²). 0.2 = one-fifth of
    * the shared launchHeightScale flight — rivals were still lofting like rockets.
    */
   aiLaunchHeightScale: 0.2,
   /** Ballistic launch ceiling (m/s) after launchHeightScale. */
-  maxLaunchVy: 10.8,
+  maxLaunchVy: 9.6,
   /**
    * Floor only for real lips — was 1.8 and forced a hop on every crest.
    * Tiny transitions can leave with near-zero vertical and still glide.
    */
   minLaunchVy: 0.04,
   /** Road-following vertical gain on ramps — speed × sin(pitch) × this. */
-  rampVyScale: 0.8,
+  rampVyScale: 0.95,
   /** How much stored ramp climb energy joins the ballistic leave (0–1). */
-  throwBlend: 0.3,
+  throwBlend: 0.45,
   /**
    * Suspension stores energy on the ramp; the lip releases it into launch speed.
-   * Scales with approach speed so fast lips pop higher than crawls.
+   * Keep below ballistic so leaves read as throws, not trampoline hops.
    */
-  springBurst: 2.7,
+  springBurst: 1.85,
   springCompressRate: 3.8,
   springReleaseRate: 10,
   /** Throttle/brake weight transfer into compress while climbing a lip. */
-  springThrottle: 0.48,
-  springBrake: 0.7,
-  springPitch: 3.2,
+  springThrottle: 0.42,
+  springBrake: 0.62,
+  springPitch: 2.8,
   /**
    * Attitude (rad, + = nose up) the driver commands in mid-air. Holding
    * throttle keeps the wheels driving and the nose up; braking spins them
-   * down and the reaction torque tips the nose over.
+   * down and the reaction torque tips the nose over. Soft — not RC-plane.
    */
-  airPitchUp: 0.38,
-  airPitchDown: 0.42,
-  airPitchRate: 6.8,
-  airPitchMax: 0.55,
-  /** In-air pitch inertia — lower = snappier rotation, higher = floaty tumble risk. */
-  airPitchInertia: 1.28,
-  airPitchDamp: 1.45,
+  airPitchUp: 0.22,
+  airPitchDown: 0.28,
+  airPitchRate: 3.2,
+  airPitchMax: 0.42,
+  /** In-air pitch inertia — higher = coasts like a heavy chassis. */
+  airPitchInertia: 2.05,
+  airPitchDamp: 1.05,
+  /**
+   * Fraction of leave attitude taken from the live mesh/road pitch so the
+   * car does not pop from planted to a canned hop pose at the lip.
+   */
+  leaveCarry: 0.72,
   /**
    * Nose-high aero lift. Modest hang at speed — large values flatten the apex
    * into a float then a late drop (reads as a hop).
    */
-  aeroFloat: 0.22,
+  aeroFloat: 0.12,
   /** Extra g when the nose is down (dive). */
-  aeroDive: 0.2,
+  aeroDive: 0.24,
   /**
    * Airborne longitudinal bleed. Keep momentum in flight — old airNoseDrag 0.58
    * + floor 0.84 dumped ~40% speed on a lofted hang and made every crest stall.
@@ -1122,61 +1135,61 @@ export const JUMP = {
    * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
    * Variation is state at the lip — speed, attitude, compress, line — never RNG.
    */
-  lipGrain: 0.14,
-  inheritPitch: 0.85,
+  lipGrain: 0.1,
+  inheritPitch: 0.55,
   /** How much authored jumpThrow (rise×gap) scales leave velocity. */
-  jumpScaleInfluence: 0.48,
+  jumpScaleInfluence: 0.42,
   /** Extra throw from sampled lip grade vs axle pitch alone. */
-  lipGradeInfluence: 0.42,
+  lipGradeInfluence: 0.35,
   /** Surface bump → spring pop (sand/mud compress more than gravel). */
-  surfaceSpringGain: 4.2,
+  surfaceSpringGain: 3.4,
   /** Surface bump → landing bounce / unsettle. */
-  surfaceLandGain: 3.6,
+  surfaceLandGain: 3.2,
   /** Climb rate stored on the ramp converted to leave energy. */
-  climbThrowGain: 0.58,
+  climbThrowGain: 0.72,
   /** Lateral speed couples into air roll (off-line takeoffs). */
-  airCrossCouple: 0.18,
-  airRollMax: 0.36,
-  airRollDamp: 1.15,
+  airCrossCouple: 0.12,
+  airRollMax: 0.28,
+  airRollDamp: 1.35,
   /**
    * Tail-first rebound amp. Energy prefers the land spring; a large bounce
    * read as a glitch hop, not weight.
    */
-  landBounce: 0.18,
+  landBounce: 0.14,
   /** Descent rate (m/s) before a mismatched landing can leave the ground again. */
-  landBounceImpact: 5.2,
+  landBounceImpact: 5.8,
   /** Minimum graded bounce before re-air is allowed. */
-  landReairMin: 0.85,
+  landReairMin: 1.05,
   /** Fraction of downward vel absorbed into the land spring on pad kiss. */
-  landVelAbsorb: 0.82,
+  landVelAbsorb: 0.74,
   /**
    * After touchdown, residual air attitude + impact squash settle over this
    * window (seconds). Longer = heavier; still capped so it does not feel jelly.
    */
-  landSettleMin: 0.42,
-  landSettleMax: 1.2,
+  landSettleMin: 0.55,
+  landSettleMax: 1.45,
   /** Extra Three.js pitch (rad) allowed while settle is live. */
-  landSettlePitchMax: 0.22,
+  landSettlePitchMax: 0.2,
   /** Extra roll (rad) carried through the settle rock. */
-  landSettleRollMax: 0.22,
+  landSettleRollMax: 0.2,
   /** Nose-down squash (rad) per m/s of impact (seed; spring owns the curve). */
-  landImpactSquash: 0.013,
+  landImpactSquash: 0.016,
   /** Attitude offset decay base (1/s) — lower = smoother rock to the axle plane. */
-  landSettleDamp: 1.55,
+  landSettleDamp: 1.35,
   /** Extra damp as settle nears end (firms the last of the rock). */
-  landSettleDampEnd: 4.2,
+  landSettleDampEnd: 3.6,
   /** Legacy squash exponential — prefer landCompress spring when present. */
   landSquashDamp: 3.4,
   /** Visual suspension sink (m) per m/s of impact. */
-  landCompressGain: 0.052,
-  landCompressMax: 0.1,
+  landCompressGain: 0.068,
+  landCompressMax: 0.12,
   /** Overdamped land spring — fast squash in, controlled settle out. */
-  landCompressWn: 13.5,
-  landCompressZeta: 1.22,
+  landCompressWn: 11.5,
+  landCompressZeta: 1.28,
   /** Pitch blend rate (1/s) while land settle is live — slower than road snap. */
-  landPitchBlend: 5.4,
+  landPitchBlend: 3.6,
   /** Roll spring scale while settle is live (<1 = heavier rock). */
-  landRollWnScale: 0.42,
+  landRollWnScale: 0.38,
   landRollZeta: 0.92,
 };
 

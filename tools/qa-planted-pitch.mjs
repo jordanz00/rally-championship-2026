@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * qa-planted-pitch.mjs — cars stay road-planted; no throttle nose-up tilt.
+ * qa-planted-pitch.mjs — cars stay road-planted; no nose-up tilt on flat ground.
  *
  * RUN: node tools/qa-planted-pitch.mjs
  */
@@ -44,16 +44,26 @@ check(
   "throttle must not pitch the mesh nose-up"
 );
 check(
-  "flat ribbon snaps residual vis-pitch to 0",
-  /VIS_PITCH_DEADZONE = 0\.012/.test(vehicle) && /if \(flat && Math\.abs\(this\._visPitch\)/.test(vehicle)
+  "land squash does not subtract from mesh pitch",
+  /wantPitch = roadPitch \+ this\._landPitchOff;/.test(vehicle) &&
+    !/wantPitch = roadPitch \+ this\._landPitchOff - this\._landSquash/.test(vehicle) &&
+    !/landPitchOff - this\._landSquash/.test(vehicle),
+  "−landSquash tipped the nose UP and floated the fronts"
+);
+check(
+  "flat ribbon hard-levels pitch to 0",
+  /VIS_PITCH_DEADZONE = 0\.028/.test(vehicle) &&
+    /Flat ribbon: hard-level/.test(vehicle) &&
+    /this\.pitch = 0;/.test(vehicle)
 );
 check(
   "player + rivals share drawPose pitch",
-  /rotation\.set\(d\.pitch, d\.yaw, d\.roll/.test(game) && /rotation\.set\(d\.pitch, d\.yaw, d\.roll/.test(read("js/ai.js"))
+  /rotation\.set\(d\.pitch, d\.yaw, d\.roll/.test(game) &&
+    /rotation\.set\(d\.pitch, d\.yaw, d\.roll/.test(read("js/ai.js"))
 );
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 541 && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 116,
+  cacheOk && Number(gameV) >= 544 && Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 118,
   `main=${mainV} game=${gameV}`
 );
 

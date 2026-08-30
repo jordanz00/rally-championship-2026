@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=167";
+import { JUMP } from "../config.js?v=170";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -126,32 +126,40 @@ export class JumpModel {
     const maxVy = (JUMP.maxLaunchVy || 10.8) * Math.sqrt(Math.max(0.05, this.aiHeightScale ?? 1));
     vy = clamp(Math.max(0, vy), JUMP.minLaunchVy || 0, maxVy);
 
-    const fromGrade = lipGrade * (0.42 + 0.58 * (1 - credit)) * jumpLip;
-    this.noseUp = fromGrade - JUMP.liftNoseDrop * credit;
-    this.noseUp = clamp(this.noseUp, -JUMP.airPitchMax, JUMP.airPitchMax);
-    const inherit = JUMP.inheritPitch != null ? JUMP.inheritPitch : 0.72;
+    // Leave following the ramp the tires just left — not a canned hop pose.
+    // Technique trims nose-down; flat-out keeps more lip attitude.
+    const fromGrade = lipGrade * (0.55 + 0.45 * (1 - credit)) * Math.min(1.35, jumpLip);
+    const wantNose = fromGrade - JUMP.liftNoseDrop * credit;
+    const meshNose = Number.isFinite(body.meshNose) ? body.meshNose : wantNose;
+    const carry = JUMP.leaveCarry != null ? JUMP.leaveCarry : 0.72;
+    this.noseUp = clamp(
+      lerp(meshNose, wantNose, 1 - carry),
+      -JUMP.airPitchMax,
+      JUMP.airPitchMax
+    );
+    const inherit = JUMP.inheritPitch != null ? JUMP.inheritPitch : 0.55;
     const fromBody = Number(body.pitchRate) || 0;
-    const pedal = (clamp(body.throttle, 0, 1) - clamp(body.brake, 0, 1)) * 1.05;
-    this.noseUpRate =
-      fromBody * inherit +
-      (lipGrade - this.noseUp) * (2.2 + jumpLip * 0.35) +
-      pedal +
-      grain * 1.6 * jumpLip;
-    this.noseUpRate = clamp(this.noseUpRate, -2.8, 2.8);
+    const pedal = (clamp(body.throttle, 0, 1) - clamp(body.brake, 0, 1)) * 0.55;
+    // Soft rate — hard kicks at the lip read as a tumble, not a throw.
+    this.noseUpRate = clamp(
+      fromBody * inherit + (wantNose - this.noseUp) * 1.15 + pedal + grain * 0.55,
+      -1.65,
+      1.65
+    );
 
     const lat = Number(body.lateral) || 0;
     const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
     this.roll = clamp(
-      (Number(body.roll) || 0) * 0.72 + lat * (0.048 + spd * 0.00035),
+      (Number(body.roll) || 0) * 0.78 + lat * (0.032 + spd * 0.00028),
       -rollMax,
       rollMax
     );
     this.rollRate = clamp(
-      (Number(body.rollRate) || 0) * 0.58 +
-        lat * spd * 0.014 * jumpLip +
-        grain * 0.7 * jumpLip,
-      -2.1,
-      2.1
+      (Number(body.rollRate) || 0) * 0.55 +
+        lat * spd * 0.01 * jumpLip +
+        grain * 0.4 * jumpLip,
+      -1.4,
+      1.4
     );
     return vy;
   }
@@ -164,32 +172,33 @@ export class JumpModel {
    * @param {{yawRate?:number, speed?:number, vLat?:number}} [extra]
    */
   air(dt, throttle, brake, extra = {}) {
+    // Gentle trim — Sega Rally / Dirt: attitude coasts; pedals nudge, not flip.
     const cmd =
       clamp(throttle, 0, 1) * JUMP.airPitchUp - clamp(brake, 0, 1) * JUMP.airPitchDown;
     const torque = cmd * JUMP.airPitchRate;
-    const I = Math.max(0.4, JUMP.airPitchInertia || 1.45);
-    const damp = Math.max(0.4, JUMP.airPitchDamp || 1.85);
+    const I = Math.max(0.6, JUMP.airPitchInertia || 2.0);
+    const damp = Math.max(0.35, JUMP.airPitchDamp || 1.05);
     const aoa = this.noseUp;
     const spd = Math.max(0, Number(extra.speed) || 0);
-    const aero = -aoa * (1.35 + spd * 0.012);
+    const aero = -aoa * (0.85 + spd * 0.008);
     this.noseUpRate += ((torque + aero) / I) * dt;
     this.noseUpRate *= Math.exp(-damp * dt);
     this.noseUp += this.noseUpRate * dt;
     this.noseUp = clamp(this.noseUp, -JUMP.airPitchMax, JUMP.airPitchMax);
     if (Math.abs(this.noseUp) >= JUMP.airPitchMax * 0.98) {
-      this.noseUpRate *= 0.32;
+      this.noseUpRate *= 0.28;
     }
 
     const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
-    const rollDamp = JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.55;
+    const rollDamp = JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.35;
     const yaw = Number(extra.yawRate) || 0;
     const vLat = Number(extra.vLat) || 0;
-    const cross = JUMP.airCrossCouple != null ? JUMP.airCrossCouple : 0.18;
-    this.rollRate += (yaw * 0.22 + vLat * cross * 0.04) * dt;
+    const cross = JUMP.airCrossCouple != null ? JUMP.airCrossCouple : 0.12;
+    this.rollRate += (yaw * 0.14 + vLat * cross * 0.03) * dt;
     this.rollRate *= Math.exp(-rollDamp * dt);
     this.roll += this.rollRate * dt;
     this.roll = clamp(this.roll, -rollMax, rollMax);
-    if (Math.abs(this.roll) >= rollMax * 0.96) this.rollRate *= 0.4;
+    if (Math.abs(this.roll) >= rollMax * 0.96) this.rollRate *= 0.35;
   }
 
   /**

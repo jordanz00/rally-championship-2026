@@ -79,7 +79,7 @@ check(
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 check(
   "GO keeps warm frames",
-  /_raceWarmFrames = Math\.max\(this\._raceWarmFrames \|\| 0, 16\)/.test(game)
+  /_raceWarmFrames = Math\.max\(this\._raceWarmFrames \|\| 0, 48\)/.test(game)
 );
 check(
   "warm frames burn only in race (not mid-countdown)",
@@ -99,8 +99,8 @@ check(
   /_settleRacePresent[\s\S]*?setSkyQuality\(this\.sky,\s*tier\.sky\)/.test(game)
 );
 check(
-  "settle warms at least four presents",
-  /_settleRacePresent[\s\S]*?present\(\);\s*present\(\);\s*present\(\);\s*present\(\);/.test(game)
+  "settle warms at least six presents",
+  /_settleRacePresent[\s\S]*?present\(\);\s*present\(\);\s*present\(\);\s*present\(\);\s*present\(\);\s*present\(\);/.test(game)
 );
 check(
   "settle warms reflections once under load overlay",
@@ -116,7 +116,7 @@ check(
 );
 check(
   "preload pump blocked during countdown",
-  /_pumpPreloadQueue\(\)[\s\S]*?if \(this\.state === "countdown" \|\| this\._presentFrozen\) return/.test(
+  /_pumpPreloadQueue\(\)[\s\S]*?this\.state === "countdown"[\s\S]*?this\._presentFrozen[\s\S]*?return/.test(
     game
   )
 );
@@ -138,7 +138,20 @@ check(
 );
 check(
   "HUD live frozen warms before unlocking 3",
-  /_presentFrozenWarms\(3\)[\s\S]*?_countShown = "3"/.test(game)
+  /_presentFrozenWarms\(4\)[\s\S]*?_countShown = "3"/.test(game)
+);
+check(
+  "re-arm present freeze after HUD warms",
+  /_presentFrozenWarms\(4\)[\s\S]*?_armPresentFreeze\(this\.perfTier\.current\(\)\)/.test(game)
+);
+check(
+  "low/medium keep shadows (only min kills — no GO shadow pop)",
+  /shadowsWanted = t\.id !== "min"/.test(game) && /wantPost = t\.id !== "min"/.test(game)
+);
+check(
+  "GO does not re-snap chase cam",
+  /countGo\(\);\s*\n\s*\/\/ Countdown already hard-snaps/.test(game) ||
+    (/countGo\(\)/.test(game) && !/countGo\(\);\s*\n\s*this\._camSnap = true/.test(game))
 );
 check(
   "enforce freeze on GO frame",
@@ -165,7 +178,7 @@ check(
   "no settling→every=1 during countdown present path",
   !/settling\s*\?\s*1\s*:\s*onPad/.test(game)
 );
-check("cache-bust aligned", cacheOk && Number(gameV) >= 521, `game=${gameV} main=${mainV}`);
+check("cache-bust aligned", cacheOk && Number(gameV) >= 546, `game=${gameV} main=${mainV}`);
 
 console.log(fail ? `\nFAIL ${fail}` : "\nPASS");
 process.exit(fail ? 1 : 0);

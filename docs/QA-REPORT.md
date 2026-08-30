@@ -4846,3 +4846,131 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Still human-only:** Hard refresh `?v=543`, C into POV on Desert — upper view is open road/sky, not a black triangle over the dash.
 
 ---
+
+# Sprint 544 — Level cars on flat ground (30 Aug 2026)
+
+**Player moment:** On flat ribbon, player and rivals sit level — all four tires on the road, no nose-up float.
+
+**Cause:** Landing squash was subtracted from mesh pitch (`−landSquash`). In Three.js that is nose-up, so every bump/land tipped the front end up and left the fronts hanging. Flat-grade slack also left residual pitch on micro-rut “flat”.
+
+**Fix:** Land squash is wheel/Y only. Flat grades inside `VIS_PITCH_DEADZONE` (0.028 rad) hard-zero pitch / bodyPitch / visPitch for player and AI.
+
+| Item | State |
+|---|---|
+| No land-squash nose-up | **Done** |
+| Flat hard-level | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=544`** · `vehicle.js?v=118`
+
+**Proof:** `node tools/qa-planted-pitch.mjs`
+
+**Still human-only:** Hard refresh `?v=544`, Desert start / straight — fronts planted; crests still follow the road.
+
+---
+
+# Sprint 545 — Realistic jump throw + land weight (30 Aug 2026)
+
+**Player moment:** Hit Desert’s lips. The car leaves following the ramp, hangs on a ballistic arc (not a trampoline hop), coasts with heavy air inertia, and lands with visible weight — chase cam pulls back in the air and kicks on touchdown.
+
+**Cause:** Leave attitude was a canned hop (aggressive `noseUpRate`, high `springBurst`, snappy air pitch). Landings either snapped upright or tipped nose-up from squash. Chase stayed glued to the car so throws did not read.
+
+**Fix:**
+- Carry live mesh/road nose into `JumpModel.launch` (`leaveCarry`); soft rate at the lip
+- Ballistic bias: lower spring burst, higher throw blend / ramp vy; less aero float; heavier air inertia / softer pedal trim
+- Land: longer settle, deeper compress, brief nose-down (+Rx) weight — not nose-up
+- Chase: air lift + pull-back; stronger land kick / FOV
+
+| Item | State |
+|---|---|
+| Leave follows lip | **Done** |
+| Soft air inertia | **Done** |
+| Land weight + cam | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=545`** · `vehicle.js?v=119` · `jump.js?v=22` · `config.js?v=168`
+
+**Proof:** `node tools/qa-jump-feel.mjs` · `node tools/qa-jump-variability.mjs` · `node tools/qa-planted-pitch.mjs`
+
+**Still human-only:** Hard refresh `?v=545`, Desert teaching hop then Safari pair — throws change with speed; landings plant with weight.
+
+---
+
+# Sprint 546 — Lighting/graphics set before countdown (30 Aug 2026)
+
+**Player moment:** Stage load → countdown 3-2-1 → GO. The world already looks race-ready under the load overlay; nothing snaps when GO is spoken.
+
+**Cause:** Mac desktop started on `low` with shadows/post off. After GO the present freeze ended and the scaler climbed to `medium`, turning shadows + grade on — a visible pop with the VO. GO also re-snapped the chase cam.
+
+**Fix:**
+- Desktop (incl. Mac) starts at **`medium`** so shadows + post are live before "3"
+- `_applyQualityTier`: post + shadows stay on for all tiers except `min` (only survival path kills them)
+- Six present warms under load; re-sync grade/lights; arm freeze; four HUD-live frozen warms before unlocking "3"; re-arm freeze after those warms
+- GO keeps **48** warm frames; no `_camSnap` on GO
+
+| Item | State |
+|---|---|
+| Race look before stage shown | **Done** |
+| No shadow/post flip at GO | **Done** |
+| No GO chase cam snap | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=546`**
+
+**Proof:** `node tools/qa-countdown-present.mjs` · `node tools/qa-sprint39-perf.mjs`
+
+**Still human-only:** Hard refresh `?v=546`, load Desert — grade/shadows stable from first HUD frame through GO VO.
+
+---
+
+# Sprint 547 — Higher race resolution, 30 fps floor (30 Aug 2026)
+
+**Player moment:** Stage looks sharper on desktop; when the GPU cannot hold 60, cadence locks to an even **30** instead of soft pixels or judder.
+
+**Change:**
+- Race `maxPixelRatio` **1.0 → 1.25**, `maxPixels` **1.2 M → 2.0 M** (title pad stays soft at 1.0 / 1.2 M)
+- `preferLock30`: lock an even **30** before stripping to `min` (keep medium shadows/grade)
+- Lock-to-30 after **~0.8 s** at the floor (`LOCK30_HOLD` 48); hard-drop at min also locks when over budget
+- Target remains 60; 30 is the minimum acceptable presented cadence
+
+| Item | State |
+|---|---|
+| Sharper race framebuffer | **Done** |
+| 30 Hz lock as floor | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=547`** · `config.js?v=169` · `perf-tier.js?v=42`
+
+**Proof:**
+```bash
+node tools/qa-sprint39-perf.mjs
+node tools/qa-sprint76-perf.mjs
+node tools/qa-frame-probe.mjs --seconds=8
+```
+
+**Headed probe (M1 Pro, Desert, 14 AI, v547):** delivered **27.1 fps** (22–28), cadence **LOCKED 30**, tier **medium**, EMA 35.6 ms — sharper pixels with a clean floor instead of ~50 fps judder at min.
+
+**Still human-only:** Hard refresh `?v=547`, Desert championship — confirm sharpness + smooth 60-or-clean-30. Optional cinema chase: `?perf=high` (still prefers lock-30 when over budget).
+
+---
+
+# Sprint 548 — Realistic cumulus sky + sun lighting (30 Aug 2026)
+
+**Player moment:** Look up on Desert/Forest. Cumulus reads as towering cauliflower stacks with lit sugar tops, cool shadowed bases, and clear blue gaps — not a grey smoke sheet. Sun disc + aureole feel photographic; stage key matches the sky.
+
+**Cause:** Sprint 536 cut raymarch to 8–10×2 and high/medium both used the soft medium sky path. PreferLock30 left GPU headroom unused on clouds.
+
+**Fix:**
+- Cinema raymarch **16×3** (medium race uses cinema steps under `cinemaRealism`); low/min 7×1 / 4×1
+- Multi-scale Worley billows, taller shell, stronger silver/powder/sugar lighting, deeper zenith blues
+- Stage LIGHTING retune (sun Kelvin/intensity, Rayleigh/Mie, cover/scale)
+
+| Item | State |
+|---|---|
+| Fluffy photographic cumulus | **Done** |
+| Sun / atmosphere / stage key | **Done** |
+| Budget bounded (≤16×3) | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=548`** · `sky.js?v=37` · `config.js?v=170` · `perf-tier.js?v=43`
+
+**Proof:** `node tools/qa-sky-fluffy.mjs` · `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint39-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Still human-only:** Hard refresh `?v=548`, park on Desert grid and look up — distinct puff islands, silver rims, hot sun disc.
+
+---
