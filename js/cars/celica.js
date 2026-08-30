@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=163";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=164";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=30";
 
 const GARAGE = {
@@ -4093,22 +4093,24 @@ function buildPovRig(root) {
   if (marks.dash) eyeZ = Math.min(eyeZ, marks.dash.minZ - 0.38);
   if (marks.wheel) eyeZ = Math.min(eyeZ, marks.wheel.z - 0.28);
 
-  // Seated eye ~1.12 m off the contact patch, raised a touch to look over the cowl.
-  const seated = ground + 1.12;
-  let eyeY = THREE.MathUtils.clamp(ground + 1.18, seated, roof - 0.18);
+  // Seated eye sits high enough to clear the cowl / dash and read the road.
+  // Prior ~1.18 m + look buried in the hood made POV feel dashboard-blocked.
+  const seated = ground + 1.22;
+  let eyeY = THREE.MathUtils.clamp(ground + 1.30, seated, roof - 0.12);
   if (marks.dash) {
-    eyeY = Math.max(eyeY, marks.dash.maxY + 0.08);
-    eyeY = Math.min(eyeY, roof - 0.16);
+    eyeY = Math.max(eyeY, marks.dash.maxY + 0.18);
+    eyeY = Math.min(eyeY, roof - 0.12);
   }
   if (marks.wheel) {
-    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.14, seated, roof - 0.16);
+    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.24, seated, roof - 0.12);
   }
 
   let hoodY = ground + Math.min(0.92, spanY * 0.48);
   if (marks.hoodY != null) hoodY = marks.hoodY;
   const lookX = eyeX * 0.12;
-  const lookY = THREE.MathUtils.clamp(hoodY + 0.04, ground + 0.68, eyeY - 0.18);
-  const lookZ = hull.maxZ + 2.4;
+  // Aim at the road ahead near the horizon band — not straight into the hood.
+  const lookY = THREE.MathUtils.clamp(hoodY + 0.28, ground + 0.92, eyeY - 0.04);
+  const lookZ = hull.maxZ + 4.2;
   const mirrorEyeX = eyeX * 0.12;
   const mirrorEyeY = THREE.MathUtils.clamp(eyeY + 0.11, eyeY + 0.08, roof - 0.1);
   const mirrorEyeZ = eyeZ + 0.34;
@@ -4139,7 +4141,7 @@ function buildPovRig(root) {
     spanY,
     spanZ,
     hull,
-    fov: 76,
+    fov: 80,
     near: 0.05,
   };
 }
@@ -4151,10 +4153,17 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 2;
-  if (!root.userData.povRig || root.userData.povRig._v !== POV_RIG_VER) {
-    root.userData.povRig = buildPovRig(root);
-    root.userData.povRig._v = POV_RIG_VER;
+  const POV_RIG_VER = 3;
+  const prev = root.userData.povRig;
+  if (!prev || prev._v !== POV_RIG_VER) {
+    const next = buildPovRig(root);
+    next._v = POV_RIG_VER;
+    if (prev && prev.head) {
+      next.head = prev.head;
+      next.lookNode = prev.lookNode;
+    }
+    root.userData.povRig = next;
+    ensurePovHead(root, next);
   }
   return root.userData.povRig;
 }
@@ -4528,24 +4537,26 @@ function attachCockpit(root) {
   const clusterZ = Math.max(wheelZ + 0.20, rig.eyeZ + 0.58);
   // Dash bulk sits past the instruments so depthTest does not bury the discs.
   const dashZ = clusterZ + 0.22;
-  const dashY = rig.eyeY - 0.28;
+  // Keep the top of the dash well below the seated eye so the windshield
+  // aperture reads road, not plastic (Sprint 535 POV sightline).
+  const dashY = rig.eyeY - 0.44;
 
   const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.04, 1.35), carpet);
   floor.position.set(0, floorY, rig.eyeZ + 0.1);
   floor.userData.cabinFill = true;
   cab.add(floor);
 
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.2, 0.28), plastic);
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.16, 0.28), plastic);
   dash.position.set(0, dashY, dashZ);
   dash.userData.cabinFill = true;
   cab.add(dash);
-  const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.05, 0.12), dark);
-  cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.02);
+  const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.04, 0.12), dark);
+  cowl.position.set(rig.eyeX * 0.15, dashY + 0.08, dashZ + 0.02);
   cowl.userData.cabinFill = true;
   cab.add(cowl);
   // Instrument hood — a real cowl over the cluster so the seat reads as a cabin.
-  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.44, 0.045, 0.16), dark);
-  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.18, clusterZ + 0.04);
+  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.44, 0.04, 0.16), dark);
+  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.14, clusterZ + 0.04);
   binnacleHood.rotation.x = -0.32;
   binnacleHood.userData.cabinFill = true;
   cab.add(binnacleHood);
@@ -4577,8 +4588,8 @@ function attachCockpit(root) {
   binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
   binnacle.userData.cabinFill = true;
   cluster.add(binnacle);
-  // Behind the rim, just ahead of the dash near face — read through the wheel.
-  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.12, clusterZ);
+  // Behind the rim, lower in the FOV so gauges do not eat the windshield.
+  cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.24, clusterZ);
   // Face the seated eye so the printed discs are not edge-on or windshield-facing.
   cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cluster.renderOrder = 20;
@@ -4590,7 +4601,7 @@ function attachCockpit(root) {
   if (!hasGlbWheel) {
     const column = new THREE.Group();
     // Closest cabin prop to the lens — gauges sit ~20 cm further into the dash.
-    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.30, wheelZ);
+    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.40, wheelZ);
     column.rotation.x = -0.55;
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.04, 12), dark);
     hub.rotation.x = Math.PI / 2;

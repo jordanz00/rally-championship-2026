@@ -4748,3 +4748,22 @@ node tools/qa-sprint39-perf.mjs
 
 ---
 
+# Sprint 535 — POV windshield sightline (29 Aug 2026)
+
+**Player moment:** Press C into the seat. The road ahead fills the windshield — dash and gauges sit lower; the eye is higher and looks further down the stage.
+
+**Fix:** Raise seated eye (~1.30 m), clear the cowl by +18 cm, aim look toward the road/horizon (`lookZ` +4.2 m, milder down-angle), FOV 80, drop procedural dash/cluster ~12–16 cm relative to the eye. `POV_RIG_VER = 3`.
+
+| Item | State |
+|---|---|
+| Higher eye / road look | **Done** |
+| Lower cabin dash + gauges | **Done** |
+| FOV 80 | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=535`** · `celica.js?v=143` · `config.js?v=164`
+
+**Proof:** `node tools/qa-pov-gauges.mjs` (static) · `node tools/qa-static-audit.mjs`
+
+**Still human-only:** Hard refresh `?v=535`, C into POV on Desert — confirm pavement and apexes stay readable above the dash.
+
+---
