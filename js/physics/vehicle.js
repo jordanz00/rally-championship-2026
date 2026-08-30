@@ -45,10 +45,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=167";
+import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=170";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=50";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=46";
-import { JumpModel } from "./jump.js?v=21";
+import { JumpModel } from "./jump.js?v=22";
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=3";
 
 const TMP = {
@@ -143,13 +143,13 @@ const SLOPE_SLEW = 3.5;
   /**
    * Visual road-pitch follow (1/s) and deadzone (rad). Physics `_slope` stays
    * on SLOPE_SLEW so gravity still bites hills; the mesh ignores sub-degree
-   * axle chatter that reads as a springy body on throttle. Deadzone widened
-   * so flat ribbon stays visibly planted (no residual nose-up).
+   * axle chatter that reads as a springy body on throttle. Deadzone is wide
+   * enough that flat ribbon (+ micro ruts) reads planted — no nose-up float.
    */
-  const VIS_PITCH_RATE = 18;
-  const VIS_PITCH_DEADZONE = 0.012;
+  const VIS_PITCH_RATE = 22;
+  const VIS_PITCH_DEADZONE = 0.028;
   /** Real grade change (rad) — snap the mesh onto the axle plane, not chatter. */
-  const VIS_PITCH_SNAP = 0.028;
+  const VIS_PITCH_SNAP = 0.04;
 /** Player chassis long-accel filter (1/s). Applied force, not load-transfer `_ax`. */
 const AX_DRIVE_RATE = 11;
 /**
@@ -1208,6 +1208,8 @@ export class Vehicle {
         const surf = SURFACES[q2.surface] || SURFACES.dirt;
         this.velY = this.jump.launch(raw, launchGrade, springBoost, {
           pitchRate: -(this.pitchRate || 0),
+          // Live mesh nose (aero + = up). Carry this so leave matches the ramp.
+          meshNose: -(this.pitch || 0),
           roll: this.roll,
           rollRate: this.rollRate,
           yawRate: this.yawRate,
@@ -1221,6 +1223,14 @@ export class Vehicle {
           lipGrade,
           surfaceBump: surf.bump,
         });
+        // Continuity: mesh pitch is already on the lip — lock to leave attitude.
+        this._visPitch = -this.jump.noseUp;
+        this._roadPitch = this._visPitch;
+        this.pitch = this._visPitch;
+        this.pitchRate = -this.jump.noseUpRate;
+        this._bodyPitch = 0;
+        this._bodyPitchRate = 0;
+        this._squatSmooth = 0;
         this._landSettle = 0;
         this._landPitchOff = 0;
         this._landRollOff = 0;
@@ -2503,14 +2513,18 @@ export class Vehicle {
     this._landSettle = clamp(tMin + impact * 0.038 + upset * 0.4 + hang * 0.3, tMin, tMax);
 
     // Soft nudge — attitude spring owns the rest. Hard assign was the snap.
-    const wantPitch = roadPitch + this._landPitchOff - this._landSquash;
+    // Hard impacts add a little nose-down (+Rx) so weight reads on landing;
+    // land squash itself stays wheel/Y via `_applyLandWheelTravel`.
+    const noseDown = clamp(impact * (JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.016), 0, 0.08);
+    this._landPitchOff = clamp(this._landPitchOff + noseDown, -pitchMax, pitchMax);
+    const wantPitch = roadPitch + this._landPitchOff;
     this.pitch += (wantPitch - this.pitch) * 0.42;
     this.pitchRate = (this.jump.noseUpRate || 0) * -0.35 + (wantPitch - this.pitch) * 2.2;
     this.roll = clamp((this.roll || 0) * 0.55 + this._landRollOff * 0.45, -rollMax, rollMax);
     this.rollRate = (this.jump.rollRate || 0) * 0.62;
-    this._bodyPitch += (-this._landSquash - this._bodyPitch) * 0.55;
+    this._bodyPitch += (noseDown - this._bodyPitch) * 0.45;
     this._bodyPitchRate = 0;
-    this._squatSmooth += (-this._landSquash - this._squatSmooth) * 0.55;
+    this._squatSmooth += (noseDown - this._squatSmooth) * 0.45;
   }
 
   /**
@@ -2690,11 +2704,22 @@ export class Vehicle {
       const grade = Number.isFinite(axles.pitch)
         ? clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX)
         : 0;
-      const roadPitch = -grade;
+      const flat =
+        Math.abs(grade) < VIS_PITCH_DEADZONE &&
+        !(this._landSettle > 0) &&
+        (this._landCompress || 0) < 0.004;
+      const roadPitch = flat ? 0 : -grade;
       this._roadPitch = roadPitch;
       this._visPitch = roadPitch;
-      this._slope = grade;
-      if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
+      this._slope = flat ? 0 : grade;
+      if (flat) {
+        // Flat ribbon: hard-level so both axles sit on the deck (no nose-up float).
+        this.pitch = 0;
+        this.pitchRate = 0;
+        this._bodyPitch = 0;
+        this._bodyPitchRate = 0;
+        this._squatSmooth = 0;
+      } else if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
         // Residual air attitude is intentional — lift below keeps tires planted.
         const maxOff = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.22;
         this.pitch = clamp(this.pitch, roadPitch - maxOff, roadPitch + maxOff);
@@ -3030,20 +3055,15 @@ export class Vehicle {
       rollTarget = clamp(ay * rollGain * rollMul + this._roadRoll, -rollMax, rollMax);
       // Accel/brake must NOT pitch the mesh (Sprint 39 / 542). Drive squat
       // read as a permanent nose-up / tilted-back car on the ribbon. Landing
-      // squash still comes from `_landSquash` below.
+      // weight is a brief nose-down (+Rx) from compress, then back to flat.
       squatTarget = 0;
+      if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
+        squatTarget = clamp((this._landSquash || 0) * 0.55, 0, 0.07);
+      }
     }
 
     if (this.onGround) {
-      const landing = this._landSettle > 0 || (this._landCompress || 0) > 0.004;
-      const squatRate = landing
-        ? 7.2
-        : HANDLING.squatSmoothRate != null
-          ? HANDLING.squatSmoothRate
-          : 10;
-      if (landing) {
-        squatTarget = Math.min(squatTarget, -this._landSquash);
-      }
+      const squatRate = HANDLING.squatSmoothRate != null ? HANDLING.squatSmoothRate : 10;
       this._squatSmooth += (squatTarget - this._squatSmooth) * (1 - Math.exp(-squatRate * dt));
     } else {
       this._squatSmooth *= Math.exp(-8 * dt);
@@ -3071,9 +3091,7 @@ export class Vehicle {
 
     if (this.onGround || this._padHitVy != null) {
       const settleOff =
-        this._landSettle > 0 || (this._landCompress || 0) > 0.004
-          ? this._landPitchOff - this._landSquash * 0.55
-          : 0;
+        this._landSettle > 0 || (this._landCompress || 0) > 0.004 ? this._landPitchOff : 0;
       const want = this._visPitch + this._bodyPitch + settleOff;
       const landBlend = JUMP.landPitchBlend != null ? JUMP.landPitchBlend : 5.4;
       const k =
@@ -3085,13 +3103,12 @@ export class Vehicle {
       this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {
-      // Three.js Rx: + = nose down, JumpModel is + = nose up. Show the attitude
-      // the driver actually commanded, so lifting and braking LOOKS like the
-      // nose dropping.
-      const flight = clamp(-this.jump.noseUp, -0.55, 0.55);
-      const blend = 1 - Math.exp(-9 * dt);
+      // Three.js Rx: + = nose down, JumpModel is + = nose up. Coast with inertia —
+      // a hard blend made every leave look like a keyframed hop.
+      const flight = clamp(-this.jump.noseUp, -0.48, 0.48);
+      const blend = 1 - Math.exp(-6.2 * dt);
       this.pitch += (flight - this.pitch) * blend;
-      this.pitchRate = this.jump.noseUpRate * -1.05 + (flight - this.pitch) * 2.8;
+      this.pitchRate = this.jump.noseUpRate * -1.0 + (flight - this.pitch) * 1.8;
     }
   }
 

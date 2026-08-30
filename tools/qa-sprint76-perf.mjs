@@ -121,20 +121,20 @@ check(
 
 console.log("\ncloud raymarch cap (Sprint 69 volume preserved)");
 check("CLOUD_BUDGET still exported", /export const CLOUD_BUDGET/.test(sky));
-check("view steps capped at 10", /maxViewSteps: 10/.test(sky));
-check("light steps capped at 2", /maxLightSteps: 2/.test(sky));
+check("view steps capped at 16", /maxViewSteps: 16/.test(sky));
+check("light steps capped at 3", /maxLightSteps: 3/.test(sky));
 check(
   "shader loop is bounded, not full-res 128-step",
-  /const int MAX_VIEW = 10;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
+  /const int MAX_VIEW = 16;/.test(sky) && /const int MAX_LIGHT = 3;/.test(sky),
   "an unbounded raymarch loop is the classic browser cliff"
 );
-check("cinema is 10 view steps", /cinemaViewSteps: 10/.test(sky));
-check("low tier drops to 5 view steps", /lowViewSteps: 5/.test(sky));
+check("cinema is 16 view steps", /cinemaViewSteps: 16/.test(sky));
+check("low tier drops to 7 view steps", /lowViewSteps: 7/.test(sky));
 check(
   "low / min drop Worley and light samples",
   /uUseWorley\.value = 0/.test(sky) && /uLightSteps\.value = 1/.test(sky)
 );
-check("scaler mirrors the sky cap", /maxCloudViewSteps: 10/.test(perf) && /maxCloudLightSteps: 2/.test(perf));
+check("scaler mirrors the sky cap", /maxCloudViewSteps: 16/.test(perf) && /maxCloudLightSteps: 3/.test(perf));
 check("tier drives sky quality", /setSkyQuality\(this\.sky, t\.sky\)/.test(game));
 
 console.log("\nmirror render target cap");
@@ -251,20 +251,24 @@ check(
 
 const recovery = (() => {
   const t = createPerfTier(GFX_TEST);
-  // Hard-drop to min without arming the 30 Hz lock (LOCK30_HOLD is longer).
-  for (let i = 0; i < 40; i++) t.tick(40);
+  // Hard-drop to min (HARD_HOLD of 40ms) without arming the at-min 30 Hz lock
+  // (that needs another HARD_HOLD of over-budget frames once already at min).
+  for (let i = 0; i < 12; i++) t.tick(40);
   const dropped = t.tier;
   const changes = [];
   for (let i = 0; i < 1200; i++) {
     const r = t.tick(14);
     if (r.changed) changes.push(r.id);
   }
-  return { dropped, tier: t.tier, changes };
+  return { dropped, tier: t.tier, changes, locked30: t.locked30 };
 })();
 check(
   "a recovered machine climbs back one tier at a time",
-  recovery.dropped === "min" && recovery.tier === "high" && recovery.changes.length === 3,
-  `${recovery.dropped} -> ${recovery.tier} via ${JSON.stringify(recovery.changes)}`
+  recovery.dropped === "min" &&
+    recovery.tier === "high" &&
+    recovery.changes.length === 3 &&
+    recovery.locked30 === false,
+  `${recovery.dropped} -> ${recovery.tier} via ${JSON.stringify(recovery.changes)} locked30=${recovery.locked30}`
 );
 
 const caps = createPerfTier({ ...GFX_TEST, minPixelRatio: 0.85 }).current();
@@ -316,6 +320,22 @@ check(
     return !lockedBeforeMin;
   })(),
   "never drop the cadence while quality tiers remain"
+);
+check(
+  "preferLock30 locks cadence before stripping to min",
+  (() => {
+    const t = createPerfTier({ ...GFX_TEST, preferLock30: true, lock30AboveMs: 18 });
+    let lockedAt = null;
+    for (let i = 0; i < 400; i++) {
+      t.tick(19);
+      if (t.locked30) {
+        lockedAt = t.tier;
+        break;
+      }
+    }
+    return t.locked30 === true && lockedAt !== "min";
+  })(),
+  "Sprint 547: even 30 at medium/low beats judder at min"
 );
 check(
   "the lock is downward-only within a stage",

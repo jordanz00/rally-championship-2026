@@ -50,10 +50,10 @@ check(
 );
 check(
   "view raymarch has a bounded step loop",
-  /const int MAX_VIEW = 10/.test(sky) &&
+  /const int MAX_VIEW = 16/.test(sky) &&
     /for \(int i = 0; i < MAX_VIEW; i\+\+\)/.test(sky) &&
-    /cinemaViewSteps:\s*10/.test(sky) &&
-    /lowViewSteps:\s*5/.test(sky)
+    /cinemaViewSteps:\s*16/.test(sky) &&
+    /lowViewSteps:\s*7/.test(sky)
 );
 check(
   "no temporal hash dither on the cloud march",
