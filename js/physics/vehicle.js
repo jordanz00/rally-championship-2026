@@ -45,7 +45,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=164";
+import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=167";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=50";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=46";
 import { JumpModel } from "./jump.js?v=21";
@@ -140,15 +140,16 @@ const ROAD_PITCH_MAX = 0.55;
  * a noisy Track.query spike is a 10° twitch in one step and is what we cut.
  */
 const SLOPE_SLEW = 3.5;
-/**
- * Visual road-pitch follow (1/s) and deadzone (rad). Physics `_slope` stays
- * on SLOPE_SLEW so gravity still bites hills; the mesh ignores sub-degree
- * axle chatter that reads as a springy body on throttle.
- */
-const VIS_PITCH_RATE = 16;
-const VIS_PITCH_DEADZONE = 0.006;
-/** Real grade change (rad) — snap the mesh onto the axle plane, not chatter. */
-const VIS_PITCH_SNAP = 0.035;
+  /**
+   * Visual road-pitch follow (1/s) and deadzone (rad). Physics `_slope` stays
+   * on SLOPE_SLEW so gravity still bites hills; the mesh ignores sub-degree
+   * axle chatter that reads as a springy body on throttle. Deadzone widened
+   * so flat ribbon stays visibly planted (no residual nose-up).
+   */
+  const VIS_PITCH_RATE = 18;
+  const VIS_PITCH_DEADZONE = 0.012;
+  /** Real grade change (rad) — snap the mesh onto the axle plane, not chatter. */
+  const VIS_PITCH_SNAP = 0.028;
 /** Player chassis long-accel filter (1/s). Applied force, not load-transfer `_ax`. */
 const AX_DRIVE_RATE = 11;
 /**
@@ -2984,9 +2985,19 @@ export class Vehicle {
     let visGrade = clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX);
     if (Math.abs(visGrade) < VIS_PITCH_DEADZONE) visGrade = 0;
     const wantPitch = -visGrade;
-    const pitchRate =
-      Math.abs(wantPitch - this._visPitch) > VIS_PITCH_SNAP ? 34 : VIS_PITCH_RATE;
+    // Flat ribbon: pull residual nose-up/down out quickly so the car reads planted.
+    const flat =
+      visGrade === 0 &&
+      Math.abs(this._bodyPitch) < 0.01 &&
+      !(this._landSettle > 0) &&
+      (this._landCompress || 0) < 0.004;
+    const pitchRate = flat
+      ? 28
+      : Math.abs(wantPitch - this._visPitch) > VIS_PITCH_SNAP
+        ? 34
+        : VIS_PITCH_RATE;
     this._visPitch += (wantPitch - this._visPitch) * (1 - Math.exp(-pitchRate * dt));
+    if (flat && Math.abs(this._visPitch) < 0.004) this._visPitch = 0;
   }
 
   /**
@@ -3017,10 +3028,10 @@ export class Vehicle {
     if (this.onGround) {
       const ay = Math.abs(this.speed) < 1.2 ? 0 : this._ay;
       rollTarget = clamp(ay * rollGain * rollMul + this._roadRoll, -rollMax, rollMax);
-      const dive = HANDLING.brakeDive != null ? HANDLING.brakeDive : 0.0052;
-      const squat = HANDLING.accelSquat != null ? HANDLING.accelSquat : 0.0034;
-      const ax = this._ax;
-      squatTarget = clamp(ax < 0 ? -ax * dive : -ax * squat, -0.032, 0.045);
+      // Accel/brake must NOT pitch the mesh (Sprint 39 / 542). Drive squat
+      // read as a permanent nose-up / tilted-back car on the ribbon. Landing
+      // squash still comes from `_landSquash` below.
+      squatTarget = 0;
     }
 
     if (this.onGround) {

@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=116";
+import { Vehicle } from "./physics/vehicle.js?v=117";
 import { getSurface } from "./physics/surfaces.js?v=50";
-import { AI, CARS } from "./config.js?v=164";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=143";
+import { AI, CARS } from "./config.js?v=167";
+import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=144";
 
 const G = 9.81;
 

@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=164";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=167";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=30";
 
 const GARAGE = {
@@ -2328,6 +2328,7 @@ function buildGenericRival(tint = {}, variant = 0) {
   // geometry per paint role at build time. Before this a rival was ~29 meshes;
   // fourteen of them meant ~460 draw calls of nothing but trim.
   const roof = new THREE.Mesh(roofGeo, kind === 2 ? bodyMat : stripeMat);
+  roof.name = "roof";
   roof.userData.interior = true;
   g.add(roof);
 
@@ -2501,6 +2502,7 @@ function assembleLoftCar(spec) {
 
   g.add(new THREE.Mesh(makeLoftGeo(spec.hull), bodyMat));
   const roof = new THREE.Mesh(makeLoftGeo(spec.roof), roofMat);
+  roof.name = "roof";
   roof.userData.interior = true;
   g.add(roof);
 
@@ -4029,26 +4031,56 @@ function isExteriorMirrorGlass(obj, hull, c) {
 }
 
 /**
- * One-time list of glass/interior meshes POV hides. Avoids a full GLB traverse
- * every time the player hits C to swap cameras.
+ * One-time list of glass / roof shell meshes POV hides. Avoids a full GLB
+ * traverse every time the player hits C. Versioned so a live car re-hides
+ * roofs that were previously skipped as "interior".
  * @param {THREE.Object3D} root
  */
 function buildPovHideCache(root) {
-  if (!root || root.userData._povHideReady) return;
+  if (!root) return;
+  const POV_HIDE_VER = 3;
+  if (root.userData._povHideReady && root.userData._povHideVer === POV_HIDE_VER) return;
+  // Re-tag so roofs marked interior still get povShell (Sprint 543).
+  tagPovShell(root);
   /** @type {THREE.Object3D[]} */
   const hide = [];
   const keepHidden = [];
   const steer = [];
+  const hull = localHull(root);
+  const spanY = Math.max(0.2, hull.maxY - hull.minY);
+  const spanZ = Math.max(0.2, hull.maxZ - hull.minZ);
+  const c = new THREE.Vector3();
+  const s = new THREE.Vector3();
   root.traverse((obj) => {
     if (!obj.userData) return;
-    if (obj.userData.windshield || obj.userData.povShell) hide.push(obj);
+    if (obj.userData.windshield || obj.userData.povShell) {
+      hide.push(obj);
+      return;
+    }
     if (obj.userData.interiorKeepHidden) keepHidden.push(obj);
     if (obj.userData.glbSteer) steer.push(obj);
+    // Interior roofs / headers that tagPovShell missed on older tags.
+    if (obj.isMesh && obj.userData.interior && !inCockpitTree(obj)) {
+      const n = (obj.name || "").toLowerCase();
+      if (/roof|headliner|ceiling|cabin.?top|header|canopy/.test(n)) {
+        hide.push(obj);
+        return;
+      }
+      const box = new THREE.Box3().setFromObject(obj);
+      box.getCenter(c);
+      box.getSize(s);
+      root.worldToLocal(c);
+      const high = c.y > hull.minY + spanY * 0.68;
+      const midCabin = c.z > hull.minZ + spanZ * 0.2 && c.z < hull.maxZ - spanZ * 0.06;
+      const slab = s.y < 0.35 && s.x > spanY * 0.4;
+      if (high && midCabin && slab) hide.push(obj);
+    }
   });
   root.userData._povHide = hide;
   root.userData._povKeepHidden = keepHidden;
   root.userData._povSteer = steer;
   root.userData._povHideReady = true;
+  root.userData._povHideVer = POV_HIDE_VER;
 }
 
 /**
@@ -4093,23 +4125,23 @@ function buildPovRig(root) {
   if (marks.dash) eyeZ = Math.min(eyeZ, marks.dash.minZ - 0.38);
   if (marks.wheel) eyeZ = Math.min(eyeZ, marks.wheel.z - 0.28);
 
-  // Seated eye sits high enough to clear the cowl / dash and read the road.
-  // Prior ~1.18 m + look buried in the hood made POV feel dashboard-blocked.
-  const seated = ground + 1.22;
-  let eyeY = THREE.MathUtils.clamp(ground + 1.30, seated, roof - 0.12);
+  // Clear the cowl without sitting inside the roof (FOV 80 + roof−0.12 clipped
+  // the underside of the cabin top into the lens — Sprint 543).
+  const seated = ground + 1.18;
+  let eyeY = THREE.MathUtils.clamp(ground + 1.22, seated, roof - 0.32);
   if (marks.dash) {
-    eyeY = Math.max(eyeY, marks.dash.maxY + 0.18);
-    eyeY = Math.min(eyeY, roof - 0.12);
+    eyeY = Math.max(eyeY, marks.dash.maxY + 0.1);
+    eyeY = Math.min(eyeY, roof - 0.32);
   }
   if (marks.wheel) {
-    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.24, seated, roof - 0.12);
+    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.16, seated, roof - 0.32);
   }
 
   let hoodY = ground + Math.min(0.92, spanY * 0.48);
   if (marks.hoodY != null) hoodY = marks.hoodY;
   const lookX = eyeX * 0.12;
-  // Aim at the road ahead near the horizon band — not straight into the hood.
-  const lookY = THREE.MathUtils.clamp(hoodY + 0.28, ground + 0.92, eyeY - 0.04);
+  // Aim at the road ahead — keep look below the eye so the roof stays out of frame.
+  const lookY = THREE.MathUtils.clamp(hoodY + 0.18, ground + 0.85, eyeY - 0.08);
   const lookZ = hull.maxZ + 4.2;
   const mirrorEyeX = eyeX * 0.12;
   const mirrorEyeY = THREE.MathUtils.clamp(eyeY + 0.11, eyeY + 0.08, roof - 0.1);
@@ -4153,7 +4185,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 3;
+  const POV_RIG_VER = 4;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -4180,15 +4212,17 @@ function tagPovShell(root) {
   const s = new THREE.Vector3();
   root.traverse((obj) => {
     if (!obj.isMesh) return;
-    if (obj.userData.windshield || obj.userData.interior || obj.userData.povHud) return;
+    if (obj.userData.windshield || obj.userData.povHud) return;
     if (inCockpitTree(obj)) return;
     const n = (obj.name || "").toLowerCase();
-    if (/roof|headliner|cabin.?top|interior.?roof|ceiling/.test(n)) {
+    // Roofs / headers block the lens — tag even when also marked interior
+    // (procedural loft roofs set interior=true and used to stay visible in POV).
+    if (/roof|headliner|cabin.?top|interior.?roof|ceiling|header.?rail|canopy|coupe.?top/.test(n)) {
       obj.userData.povShell = true;
       return;
     }
     if (
-      /a.?pillar|apillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage|header.?rail/.test(
+      /a.?pillar|apillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage/.test(
         n
       ) &&
       !/wheel|tire|tyre|seat|steer/.test(n)
@@ -4196,15 +4230,21 @@ function tagPovShell(root) {
       obj.userData.povShell = true;
       return;
     }
+    // Dash / seats stay; only geometric roof slabs among interiors are hidden.
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(c);
     box.getSize(s);
     root.worldToLocal(c);
     const spanX = hull.maxX - hull.minX;
-    const high = c.y > hull.minY + spanY * 0.72;
+    const high = c.y > hull.minY + spanY * 0.68;
     const midCabin = c.z > hull.minZ + spanZ * 0.22 && c.z < hull.maxZ - spanZ * 0.08;
-    const wide = s.x > spanY * 0.55 && s.z > spanZ * 0.35;
-    if (high && midCabin && wide) obj.userData.povShell = true;
+    const wide = s.x > spanY * 0.5 && s.z > spanZ * 0.28;
+    const thinSlab = s.y < 0.38 && s.x > spanY * 0.45;
+    if (high && midCabin && (wide || thinSlab)) {
+      obj.userData.povShell = true;
+      return;
+    }
+    if (obj.userData.interior) return;
     // Tall thin posts at the windshield corners — A-pillars that fill the lens.
     const tall = s.y > 0.32;
     const thin = Math.min(s.x, s.z) < 0.16 && Math.max(s.x, s.z) < 0.38;
@@ -4749,7 +4789,9 @@ function makeRearviewMirror() {
 export function setCockpitView(root, on, _camera) {
   if (!root) return;
   const want = !!on;
-  if (root.userData._cockpitOn === want) return;
+  // Force a hide-cache rebuild when the POV shell tag set changes.
+  if (root.userData._povHideVer !== 3) root.userData._povHideReady = false;
+  if (root.userData._cockpitOn === want && root.userData._povHideReady) return;
   root.userData._cockpitOn = want;
   buildPovHideCache(root);
   const hide = root.userData._povHide || [];

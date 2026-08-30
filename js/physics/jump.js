@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=164";
+import { JUMP } from "../config.js?v=167";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));

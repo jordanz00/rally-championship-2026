@@ -28,12 +28,12 @@ export const INTERNAL_HEIGHT = 900;
  */
 export const GFX = {
   /**
-   * Race — photoreal that can hold 60 on M1 / desktop Chrome.
-   * Sprint 76/96 measured ~28–37 ms at 4096² + 1.5 DPR; fill-rate and the
-   * sun atlas were the floor. Prefer frame time over Retina excess.
+   * Race — hold 60 on M1 Pro / desktop Chrome (Sprint 536).
+   * Probe at v535: even quality `min` delivered ~50 fps judder on M1 Pro.
+   * Prefer frame time over Retina excess and soft-shadow fill-rate.
    */
-  maxPixelRatio: 1.25,
-  maxPixels: 2000000,
+  maxPixelRatio: 1.0,
+  maxPixels: 1200000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
   titleMaxPixelRatio: 1.0,
   titleMaxPixels: 1200000,
@@ -48,23 +48,23 @@ export const GFX = {
    */
   unlockFpsOnTitle: false,
   /**
-   * Soft PCF sun atlas. 4096² every frame was the #1 fixed GPU tax on M1;
-   * 2048 still pins a sharp contact blob under the car at chase distance.
+   * Soft PCF sun atlas. 2048² was still too heavy once the scaler hit `min`
+   * on M1; 1536 keeps a readable contact blob at chase distance.
    */
-  shadowMap: 2048,
+  shadowMap: 1536,
   shadowExtent: 36,
   /**
    * Race sun ortho half-width (metres). Tight chase frustum — denser contact
    * under the car and fewer mid-ground casters in the atlas (fill-rate win).
    */
-  shadowExtentRace: 34,
+  shadowExtentRace: 32,
   shadowNear: 2,
   shadowFar: 160,
   /**
-   * Soft PCF hides a skipped bake. Every other present halves the second
-   * geometry pass; high/medium tiers use the same cadence via perf-tier.
+   * Soft PCF hides a skipped bake. Every third present on the race default;
+   * min tier stretches further / can disable the atlas entirely.
    */
-  shadowEvery: 2,
+  shadowEvery: 3,
   reflectEvery: 0,
   cubeSize: 64,
   /**
@@ -73,13 +73,13 @@ export const GFX = {
    * FOV is vertical; ~26° at 384×120 ≈ 70° horizontal — a real cabin mirror,
    * not a 130° security cam. Far covers the road/trees/rivals behind you.
    */
-  mirrorW: 384,
-  mirrorH: 120,
-  mirrorEvery: 1,
+  mirrorW: 320,
+  mirrorH: 100,
+  mirrorEvery: 2,
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
-  mirrorFar: 200,
+  mirrorFar: 160,
   mirrorNear: 0.4,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
@@ -87,32 +87,27 @@ export const GFX = {
    * Adaptive present quality (Sprint 24 / 30 fps floor).
    * frameMs above highMs → drop post bloom; above floorMs → emergency low + DPR cut.
    */
-  adaptHighMs: 22,
+  adaptHighMs: 20,
   adaptLowMs: 14.5,
   /** Hard floor — present cost above this forces low post + thinner pixel ratio. */
   adaptFloorMs: 33.3,
   /**
    * Minimum DPR scale the quality ladder may fall to.
-   *
-   * Sprint 96: this was 0.85, which on a 2× Retina panel still resolved to an
-   * effective 1.275 pixel ratio — the *cheapest* tier was rendering 2.0 Mpix
-   * and an M1 Pro measured p50 33 ms (30 fps) there with nowhere left to go.
-   * 0.65 gives the scaler a floor that is genuinely cheap (~1.17 Mpix), so a
-   * machine that cannot hold 60 at medium can still hold it at min instead of
-   * juddering between 60 and 30.
+   * 0.55 × maxPixelRatio 1.0 ≈ 0.55 effective — cheap enough that M1 can
+   * chase 60 at `min` instead of juddering at ~50.
    */
-  minPixelRatio: 0.65,
+  minPixelRatio: 0.5,
   /**
    * Present-cadence lock (Sprint 96). If the machine still cannot hold the 60 Hz
    * target at the cheapest quality tier, stop free-running at ~46 fps with
    * alternating 16.8/33.7 ms frames and deliberately present every second
    * vsync instead. A clean 30 reads as smooth; 46 with judder does not.
    */
-  lock30AboveMs: 20,
-  /** Sprint 39 — integrated GPU targets (iGPU / M-series low power). */
-  integratedFloorMs: 18.5,
-  integratedEmergencyMs: 22,
-  integratedShadowMap: 2048,
+  lock30AboveMs: 21,
+  /** Sprint 39 / 536 — integrated GPU / M-series targets. */
+  integratedFloorMs: 17.5,
+  integratedEmergencyMs: 20,
+  integratedShadowMap: 1024,
 };
 
 /**
@@ -210,28 +205,28 @@ export const STREAM = {
   unloadRadius: 980,
   /** Heightmap tile edge length (metres). */
   terrainTileSize: 256,
-  /** 24 = denser heightmap than 18 without the 32-seg fill cost. */
-  terrainTileSegs: 24,
+  /** 20 = denser heightmap than 16 without the 24-seg fill cost. */
+  terrainTileSegs: 20,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
-  prefetchChunks: 2,
+  prefetchChunks: 1,
   /** Driving seconds to pre-warm streaming along the racing line. */
-  lookaheadSeconds: 3,
+  lookaheadSeconds: 2.5,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
-  boundsPadding: 96,
+  boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */
   hysteresis: 80,
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
-  minLoadRadius: 320,
+  minLoadRadius: 280,
   /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
-  countdownLoadRadius: 720,
+  countdownLoadRadius: 640,
   /**
    * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
    * stops the swap strobing on a 220 m slice boundary.
    */
-  lodNear: 108,
-  lodHysteresis: 22,
+  lodNear: 88,
+  lodHysteresis: 20,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */
@@ -922,9 +917,12 @@ export const HANDLING = {
   /** Visible chassis lean from lateral g — a hint of weight, not a cabinet tip. */
   bodyRollMul: 1.55,
   bodyRollMax: 0.105,
-  /** Pitch from filtered long accel (rad per m/s²). Brake dive / throttle squat. */
-  brakeDive: 0.0058,
-  accelSquat: 0.0038,
+  /**
+   * Visual drive squat / dive — always 0. Non-zero values tilted the car
+   * nose-up on throttle. Landing squash uses JUMP settle, not these.
+   */
+  brakeDive: 0,
+  accelSquat: 0,
   /**
    * Tire-moment yaw blend. Lower = snappier arcade bicycle (AM3); higher =
    * delayed mass (GTA IV). Prefer AM3 for championship fun.
@@ -980,7 +978,7 @@ export const HANDLING = {
   groundPlantRate: 46,
   groundSpringHz: 28,
   groundSpringZeta: 1.22,
-  /** Landing-squash follow rate (1/s). Accel/brake no longer pitch the mesh. */
+  /** Landing-squash follow rate (1/s). Accel/brake do not pitch the mesh. */
   squatSmoothRate: 14,
   /**
    * Arcade automatic — tuned for fast rally fun, not economy cruising.

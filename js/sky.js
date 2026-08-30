@@ -23,21 +23,21 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { gradientTexture } from "./gfx/saturn.js?v=1";
-import { VISUAL } from "./config.js?v=164";
+import { VISUAL } from "./config.js?v=167";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
  */
 export const CLOUD_BUDGET = {
   technique: "planet-shell-raymarch",
-  maxViewSteps: 16,
-  cinemaViewSteps: 16,
-  mediumViewSteps: 12,
-  lowViewSteps: 6,
-  minViewSteps: 4,
+  maxViewSteps: 10,
+  cinemaViewSteps: 10,
+  mediumViewSteps: 8,
+  lowViewSteps: 5,
+  minViewSteps: 3,
   maxLightSteps: 2,
   notes:
-    "16x2 high / 12x2 medium / 6x1 low / 4x1 min. Fluffy Worley cores + lens flare. Chord capped at CLOUD_MAX_SPAN. Early-out below horizon / transmittance < 0.02.",
+    "10x2 high / 8x2 medium / 5x1 low / 3x1 min (Sprint 536 M1 budget). Fluffy Worley cores + lens flare. Chord capped at CLOUD_MAX_SPAN. Early-out below horizon / transmittance < 0.02.",
 };
 
 /**
@@ -101,7 +101,7 @@ varying vec3 vDir;
 const float PLANET_R = 8.0;
 const float CLOUD_INNER = 8.05;
 const float CLOUD_OUTER = 9.55;
-const int MAX_VIEW = 16;
+const int MAX_VIEW = 10;
 const int MAX_LIGHT = 2;
 
 /**
@@ -717,11 +717,13 @@ export function setSkyQuality(mesh, perfTier) {
     u.uLightSteps.value = 1;
     u.uCloudDetail.value = 3;
     u.uUseWorley.value = 0;
+    if (u.uLensFlare) u.uLensFlare.value = 0;
   } else if (perfTier === "low") {
     u.uCloudSteps.value = CLOUD_BUDGET.lowViewSteps;
     u.uLightSteps.value = 1;
     u.uCloudDetail.value = 3;
     u.uUseWorley.value = 0;
+    if (u.uLensFlare) u.uLensFlare.value = 0;
   } else if (perfTier === "medium") {
     u.uCloudSteps.value = CLOUD_BUDGET.mediumViewSteps;
     u.uLightSteps.value = 2;

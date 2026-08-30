@@ -31,7 +31,7 @@ export const QUALITY_CAPS = {
    */
   maxShadowMap: 4096,
   /** Volumetric cloud raymarch ceiling — matches sky.js CLOUD_BUDGET. */
-  maxCloudViewSteps: 16,
+  maxCloudViewSteps: 10,
   maxCloudLightSteps: 2,
   /** Rearview render target — readable cabin glass, ~1/4 framebuffer width. */
   maxMirrorW: 384,
@@ -39,13 +39,13 @@ export const QUALITY_CAPS = {
 };
 
 /** Presented frames a verdict must hold before the tier moves. */
-const DOWN_HOLD = 24;
+const DOWN_HOLD = 16;
 const UP_HOLD = 150;
 /**
  * Presented frames of settled, over-deadline cost before the scaler gives up one
  * more quality tier in pursuit of 60 Hz.
  */
-const PUSH_HOLD = 90;
+const PUSH_HOLD = 48;
 /**
  * Presented frames of settled, over-deadline cost *at the cheapest tier* before
  * the present cadence drops from 60 Hz to a deliberate 30 Hz.
@@ -57,12 +57,10 @@ const PUSH_HOLD = 90;
  * which reads as far smoother. Measured on an M1 Pro: p50 16.8 ms with p95
  * 34.0 ms and 65% of frames over budget — the worst case for feel.
  *
- * WHY SO MUCH LONGER THAN PUSH_HOLD: halving the frame rate is the most drastic
- * thing the scaler can do and it does not reverse until the next stage, so a
- * dense village section or a background app must not spend it. Ten seconds of
- * evidence at the cheapest tier is the bar.
+ * WHY NOT TEN SECONDS: Sprint 536 probe showed ~50 fps judder at `min` for the
+ * whole sample. Two seconds of evidence is enough to prefer a clean 30.
  */
-const LOCK30_HOLD = 600;
+const LOCK30_HOLD = 240;
 /**
  * Ceiling on a single sample folded into the EMA. A shader compile or a GC
  * pause can present one 1000 ms frame; letting that raw number into the EMA
@@ -90,52 +88,52 @@ const UP_MARGIN = 0.82;
  */
 function buildLadder(gfx) {
   const capShadow = Math.min(QUALITY_CAPS.maxShadowMap, gfx.shadowMap || QUALITY_CAPS.maxShadowMap);
-  const minDpr = Math.max(0.6, Math.min(1, gfx.minPixelRatio || 0.75));
-  const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 2048);
+  const minDpr = Math.max(0.5, Math.min(1, gfx.minPixelRatio || 0.55));
+  const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 1024);
   // `shadowEvery` is the sun atlas re-render interval in presented frames. The
   // shadow pass is a second full geometry pass over the visible world. Soft
-  // PCF hides a skipped bake, so high/medium bake every other present — the
-  // #1 fixed cost cut from the Sprint 76/96 ~37 ms floor. Low/min stretch further.
+  // PCF hides a skipped bake. Sprint 536: high/medium bake every 3rd present;
+  // min disables the atlas in game.js when shadow ≤ 512.
   return [
     {
       id: "high",
       floorMs: 0,
       dpr: 1,
       shadow: capShadow,
-      post: "high",
-      sky: "high",
-      mirrorEvery: 1,
-      shadowEvery: 2,
-    },
-    {
-      id: "medium",
-      floorMs: gfx.integratedFloorMs ?? 18.5,
-      dpr: Math.max(minDpr, 0.92),
-      shadow: Math.min(capShadow, 2048),
       post: "balanced",
       sky: "medium",
       mirrorEvery: 2,
-      shadowEvery: 2,
+      shadowEvery: 3,
     },
     {
-      id: "low",
-      floorMs: gfx.adaptHighMs ?? 22,
-      dpr: Math.max(minDpr, 0.85),
-      shadow: Math.min(lowShadow, 1536),
-      post: "low",
-      sky: "low",
+      id: "medium",
+      floorMs: gfx.integratedFloorMs ?? 17.5,
+      dpr: Math.max(minDpr, 0.88),
+      shadow: Math.min(capShadow, 1024),
+      post: "balanced",
+      sky: "medium",
       mirrorEvery: 3,
       shadowEvery: 3,
     },
     {
-      id: "min",
-      floorMs: 27,
-      dpr: minDpr,
-      shadow: Math.min(lowShadow, 1024),
+      id: "low",
+      floorMs: gfx.adaptHighMs ?? 20,
+      dpr: Math.max(minDpr, 0.72),
+      shadow: Math.min(lowShadow, 768),
       post: "low",
-      sky: "min",
+      sky: "low",
       mirrorEvery: 4,
       shadowEvery: 4,
+    },
+    {
+      id: "min",
+      floorMs: 26,
+      dpr: minDpr,
+      shadow: 512,
+      post: "low",
+      sky: "min",
+      mirrorEvery: 6,
+      shadowEvery: 8,
     },
   ];
 }
@@ -152,13 +150,6 @@ export function createPerfTier(gfx, opts = {}) {
 
   let index = 0;
   let emaMs = 16.5;
-  if (opts.startTier) {
-    const want = ladder.findIndex((t) => t.id === opts.startTier);
-    if (want >= 0) {
-      index = want;
-      emaMs = Math.max(emaMs, (ladder[index].floorMs || 0) + 0.4);
-    }
-  }
   let downFor = 0;
   let upFor = 0;
   let hardFor = 0;
@@ -167,10 +158,23 @@ export function createPerfTier(gfx, opts = {}) {
   let lock30For = 0;
   const targetHz = gfx.targetFps || 60;
   /**
-   * The interval we must beat to call 60 Hz held. 6% of slack keeps EMA noise
-   * and a single late vsync from arming the cadence lock.
+   * Interval we must beat to call 60 Hz held — drives quality PUSH only.
+   * 6% slack keeps EMA noise from dumping a tier.
    */
-  const deadlineMs = Math.min(gfx.lock30AboveMs ?? 20, (1000 / targetHz) * 1.06);
+  const deadlineMs = (1000 / targetHz) * 1.06;
+  /**
+   * Cadence lock bar — deliberately above deadlineMs so a machine that holds
+   * ~54 fps (18 ms) keeps free-running at 60 target instead of sticky 30.
+   * Sprint 536: Math.min(lock30AboveMs, deadline) made 21 collapse to 17.7.
+   */
+  const lock30Ms = Math.max(deadlineMs + 2, gfx.lock30AboveMs ?? 21);
+  if (opts.startTier) {
+    const want = ladder.findIndex((t) => t.id === opts.startTier);
+    if (want >= 0) {
+      index = want;
+      emaMs = 16.5;
+    }
+  }
 
   /** @param {number} ms */
   function wantIndex(ms) {
@@ -298,7 +302,8 @@ export function createPerfTier(gfx, opts = {}) {
           lock30For = 0;
           index += 1;
           changed = true;
-        } else if (atFloor && lock30For >= LOCK30_HOLD) {
+        } else if (atFloor && emaMs > lock30Ms && lock30For >= LOCK30_HOLD) {
+          // Higher bar than deadlineMs — ~54 fps (18 ms) must not sticky-lock 30.
           lock30For = 0;
           lockedHz = 30;
         }
@@ -311,6 +316,19 @@ export function createPerfTier(gfx, opts = {}) {
     /** Current tier knobs without folding a new sample in. */
     current() {
       return { ...ladder[index], changed: false };
+    },
+
+    /**
+     * After GPU settle / countdown, forget compile-cost EMA so the stage does
+     * not inherit a sticky 30 Hz lock from shader warm frames.
+     */
+    resetCadence() {
+      emaMs = 16.5;
+      downFor = 0;
+      upFor = 0;
+      hardFor = 0;
+      lock30For = 0;
+      lockedHz = 0;
     },
 
     /** Metrics for live telemetry export. */

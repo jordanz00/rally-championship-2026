@@ -397,7 +397,7 @@ node tools/qa-race-probe.mjs --course=desert --seconds=6   # needs .qa/playwrigh
 
 # Sprint 1–7 closure (19 Aug 2026)
 
-**Cache bust:** `index.html` / `main.js` → **`?v=194`**
+**Cache bust:** `index.html` / `main.js` → **`?v=541`**
 
 | Sprint | Scope | Code | Automated QA | Human feel |
 |--------|-------|------|--------------|------------|
@@ -919,7 +919,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint27-env.mjs` → PASS
 
-**Cache bust:** `?v=247` · `config.js?v=94` · `effects.js?v=47` · `sky.js?v=9` · `game.js?v=246`
+**Cache bust:** `?v=247` · `config.js?v=94` · `effects.js?v=47` · `sky.js?v=9` · `game.js?v=541`
 
 **Still human-only:** Desert chase cam plume volume at speed; Forest canopy sky read; Lakeside mist band vs fog.
 
@@ -955,7 +955,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint28-launch.mjs` → PASS (re-verified 23 Aug 2026 after Sprint 27 stack)
 
-**Cache bust (live):** `?v=273` · `config.js?v=102` · `vehicle.js?v=59` · `game.js?v=273`
+**Cache bust (live):** `?v=273` · `config.js?v=102` · `vehicle.js?v=59` · `game.js?v=541`
 
 **Still human-only:** 0→100 feel on Desert sand vs Forest gravel; Stratos 2WD wheelspin on loose launch.
 
@@ -1182,7 +1182,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint19-speed.mjs` | **PASS** (no FOV/speed regression) |
 | `tools/qa-static-audit.mjs` | **PASS** (config unified at `?v=123`) |
 
-**Cache:** `main.js?v=335` · `game.js?v=335` · `config.js?v=125` · `celica.js?v=109` · `ai.js?v=98` · `cockpit-anim.js?v=3`
+**Cache:** `main.js?v=541` · `game.js?v=541` · `config.js?v=125` · `celica.js?v=109` · `ai.js?v=98` · `cockpit-anim.js?v=3`
 
 **Medium chase (23 Aug 2026):** `back` 3.18 → 3.98 (+25%), `height` 1.24 → 1.80 (+45%). Default chase sits further off the bumper and higher so the car is not filling the lower third.
 
@@ -1476,6 +1476,8 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 
 **Cache:** `index.html` / `main.js` / `game.js` **`?v=353`** · `track.js?v=169`
 
+**Probe (headed M1 Pro, v541):** delivered **53.8 fps** steady (51–56) at quality `min`, 60 Hz cadence, 0 hitches >33 ms — was **49.8 fps** judder (23–56) with sticky 30 Hz lock on v535.
+
 **Proof:** `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-desert-bridge-portal.mjs`
 
 ---
@@ -1507,7 +1509,9 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 
 **Cause:** `assets/focus/focus.glb` (and the rival LOD) is a Sketchfab export ~11.1 m long. `fitToRallyCar` applied `root.scale = 4.36 / 11.1 ≈ 0.39` on the **wrapper**. That did shrink the bodyshell, but it also shrunk cockpit, lamps, and POV (parented in metres to the wrapper). AI clones of the same template inherited the same squash.
 
-**Fix:** Measure visible bodywork (skip studio helpers), keep the wrapper at scale 1, and `multiplyScalar` the **inner** GLB scene so hero, rival, ghost, and title all land on `CARS.focus.lengthM` (4.36 m). Other garage cars were already ~1:1 so they do not change size.
+**Fix:**
+- Race settle no longer forces post/shadows back on after the tier apply
+ Measure visible bodywork (skip studio helpers), keep the wrapper at scale 1, and `multiplyScalar` the **inner** GLB scene so hero, rival, ghost, and title all land on `CARS.focus.lengthM` (4.36 m). Other garage cars were already ~1:1 so they do not change size.
 
 | Change | Status |
 |--------|--------|
@@ -4765,5 +4769,80 @@ node tools/qa-sprint39-perf.mjs
 **Proof:** `node tools/qa-pov-gauges.mjs` (static) · `node tools/qa-static-audit.mjs`
 
 **Still human-only:** Hard refresh `?v=535`, C into POV on Desert — confirm pavement and apexes stay readable above the dash.
+
+---
+
+# Sprint 536 — M1 Pro frame budget rescue (30 Aug 2026)
+
+**Player moment:** Race Desert on an M1 Pro. The stage holds a clean cadence — 60 when possible, even 30 if not — instead of ~50 fps judder with the quality scaler already at `min`.
+
+**Evidence (headed probe, v535):** delivered **49.8 fps** (23–56), tier **min**, EMA 19.1 ms — neither held 60 nor locked 30.
+
+**Fix:**
+- Race caps: `maxPixelRatio` 1.0, `maxPixels` 1.6 M, shadow atlas 1536 / every 3, cheaper mirror
+- Mac desktop starts **medium** (`?perf=high` still unlocks cinema)
+- Ladder: high uses balanced post + medium sky; **min disables sun shadows**; BasicShadowMap on low
+- Clouds 10/8/5/3 steps; STREAM denser LOD cards sooner; faster 30 Hz lock (2 s)
+- Skip pack see-through on min; sky tick every 2 on low/min
+
+| Item | State |
+|---|---|
+| Cheaper race caps + min kills shadows | **Done** |
+| Mac starts medium | **Done** |
+| Cloud / stream cuts | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=541`** · `config.js?v=541` · `perf-tier.js?v=541` · `sky.js?v=541`
+
+**Proof:**
+```bash
+node tools/qa-sprint39-perf.mjs
+node tools/qa-sprint76-perf.mjs
+node tools/qa-frame-probe.mjs --seconds=8
+```
+
+**Still human-only:** Hard refresh `?v=541`, championship Desert — confirm smooth feel. Optional cinema: `?perf=high`.
+
+---
+
+# Sprint 542 — Planted chassis pitch (30 Aug 2026)
+
+**Player moment:** Drive on flat road. The car sits planted — no nose-up / tilted-back stance under throttle. Hills still follow the axle plane.
+
+**Cause:** Visual accel squat mapped positive long-accel to negative Three.js Rx (nose-up). Config claimed drive squat was off; `HANDLING.accelSquat` / `brakeDive` were still non-zero and wired into `_updateAttitude`.
+
+**Fix:** Zero drive squat/dive; attitude only uses road `_visPitch` + landing squash. Wider flat deadzone snaps residual pitch to 0.
+
+| Item | State |
+|---|---|
+| No throttle nose-up | **Done** |
+| Flat ribbon snaps pitch | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=542`** · `vehicle.js?v=117` · `config.js?v=167`
+
+**Proof:** `node tools/qa-planted-pitch.mjs`
+
+**Still human-only:** Hard refresh `?v=542`, Desert straight — car sits level; crest still follows the road.
+
+---
+
+# Sprint 543 — POV roof no longer letterboxes the view (30 Aug 2026)
+
+**Player moment:** Press C into the seat. The windshield opens onto the stage — no dark roof slab cutting across the upper half of the frame.
+
+**Cause:** Procedural loft roofs were `userData.interior = true` with no name. `tagPovShell` early-returned on interiors, so roofs never got `povShell`. `setCockpitView` only hid glass + `povShell`. Sprint 535 raised the eye to `roof − 0.12` with FOV 80, so the underside filled the lens.
+
+**Fix:** Name loft/rival roofs `"roof"`. Tag roofs/headers (and high cabin slabs) as `povShell` even when marked interior. Versioned POV hide cache (`POV_HIDE_VER = 3`) rebuilds on live cars. Cap eye at `roof − 0.32` and keep look below the eye. `POV_RIG_VER = 4`.
+
+| Item | State |
+|---|---|
+| Roof named + tagged povShell | **Done** |
+| Hide-cache rebuild | **Done** |
+| Eye under roof / look down | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=543`** · `celica.js?v=144`
+
+**Proof:** `node tools/qa-pov-roof-clear.mjs`
+
+**Still human-only:** Hard refresh `?v=543`, C into POV on Desert — upper view is open road/sky, not a black triangle over the dash.
 
 ---
