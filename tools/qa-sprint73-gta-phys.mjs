@@ -53,14 +53,14 @@ check("speedUndersteer", /speedUndersteer:\s*0\.00\d+/.test(config));
 check("liftOffYaw", /liftOffYaw:\s*0\.\d+/.test(config));
 check("limitMush", /limitMush:\s*0\.\d+/.test(config));
 check("bodyRollMax", num(config, "bodyRollMax") >= 0.1 && num(config, "bodyRollMax") <= 0.13, `= ${num(config, "bodyRollMax")}`);
-check("brakeDive + accelSquat", /brakeDive:\s*0\.00\d+/.test(config) && /accelSquat:\s*0\.00\d+/.test(config));
+check("brakeDive + accelSquat are 0 (no visual drive pitch)", /brakeDive:\s*0\b/.test(config) && /accelSquat:\s*0\b/.test(config));
+check("attitude does not pitch from filtered _ax", /squatTarget = 0/.test(vehicle));
 check("weighted rack (no digital snap)", /Weighted rack/.test(vehicle) && !/steerIn\) >= 0\.92/.test(vehicle));
 check("softLimit helper", /function softLimit/.test(vehicle));
 check("load-scaled axle µ", /loadFRatio/.test(vehicle) && /rearLight/.test(vehicle));
 check("lift-off oversteer", /liftOffYaw/.test(vehicle) && /liftAmt/.test(vehicle));
 check("mushy yaw cap", /softLimit\(rWant/.test(vehicle));
 check("speed-mass yawFollow", /speedMass/.test(vehicle));
-check("brake-dive from filtered _ax", /brakeDive/.test(vehicle) && /accelSquat/.test(vehicle));
 check("body roll from HANDLING", /bodyRollMax/.test(vehicle) && /bodyRollMul/.test(vehicle));
 check("camera roll follow (hint, not swing)", num(config, "rollFollow") >= 0.18 && num(config, "rollFollow") <= 0.28, `= ${num(config, "rollFollow")}`);
 check(

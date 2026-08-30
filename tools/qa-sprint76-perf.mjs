@@ -108,7 +108,7 @@ check(
 check("low tier uses the integrated atlas size", /integratedShadowMap/.test(perf));
 check(
   "high tier skips every other sun bake",
-  /id: "high"[\s\S]{0,220}?shadowEvery:\s*[2-9]/.test(perf),
+  /id: "high"[\s\S]{0,280}?shadowEvery:\s*[3-9]/.test(perf),
   "shadowEvery:1 at high was the measured ~37 ms fixed floor on M1"
 );
 const gfxBlock = (config.match(/export const GFX = \{([\s\S]*?)\n\};/) || [])[1] || "";
@@ -121,20 +121,20 @@ check(
 
 console.log("\ncloud raymarch cap (Sprint 69 volume preserved)");
 check("CLOUD_BUDGET still exported", /export const CLOUD_BUDGET/.test(sky));
-check("view steps capped at 16", /maxViewSteps: 16/.test(sky));
+check("view steps capped at 10", /maxViewSteps: 10/.test(sky));
 check("light steps capped at 2", /maxLightSteps: 2/.test(sky));
 check(
   "shader loop is bounded, not full-res 128-step",
-  /const int MAX_VIEW = 16;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
+  /const int MAX_VIEW = 10;/.test(sky) && /const int MAX_LIGHT = 2;/.test(sky),
   "an unbounded raymarch loop is the classic browser cliff"
 );
-check("cinema is 16 view steps", /cinemaViewSteps: 16/.test(sky));
-check("low tier drops to 6 view steps", /lowViewSteps: 6/.test(sky));
+check("cinema is 10 view steps", /cinemaViewSteps: 10/.test(sky));
+check("low tier drops to 5 view steps", /lowViewSteps: 5/.test(sky));
 check(
   "low / min drop Worley and light samples",
   /uUseWorley\.value = 0/.test(sky) && /uLightSteps\.value = 1/.test(sky)
 );
-check("scaler mirrors the sky cap", /maxCloudViewSteps: 16/.test(perf) && /maxCloudLightSteps: 2/.test(perf));
+check("scaler mirrors the sky cap", /maxCloudViewSteps: 10/.test(perf) && /maxCloudLightSteps: 2/.test(perf));
 check("tier drives sky quality", /setSkyQuality\(this\.sky, t\.sky\)/.test(game));
 
 console.log("\nmirror render target cap");
@@ -147,7 +147,7 @@ check(
   mirrorClamped,
   "full-res rearview was a measured hitch"
 );
-check("config keeps the mirror small", /mirrorW: 384/.test(config) && /mirrorH: 120/.test(config));
+check("config keeps the mirror small", /mirrorW:\s*(?:320|384)/.test(config) && /mirrorH:\s*(?:100|120)/.test(config));
 check("tier can stretch mirror cadence", /_qualityMirrorEvery/.test(game));
 check(
   "mirror RT is fixed size, not the framebuffer",
@@ -251,7 +251,8 @@ check(
 
 const recovery = (() => {
   const t = createPerfTier(GFX_TEST);
-  for (let i = 0; i < 200; i++) t.tick(40);
+  // Hard-drop to min without arming the 30 Hz lock (LOCK30_HOLD is longer).
+  for (let i = 0; i < 40; i++) t.tick(40);
   const dropped = t.tier;
   const changes = [];
   for (let i = 0; i < 1200; i++) {

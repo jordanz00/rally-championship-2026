@@ -20,12 +20,12 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=164";
+} from "./config.js?v=167";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=116";
+import { Vehicle } from "./physics/vehicle.js?v=117";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=143";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=144";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=235";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=28";
@@ -36,11 +36,11 @@ import { CoDriver } from "./audio/codriver.js?v=37";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=32";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=58";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
-import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=34";
+import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=36";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=30";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
 import { PhotoRealPost } from "./gfx/postfx.js?v=19";
-import { createPerfTier } from "./gfx/perf-tier.js?v=11";
+import { createPerfTier } from "./gfx/perf-tier.js?v=16";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -99,7 +99,10 @@ function raceStartTier() {
   const macDesktop = /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
   // Headless CDP uses SwiftShader — cinema clouds stall the loop below 1 fps.
   if (macDesktop && navigator.webdriver) return "medium";
-  if (macDesktop && (window.devicePixelRatio || 1) <= 2) return "high";
+  // Sprint 536: M1 Pro headed probe collapsed even from medium → min and still
+  // needed a 30 Hz lock. Start **low** so the first race is playable without a
+  // hitch cascade; `?perf=medium|high` restores the heavier ladder.
+  if (macDesktop) return "low";
   return "medium";
 }
 
@@ -174,6 +177,8 @@ export class RallyGame {
     this._fpsMark = null;
     /** 1 = full DPR; drops toward GFX.minPixelRatio when present cost exceeds 30 fps floor. */
     this._perfDprScale = 1;
+    /** Active quality ladder id — drives shadow / sky / pack-fade present cuts. */
+    this._qualityTierId = "medium";
     this._lastPresent = 0;
     this._minimapT = 0;
     this.raceTime = 0;
@@ -2307,7 +2312,8 @@ export class RallyGame {
     this._applyQualityTier(tier);
     if (this.post) {
       this.post._titleShowroom = false;
-      this.post.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
+      // Tier owns post.enabled (low/min skip the RT stack). Do not force
+      // cinema post back on after apply — that undid the M1 budget cut.
       if (tier && tier.post) this.post.setQuality(tier.post);
       const L = LIGHTING[this.courseId] || LIGHTING.desert;
       this.post.syncFromConfig(L);
@@ -2419,6 +2425,7 @@ export class RallyGame {
       skyExposure: skyU && skyU.uExposure ? skyU.uExposure.value : null,
       skyBloom: skyU && skyU.uSunBloom ? skyU.uSunBloom.value : null,
       skyFlare: skyU && skyU.uLensFlare ? skyU.uLensFlare.value : null,
+      shadowsEnabled: !!(this.renderer.shadowMap.enabled && this.sun && this.sun.castShadow),
       shadow: (tier && tier.shadow) || (this.sun && this.sun.shadow ? this.sun.shadow.mapSize.x : 2048),
       shadowEvery,
       mirrorEvery,
@@ -2453,8 +2460,9 @@ export class RallyGame {
     const f = this._presentFreeze;
     this.renderer.toneMapping = f.toneMapping;
     this.renderer.toneMappingExposure = f.exposure;
-    this.renderer.shadowMap.enabled = true;
-    if (this.sun) this.sun.castShadow = true;
+    const shadowsOn = f.shadowsEnabled !== false;
+    this.renderer.shadowMap.enabled = shadowsOn;
+    if (this.sun) this.sun.castShadow = shadowsOn;
     this._perfDprScale = f.dprScale;
     this._qualityShadowEvery = f.shadowEvery;
     this._qualityMirrorEvery = f.mirrorEvery;
@@ -2522,6 +2530,11 @@ export class RallyGame {
   _releasePresentFreeze() {
     this._presentFrozen = false;
     this._presentFreeze = null;
+    // Compile / warm presents inflate the scaler EMA; forget them so the race
+    // does not inherit a sticky 30 Hz lock from the countdown settle.
+    if (this.perfTier && typeof this.perfTier.resetCadence === "function") {
+      this.perfTier.resetCadence();
+    }
   }
 
   /**
@@ -3890,15 +3903,34 @@ export class RallyGame {
     // tier up and down freely.
     this._qualityMirrorEvery = Math.max(1, t.mirrorEvery | 0);
     this._qualityShadowEvery = Math.max(1, t.shadowEvery | 0);
+    this._qualityTierId = t.id || this._qualityTierId || "medium";
     if (this.post && this.post.setQuality) this.post.setQuality(t.post);
+    // Min / low: skip the whole post RT stack (scene→AO→bloom→composite).
+    // Grade+ACES on the main renderer is enough; the multi-pass was the
+    // remaining M1 floor after shadows were already cut.
+    if (this.post) {
+      const wantPost = t.id === "high" || t.id === "medium";
+      this.post.enabled = wantPost && VISUAL.postFx !== false;
+    }
     if (this.sky) setSkyQuality(this.sky, t.sky);
+
+    // Low / min: kill the sun atlas. Even a 768² bake every 4 presents kept
+    // M1 Pro off the 60 Hz deadline after other cuts (Sprint 536 probe).
+    const shadowsWanted = t.id === "high" || t.id === "medium";
+    if (this.renderer) {
+      this.renderer.shadowMap.enabled = shadowsWanted;
+      if (this.sun) this.sun.castShadow = shadowsWanted;
+      if (shadowsWanted) {
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      }
+    }
 
     // Reallocating the canvas or the shadow atlas costs 1–3 frames (Sprint 60).
     // So the two allocating knobs are monotonic within a race: they step down
     // when the machine proves it cannot hold the tier, and never climb back
     // mid-stage. A stage start re-grades from scratch. That bounds the cost at
     // three hitches per stage instead of an oscillation that never settles.
-    if (this.renderer && this.renderer.shadowMap.enabled) {
+    if (shadowsWanted && this.renderer && this.renderer.shadowMap.enabled) {
       const floor = this._qualityShadowFloor || Infinity;
       if (t.shadow < floor) {
         this._qualityShadowFloor = t.shadow;
@@ -3906,7 +3938,7 @@ export class RallyGame {
         this.renderer.shadowMap.needsUpdate = true;
       }
     }
-    const dpr = Math.max(0.6, Math.min(1, t.dpr || 1));
+    const dpr = Math.max(0.5, Math.min(1, t.dpr || 1));
     if (dpr < (this._qualityDprFloor != null ? this._qualityDprFloor : 1)) {
       this._qualityDprFloor = dpr;
       this._perfDprScale = dpr;
@@ -4420,7 +4452,9 @@ export class RallyGame {
       const skyEvery =
         onPad
           ? Math.max(4, (TITLE_SHOWROOM && TITLE_SHOWROOM.skyTickEvery) || 8)
-          : 1;
+          : this._qualityTierId === "min" || this._qualityTierId === "low"
+            ? 2
+            : 1;
       if ((this._shadowTick || 0) % skyEvery === 0) {
         if (!this._skyCamFwd) this._skyCamFwd = new THREE.Vector3();
         this.camera.getWorldDirection(this._skyCamFwd);
@@ -4438,8 +4472,13 @@ export class RallyGame {
       const chase =
         !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id !== "pov");
       const carPos = this.playerMesh ? this.playerMesh.position : this.camera.position;
-      updateCameraFade(this.camera.position, carPos, chase);
-      this._fadeBlockingPack(chase, dt);
+      // Pack see-through is a second material pass — skip on min, half-rate on low.
+      const fadeEvery =
+        this._qualityTierId === "min" ? 0 : this._qualityTierId === "low" ? 2 : 1;
+      if (fadeEvery > 0 && (this._shadowTick || 0) % fadeEvery === 0) {
+        updateCameraFade(this.camera.position, carPos, chase);
+        this._fadeBlockingPack(chase, dt);
+      }
       // Mirror / cube must see a solid pack. Ghost after those captures.
       this._paintBlockingPack(0);
     }

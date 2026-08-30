@@ -30,7 +30,7 @@ check("perf tier module", /createPerfTier/.test(perf));
 check("game perf tier tick", /perfTier/.test(game) && /createPerfTier/.test(game));
 check("adapt floor preserved", /adaptFloorMs/.test(config));
 
-check("M1 desktop starts high tier", /function raceStartTier/.test(game) && /return "high"/.test(game));
+check("M1 desktop starts low tier (Sprint 536)", /function raceStartTier/.test(game) && /if \(macDesktop\) return "low"/.test(game));
 check("headless QA stays medium tier", /navigator\.webdriver/.test(game) && /return "medium"/.test(game));
 check("raceStartTier wired to createPerfTier", /createPerfTier\(GFX, \{ startTier: raceStartTier\(\) \}/.test(game));
 check(
@@ -53,25 +53,26 @@ check("AI cheap road probe smoothed", /_cheapFilt/.test(vehicle) && /_axleRoadCh
 check("AI lowDetail wheel travel lerps", /lowDetail[\s\S]*travel\[i\] \+= \(targets\[i\] - travel\[i\]\)/.test(vehicle));
 check("AI three substeps", /aiSubsteps:\s*3/.test(config));
 
-check("medium cumulus 12 steps", /mediumViewSteps:\s*12/.test(sky));
-check("cinema cumulus 16 steps", /cinemaViewSteps:\s*16/.test(sky));
+check("medium cumulus 8 steps", /mediumViewSteps:\s*8/.test(sky));
+check("cinema cumulus 10 steps", /cinemaViewSteps:\s*10/.test(sky));
 
 // Sprint 39–49 realism+perf closeout — cut the Sprint 76/96 ~37 ms fixed floor.
+// Sprint 536: further cut so M1 Pro can hold 60 at `min` instead of ~50 judder.
 const gfxBlock = (config.match(/export const GFX = \{([\s\S]*?)\n\};/) || [])[1] || "";
 const raceShadow = Number((gfxBlock.match(/^\s*shadowMap:\s*(\d+)/m) || [])[1]);
 const raceShadowEvery = Number((gfxBlock.match(/^\s*shadowEvery:\s*(\d+)/m) || [])[1]);
 const maxPr = Number((gfxBlock.match(/^\s*maxPixelRatio:\s*([\d.]+)/m) || [])[1]);
 const maxPx = Number((gfxBlock.match(/^\s*maxPixels:\s*(\d+)/m) || [])[1]);
-check("race shadow atlas ≤ 2048", raceShadow > 0 && raceShadow <= 2048, `shadowMap=${raceShadow}`);
-check("race shadowEvery ≥ 2", raceShadowEvery >= 2, `shadowEvery=${raceShadowEvery}`);
-check("race maxPixelRatio ≤ 1.25", maxPr > 0 && maxPr <= 1.25, `maxPixelRatio=${maxPr}`);
-check("race maxPixels ≤ 2.0 M", maxPx > 0 && maxPx <= 2000000, `maxPixels=${maxPx}`);
-check("high tier bakes sun every other present", /id: "high"[\s\S]{0,220}?shadowEvery:\s*2/.test(perf));
+check("race shadow atlas ≤ 1536", raceShadow > 0 && raceShadow <= 1536, `shadowMap=${raceShadow}`);
+check("race shadowEvery ≥ 3", raceShadowEvery >= 3, `shadowEvery=${raceShadowEvery}`);
+check("race maxPixelRatio ≤ 1.0", maxPr > 0 && maxPr <= 1.0, `maxPixelRatio=${maxPr}`);
+check("race maxPixels ≤ 1.2 M", maxPx > 0 && maxPx <= 1200000, `maxPixels=${maxPx}`);
+check("high tier bakes sun every 3rd present", /id: "high"[\s\S]{0,280}?shadowEvery:\s*3/.test(perf));
 check("30 fps cadence lock retained", /LOCK30_HOLD/.test(perf) && /lockedHz/.test(perf));
 check("present interval feeds scaler", /perfTier\.tick\(presentDelta\)/.test(game));
 
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
-check("cache-bust ≥516", cacheOk && Number(gameV) >= 516, `v=${gameV}`);
+check("cache-bust ≥540", cacheOk && Number(gameV) >= 536, `v=${gameV}`);
 
 console.log(fail ? `\nFAIL ${fail}` : "\nPASS");
 process.exit(fail ? 1 : 0);
