@@ -56,7 +56,13 @@ check("gravity hangs on nose-up and dives on nose-down", /aeroDive/.test(jump) &
 check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /noseFirst/.test(jump));
 check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle\(/.test(vehicle) && /_landSettle/.test(vehicle) && /landSettleMin/.test(config));
 check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
-check("overdamped land compress spring", /_seedLandCompress\(/.test(vehicle) && /landCompressWn/.test(config) && /landCompressZeta/.test(config));
+check(
+  "underdamped land compress spring",
+  /_seedLandCompress\(/.test(vehicle) &&
+    /landCompressWn/.test(config) &&
+    /landCompressZeta:\s*0\.[5-8]/.test(config) &&
+    /landCompressExtMin/.test(config)
+);
 check("pad hit absorbs vel into spring", /landVelAbsorb/.test(config) && /_seedLandCompress\(-this\.velY/.test(vehicle));
 check("soft re-air only on severe bounce", /landReairMin/.test(config) && /bounce > reairMin && impact > bounceNeed/.test(vehicle));
 check("JUMP.launchHeightScale is not the old 0.28 squash", !/launchHeightScale:\s*0\.28/.test(config));
