@@ -1157,42 +1157,44 @@ export const JUMP = {
    * Tail-first rebound amp. Energy prefers the land spring; a large bounce
    * read as a glitch hop, not weight.
    */
-  landBounce: 0.14,
+  landBounce: 0.22,
   /** Descent rate (m/s) before a mismatched landing can leave the ground again. */
-  landBounceImpact: 5.8,
+  landBounceImpact: 4.8,
   /** Minimum graded bounce before re-air is allowed. */
-  landReairMin: 1.05,
+  landReairMin: 0.82,
   /** Fraction of downward vel absorbed into the land spring on pad kiss. */
-  landVelAbsorb: 0.74,
+  landVelAbsorb: 0.62,
   /**
-   * After touchdown, residual air attitude + impact squash settle over this
-   * window (seconds). Longer = heavier; still capped so it does not feel jelly.
+   * After touchdown, residual air attitude decays quickly while the land
+   * spring does one underdamped bounce — not a long float to upright.
    */
-  landSettleMin: 0.55,
-  landSettleMax: 1.45,
+  landSettleMin: 0.28,
+  landSettleMax: 0.72,
   /** Extra Three.js pitch (rad) allowed while settle is live. */
   landSettlePitchMax: 0.2,
   /** Extra roll (rad) carried through the settle rock. */
   landSettleRollMax: 0.2,
   /** Nose-down squash (rad) per m/s of impact (seed; spring owns the curve). */
-  landImpactSquash: 0.016,
-  /** Attitude offset decay base (1/s) — lower = smoother rock to the axle plane. */
-  landSettleDamp: 1.35,
-  /** Extra damp as settle nears end (firms the last of the rock). */
-  landSettleDampEnd: 3.6,
+  landImpactSquash: 0.018,
+  /** Attitude offset decay (1/s) — higher = levels out faster after touchdown. */
+  landSettleDamp: 2.65,
+  /** Extra damp as settle nears end (snaps the last of the rock). */
+  landSettleDampEnd: 6.8,
   /** Legacy squash exponential — prefer landCompress spring when present. */
   landSquashDamp: 3.4,
   /** Visual suspension sink (m) per m/s of impact. */
-  landCompressGain: 0.068,
+  landCompressGain: 0.078,
   landCompressMax: 0.12,
-  /** Overdamped land spring — fast squash in, controlled settle out. */
-  landCompressWn: 11.5,
-  landCompressZeta: 1.28,
-  /** Pitch blend rate (1/s) while land settle is live — slower than road snap. */
-  landPitchBlend: 3.6,
+  /** Underdamped land spring — squash in, one rebound, settle. */
+  landCompressWn: 15.5,
+  landCompressZeta: 0.68,
+  /** Rebound extension past rest (m, negative x) for visible bounce. */
+  landCompressExtMin: -0.024,
+  /** Pitch blend rate (1/s) while land settle is live. */
+  landPitchBlend: 9.5,
   /** Roll spring scale while settle is live (<1 = heavier rock). */
   landRollWnScale: 0.38,
-  landRollZeta: 0.92,
+  landRollZeta: 0.72,
 };
 
 /**

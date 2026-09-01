@@ -20,9 +20,9 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=172";
+} from "./config.js?v=173";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=120";
+import { Vehicle } from "./physics/vehicle.js?v=121";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=144";

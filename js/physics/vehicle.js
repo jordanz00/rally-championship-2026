@@ -1309,7 +1309,7 @@ export class Vehicle {
         this.position.y = plantDeck;
         this._deckFilt = plantDeck;
         this._deckSmoothY = plantDeck;
-        if (this._landLock > 0 && this._landSettle <= 0 && (this._landCompress || 0) <= 0.004) {
+        if (this._landLock > 0 && this._landSettle <= 0 && Math.abs(this._landCompress || 0) <= 0.004) {
           this._snapPitchToRoad(axles);
         }
       } else if (this.position.y < plantDeck) {
@@ -1400,16 +1400,16 @@ export class Vehicle {
       const reairMin = JUMP.landReairMin != null ? JUMP.landReairMin : 0.85;
       // Soft rebound only on severe mismatch — most energy is already in the spring.
       if (bounce > reairMin && impact > bounceNeed && this._landLock <= 0) {
-        this.velY = Math.min(bounce * 0.42, 0.85);
+        this.velY = Math.min(bounce * 0.55, 1.2);
         this.onGround = false;
         this._airTime = 0.04;
-        this._landLock = 0.1;
+        this._landLock = 0.08;
         this.position.y = floorY + 0.02;
       } else {
         this.velY = 0;
         this.onGround = true;
         this._airTime = 0;
-        this._landLock = 0.26 + impact * 0.018;
+        this._landLock = 0.16 + impact * 0.012;
       }
     }
   }
@@ -2518,8 +2518,9 @@ export class Vehicle {
     const noseDown = clamp(impact * (JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.016), 0, 0.08);
     this._landPitchOff = clamp(this._landPitchOff + noseDown, -pitchMax, pitchMax);
     const wantPitch = roadPitch + this._landPitchOff;
-    this.pitch += (wantPitch - this.pitch) * 0.42;
-    this.pitchRate = (this.jump.noseUpRate || 0) * -0.35 + (wantPitch - this.pitch) * 2.2;
+    const snap = this.ai ? 0.48 : 0.72;
+    this.pitch += (wantPitch - this.pitch) * snap;
+    this.pitchRate = (this.jump.noseUpRate || 0) * -0.35 + (wantPitch - this.pitch) * 3.4;
     this.roll = clamp((this.roll || 0) * 0.55 + this._landRollOff * 0.45, -rollMax, rollMax);
     this.rollRate = (this.jump.rollRate || 0) * 0.62;
     this._bodyPitch += (noseDown - this._bodyPitch) * 0.45;
@@ -2538,8 +2539,8 @@ export class Vehicle {
     const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.013;
     const seed = clamp(impact * gain + upset * 0.018, 0.01, maxC);
     this._landCompress = Math.max(this._landCompress || 0, seed);
-    // Positive vel = still compressing; overdamped spring kills rebound hop.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.014);
+    // Initial compress velocity — higher on hard hits so the spring can rebound.
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.022);
     this._landSquash = clamp(
       Math.max(this._landSquash || 0, this._landCompress * 0.92 + impact * squashK * 0.35),
       0.008,
@@ -2548,12 +2549,13 @@ export class Vehicle {
   }
 
   /**
-   * Decay residual landing attitude toward the axle plane with an overdamped
-   * compress spring — weight on touchdown, controlled settle, no jelly bounce.
+   * Decay residual landing attitude toward the axle plane with an underdamped
+   * compress spring — weight on touchdown, one bounce, quick level-out.
    * @param {number} dt
    */
   _updateLandSettle(dt) {
-    const hasSpring = (this._landCompress || 0) > 0.0008 || Math.abs(this._landCompressVel || 0) > 0.002;
+    const hasSpring =
+      Math.abs(this._landCompress || 0) > 0.0008 || Math.abs(this._landCompressVel || 0) > 0.002;
     if (this._landSettle <= 0 && !hasSpring) {
       this._landPitchOff = 0;
       this._landRollOff = 0;
@@ -2564,8 +2566,6 @@ export class Vehicle {
     }
     if (this._landSettle > 0) this._landSettle = Math.max(0, this._landSettle - dt);
 
-    // Overdamped spring toward rest (x=0). Clamp x>=0 so we never extend past
-    // ride height — that was the bouncy glitch.
     const wn = JUMP.landCompressWn != null ? JUMP.landCompressWn : 13.5;
     const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 1.22;
     let x = this._landCompress || 0;
@@ -2573,21 +2573,26 @@ export class Vehicle {
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
-    if (x < 0) {
-      x = 0;
-      v = 0;
-    }
+    const extMin = JUMP.landCompressExtMin != null ? JUMP.landCompressExtMin : -0.024;
     const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.1;
-    this._landCompress = Math.min(x, maxC);
+    if (x < extMin) {
+      x = extMin;
+      if (v < 0) v *= 0.18;
+    }
+    if (x > maxC) {
+      x = maxC;
+      if (v > 0) v = 0;
+    }
+    this._landCompress = x;
     this._landCompressVel = v;
-    this._landSquash = clamp(this._landCompress * 0.9, 0, 0.11);
+    this._landSquash = clamp(Math.abs(x) * 0.9, 0, 0.11);
 
     const dampBase = JUMP.landSettleDamp != null ? JUMP.landSettleDamp : 1.55;
     const dampEnd = JUMP.landSettleDampEnd != null ? JUMP.landSettleDampEnd : 4.2;
     const life = clamp(this._landSettle / Math.max(0.2, JUMP.landSettleMax || 1.2), 0, 1);
-    const compressN = clamp(this._landCompress / 0.055, 0, 1);
-    // Soft while the spring is loaded (weight), firmer as life/compress fade.
-    const damp = lerp(dampEnd, dampBase, Math.max(life, compressN * 0.85));
+    const compressN = clamp(Math.abs(x) / 0.055, 0, 1);
+    const playerBoost = this.ai ? 1 : 1.28;
+    const damp = lerp(dampEnd, dampBase, Math.max(life, compressN * 0.85)) * playerBoost;
     const k = Math.exp(-damp * dt);
     this._landPitchOff *= k;
     this._landRollOff *= k;
@@ -2596,7 +2601,8 @@ export class Vehicle {
 
     if (
       this._landSettle <= 0 &&
-      this._landCompress < 0.002 &&
+      Math.abs(this._landCompress) < 0.002 &&
+      Math.abs(this._landCompressVel) < 0.04 &&
       Math.abs(this._landPitchOff) + Math.abs(this._landRollOff) < 0.003
     ) {
       this._landSettle = 0;
@@ -2613,13 +2619,13 @@ export class Vehicle {
    */
   _applyLandWheelTravel() {
     const sink = this._landCompress || 0;
-    if (sink < 0.001) return;
+    if (Math.abs(sink) < 0.001) return;
     const t = this._wheelTravel;
     for (let i = 0; i < 4; i++) {
-      // Slightly more rear sink on hard landings — reads as weight transfer.
+      // Negative sink = rebound extension (wheels drop, body rises briefly).
       const rearBias = i >= 2 ? 1.12 : 0.92;
-      const want = -sink * rearBias;
-      t[i] += (want - t[i]) * 0.58;
+      const want = sink > 0 ? -sink * rearBias : -sink * rearBias * 0.88;
+      t[i] += (want - t[i]) * 0.62;
     }
   }
 
@@ -2707,7 +2713,7 @@ export class Vehicle {
       const flat =
         Math.abs(grade) < VIS_PITCH_DEADZONE &&
         !(this._landSettle > 0) &&
-        (this._landCompress || 0) < 0.004;
+        Math.abs(this._landCompress || 0) < 0.004;
       const roadPitch = flat ? 0 : -grade;
       this._roadPitch = roadPitch;
       this._visPitch = roadPitch;
@@ -2719,7 +2725,7 @@ export class Vehicle {
         this._bodyPitch = 0;
         this._bodyPitchRate = 0;
         this._squatSmooth = 0;
-      } else if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
+      } else if (this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004) {
         // Residual air attitude is intentional — lift below keeps tires planted.
         const maxOff = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.22;
         this.pitch = clamp(this.pitch, roadPitch - maxOff, roadPitch + maxOff);
@@ -2739,7 +2745,7 @@ export class Vehicle {
     const frontOff = -half * sinP;
     const rearOff = half * sinP;
     // While residual air pitch is live, lift harder so axles never poke the deck.
-    const sinkAllow = this._landSettle > 0 || (this._landCompress || 0) > 0.004 ? -0.02 : AXLE_SINK_MAX;
+    const sinkAllow = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004 ? -0.02 : AXLE_SINK_MAX;
 
     let lift = 0;
     const needLift = (solid, height, off) => {
@@ -3010,17 +3016,21 @@ export class Vehicle {
     let visGrade = clamp(axles.pitch, -ROAD_PITCH_MAX, ROAD_PITCH_MAX);
     if (Math.abs(visGrade) < VIS_PITCH_DEADZONE) visGrade = 0;
     const wantPitch = -visGrade;
+    const landing = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
     // Flat ribbon: pull residual nose-up/down out quickly so the car reads planted.
     const flat =
       visGrade === 0 &&
       Math.abs(this._bodyPitch) < 0.01 &&
-      !(this._landSettle > 0) &&
-      (this._landCompress || 0) < 0.004;
-    const pitchRate = flat
-      ? 28
-      : Math.abs(wantPitch - this._visPitch) > VIS_PITCH_SNAP
+      !landing;
+    const pitchRate = landing
+      ? this.ai
         ? 34
-        : VIS_PITCH_RATE;
+        : 44
+      : flat
+        ? 28
+        : Math.abs(wantPitch - this._visPitch) > VIS_PITCH_SNAP
+          ? 34
+          : VIS_PITCH_RATE;
     this._visPitch += (wantPitch - this._visPitch) * (1 - Math.exp(-pitchRate * dt));
     if (flat && Math.abs(this._visPitch) < 0.004) this._visPitch = 0;
   }
@@ -3056,7 +3066,7 @@ export class Vehicle {
       // Accel/brake used to add a sprung squat from `_ax`; mesh pitch now follows
       // `_visPitch` only (Sprint 28 / 542). Landing weight is brief nose-down.
       squatTarget = 0;
-      if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
+      if (this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004) {
         squatTarget = clamp((this._landSquash || 0) * 0.55, 0, 0.07);
       }
     }
@@ -3073,11 +3083,11 @@ export class Vehicle {
     const iRoll = Math.max(280, s.rollInertia || 480);
     const wnRoll = Math.max(10, Math.sqrt(kRoll / iRoll));
     if (this.onGround) {
-      const settleRoll = this._landSettle > 0 || (this._landCompress || 0) > 0.004 ? this._landRollOff : 0;
+      const settleRoll = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004 ? this._landRollOff : 0;
       const wantRoll = clamp(rollTarget + settleRoll, -Math.max(rollMax, 0.24), Math.max(rollMax, 0.24));
       const wnScale = JUMP.landRollWnScale != null ? JUMP.landRollWnScale : 0.42;
       const landZeta = JUMP.landRollZeta != null ? JUMP.landRollZeta : 0.92;
-      const landing = this._landSettle > 0 || (this._landCompress || 0) > 0.004;
+      const landing = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
       const wn = landing ? wnRoll * wnScale : wnRoll;
       const zeta = landing ? landZeta : 1.08;
       this._springAxis("roll", wantRoll, dt, wn, zeta);
@@ -3090,15 +3100,16 @@ export class Vehicle {
 
     if (this.onGround || this._padHitVy != null) {
       const settleOff =
-        this._landSettle > 0 || (this._landCompress || 0) > 0.004 ? this._landPitchOff : 0;
+        this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004 ? this._landPitchOff : 0;
       const want = this._visPitch + this._bodyPitch + settleOff;
       const landBlend = JUMP.landPitchBlend != null ? JUMP.landPitchBlend : 5.4;
-      const k =
-        this._landSettle > 0 || (this._landCompress || 0) > 0.004
-          ? 1 - Math.exp(-landBlend * dt)
-          : this._landLock > 0
-            ? 1 - Math.exp(-12 * dt)
-            : 1 - Math.exp(-24 * dt);
+      const landing = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
+      const playerBoost = this.ai ? 1 : 1.32;
+      const k = landing
+        ? 1 - Math.exp(-landBlend * playerBoost * dt)
+        : this._landLock > 0
+          ? 1 - Math.exp(-12 * dt)
+          : 1 - Math.exp(-24 * dt);
       this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {

@@ -52,8 +52,14 @@ check(
 check("GO extends race warm frames", /_raceWarmFrames = Math\.max\(this\._raceWarmFrames \|\| 0, 16\)/.test(game));
 check("settle locks stage grade", /_settleRacePresent[\s\S]*?post\.syncFromConfig\(L\)/.test(game));
 
-check("JUMP settle window longer", /landSettleMin:\s*0\.42/.test(config) && /landSettleMax:\s*1\.2/.test(config));
-check("JUMP soft damp knobs", /landSettleDamp:\s*1\.55/.test(config) && /landSquashDamp:\s*3\.4/.test(config));
+check(
+  "JUMP settle window tuned for bounce",
+  /landSettleMin:\s*0\.2[5-9]/.test(config) && /landSettleMax:\s*0\.[67]\d/.test(config)
+);
+check(
+  "JUMP land damp knobs",
+  /landSettleDamp:\s*2\.[4-9]/.test(config) && /landSquashDamp:\s*3\.4/.test(config)
+);
 check("vehicle uses JUMP damp", /JUMP\.landSettleDamp/.test(vehicle) && /JUMP\.landSettleDampEnd/.test(vehicle));
 
 check("mountain bed tuck ~0.28 m", /scenery === "mountain" \? 0\.28/.test(track) && /drop = mountain \? 0\.28/.test(track));

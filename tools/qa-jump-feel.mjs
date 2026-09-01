@@ -40,7 +40,13 @@ check("takeoff locks mesh to leave attitude", /this\._visPitch = -this\.jump\.no
 check("air pitch is soft trim (not RC flip)", /airPitchRate:\s*3\.2/.test(config) && /airPitchInertia:\s*2\.05/.test(config));
 check("spring burst below old trampoline", /springBurst:\s*1\.85/.test(config) && /throwBlend:\s*0\.45/.test(config));
 check("aero float reduced", /aeroFloat:\s*0\.12/.test(config));
-check("landing settle is heavier", /landSettleMin:\s*0\.55/.test(config) && /landCompressGain:\s*0\.068/.test(config));
+check(
+  "landing settle is snappy with bounce spring",
+  /landSettleMin:\s*0\.2[5-9]/.test(config) &&
+    /landCompressZeta:\s*0\.[5-8]/.test(config) &&
+    /landCompressExtMin/.test(config),
+  "underdamped land spring + short settle window"
+);
 check("land adds nose-down weight (+Rx)", /noseDown/.test(vehicle) && /landImpactSquash/.test(vehicle));
 check("chase cam lifts / pulls back in air", /airLift/.test(game) && /airBack/.test(game) && /!p\.onGround/.test(game));
 check("no Math.random in jump model", !/Math\.random/.test(jump));
