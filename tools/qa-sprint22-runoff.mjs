@@ -40,9 +40,17 @@ const game = read("js/game.js");
 
 check("OFF_RESET defined", /OFF_RESET\s*=\s*24/.test(collide), "set OFF_RESET = 24");
 check("bounceOffRoad takes track", /export function bounceOffRoad\(v, q, track/.test(collide), "signature bounceOffRoad(v,q,track)");
-check("mid-track reset via sample", /track\.sample/.test(collide) && /Extreme:/.test(collide), "reset to ribbon centre");
+check(
+  "mid-track reset without teleport",
+  /Never snap XZ onto the centre/.test(collide) && /OFF_RESET/.test(collide),
+  "extreme runoff nudges inward — no sample() teleport"
+);
 check("soft creep not snap wall", /Creep back/.test(collide), "recover zone creep");
-check("glance keeps forward momentum", /const keep = Math\.max\(along/.test(collide), "re-aim speed down the nose");
+check(
+  "glance keeps forward momentum",
+  /const keep = Math\.max\(along/.test(collide) || /never zero the along-track/.test(collide),
+  "re-aim speed down the nose"
+);
 check("Vehicle.step calls bounceOffRoad", /bounceOffRoad\(this,\s*q2,\s*track\)/.test(vehicle), "wire in vehicle.js");
 check("barriers visual-only comment", /Barriers: visual posts only/.test(track), "no verge collider wall");
 check("CrowdField module", exists("js/tracks/crowd.js") && /export class CrowdField/.test(crowdVis), "crowd.js");

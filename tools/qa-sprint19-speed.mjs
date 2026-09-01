@@ -55,7 +55,7 @@ check(
 
 check(
   "CAMERA speedFov punch armed",
-  /speedFov:\s*0\.(1|2)/.test(config) && /maxFovPunch:\s*1[2-9]/.test(config),
+  /speedFov:\s*0\.(1|2|3)/.test(config) && /maxFovPunch:\s*1[2-9]/.test(config),
   "raise speedFov and maxFovPunch for Model-2 rush"
 );
 

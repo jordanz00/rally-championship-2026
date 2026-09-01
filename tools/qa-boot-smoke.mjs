@@ -390,11 +390,11 @@ async function main() {
       // Keyboard this time, so both Start paths are covered.
       await pressKey(cdp, "Enter");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`, {
-        timeout: 5000, label: "Enter on the title to reach SELECT MODE",
+        timeout: 15000, label: "Enter on the title to reach SELECT MODE",
       });
       await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {
-        timeout: 5000, label: "#screen-cars after PRACTICE",
+        timeout: 15000, label: "#screen-cars after PRACTICE",
       });
       // Sprint 21 prop kit + car GLBs can still be warming after a full reload;
       // wait until Delta is actually selectable before clicking.

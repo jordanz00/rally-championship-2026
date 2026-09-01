@@ -3053,9 +3053,8 @@ export class Vehicle {
     if (this.onGround) {
       const ay = Math.abs(this.speed) < 1.2 ? 0 : this._ay;
       rollTarget = clamp(ay * rollGain * rollMul + this._roadRoll, -rollMax, rollMax);
-      // Accel/brake must NOT pitch the mesh (Sprint 39 / 542). Drive squat
-      // read as a permanent nose-up / tilted-back car on the ribbon. Landing
-      // weight is a brief nose-down (+Rx) from compress, then back to flat.
+      // Accel/brake used to add a sprung squat from `_ax`; mesh pitch now follows
+      // `_visPitch` only (Sprint 28 / 542). Landing weight is brief nose-down.
       squatTarget = 0;
       if (this._landSettle > 0 || (this._landCompress || 0) > 0.004) {
         squatTarget = clamp((this._landSquash || 0) * 0.55, 0, 0.07);

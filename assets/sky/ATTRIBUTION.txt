@@ -1,0 +1,19 @@
+Sky HDRIs — Poly Haven (CC0)
+-----------------------------
+Equirectangular pure-sky environments used as the stage skybox
+(replaces the previous volumetric raymarch).
+
+  assets/sky/kloofendal_partly_cloudy_2k.hdr
+    Source: https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
+    Stages: desert, title
+
+  assets/sky/kloppenheim_06_2k.hdr
+    Source: https://polyhaven.com/a/kloppenheim_06_puresky
+    Stages: mountain
+
+  assets/sky/sunflowers_2k.hdr
+    Source: https://polyhaven.com/a/sunflowers_puresky
+    Stages: forest, lakeside
+
+All Poly Haven HDRIs are CC0 (public domain). No attribution required;
+credits retained here for maintainers.

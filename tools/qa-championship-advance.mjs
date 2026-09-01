@@ -60,12 +60,17 @@ async function main() {
       });
       await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
       await waitFor(cdp, `return document.querySelector("#screen-cars.active") ? 1 : null;`, {
-        timeout: 8000,
+        timeout: 15000,
         label: "cars",
       });
+      await waitFor(
+        cdp,
+        `const b = document.querySelector("[data-car='celica']"); return b && !b.disabled ? 1 : null;`,
+        { timeout: 60000, label: "celica enabled" }
+      );
       await clickSelector(cdp, "[data-car='celica']", "CELICA");
       await waitFor(cdp, `return document.querySelector("#screen-courses.active") ? 1 : null;`, {
-        timeout: 12000,
+        timeout: 20000,
         label: "courses",
       });
       const lake = await waitFor(

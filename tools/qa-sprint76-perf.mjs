@@ -119,23 +119,22 @@ check(
   "4096² PCFSoft every present was GPU-bound before any scaling"
 );
 
-console.log("\ncloud raymarch cap (Sprint 69 volume preserved)");
+console.log("\ncloud / skybox cap (Sprint 549 — volumetric removed)");
 check("CLOUD_BUDGET still exported", /export const CLOUD_BUDGET/.test(sky));
-check("view steps capped at 16", /maxViewSteps: 16/.test(sky));
-check("light steps capped at 3", /maxLightSteps: 3/.test(sky));
+check("view steps capped at 0 (skybox)", /maxViewSteps: 0/.test(sky));
+check("light steps capped at 0 (skybox)", /maxLightSteps: 0/.test(sky));
 check(
-  "shader loop is bounded, not full-res 128-step",
-  /const int MAX_VIEW = 16;/.test(sky) && /const int MAX_LIGHT = 3;/.test(sky),
-  "an unbounded raymarch loop is the classic browser cliff"
+  "technique is equirect skybox",
+  /technique:\s*"equirect-skybox"/.test(sky),
+  "volumetric planet-shell raymarch was removed"
 );
-check("cinema is 16 view steps", /cinemaViewSteps: 16/.test(sky));
-check("low tier drops to 7 view steps", /lowViewSteps: 7/.test(sky));
+check("no volumetricClouds shader", !/function volumetricClouds|vec4 volumetricClouds/.test(sky));
+check("cinema/medium steps are zero", /cinemaViewSteps: 0/.test(sky) && /mediumViewSteps: 0/.test(sky));
 check(
-  "low / min drop Worley and light samples",
-  /uUseWorley\.value = 0/.test(sky) && /uLightSteps\.value = 1/.test(sky)
+  "scaler mirrors the sky cap",
+  /maxCloudViewSteps: 0/.test(perf) && /maxCloudLightSteps: 0/.test(perf)
 );
-check("scaler mirrors the sky cap", /maxCloudViewSteps: 16/.test(perf) && /maxCloudLightSteps: 3/.test(perf));
-check("tier drives sky quality", /setSkyQuality\(this\.sky, t\.sky\)/.test(game));
+check("tier still calls setSkyQuality", /setSkyQuality\(this\.sky, t\.sky\)/.test(game));
 
 console.log("\nmirror render target cap");
 check("mirror cap declared 384x120", /maxMirrorW: 384/.test(perf) && /maxMirrorH: 120/.test(perf));

@@ -67,7 +67,8 @@ check(
 );
 check(
   "buried / long-air lift Y, they do not plant XZ",
-  /this\.position\.y = floor - TIRE_PLANT/.test(guardFn) && !/_plantOnRibbon/.test(guardFn)
+  /_neverFallThrough\(track\)/.test(guardFn) && !/_plantOnRibbon\(track/.test(guardFn),
+  "guard lifts Y via axle floor, not ribbon teleport"
 );
 check(
   "pit query may take the climb, not a distant tunnel",

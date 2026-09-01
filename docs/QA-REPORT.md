@@ -4974,3 +4974,27 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Still human-only:** Hard refresh `?v=548`, park on Desert grid and look up — distinct puff islands, silver rims, hot sun disc.
 
 ---
+
+# Sprint 549 — Equirect HDR skybox (replace volumetric clouds) (31 Aug 2026)
+
+**Player moment:** Look up. The sky is a real photo environment — Poly Haven pure-sky HDR with realistic cumulus — not a grey procedural volume.
+
+**Cause:** Volumetric Worley raymarch never read as photographic clouds despite step increases.
+
+**Fix:**
+- Remove planet-shell volumetric raymarch entirely
+- Stage skyboxes: Kloofendal partly cloudy (desert/title), Kloppenheim 06 (mountain), Sunflowers (forest/lakeside) — CC0 2k HDR via `RGBELoader`
+- `MeshBasicMaterial` BackSide sphere; IBL still PMREM-baked from the sky mesh
+
+| Item | State |
+|---|---|
+| Volumetric clouds removed | **Done** |
+| Realistic HDR skybox | **Done** |
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=549`** · `sky.js?v=38` · `perf-tier.js?v=44`
+
+**Proof:** `node tools/qa-sky-skybox.mjs` · `node tools/qa-sprint39-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Still human-only:** Hard refresh `?v=549`, Desert look-up — photo cumulus, no smoke sheets.
+
+---

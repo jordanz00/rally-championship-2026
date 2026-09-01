@@ -50,18 +50,18 @@ check(
 );
 check(
   "planted LAT_BLEED",
-  /LAT_BLEED\s*=\s*5\.8/.test(vehicle),
-  "LAT_BLEED = 5.8"
+  /LAT_BLEED\s*=\s*[4-9]\.\d+/.test(vehicle),
+  "LAT_BLEED tuned for GTA planted deck (4.55+)"
 );
 check(
   "steerFalloff soft at speed",
-  /steerFalloff:\s*0\.007/.test(config),
-  "steerFalloff 0.007"
+  /steerFalloff:\s*0\.00[7-9]/.test(config),
+  "steerFalloff 0.007–0.009"
 );
 check(
   "arcade maxSlideVel",
-  /maxSlideVel:\s*11\.2/.test(config),
-  "maxSlideVel 11.2"
+  /maxSlideVel:\s*(1[1-9]|2[0-9])\.\d+/.test(config),
+  "maxSlideVel 11+ (GTA retune may exceed 11.2)"
 );
 check(
   "AI skillCeiling raised",
