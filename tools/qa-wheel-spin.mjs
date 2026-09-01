@@ -41,6 +41,13 @@ check(
   "prefer tire mesh AABB"
 );
 check(
+  "canonicalizeWheelKnuckle aligns GLB axle to +X",
+  /function canonicalizeWheelKnuckle/.test(celica) &&
+    /canonicalizeWheelKnuckle\(rigWheel/.test(celica) &&
+    /data\.restQuat = new THREE\.Quaternion\(\)/.test(celica),
+  "CAD/GLB hubs must not steer on camber"
+);
+check(
   "applyWheelPose uses spinAxis + optional spinSign",
   /spinAxis/.test(celica) && /spinSign/.test(celica) && /hub\.rotation\.x = axis === "x"/.test(celica)
 );
@@ -50,10 +57,10 @@ check(
     /applyWheelPose\(this\.playerMesh\.userData\.wheels/.test(game)
 );
 const celicaV = Number((game.match(/celica\.js\?v=(\d+)/) || [])[1] || 0);
-check("celica.js cache-bust ≥140", celicaV >= 140, `v=${celicaV}`);
+check("celica.js cache-bust ≥146", celicaV >= 146, `v=${celicaV}`);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
 const indexV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
-check("boot cache lockstep", gameV === indexV && gameV >= 526, `main=${indexV} game=${gameV}`);
+check("boot cache lockstep", gameV === indexV && gameV >= 559, `main=${indexV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "wheel spin axis armed"}`);
 process.exit(fail ? 1 : 0);

@@ -40,6 +40,12 @@ check(
   /deltaFrontHousingHidden/.test(src) && /mats\[mi\]\.visible = false/.test(src)
 );
 check(
+  "rim chrome shaded before glass (opaque)",
+  /!isChrome &&[\s\S]*!isRubber &&/.test(src) && /if \(isChrome\) \{[\s\S]*?transparent = false/.test(src),
+  "transparent rim materials must not become 0.48 glass"
+);
+check("wheel hub materials isolated from lamps", /function isolateWheelHubMaterials/.test(src));
+check(
   "nests head emitters in Light Front housing",
   /nestHeadEmittersInLamp/.test(src) && /findFrontLightHousing/.test(src)
 );
@@ -57,7 +63,7 @@ check(
   /isFullLengthLightSheetLabel\(label\) return false/.test(src) ||
     /isFullLengthLightSheetLabel\(label\)\) return false/.test(src)
 );
-check("cache-bust celica.js?v=128+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 128, "game imports celica");
+check("cache-bust celica.js?v=146+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 146, "game imports celica");
 check("main → game v=453+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 453);
 check("index → main v=453+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 453);
 

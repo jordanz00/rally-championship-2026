@@ -132,18 +132,30 @@ check(
   "Euclidean nearest-road beside the mouth was a lower Desert arm"
 );
 check(
+  "desert tunnel portal is a natural cut (no doorway frame)",
+  /No arch ring \/ jambs \/ sill/.test(trackSrc) &&
+    !/portalFrame/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
+    /tunnelMouthSlopeGeometry/.test(trackSrc),
+  "arch/jamb gate removed — hillside cheeks only"
+);
+check(
+  "tunnel mouth collider scrub covers entrance + exit",
+  /tunStart - 42/.test(trackSrc) && /tunEnd - 32/.test(trackSrc),
+  "ribbon-sample scrub must clear both mouths"
+);
+check(
   "desert tunnel portal has buried embankment footing",
   /tunnelPortal/.test(trackSrc) &&
-    (/_scrubTunnelPortalDrive/.test(trackSrc) || /Grounding slab under the whole mouth/.test(trackSrc)) &&
-    /Approach embankment/.test(trackSrc),
+    /_scrubTunnelPortalDrive/.test(trackSrc) &&
+    /Approach blend/.test(trackSrc),
   "portal must plant into the hillside, not float as a gate"
 );
 check(
   "tunnel portal wings plant onto tunnel terrain Y",
-  /plantY\(/.test(trackSrc) &&
+  /groundLocalY\(/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
     /_tunnelTerrainY/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
-    /Fill wedge between verge and face/.test(trackSrc),
-  "apron/ramp/wing toes must embed into dunes, not sit at fixed roadY"
+    /Inner cheek/.test(trackSrc),
+  "cheek/ramp toes must embed into dunes, not sit at fixed roadY"
 );
 check(
   "mouth embankment fills thin gaps (no canyon slots)",

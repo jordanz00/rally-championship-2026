@@ -2,7 +2,7 @@
 /**
  * qa-sprint30-tunnel.mjs — Desert tunnel portal baseline.
  *
- * Sprint 551: arched mouth + terrain-conforming slopes (replaces box wings).
+ * Natural hillside cut — terrain cheeks + overburden cap, no doorway frame.
  *
  * RUN: node tools/qa-sprint30-tunnel.mjs
  */
@@ -29,11 +29,12 @@ function check(label, ok, detail) {
 console.log(`TUNNEL PORTAL BASELINE GATE  ·  ${new Date().toISOString()}\n`);
 
 const track = read("js/tracks/track.js");
+const portalSlice = track.slice(track.indexOf("_addTunnelPortal"));
 
 check(
-  "portal arch frame",
-  /tunnelPortalArchGeometry/.test(track) && /portalFrame/.test(track),
-  "extruded arch ring"
+  "natural cut — no doorway frame",
+  /No arch ring \/ jambs \/ sill/.test(portalSlice) && !/portalFrame/.test(portalSlice),
+  "removed arch ring / jambs / sill gate"
 );
 check(
   "portal hillside slopes",
@@ -42,14 +43,18 @@ check(
 );
 check("portal openH 8.0", /openH = 8\.0/.test(track), "8 m clearance");
 check(
-  "portal bore throat",
-  /Bore throat/.test(track) || /throatH/.test(track),
-  "jambs tie arch to tube"
+  "mouth collider scrub at entrance + exit",
+  /tunStart - 42/.test(track) && /tunEnd - 32/.test(track),
+  "both mouths ribbon-scrubbed"
 );
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");
 check("interior wallH 8.2", /wallH = 8\.2/.test(track), "tube height");
-check("portal plants onto tunnel terrain", /plantY\(/.test(track) && /_tunnelTerrainY/.test(track), "toes bury into dunes");
+check(
+  "portal plants onto tunnel terrain",
+  /groundLocalY\(/.test(portalSlice) && /_tunnelTerrainY/.test(portalSlice),
+  "cheek toes bury into dunes"
+);
 
 console.log(
   `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Tunnel portal baseline OK"}`

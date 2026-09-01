@@ -77,7 +77,10 @@ export const GFX = {
    */
   mirrorW: 320,
   mirrorH: 100,
+  /** Chase / non-POV mirror cadence (presented frames). POV uses mirrorEveryPov. */
   mirrorEvery: 2,
+  /** POV rearview — capture every presented frame; tier throttle made it feel laggy. */
+  mirrorEveryPov: 1,
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
@@ -156,9 +159,9 @@ export const VISUAL = {
   cameraOcclusionFade: true,
   /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
   aerialPerspective: true,
-  aerialStrength: 0.52,
-  aerialStart: 36,
-  aerialEnd: 520,
+  aerialStrength: 0.6,
+  aerialStart: 32,
+  aerialEnd: 560,
   /** One authored silhouette cluster per stage (desert arch, forest cedars, lakeside pier). */
   heroLandmarks: true,
   /** Stronger water env response at tier 4+ (lakeside). */
@@ -176,28 +179,29 @@ export const VISUAL = {
   /** Procedural anamorphic lens flare + ghosts when the sun is in frame. */
   lensFlare: true,
   /** Tier 13 IBL — world and car read sunlit materials. */
-  worldEnvIntensity: 0.92,
-  carEnvIntensity: 1.18,
+  worldEnvIntensity: 0.98,
+  carEnvIntensity: 1.22,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
   highlightRolloff: 0.28,
   pbrSkySigma: 0,
   /** Screen-space crevice AO — contact between car, road, and verge. */
-  aoStrength: 0.52,
-  aoRadius: 1.35,
+  aoStrength: 0.58,
+  aoRadius: 1.42,
   /** Normal strength on road/terrain. */
-  normalStrength: 1.32,
-  /** Half-res normals — chase-cam distance; keep Sprint 24 GPU win. */
-  normalMapScale: 0.5,
+  normalStrength: 1.48,
+  /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
+  normalMapScale: 0.88,
   /**
-   * Albedo ×2 + procedural roughness — ×4 was the measured fill-rate floor
-   * that kept Desert pack below 60 even at the cheapest DPR tier (Sprint 96).
+   * Albedo ×2.65 + procedural roughness — ×4 kept Desert below 60 at min DPR.
    */
-  textureScale: 2,
+  textureScale: 2.65,
   roughnessMaps: true,
-  propSegments: 16,
-  rockDetail: 3,
+  /** Cone/cylinder segments for procedural foliage + trunk cards. */
+  propSegments: 20,
+  /** Icosahedron subdivisions for rocks, tumbleweed, shrub blobs. */
+  rockDetail: 5,
 };
 
 /**
@@ -215,8 +219,10 @@ export const STREAM = {
   unloadRadius: 980,
   /** Heightmap tile edge length (metres). */
   terrainTileSize: 256,
-  /** 20 = denser heightmap than 16 without the 24-seg fill cost. */
-  terrainTileSegs: 20,
+  /** Base heightmap density — cinema tier uses terrainTileSegsCinema. */
+  terrainTileSegs: 24,
+  /** Tier 13 only — smoother ridges without forcing 28 on every machine. */
+  terrainTileSegsCinema: 28,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
   prefetchChunks: 2,
@@ -235,8 +241,8 @@ export const STREAM = {
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
    * stops the swap strobing on a 220 m slice boundary.
    */
-  lodNear: 88,
-  lodHysteresis: 20,
+  lodNear: 132,
+  lodHysteresis: 28,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */

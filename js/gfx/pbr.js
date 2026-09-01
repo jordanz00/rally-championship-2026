@@ -463,9 +463,9 @@ export function worldTerrainMaterial(opts = {}) {
     ),
     color: opts.color ?? 0xffffff,
     vertexColors: !!opts.vertexColors,
-    roughness: opts.roughness ?? (ue5() ? (cinema ? 0.84 : 0.86) : 0.9),
-    metalness: ue5() ? 0.03 : 0.018,
-    envMapIntensity: baseEnv * WORLD_ENV * (ue5() ? 1.12 : 1) * (cinema ? 1.08 : 1),
+    roughness: opts.roughness ?? (ue5() ? (cinema ? 0.8 : 0.86) : 0.9),
+    metalness: ue5() ? 0.035 : 0.018,
+    envMapIntensity: baseEnv * WORLD_ENV * (ue5() ? 1.12 : 1) * (cinema ? 1.12 : 1),
     flatShading: false,
     side: opts.side ?? THREE.FrontSide,
   });
