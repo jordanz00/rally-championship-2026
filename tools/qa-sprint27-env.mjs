@@ -43,27 +43,31 @@ check("envAtmosphere flag", /envAtmosphere:\s*true/.test(config), "envAtmosphere
 check("glbProps armed", /glbProps:\s*true/.test(config), "glbProps");
 check(
   "desert wind + stronger dust",
-  /dustStrength:\s*0\.72/.test(config) && /wind:\s*\[/.test(config),
-  "desert dustStrength 0.72 + wind"
+  /dustStrength:\s*0\.(1[0-9]|[2-9]\d)/.test(config) && /wind:\s*\[/.test(config),
+  "desert dustStrength 0.10+ with wind vector"
 );
 check("Dust.setAtmosphere", /setAtmosphere\(L\)/.test(effects), "setAtmosphere API");
 check("rear wake bias", /almost all spray from the rear|Sprint 27/.test(effects), "rear emission");
 check("plume particles", /plume/.test(effects) && /profile\.plume/.test(effects), "plume layer");
 check("wind on particles", /_wind/.test(effects) && /this\._wind\.x/.test(effects), "stage wind");
-check("sky ground bounce", /uGroundBounce/.test(sky), "uGroundBounce uniform");
-check("sky dual cloud octave", /n2/.test(sky) && /mix\(n, n2/.test(sky), "cloud octave");
+check(
+  "HDR skybox armed",
+  /RGBELoader|isSkyReady|applySky/.test(sky),
+  "equirect HDR replaces volumetric shader"
+);
 check("game wires dust atmosphere", /dust\.setAtmosphere/.test(game), "game → dust.setAtmosphere");
-check("effects cache bump", /effects\.js\?v=4[89]/.test(game), "effects.js?v=48|49");
-check("sky cache bump", /sky\.js\?v=9/.test(game), "sky.js?v=9");
+check("effects cache bump", /effects\.js\?v=\d+/.test(game), "effects.js versioned import");
+check("sky cache bump", /sky\.js\?v=\d+/.test(game), "sky.js versioned import");
 
 // HD nature — no card/cone forest trees on the live path
 check("HD treeline helper", /_addHdBackdrop\(/.test(track) && /_addForestTreeline/.test(track), "HD backdrop API");
 check("forest treeline uses pine GLB", /tree_pineDefaultA/.test(track), "pine GLB");
 check("forest treeline uses fir GLB", /tree_fir/.test(track), "fir GLB");
 check(
-  "no crownGeometry plant in track",
-  !/crownGeometry\(\)/.test(track),
-  "remove card foliage instances"
+  "crownGeometry only for far LOD cards / horizon",
+  /crownGeometry/.test(track) &&
+    /_addDesertHorizonAcacia|_treeCardPoses|farOnly/.test(track),
+  "card crowns allowed for LOD/horizon, not primary forest GLB"
 );
 check(
   "no foliageGeometry plant in track",

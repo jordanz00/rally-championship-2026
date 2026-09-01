@@ -173,7 +173,8 @@ export class Track {
     this.group = new THREE.Group();
     /** Chunked objects that streaming is allowed to switch off. */
     this._streamable = [];
-    /** @type {Map<number, number[]>|null} spline point index, keyed by grid cell */
+    /** Slices that just turned visible — compiled incrementally in game.js. */
+    this._compileQueue = [];
     this._grid = null;
     this._chunkCount = 1;
     this._streamFrame = 0;
@@ -234,8 +235,12 @@ export class Track {
     await this._addSceneryBody(def, (t) => report(0.54 + t * 0.34, "Planting trees & props…"));
 
     report(0.88, "Tunnel & stage gates…");
+    await tick();
     this._addTunnel();
+    await tick();
     this._addStageGates();
+    await tick();
+    await tick();
     if (VISUAL.tracksideSignage && (VISUAL.tier || 0) >= 5) {
       this._addTracksideSignage(def);
     }
@@ -732,8 +737,10 @@ export class Track {
         else want = want && band === 2;
       }
 
+      const wasVisible = obj.visible;
       obj.visible = want;
       obj.userData.streamVisible = want;
+      if (want && !wasVisible) this._compileQueue.push(obj);
     }
     this._tickWaterScroll();
     this._tickTumbleweeds(player);
@@ -800,6 +807,31 @@ export class Track {
       sz: radius * 0.86 * s,
       ry: 0,
     });
+  }
+
+  /**
+   * Compile shaders for slices that just became visible — spread cost across
+   * frames so streaming does not hitch the race loop.
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {THREE.Scene} scene
+   * @param {THREE.Camera} camera
+   * @param {number} budgetMs
+   */
+  drainCompileQueue(renderer, scene, camera, budgetMs = 12) {
+    const q = this._compileQueue;
+    if (!q || !q.length || !renderer || !scene || !camera) return;
+    const t0 = performance.now();
+    let compiled = 0;
+    while (q.length && performance.now() - t0 < budgetMs && compiled < 1) {
+      const obj = q.shift();
+      if (!obj || !obj.visible) continue;
+      try {
+        renderer.compile(obj, camera, scene);
+        compiled += 1;
+      } catch (err) {
+        console.warn("Stream compile failed", err);
+      }
+    }
   }
 
   /** Failure path: put every slice back on screen. */
@@ -6500,7 +6532,7 @@ export class Track {
     const jagged = 0.86 + 0.14 * Math.sin(along * 0.055 + dist * 0.04);
     // Tall enough that portal wings bury into a continuous ridge (not a gate
     // on flat sand). Peak pulled inward so the mouth face reads as quarry wall.
-    return env * lat * 42 * jagged;
+    return env * lat * 46 * jagged;
   }
 
   /**
@@ -6604,6 +6636,8 @@ export class Track {
       metalness: 0.02,
       side: THREE.FrontSide,
       map: boreMap || null,
+      normalMap: boreMap || null,
+      normalScale: boreMap ? new THREE.Vector2(0.42, 0.42) : undefined,
     });
     const rockSunDark = new THREE.MeshStandardMaterial({
       color: 0x8a7358,
@@ -6611,6 +6645,8 @@ export class Track {
       metalness: 0.01,
       side: THREE.FrontSide,
       map: boreMap || null,
+      normalMap: boreMap || null,
+      normalScale: boreMap ? new THREE.Vector2(0.38, 0.38) : undefined,
     });
     const vault = new THREE.MeshStandardMaterial({
       color: 0x4a4034,
@@ -6804,8 +6840,6 @@ export class Track {
     const g = new THREE.Group();
     const half = p.width * 0.5;
     const openH = 8.0;
-    const postW = 2.4;
-    const postD = 4.2;
     // Clear half-width of the drive tube — every prop sits outside this.
     const clear = half + ROAD_VERGE + 1.6;
     const fx = Math.sin(p.heading);
@@ -6831,126 +6865,132 @@ export class Track {
     const plantY = (lat, along, h, bury = 0.95) => {
       const { x, z } = worldXZ(lat, along);
       const gy = this._tunnelTerrainY(x, z);
-      // World bottom: deeper of terrain bury vs deck footing — no see-under.
       const worldBot = Math.min(gy - bury, p.y - 2.4);
       return worldBot - p.y + h * 0.5;
     };
 
-    // Continuous buried skirt under both shoulders — closes the canyon slot
-    // between painted deck and the first wing so the mouth cannot float.
+    const groundLocalY = (lat, along, bury = 1.05) => {
+      const { x, z } = worldXZ(lat, along);
+      const gy = this._tunnelTerrainY(x, z);
+      return Math.min(gy - bury, p.y - 2.4) - p.y;
+    };
+
+    const lipLocalY = (along) => openH + 0.45 + Math.min(7, along * 0.14);
+
+    const clearHalf = half + 0.35;
+    const archGeo = tunnelPortalArchGeometry(clearHalf, openH, 5.4);
+    const arch = new THREE.Mesh(archGeo, rockDark);
+    arch.castShadow = true;
+    arch.receiveShadow = true;
+    arch.userData.portalFrame = true;
+    g.add(arch);
+
+    const lipGeo = tunnelPortalArchGeometry(clearHalf - 0.22, openH - 0.12, 2.6);
+    const lip = new THREE.Mesh(lipGeo, rock);
+    lip.position.set(0, 0.05, outward * 0.55);
+    lip.castShadow = false;
+    lip.userData.portalFrame = true;
+    g.add(lip);
+
+    // Bore throat — short wall stubs tie the arch ring to the instanced tube.
+    const throatD = 3.8;
+    const throatH = openH + 1.2;
     for (const side of [-1, 1]) {
-      for (const along of [2, 7, 14, 22]) {
-        const skirtH = 9 + bedExtra * 0.55;
-        const skirtLat = side * (clear + 5 + along * 0.15);
-        const skirt = new THREE.Mesh(new THREE.BoxGeometry(14, skirtH, 12), rockDark);
-        skirt.position.set(skirtLat, plantY(skirtLat, along, skirtH, 1.35), outward * along);
-        skirt.receiveShadow = false;
-        g.add(skirt);
-      }
+      const jambLat = side * (clearHalf + 0.95);
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(1.85, throatH, throatD), rockDark);
+      jamb.position.set(jambLat, throatH * 0.5 - 0.15, outward * -1.2);
+      jamb.userData.portalFrame = true;
+      jamb.castShadow = true;
+      g.add(jamb);
     }
-    // Grounding slab under the shoulders only — buried fully below the deck.
-    for (const side of [-1, 1]) {
-      const bedH = 9 + bedExtra;
-      const bed = new THREE.Mesh(new THREE.BoxGeometry(28, bedH, 36), rockDark);
-      const lat = side * (clear + 11);
-      bed.position.set(lat, plantY(lat, 8, bedH, 1.45), outward * 8);
-      bed.receiveShadow = false;
-      g.add(bed);
-    }
-    for (const side of [-1, 1]) {
-      const latPost = side * (half + postW * 0.55 + 0.35);
-      // Posts frame the bore opening; toes dig past washed land so no see-under.
-      const postTop = openH + 0.6;
-      const { x: px, z: pz } = worldXZ(latPost, 0.5);
-      const pgy = this._tunnelTerrainY(px, pz);
-      const postBot = Math.min(-2.6, pgy - p.y - 1.25);
-      const postH = Math.max(openH + 3.2, postTop - postBot);
-      const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postD), rockDark);
-      post.position.set(latPost, postBot + postH * 0.5, 0);
-      post.castShadow = true;
-      post.receiveShadow = false;
-      g.add(post);
+    const crown = new THREE.Mesh(new THREE.BoxGeometry(p.width + 3.2, 1.35, throatD), rock);
+    crown.position.set(0, openH + 0.35, outward * -1.2);
+    crown.userData.portalFrame = true;
+    g.add(crown);
 
-      // Cut face — inner quarry wall planted into the ridge.
-      const faceH = 22;
-      const faceLat = side * (clear + 6);
-      const face = new THREE.Mesh(new THREE.BoxGeometry(14, faceH, 22), rock);
-      face.position.set(faceLat, plantY(faceLat, 3, faceH, 1.15), outward * 3);
-      face.castShadow = true;
-      face.receiveShadow = false;
-      g.add(face);
-
-      const wingH = 28;
-      const wingLat = side * (clear + 14);
-      const wing = new THREE.Mesh(new THREE.BoxGeometry(20, wingH, 26), rock);
-      wing.position.set(wingLat, plantY(wingLat, 7, wingH, 1.25), outward * 7);
-      wing.castShadow = true;
-      wing.receiveShadow = false;
-      g.add(wing);
-
-      const buttH = 32;
-      const buttLat = side * (clear + 24);
-      const buttress = new THREE.Mesh(new THREE.BoxGeometry(24, buttH, 28), rockDark);
-      buttress.position.set(buttLat, plantY(buttLat, 10, buttH, 1.4), outward * 10);
-      buttress.receiveShadow = false;
-      g.add(buttress);
-
-      // Talus apron — foot of the cut, planted so it cannot float over sand.
-      const apronH = 10;
-      const apronLat = side * (clear + 5.5);
-      const apron = new THREE.Mesh(new THREE.BoxGeometry(13, apronH, 20), rockDark);
-      apron.position.set(apronLat, plantY(apronLat, 4, apronH, 1.1), outward * 4);
-      apron.receiveShadow = false;
-      g.add(apron);
-
-      // Approach embankment ramp into the mouth.
-      const rampH = 14;
-      const rampLat = side * (clear + 11);
-      const ramp = new THREE.Mesh(new THREE.BoxGeometry(16, rampH, 24), rock);
-      ramp.position.set(rampLat, plantY(rampLat, 16, rampH, 1.2), outward * 16);
-      ramp.receiveShadow = false;
-      g.add(ramp);
-
-      // Fill wedge between verge and face — closes the see-under canyon.
-      const wedgeH = Math.max(8, openH * 1.05);
-      const wedgeLat = side * (clear + 2.6);
-      const wedge = new THREE.Mesh(new THREE.BoxGeometry(6.5, wedgeH, 16), rockDark);
-      wedge.position.set(wedgeLat, plantY(wedgeLat, 2.5, wedgeH, 1.0), outward * 2.5);
-      wedge.receiveShadow = false;
-      g.add(wedge);
-
-      // Second fill row — denser land→portal join so chase cam never sees a lip.
-      const fillH = Math.max(9, openH * 1.15);
-      const fillLat = side * (clear + 4.2);
-      const fill = new THREE.Mesh(new THREE.BoxGeometry(7.5, fillH, 18), rock);
-      fill.position.set(fillLat, plantY(fillLat, 5.5, fillH, 1.1), outward * 5.5);
-      fill.receiveShadow = false;
-      g.add(fill);
-
-      // Third shoulder berm — bridges remaining land→rock gap at mid-approach.
-      const bermH = 12;
-      const bermLat = side * (clear + 8);
-      const berm = new THREE.Mesh(new THREE.BoxGeometry(11, bermH, 20), rockDark);
-      berm.position.set(bermLat, plantY(bermLat, 11, bermH, 1.15), outward * 11);
-      berm.receiveShadow = false;
-      g.add(berm);
-    }
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(p.width + 5.2, 1.6, postD + 0.4), rock);
-    lintel.position.set(0, openH + 0.55, 0);
-    lintel.receiveShadow = false;
-    g.add(lintel);
     // Sill buried under the deck — top stays below ROAD_DECK.
     const sill = new THREE.Mesh(new THREE.BoxGeometry(p.width + 4.5, 1.6, 5), rockDark);
     sill.position.set(0, -1.15, outward * 1.6);
-    sill.receiveShadow = false;
+    sill.receiveShadow = true;
     g.add(sill);
-    // Overburden above the opening — base planted onto ridge so the cap is not
-    // a floating hat above washed sand.
+
+    for (const side of [-1, 1]) {
+      const slopeGeo = tunnelMouthSlopeGeometry(
+        (lat, along, t) => {
+          const gy = groundLocalY(lat, along, 1.05 + t * 0.4);
+          const top = lipLocalY(along) + t * 4.5;
+          const blend = t * t * (3 - 2 * t);
+          return gy + (top - gy) * blend;
+        },
+        clear,
+        side,
+        outward
+      );
+      const slope = new THREE.Mesh(slopeGeo, rock);
+      slope.castShadow = true;
+      slope.receiveShadow = true;
+      slope.userData.portalSlope = true;
+      g.add(slope);
+
+      const outerGeo = tunnelMouthSlopeGeometry(
+        (lat, along, t) => {
+          const gy = groundLocalY(lat, along, 1.25 + t * 0.5);
+          const top = lipLocalY(along) + 2 + t * 6;
+          const blend = Math.pow(t, 0.82);
+          return gy + (top - gy) * blend;
+        },
+        clear,
+        side,
+        outward,
+        { latNear: clear + 8, latFar: clear + 38, segsAlong: 14, segsLat: 10 }
+      );
+      const outer = new THREE.Mesh(outerGeo, rockDark);
+      outer.castShadow = true;
+      outer.receiveShadow = true;
+      outer.userData.portalSlope = true;
+      g.add(outer);
+
+      // Fill wedge between verge and face — closes the see-under canyon.
+      const wedgeH = Math.max(8.5, openH);
+      const wedgeLat = side * (clear + 2.8);
+      const wedge = new THREE.Mesh(new THREE.BoxGeometry(6.5, wedgeH, 14), rockDark);
+      wedge.position.set(wedgeLat, plantY(wedgeLat, 1.8, wedgeH, 1.1), outward * 1.8);
+      wedge.receiveShadow = true;
+      g.add(wedge);
+
+      // Grounding slab under the shoulders only — buried fully below the deck.
+      const bedH = 8 + bedExtra * 0.65;
+      const bedLat = side * (clear + 9);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(22, bedH, 26), rockDark);
+      bed.position.set(bedLat, plantY(bedLat, 6, bedH, 1.5), outward * 6);
+      bed.receiveShadow = true;
+      g.add(bed);
+
+      // Approach embankment ramp into the mouth.
+      const rampGeo = tunnelMouthSlopeGeometry(
+        (lat, along, t) => {
+          const gy = groundLocalY(lat, along, 1.15);
+          const top = lipLocalY(along) * 0.82;
+          const blend = Math.pow(t, 1.15);
+          return gy + (top - gy) * blend;
+        },
+        clear,
+        side,
+        outward,
+        { maxAlong: 32, latNear: clear + 10, latFar: clear + 28, segsAlong: 12, segsLat: 8 }
+      );
+      const ramp = new THREE.Mesh(rampGeo, rock);
+      ramp.castShadow = true;
+      ramp.receiveShadow = true;
+      ramp.userData.portalSlope = true;
+      g.add(ramp);
+    }
+
     const ridgeSample = () => {
       let maxGy = p.y;
       for (const side of [-1, 1]) {
-        for (const along of [4, 10, 18]) {
-          const lat = side * (clear + 12);
+        for (const along of [6, 14, 22]) {
+          const lat = side * (clear + 14);
           const { x, z } = worldXZ(lat, along);
           maxGy = Math.max(maxGy, this._tunnelTerrainY(x, z));
         }
@@ -6958,37 +6998,32 @@ export class Track {
       return maxGy;
     };
     const ridgeY = ridgeSample();
-    const capH = 16;
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(p.width + 40, capH, 28), rock);
-    const capBot = Math.max(openH + 0.2, ridgeY - p.y - 2.5);
+    const capH = 18;
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(p.width + 42, capH, 30), rock);
+    const capBot = Math.max(openH + 0.5, ridgeY - p.y - 2.8);
     cap.position.set(0, capBot + capH * 0.5, outward * 5);
-    cap.receiveShadow = false;
+    cap.receiveShadow = true;
     g.add(cap);
-    const peakH = 12;
-    const peak = new THREE.Mesh(new THREE.BoxGeometry(p.width + 26, peakH, 18), rockDark);
-    peak.position.set(0, capBot + capH * 0.55 + peakH * 0.5, outward * 7);
-    peak.receiveShadow = false;
-    g.add(peak);
-    const rubbleGeo = new THREE.BoxGeometry(1, 1, 1);
-    const scatter = [
-      [clear + 8, outward * 5, 4.2, 3.6, 4.0],
-      [-(clear + 9), outward * 6, 4.4, 3.8, 4.2],
-      [clear + 13, outward * 12, 4.0, 3.0, 3.8],
-      [-(clear + 14), outward * 13, 4.2, 2.8, 4.0],
-      [clear + 16, outward * 18, 4.8, 3.4, 4.6],
-      [-(clear + 17), outward * 19, 5.0, 3.2, 4.8],
-      [clear + 10, outward * 9, 3.6, 2.8, 3.4],
-      [-(clear + 11), outward * 10, 3.8, 2.6, 3.6],
+
+    const shardGeo = cliffShardGeometry();
+    const talusSpots = [
+      [clear + 8, 5],
+      [-(clear + 9), 6],
+      [clear + 14, 12],
+      [-(clear + 15), 13],
+      [clear + 20, 20],
+      [-(clear + 21), 21],
     ];
-    for (let i = 0; i < scatter.length; i++) {
-      const s = scatter[i];
-      const chunk = new THREE.Mesh(rubbleGeo, i % 2 ? rockDark : rock);
-      const h = s[3];
-      chunk.position.set(s[0], plantY(s[0], Math.abs(s[1]), h, 0.65), s[1]);
-      chunk.scale.set(s[2], h, s[4]);
-      chunk.rotation.set(0, i * 0.35, 0);
-      chunk.receiveShadow = false;
-      g.add(chunk);
+    for (let i = 0; i < talusSpots.length; i++) {
+      const lat = talusSpots[i][0];
+      const along = talusSpots[i][1];
+      const s = 1.9 + (i % 3) * 0.5;
+      const shard = new THREE.Mesh(shardGeo, i % 2 ? rockDark : rock);
+      shard.position.set(lat, plantY(lat, along, s * 1.1, 0.65), outward * along);
+      shard.scale.setScalar(s);
+      shard.rotation.set(i * 0.26, i * 0.38, lat > 0 ? 0.16 : -0.16);
+      shard.castShadow = true;
+      g.add(shard);
     }
     g.position.set(p.x, p.y, p.z);
     g.rotation.y = p.heading;
@@ -7064,6 +7099,7 @@ export class Track {
     g.updateMatrixWorld(true);
     g.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
+      if (obj.userData.portalFrame) return;
       if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
       const box = obj.geometry.boundingBox.clone();
       box.applyMatrix4(obj.matrixWorld);
@@ -7098,6 +7134,7 @@ export class Track {
     const doomed = [];
     g.traverse((child) => {
       if (!child.isMesh || !child.geometry) return;
+      if (child.userData.portalFrame || child.userData.portalSlope) return;
       child.updateWorldMatrix(true, false);
       const box = new THREE.Box3().setFromObject(child);
       const cx = (box.min.x + box.max.x) * 0.5;
@@ -7132,8 +7169,9 @@ export class Track {
     const shards = [];
     for (const side of [-1, 1]) {
       // Dense near-mouth fill so land crest meets the portal without canyon slots.
-      for (let along = 0; along <= 44; along += 2.5) {
-        for (let lat = clear + 1.2; lat <= clear + 40; lat += 2.8) {
+      // Slopes own the first 16 m — instancing here only stacks visible boxes.
+      for (let along = 16; along <= 44; along += 2.5) {
+        for (let lat = clear + 1.2; lat <= clear + 40; lat += 3.6) {
           const hx = p.x + p.nx * side * lat + fx * outward * along;
           const hz = p.z + p.nz * side * lat + fz * outward * along;
           if (!this._ribbonClear(hx, hz, 2.2)) continue;
@@ -7149,9 +7187,9 @@ export class Track {
             x: hx,
             y: this._plantBoxY(gy, h, 0.95),
             z: hz,
-            sx: 6.2 + lat * 0.04 + along * 0.03,
+            sx: 9.2 + lat * 0.05 + along * 0.04,
             sy: h,
-            sz: 5.6 + along * 0.12,
+            sz: 8.4 + along * 0.14,
             ry: p.heading + side * 0.07,
           });
           if (along % 5 < 0.1 && lat <= clear + 24) {
@@ -8013,7 +8051,7 @@ export class Track {
   dispose() {
     if (!this.group) return;
     this._streamable = [];
-    this._grid = null;
+    this._compileQueue = [];
     this.group.traverse((obj) => {
       if (obj.geometry && !obj.geometry.userData.shared) {
         obj.geometry.dispose();
@@ -8518,6 +8556,106 @@ function texHash(x, y, s) {
   let n = Math.imul(x + s * 17, 374761393) ^ Math.imul(y + s * 13, 668265263);
   n = Math.imul(n ^ (n >>> 13), 1274126177);
   return ((n >>> 0) % 10000) / 10000;
+}
+
+/** Cached extruded arch rings for tunnel mouths (width × height × depth). */
+const TUNNEL_ARCH_GEO = new Map();
+
+/**
+ * Terrain-conforming hillside skin beside a tunnel mouth. Base verts sample
+ * buried ground; the lip rises toward the arch so the cut reads as one mass.
+ * @param {(lat:number, along:number, t:number)=>number} yAt local Y relative to road
+ * @param {number} clearBase lateral clear width reference
+ * @param {number} side −1 / +1
+ * @param {number} outward mouth sign
+ * @param {{maxAlong?:number,latNear?:number,latFar?:number,segsAlong?:number,segsLat?:number}} [opts]
+ * @returns {THREE.BufferGeometry}
+ */
+function tunnelMouthSlopeGeometry(yAt, clearBase, side, outward, opts = {}) {
+  const maxAlong = opts.maxAlong ?? 40;
+  const latNear = opts.latNear ?? clearBase + 1.8;
+  const latFar = opts.latFar ?? clearBase + 32;
+  const segsAlong = opts.segsAlong ?? 16;
+  const segsLat = opts.segsLat ?? 12;
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const row = segsLat + 1;
+
+  for (let ai = 0; ai <= segsAlong; ai++) {
+    const along = (ai / segsAlong) * maxAlong;
+    for (let li = 0; li <= segsLat; li++) {
+      const t = li / segsLat;
+      const lat = latNear + (latFar - latNear) * t;
+      const latS = side * lat;
+      const y = yAt(latS, along, t);
+      positions.push(latS, y, outward * along);
+      uvs.push(t, ai / segsAlong);
+    }
+  }
+
+  for (let ai = 0; ai < segsAlong; ai++) {
+    for (let li = 0; li < segsLat; li++) {
+      const a = ai * row + li;
+      const b = a + 1;
+      const c = a + row;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Extruded road-tunnel arch frame — rectangular spring line + semicircular crown.
+ * Reads as a carved sandstone bore instead of stacked box posts.
+ * @param {number} clearHalfW drive half-width clearance
+ * @param {number} openH vertical clearance metres
+ * @param {number} depth extrusion along road tangent
+ * @returns {THREE.ExtrudeGeometry}
+ */
+function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
+  const key = `${clearHalfW.toFixed(2)}|${openH}|${depth.toFixed(2)}`;
+  if (TUNNEL_ARCH_GEO.has(key)) return TUNNEL_ARCH_GEO.get(key);
+
+  const thick = 1.35;
+  const outerW = clearHalfW + thick;
+  const spring = openH * 0.62;
+
+  const shape = new THREE.Shape();
+  shape.moveTo(-outerW, 0);
+  shape.lineTo(-outerW, spring);
+  shape.absarc(0, spring, outerW, Math.PI, 0, false);
+  shape.lineTo(outerW, 0);
+  shape.lineTo(-outerW, 0);
+
+  const hole = new THREE.Path();
+  hole.moveTo(-clearHalfW, 0);
+  hole.lineTo(-clearHalfW, spring - 0.04);
+  hole.absarc(0, spring - 0.04, clearHalfW, Math.PI, 0, true);
+  hole.lineTo(clearHalfW, 0);
+  hole.lineTo(-clearHalfW, 0);
+  shape.holes.push(hole);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: 0.16,
+    bevelSize: 0.1,
+    bevelSegments: 2,
+    curveSegments: 16,
+  });
+  geo.translate(0, 0, -depth * 0.5);
+  geo.computeVertexNormals();
+  geo.userData.shared = true;
+  TUNNEL_ARCH_GEO.set(key, geo);
+  return geo;
 }
 
 /**

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * qa-sprint30-tunnel.mjs — Desert tunnel portal baseline (reverted Sprint 30 underpass).
+ * qa-sprint30-tunnel.mjs — Desert tunnel portal baseline.
+ *
+ * Sprint 551: arched mouth + terrain-conforming slopes (replaces box wings).
  *
  * RUN: node tools/qa-sprint30-tunnel.mjs
  */
@@ -28,9 +30,22 @@ console.log(`TUNNEL PORTAL BASELINE GATE  ·  ${new Date().toISOString()}\n`);
 
 const track = read("js/tracks/track.js");
 
-check("portal wings present", /BoxGeometry\(18, wingH, 24\)/.test(track) || /BoxGeometry\(18, 26, 24\)/.test(track), "wing slabs");
+check(
+  "portal arch frame",
+  /tunnelPortalArchGeometry/.test(track) && /portalFrame/.test(track),
+  "extruded arch ring"
+);
+check(
+  "portal hillside slopes",
+  /tunnelMouthSlopeGeometry/.test(track) && /portalSlope/.test(track),
+  "terrain-conforming skins"
+);
 check("portal openH 8.0", /openH = 8\.0/.test(track), "8 m clearance");
-check("portal buttresses", /BoxGeometry\(22, buttH, 26\)/.test(track) || /BoxGeometry\(22, 30, 26\)/.test(track), "buttress mass");
+check(
+  "portal bore throat",
+  /Bore throat/.test(track) || /throatH/.test(track),
+  "jambs tie arch to tube"
+);
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");
 check("interior wallH 8.2", /wallH = 8\.2/.test(track), "tube height");

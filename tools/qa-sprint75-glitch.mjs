@@ -131,7 +131,12 @@ function staticGates() {
   check("TIRE_PLANT unchanged", /const TIRE_PLANT\s*=\s*0\.014/.test(vehicle));
   check("QA throttle hold", /_qaHold/.test(input) && /_qaDrive/.test(game));
   check("qaSnapshot on the game", /qaSnapshot\(/.test(game));
-  check("phone starts on low tier", /startTier: isPhonePlay\(\) \? "low"/.test(game));
+  check(
+    "phone starts on low tier",
+    /function raceStartTier\(/.test(game) &&
+      /if \(isPhonePlay\(\)\) return "low"/.test(game) &&
+      /startTier: raceStartTier\(\)/.test(game)
+  );
   check("createPerfTier accepts startTier", /opts\.startTier/.test(perf));
   check("never-under-world floor", /_neverFallThrough/.test(vehicle) && /_solidFloorY/.test(vehicle));
   check(

@@ -56,12 +56,9 @@ check("AI cheap road probe smoothed", /_cheapFilt/.test(vehicle) && /_axleRoadCh
 check("AI lowDetail wheel travel lerps", /lowDetail[\s\S]*travel\[i\] \+= \(targets\[i\] - travel\[i\]\)/.test(vehicle));
 check("AI three substeps", /aiSubsteps:\s*3/.test(config));
 
-check("medium cumulus 12 steps", /mediumViewSteps:\s*12/.test(sky));
-check("cinema cumulus 16 steps", /cinemaViewSteps:\s*16/.test(sky));
-check(
-  "medium race sky uses cinema steps when cinemaRealism",
-  /perfTier === "medium"[\s\S]{0,280}?cinemaViewSteps/.test(sky)
-);
+check("skybox technique (no volumetric cumulus)", /technique:\s*"equirect-skybox"/.test(sky));
+check("cinema/medium cloud steps are zero (skybox)", /cinemaViewSteps:\s*0/.test(sky) && /mediumViewSteps:\s*0/.test(sky));
+check("RGBE skybox assets referenced", /STAGE_SKYBOX/.test(sky) && /kloofendal_partly_cloudy_2k\.hdr/.test(sky));
 
 // Sprint 39–49 realism+perf closeout — cut the Sprint 76/96 ~37 ms fixed floor.
 // Sprint 536: further cut so M1 Pro can hold 60 at `min` instead of ~50 judder.
@@ -93,7 +90,7 @@ check(
 check("present interval feeds scaler", /perfTier\.tick\(presentDelta\)/.test(game));
 
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
-check("cache-bust ≥548", cacheOk && Number(gameV) >= 548, `v=${gameV}`);
+check("cache-bust ≥549", cacheOk && Number(gameV) >= 549, `v=${gameV}`);
 
 console.log(fail ? `\nFAIL ${fail}` : "\nPASS");
 process.exit(fail ? 1 : 0);

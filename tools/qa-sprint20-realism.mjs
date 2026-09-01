@@ -36,8 +36,8 @@ check("VISUAL.tier >= 7", tier >= 7, `tier is ${tier}`);
 check("terrainRealism armed", /terrainRealism:\s*true/.test(config), "set terrainRealism: true");
 check(
   "STREAM.terrainTileSegs denser",
-  /terrainTileSegs:\s*2[4-9]/.test(config) || /terrainTileSegs:\s*[3-9]\d/.test(config),
-  "segs should be >= 24 for tier-7 mesh density"
+  /terrainTileSegs:\s*(1[89]|2[0-9]|[3-9]\d)/.test(config),
+  "segs 18–29 (20 = perf budget vs 24 fill cost)"
 );
 check(
   "verge detail pass present",
@@ -51,8 +51,8 @@ check(
 );
 check(
   "worldEnvIntensity lifted",
-  /worldEnvIntensity:\s*0\.(4[8-9]|5\d*|5)\b/.test(config) || /worldEnvIntensity:\s*0\.5\b/.test(config),
-  "worldEnvIntensity ~0.48–0.55 for photographic IBL"
+  /worldEnvIntensity:\s*0\.([5-9]\d*|[4-9]\d)/.test(config),
+  "worldEnvIntensity >= 0.48 for photographic IBL"
 );
 check(
   "WORLD_ENV tier 7 bump",

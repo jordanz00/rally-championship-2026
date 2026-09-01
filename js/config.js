@@ -34,8 +34,8 @@ export const GFX = {
    * when the machine cannot, present every second vsync (even 30) rather than
    * free-running below that.
    */
-  maxPixelRatio: 1.25,
-  maxPixels: 2000000,
+  maxPixelRatio: 1.1,
+  maxPixels: 1650000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
   titleMaxPixelRatio: 1.0,
   titleMaxPixels: 1200000,
@@ -85,6 +85,8 @@ export const GFX = {
   mirrorNear: 0.4,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
+  /** PMREM atlas resolution — 64³ is the 60 Hz / 30-lock budget (QA sprint 12/23). */
+  pmremSize: 64,
   /**
    * Adaptive present quality (Sprint 24 / 30 fps floor).
    * frameMs above highMs → drop post bloom; above floorMs → emergency low + DPR cut.
@@ -217,7 +219,7 @@ export const STREAM = {
   terrainTileSegs: 20,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
-  prefetchChunks: 1,
+  prefetchChunks: 2,
   /** Driving seconds to pre-warm streaming along the racing line. */
   lookaheadSeconds: 2.5,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
@@ -227,7 +229,7 @@ export const STREAM = {
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
   minLoadRadius: 280,
   /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
-  countdownLoadRadius: 640,
+  countdownLoadRadius: 820,
   /**
    * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis

@@ -48,9 +48,17 @@ check("PhotoRealPost module", exists("js/gfx/postfx.js") && /export class PhotoR
 check("bloom composite", /bloomStrength/.test(post) && /COMPOSITE_FRAG|tBloom/.test(post), "composite shader");
 check("game wires post", /PhotoRealPost/.test(game) && /post\.render/.test(game), "game.js render path");
 check("post resize wired", /post\.setSize/.test(game), "_onResize → post.setSize");
-check("ACES tone mapping", /ACESFilmicToneMapping/.test(game), "renderer tone mapping");
+check(
+  "ACES tone mapping",
+  /ACESFilmicToneMapping/.test(game) || /ACESFilmicToneMapping/.test(read("js/gfx/lighting-rig.js")),
+  "renderer tone mapping via game or lighting-rig"
+);
 check("tier-9 WORLD_ENV bump", />= 9[\s\S]{0,40}1\.42/.test(pbr), "pbr WORLD_ENV for tier 9");
-check("sky photoreal sun", /pow\(mu,\s*900\.0\)/.test(sky), "sky sun disc");
+check(
+  "HDR equirect skybox",
+  /RGBELoader|isSkyReady|kloofendal/.test(sky),
+  "Sprint 549 skybox replaces volumetric sun disc"
+);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Sprint 23 photoreal stack armed"}`);
 process.exit(fail ? 1 : 0);

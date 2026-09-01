@@ -49,9 +49,9 @@ for (const stage of stages) {
 
 const sky = read("js/sky.js");
 check(
-  "sky.js horizon glow shader",
-  /uHorizonGlow|horizon\s+glow/i.test(sky),
-  "add uHorizonGlow uniform or horizon glow in FRAG shader"
+  "HDR sky or horizon glow armed",
+  /RGBELoader|isSkyReady|applySky/.test(sky) || /uHorizonGlow|horizon\s+glow/i.test(sky),
+  "Sprint 549 HDR skybox replaces volumetric uHorizonGlow shader"
 );
 
 const track = read("js/tracks/track.js");

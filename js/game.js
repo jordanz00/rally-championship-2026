@@ -20,27 +20,27 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=170";
+} from "./config.js?v=172";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=119";
+import { Vehicle } from "./physics/vehicle.js?v=120";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=144";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=235";
+import { Track } from "./tracks/track.js?v=239";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=28";
-import { Opponent } from "./ai.js?v=135";
+import { Opponent } from "./ai.js?v=136";
 import { RallyAudio } from "./audio/engine.js?v=60";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=37";
 import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } from "./ui/hud.js?v=32";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=58";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
-import { createSky, applySky, tickSky, setSkyQuality } from "./sky.js?v=37";
+import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=38";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=30";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
 import { PhotoRealPost } from "./gfx/postfx.js?v=19";
-import { createPerfTier } from "./gfx/perf-tier.js?v=43";
+import { createPerfTier } from "./gfx/perf-tier.js?v=46";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -78,7 +78,7 @@ function yieldFrame() {
  * Load-time budget for linking start-grid shaders. The old full-stage
  * showAllChunks pass turned a 0.6 s mid-race hitch into a multi-second load.
  */
-const PRECOMPILE_BUDGET_MS = 400;
+const PRECOMPILE_BUDGET_MS = 220;
 
 /**
  * Opening perf tier — desktop starts at medium so settle paints shadows + post
@@ -1551,9 +1551,11 @@ export class RallyGame {
     } else {
       this.scene.background.setHex(L.skyBack);
     }
-    applySky(this.sky, L, "title");
-    // Title budget — low cumulus (6×1), not medium 12×2 / cinema 16×2.
-    // Race restores via _settleRacePresent → _applyQualityTier(raceStartTier()).
+    applySky(this.sky, L, "title").then(() => {
+      // Drop cached title IBL so the bake sees the HDR skybox, not a prior empty sphere.
+      if (this._skyEnvCache) delete this._skyEnvCache.title;
+    });
+    // Title budget — skybox has no raymarch cost; quality string kept for QA/docs.
     const titleSkyQ =
       (TITLE_SHOWROOM && TITLE_SHOWROOM.skyQuality) || "low";
     setSkyQuality(this.sky, titleSkyQ);
@@ -1568,6 +1570,21 @@ export class RallyGame {
         this._titleIblTimer = 0;
         if (this.state !== "title" && this.state !== "menu") return;
         try {
+          if (!isSkyReady(this.sky)) {
+            // HDR still loading — retry once shortly.
+            this._titleIblTimer = setTimeout(() => {
+              this._titleIblTimer = 0;
+              if (this.state !== "title" && this.state !== "menu") return;
+              try {
+                this._bakeSkyEnv("title");
+                this._titleIblReady = true;
+                this._applyTitleCarShowcase(true);
+              } catch (err) {
+                console.warn("Title IBL failed", err);
+              }
+            }, 400);
+            return;
+          }
           this._bakeSkyEnv("title");
           this._titleIblReady = true;
           this._applyTitleCarShowcase(true);
@@ -1936,8 +1953,8 @@ export class RallyGame {
     this._camSnap = true;
     this._chaseCam(1 / 60);
     this._syncWorldStream();
-    /** Countdown always hard-snaps cam; timer unused (was 2.8s and died at "1"). */
-    this._gridCamHold = 0;
+    /** Countdown hard-snaps chase cam until this timer reaches 0. */
+    this._gridCamHold = 4;
   }
 
   /** Plant every car mesh on its physics pose before the first frame draws. */
@@ -2229,6 +2246,7 @@ export class RallyGame {
     this.state = "countdown";
     this.countdown = 3;
     this._countHold = true;
+    this._gridCamHold = 4;
     this.raceTime = 0;
     this._physAccum = 0;
     this.nextCp = 0;
@@ -2332,7 +2350,6 @@ export class RallyGame {
     this._onResize();
 
     this._updateLights(0);
-    this._syncWorldStream(true);
     const radius = STREAM.countdownLoadRadius || 720;
     if (this.track && this.track.prewarmAround && this.player && this.player.position) {
       this.track.prewarmAround(this.player.position, this.camera.position, radius);
@@ -2347,10 +2364,8 @@ export class RallyGame {
       else this.renderer.render(this.scene, this.camera);
     };
     try {
-      // Six warms under the load overlay: atlas + post compile + stable race look
-      // before any HUD / countdown paints.
-      present();
-      present();
+      // Four warms under the load overlay — enough for atlas + post without
+      // a multi-hundred-ms compile hitch on the first race sample.
       present();
       present();
       present();
@@ -2650,6 +2665,9 @@ export class RallyGame {
         // Physics always advances — capping render must not drop sim time or
         // steering feels half-speed on 120 Hz panels (was bundling _fixed here).
         this._fixed(dt);
+        if (skipPresent && !onTitle && this.state !== "loading") {
+          this._compileStreamSlices(18);
+        }
         if (this._qaDrive && this.state === "race" && this.player) {
           if (!this._qaSamples) this._qaSamples = [];
           if (this._qaSamples.length < 400) {
@@ -2833,7 +2851,7 @@ export class RallyGame {
       // Hard cam for the entire 3-2-1 — a 2.8s timer used to expire at "1" and
       // the chase ease read as a lighting/graphics snap.
       if (this._camBlendT <= 0) this._camSnap = true;
-      this._gridCamHold = 0;
+      if (this._gridCamHold > 0) this._gridCamHold = Math.max(0, this._gridCamHold - dt);
       this._syncPackMeshes();
       this._chaseCam(dt);
       return;
@@ -3742,12 +3760,22 @@ export class RallyGame {
     } else {
       this.scene.background.setHex(L.skyBack || L.fog);
     }
-    applySky(this.sky, L, courseId);
+    applySky(this.sky, L, courseId).then(() => {
+      if (this._skyEnvCache) delete this._skyEnvCache[courseId];
+      try {
+        this._bakeSkyEnv(courseId);
+      } catch (err) {
+        console.warn("Sky IBL failed", err);
+      }
+    });
     if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
-    try {
-      this._bakeSkyEnv(courseId);
-    } catch (err) {
-      console.warn("Sky IBL failed", err);
+    // Sync bake if the HDR was already warm (common after title / prior stage).
+    if (isSkyReady(this.sky) && this.sky.userData.skyStage === courseId) {
+      try {
+        this._bakeSkyEnv(courseId);
+      } catch (err) {
+        console.warn("Sky IBL failed", err);
+      }
     }
     this.hemi.color.setHex(L.hemiSky);
     this.hemi.groundColor.setHex(L.hemiGround);
@@ -4235,12 +4263,17 @@ export class RallyGame {
    */
   _warmPov() {
     const mesh = this.playerMesh;
-    this._ensureMirrorRT();
-    if (!mesh || !this.renderer || !this._mirrorRT || !this._mirrorCam) return;
-    const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}`;
+    if (!mesh || !this.renderer) return;
+    const wantPov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
+    const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}|${wantPov ? "pov" : "chase"}`;
     if (this._povWarmKey === key) return;
     getPovRig(mesh);
-    const wantPov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
+    if (!wantPov) {
+      this._povWarmKey = key;
+      return;
+    }
+    this._ensureMirrorRT();
+    if (!this._mirrorRT || !this._mirrorCam) return;
     setCockpitView(mesh, true, this.camera);
     setCockpitMirrorMap(mesh, this._mirrorRT.texture);
     try {
@@ -4256,14 +4289,8 @@ export class RallyGame {
     } catch (err) {
       console.warn("POV warm failed", err);
     }
-    if (!wantPov) {
-      setCockpitView(mesh, false, this.camera);
-      this._cockpitLive = false;
-      this._povHudFade = 0;
-    } else {
-      this._cockpitLive = true;
-      this._povHudFade = 1;
-    }
+    this._cockpitLive = true;
+    this._povHudFade = 1;
   }
 
   _syncMirrorCam() {
@@ -4407,6 +4434,15 @@ export class RallyGame {
       if (marks) marks.visible = marksVis;
       if (this.sky) this.sky.position.copy(this.camera.position);
       if (this.scene.fog && prevFogFar != null) this.scene.fog.far = prevFogFar;
+    }
+  }
+
+  _compileStreamSlices(budgetMs = 14) {
+    if (!this.track || !this.track.drainCompileQueue || !this.renderer) return;
+    try {
+      this.track.drainCompileQueue(this.renderer, this.scene, this.camera, budgetMs);
+    } catch (err) {
+      console.warn("Stream compile budget failed", err);
     }
   }
 

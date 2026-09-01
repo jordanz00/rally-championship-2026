@@ -30,9 +30,9 @@ export const QUALITY_CAPS = {
    * this is the hard QA contract — never allocate above it.
    */
   maxShadowMap: 4096,
-  /** Volumetric cloud raymarch ceiling — matches sky.js CLOUD_BUDGET. */
-  maxCloudViewSteps: 16,
-  maxCloudLightSteps: 3,
+  /** Volumetric cloud raymarch removed (Sprint 549 skybox). Caps stay 0. */
+  maxCloudViewSteps: 0,
+  maxCloudLightSteps: 0,
   /** Rearview render target — readable cabin glass, ~1/4 framebuffer width. */
   maxMirrorW: 384,
   maxMirrorH: 120,
@@ -105,7 +105,7 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "high",
       mirrorEvery: 2,
-      shadowEvery: 3,
+      shadowEvery: 4,
     },
     {
       id: "medium",
@@ -114,8 +114,8 @@ function buildLadder(gfx) {
       shadow: Math.min(capShadow, 1024),
       post: "balanced",
       sky: "medium",
-      mirrorEvery: 3,
-      shadowEvery: 3,
+      mirrorEvery: 5,
+      shadowEvery: 5,
     },
     {
       id: "low",
