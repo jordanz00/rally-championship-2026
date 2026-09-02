@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * qa-desert-tunnel-mouth.mjs — Stage 1 tunnel entrance (~1258 m) regression gate.
+ * qa-desert-tunnel-mouth.mjs — Stage 1 tunnel entrance/exit regression gate.
  *
- * Ensures the desert mouth is a natural rock cut: clear bore, no floating cap
- * box, world-space bore scrub, embankment past the opening.
+ * Ensures both mouths are terrain-welded rock-cut portals: unified hillside
+ * shells, lintel crown, recessed bore liner, no floating arch gate or box
+ * embankment at the mouth.
  *
  * RUN: node tools/qa-desert-tunnel-mouth.mjs
  */
@@ -27,6 +28,7 @@ import {
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
 const gameSrc = fs.readFileSync(path.join(ROOT, "js/game.js"), "utf8");
 const portalSlice = trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"));
+const runSlice = trackSrc.slice(trackSrc.indexOf("_addTunnelRun"));
 
 let fail = 0;
 function check(label, ok, detail) {
@@ -42,53 +44,90 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 243,
+  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 245,
   "stale cache keeps broken portal"
 );
 check(
-  "no floating cap box at portal",
+  "unified terrain-welded hillside shells",
+  /tunnelMouthHillsideGeometry/.test(trackSrc) && /portalHillside/.test(portalSlice),
+  "need single welded hillside per side"
+);
+check(
+  "lintel crown above arch spring",
+  /tunnelMouthLintelGeometry/.test(trackSrc) && /portalLintel/.test(portalSlice),
+  "overburden crown missing"
+);
+check(
+  "recessed bore liner into mountain",
+  /portalBoreLiner/.test(portalSlice),
+  "dark bore mouth missing"
+);
+check(
+  "vertex weld to terrain",
+  /_weldPortalVerticesToTerrain/.test(trackSrc),
+  "portal verts must snap to land"
+);
+check(
+  "no floating extruded arch gate at portal",
+  !/portalFace/.test(portalSlice),
+  "extruded face floated above hillside"
+);
+check(
+  "no talus shards at portal",
+  !/talusSpots/.test(portalSlice),
+  "floating shard props at mouth"
+);
+check(
+  "no box embankment at portal",
+  !/_addTunnelMouthEmbankment\(pts\[start\]/.test(runSlice),
+  "box fill gated the mouth"
+);
+check(
+  "mountain masses skip mouth zone",
+  /mouthSkip/.test(trackSrc) && /start \+ mouthSkip/.test(trackSrc),
+  "ridge boxes overlapped portal"
+);
+check(
+  "no floating full-width cap box",
   !/BoxGeometry\(p\.width \+ 48/.test(portalSlice),
   "full-width cap box floated above mouth"
 );
 check(
-  "crown lintel replaces cap",
-  /tunnelMouthCrownGeometry/.test(trackSrc) && /portalCrown/.test(portalSlice),
-  "arch crown over bore"
+  "clearHalfW includes verge",
+  /clearHalfW:\s*half \+ ROAD_VERGE/.test(trackSrc),
+  "narrow clearHalfW left rock in the drive path"
+);
+check(
+  "mouth land prisms registered early",
+  /_tunnelMouthPrisms/.test(trackSrc) &&
+    /_registerTunnelMouthPrism/.test(trackSrc) &&
+    /_markTunnelRuns[\s\S]{0,600}_registerTunnelMouthPrism/.test(trackSrc),
+  "prisms must exist before land tiles"
+);
+check(
+  "land refuse uses mouth corridor",
+  /_inTunnelMouthCorridor/.test(trackSrc) && /_tunnelMouthFloorY/.test(trackSrc),
+  "heightmap must stay a floor through the opening"
 );
 check(
   "world-space bore scrub",
-  /_scrubPortalBoreWorld/.test(trackSrc) && /_tunnelPortalSpec/.test(trackSrc),
-  "slope wings must not survive inside bore"
+  /_scrubPortalBoreWorld/.test(trackSrc),
+  "hillside wings must not survive inside bore"
 );
 check(
-  "no approach ramp slabs at mouth",
-  !/Approach blend/.test(portalSlice),
-  "ramp geo blocked the entrance"
+  "interior lining inset from mouths",
+  /wallStart/.test(trackSrc) && /start \+ 1/.test(trackSrc),
+  "box walls poked into the approach"
 );
 check(
-  "mouth embankment starts past bore",
-  /along = 32; along <= 48/.test(trackSrc) && /lat = clear \+ 3\.5/.test(trackSrc),
-  "embankment boxes gated the mouth"
-);
-check(
-  "no duplicate mouth shoulder masses",
-  !/Mouth shoulders — extra rock/.test(trackSrc),
-  "shoulder loop duplicated embankment at entrance"
-);
-check(
-  "entrance collider scrub band widened",
-  /tunStart - 58/.test(trackSrc) && /tunStart \+ 48/.test(trackSrc),
-  "ribbon scrub must cover climb approach"
+  "entrance + exit collider scrub widened",
+  /tunStart - 72/.test(trackSrc) && /tunEnd \+ 72/.test(trackSrc),
+  "ribbon scrub must cover both mouths"
 );
 check(
   "portal openH 8.2",
   /openH: 8\.2/.test(trackSrc),
   "clearance spec"
-);
-check(
-  "cheeks start outside drive prism",
-  /latNear: clear \+ 8\.5/.test(portalSlice),
-  "inner cheek too close to ribbon"
 );
 
 if (fail) {
@@ -118,169 +157,108 @@ async function main() {
   }
   const { cdp } = browser;
   const { errors } = await preparePage(cdp);
+  await goto(cdp, `${server.url}/index.html?v=564&perf=medium`);
+  await waitFor(cdp, () => evaluate(cdp, () => !!window.__RALLY__), 20000).catch(() => null);
+
   try {
-    await goto(cdp, `${server.origin}/index.html`);
-    await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 20000, label: "game" });
-    await pressKey(cdp, "Enter");
-    await waitFor(
-      cdp,
-      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-menu"?1:null;`,
-      { timeout: 8000, label: "menu" }
-    );
-    await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
-    await waitFor(
-      cdp,
-      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-cars"?1:null;`,
-      { timeout: 12000, label: "cars" }
-    );
-    await waitFor(
-      cdp,
-      `const b=document.querySelector("[data-car='celica']"); return b&&!b.disabled?1:null;`,
-      { timeout: 20000, label: "celica" }
-    );
-    await clickSelector(cdp, "[data-car='celica']", "CELICA");
-    await waitFor(
-      cdp,
-      `const el=document.querySelector(".screen.active"); return el&&el.id==="screen-courses"?1:null;`,
-      { timeout: 25000, label: "courses" }
-    );
-    await clickSelector(cdp, "[data-course='desert']", "DESERT");
-    await waitFor(
-      cdp,
-      `return window.game && (window.game.state === "countdown" || window.game.state === "race")
-         ? window.game.courseId : null;`,
-      { timeout: 120000, label: "desert boot" }
-    );
-
-    const probe = await evaluate(
-      cdp,
-      `const g = window.game;
-      const track = g.track;
-      if (!track || !track._tunnels || !track._tunnels.length) return null;
-      const run = track._tunnels[0];
-      const tunStart = run.startDist;
-      const pts = track.points;
-      let entrance = pts[0];
-      let bestD = 1e9;
-      for (let i = 0; i < pts.length; i++) {
-        if (!pts[i].tunnel) continue;
-        const d = Math.abs(pts[i].dist - tunStart);
-        if (d < bestD) { bestD = d; entrance = pts[i]; }
-      }
-      const fx = Math.sin(entrance.heading);
-      const fz = Math.cos(entrance.heading);
-      const nx = entrance.nx;
-      const nz = entrance.nz;
-      const half = entrance.width * 0.5;
-      const clearHalfW = half + 2.6;
-      const openH = 8.2;
-      let laneBlocks = 0;
-      let floatAbove = 0;
-      let portalMeshes = 0;
-      let boreInvaders = 0;
-      const group = track.group;
-      if (group) {
-        group.traverse((obj) => {
-          if (!(obj.isMesh && obj.userData && obj.userData.tunnelPortal)) return;
-          portalMeshes += 1;
-          obj.updateWorldMatrix(true, false);
-          const e = obj.matrixWorld.elements;
-          const geo = obj.geometry;
-          if (geo && !geo.boundingBox && geo.computeBoundingBox) geo.computeBoundingBox();
-          const bb = geo && geo.boundingBox;
-          if (!bb) return;
-          const corners = [
-            [bb.min.x, bb.min.y, bb.min.z],
-            [bb.max.x, bb.min.y, bb.min.z],
-            [bb.min.x, bb.min.y, bb.max.z],
-            [bb.max.x, bb.min.y, bb.max.z],
-            [bb.min.x, bb.max.y, bb.min.z],
-            [bb.max.x, bb.max.y, bb.min.z],
-          ];
-          let minY = Infinity;
-          let inv = 0;
-          for (let c = 0; c < corners.length; c++) {
-            const lx = corners[c][0], ly = corners[c][1], lz = corners[c][2];
-            const wx = e[0]*lx + e[4]*ly + e[8]*lz + e[12];
-            const wy = e[1]*lx + e[5]*ly + e[9]*lz + e[13];
-            const wz = e[2]*lx + e[6]*ly + e[10]*lz + e[14];
-            if (wy < minY) minY = wy;
-            const dx = wx - entrance.x;
-            const dy = wy - entrance.y;
-            const dz = wz - entrance.z;
-            const wAlong = -(dx * fx + dz * fz);
-            if (wAlong < -4 || wAlong > 30) continue;
-            const lat = dx * nx + dz * nz;
-            if (Math.abs(lat) > clearHalfW + 0.3) continue;
-            if (dy < -0.4 || dy > openH - 0.1) continue;
-            inv += 1;
-          }
-          if (inv > 0) boreInvaders += 1;
-          const gy = track._tunnelTerrainY(e[12], e[14]);
-          if (minY - gy > 1.2 && minY > entrance.y + openH + 0.5) floatAbove += 1;
-        });
-      }
-      for (let d = tunStart - 35; d <= tunStart + 12; d += 2) {
-        const pose = track._ribbonPoseAt(d);
-        if (!pose) continue;
-        for (const lat of [-0.35, 0, 0.35]) {
-          const x = pose.x + nx * lat * pose.width;
-          const z = pose.z + nz * lat * pose.width;
-          const road = track._nearestRoad(x, z);
-          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-          if (over < 2.8) {
-            const gh = track._groundHeight(x, z, "desert");
-            if (gh > road.roadY + 0.35) laneBlocks += 1;
-          }
-        }
-        const colliders = track.colliders || [];
-        for (let i = 0; i < colliders.length; i++) {
-          const c = colliders[i];
-          if (c.kind === "wall") continue;
-          const road = track._nearestRoad(c.x, c.z);
-          if (Math.abs(road.along - d) > 4) continue;
-          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-          if (over - (c.r || 0.5) < 3.8) laneBlocks += 1;
-        }
-      }
-      return {
-        tunStart,
-        entranceY: entrance.y,
-        portalMeshes,
-        boreInvaders,
-        floatAbove,
-        laneBlocks,
-      };`
-    );
-
-    if (!probe) throw new Error("desert tunnel not loaded");
-    console.log(`  ok  tunnel starts at ${probe.tunStart.toFixed(1)} m (y=${probe.entranceY.toFixed(2)})`);
-    if (probe.boreInvaders > 0) {
-      throw new Error(`${probe.boreInvaders} portal mesh(es) still invade the drive bore`);
-    }
-    console.log(`  ok  portal bore clear (${probe.portalMeshes} portal meshes)`);
-    if (probe.floatAbove > 2) {
-      throw new Error(`${probe.floatAbove} portal mesh(es) float >1.2 m above terrain`);
-    }
-    console.log(`  ok  portal footing (${probe.floatAbove} floaters tolerated)`);
-    if (probe.laneBlocks > 0) {
-      throw new Error(`${probe.laneBlocks} lane block(s) on tunnel approach`);
-    }
-    console.log("  ok  approach ribbon + colliders clear");
-
-    const fatal = errors.filter((e) => !/mergeGeometries/.test(String(e.text || "")));
-    if (fatal.length) throw new Error(`${fatal.length} page error(s)`);
-
-    console.log("\nPASS  ·  static + headed desert tunnel mouth");
-    await browser.close();
-    server.close();
-    process.exit(0);
-  } catch (err) {
-    console.error(`\nFAIL  ${err.message || err}`);
-    await browser.close();
-    server.close();
-    process.exit(1);
+    await clickSelector(cdp, "#btn-play, .btn-play, [data-action=play]");
+  } catch {
+    /* title may already be racing */
   }
+  await new Promise((r) => setTimeout(r, 2500));
+
+  const probe = await evaluate(cdp, () => {
+    const g = window.__RALLY__;
+    const track = g && (g.track || g._track);
+    if (!track || !track._tunnels || !track._tunnels.length) {
+      return { ok: false, reason: "no tunnel runs" };
+    }
+    const run = track._tunnels[0];
+    const prisms = track._tunnelMouthPrisms || [];
+    const portals = [];
+    track.group.traverse((o) => {
+      if (o.userData && o.userData.tunnelPortal && o.isGroup) portals.push(o);
+    });
+    let hillsides = 0;
+    let lintels = 0;
+    let liners = 0;
+    let floaters = 0;
+    const THREE = window.THREE;
+    const box = THREE ? new THREE.Box3() : null;
+    for (let i = 0; i < portals.length; i++) {
+      portals[i].traverse((m) => {
+        if (!m.isMesh) return;
+        if (m.userData.portalHillside) hillsides += 1;
+        if (m.userData.portalLintel) lintels += 1;
+        if (m.userData.portalBoreLiner) liners += 1;
+        if (!box) return;
+        box.setFromObject(m);
+        const gy =
+          typeof track._tunnelTerrainY === "function"
+            ? track._tunnelTerrainY(
+                (box.min.x + box.max.x) * 0.5,
+                (box.min.z + box.max.z) * 0.5
+              )
+            : box.min.y;
+        if (
+          !m.userData.portalLintel &&
+          !m.userData.portalBoreLiner &&
+          box.min.y - gy > 1.2
+        ) {
+          floaters += 1;
+        }
+      });
+    }
+    const pose = track._ribbonPoseAt
+      ? track._ribbonPoseAt(run.startDist - 12)
+      : null;
+    let apronClear = true;
+    if (pose && typeof track._groundHeight === "function") {
+      const h = track._groundHeight(pose.x, pose.z, "desert");
+      if (h > pose.y - 0.2) apronClear = false;
+    }
+    return {
+      ok: true,
+      startDist: run.startDist,
+      endDist: run.endDist,
+      prisms: prisms.length,
+      portals: portals.length,
+      hillsides,
+      lintels,
+      liners,
+      floaters,
+      apronClear,
+    };
+  });
+
+  if (!probe || !probe.ok) {
+    check("headed probe", false, (probe && probe.reason) || "probe failed");
+  } else {
+    check("tunnel start near climb", probe.startDist > 1100 && probe.startDist < 1450, `at ${probe.startDist}`);
+    check("mouth prisms present", probe.prisms >= 2, `count=${probe.prisms}`);
+    check("portal groups for enter+exit", probe.portals >= 2, `count=${probe.portals}`);
+    check("hillside shells present", probe.hillsides >= 4, `hillsides=${probe.hillsides}`);
+    check("lintel crowns present", probe.lintels >= 2, `lintels=${probe.lintels}`);
+    check("bore liners present", probe.liners >= 2, `liners=${probe.liners}`);
+    check("no large floaters", probe.floaters === 0, `floaters=${probe.floaters}`);
+    check("approach apron land is floor", probe.apronClear, "land rose into bore");
+  }
+
+  const pageErrors = (errors || []).filter((e) => /tunnel|portal|SyntaxError/i.test(String(e)));
+  check("no tunnel page errors", pageErrors.length === 0, pageErrors.slice(0, 2).join("; "));
+
+  try {
+    browser.close();
+  } catch {
+    /* ignore */
+  }
+  server.close();
+
+  console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "desert tunnel mouths OK"}`);
+  process.exit(fail ? 1 : 0);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

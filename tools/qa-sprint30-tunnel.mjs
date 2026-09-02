@@ -2,7 +2,8 @@
 /**
  * qa-sprint30-tunnel.mjs — Desert tunnel portal baseline.
  *
- * Natural hillside cut — terrain cheeks + overburden cap, no doorway frame.
+ * Realistic horseshoe rock-cut mouths at entrance + exit: punched drive hole,
+ * hillside cheeks, mouth land prisms, no floating bore sheet.
  *
  * RUN: node tools/qa-sprint30-tunnel.mjs
  */
@@ -32,19 +33,31 @@ const track = read("js/tracks/track.js");
 const portalSlice = track.slice(track.indexOf("_addTunnelPortal"));
 
 check(
-  "natural cut — no doorway frame",
-  /No arch ring \/ jambs \/ sill/.test(portalSlice) && !/portalFrame/.test(portalSlice),
-  "removed arch ring / jambs / sill gate"
+  "unified terrain-welded hillside shells",
+  /tunnelMouthHillsideGeometry/.test(track) && /portalHillside/.test(portalSlice),
+  "single welded hillside per side"
 );
 check(
-  "portal hillside slopes",
-  /tunnelMouthSlopeGeometry/.test(track) && /portalSlope/.test(track),
-  "terrain-conforming skins"
+  "lintel crown + recessed bore liner",
+  /tunnelMouthLintelGeometry/.test(track) &&
+    /portalLintel/.test(portalSlice) &&
+    /portalBoreLiner/.test(portalSlice),
+  "mountain mouth read"
+);
+check(
+  "no free-standing doorway frame tag",
+  !/portalFrame/.test(portalSlice),
+  "legacy doorway frame removed"
+);
+check(
+  "vertex weld to terrain",
+  /_weldPortalVerticesToTerrain/.test(track),
+  "portal verts snap to land"
 );
 check("portal openH 8.2", /openH: 8\.2/.test(track), "8.2 m clearance");
 check(
   "mouth collider scrub at entrance + exit",
-  /tunStart - 58/.test(track) && /tunEnd - 38/.test(track),
+  /tunStart - 72/.test(track) && /tunEnd \+ 72/.test(track),
   "both mouths ribbon-scrubbed"
 );
 check(
@@ -53,9 +66,14 @@ check(
   "cap box removed"
 );
 check(
-  "crown lintel + bore scrub",
-  /tunnelMouthCrownGeometry/.test(track) && /_scrubPortalBoreWorld/.test(track),
-  "natural cut finish"
+  "mouth prisms + bore scrub",
+  /_tunnelMouthPrisms/.test(track) && /_scrubPortalBoreWorld/.test(track),
+  "land refuse + mesh scrub"
+);
+check(
+  "clearHalfW includes verge",
+  /clearHalfW:\s*half \+ ROAD_VERGE/.test(track),
+  "drive prism must clear verge rock"
 );
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");

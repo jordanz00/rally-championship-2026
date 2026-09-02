@@ -132,37 +132,39 @@ check(
   "Euclidean nearest-road beside the mouth was a lower Desert arm"
 );
 check(
-  "desert tunnel portal is a natural cut (no doorway frame)",
-  /No arch ring \/ jambs \/ sill/.test(trackSrc) &&
+  "desert tunnel portal is terrain-welded rock cut",
+  /tunnelMouthHillsideGeometry/.test(trackSrc) &&
+    /portalHillside/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
     !/portalFrame/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
-    /tunnelMouthSlopeGeometry/.test(trackSrc),
-  "arch/jamb gate removed — hillside cheeks only"
+    /portalBoreLiner/.test(trackSrc),
+  "unified hillside + recessed bore"
 );
 check(
   "tunnel mouth collider scrub covers entrance + exit",
-  /tunStart - 58/.test(trackSrc) && /tunEnd - 38/.test(trackSrc),
+  /tunStart - 72/.test(trackSrc) && /tunEnd \+ 72/.test(trackSrc),
   "ribbon-sample scrub must clear both mouths"
 );
 check(
-  "desert tunnel portal has buried embankment footing",
+  "desert tunnel portal has mouth prisms + bore scrub",
   /tunnelPortal/.test(trackSrc) &&
     /_scrubTunnelPortalDrive/.test(trackSrc) &&
     /_scrubPortalBoreWorld/.test(trackSrc) &&
-    /tunnelMouthCrownGeometry/.test(trackSrc),
+    /_tunnelMouthPrisms/.test(trackSrc),
   "portal must plant into the hillside, not float as a gate"
 );
 check(
   "tunnel portal wings plant onto tunnel terrain Y",
   /groundLocalY\(/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
     /_tunnelTerrainY/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
-    /cheekGeo/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))),
-  "cheek toes must embed into dunes, not sit at fixed roadY"
+    /portalHillside/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
+    /_weldPortalVerticesToTerrain/.test(trackSrc),
+  "hillside toes must embed into dunes, not sit at fixed roadY"
 );
 check(
   "mouth embankment fills thin gaps (no canyon slots)",
   /gap < 0\.35/.test(trackSrc) &&
-    /along = 32; along <= 48/.test(trackSrc) &&
-    /target = p\.y \+ 11\.5/.test(trackSrc) &&
+    /along = 40; along <= 58/.test(trackSrc) &&
+    /target = p\.y \+ 12\.5/.test(trackSrc) &&
     /_plantBoxY\(gy, h, 0\.95\)/.test(trackSrc) &&
     /_buryPortalMeshesToLand/.test(trackSrc),
   "thin-gap skip + low target left floating lips; bury pass grounds scrub survivors"
@@ -374,7 +376,7 @@ async function main() {
       if (group) {
         group.traverse((obj) => {
           if (!(obj.isMesh && obj.userData && obj.userData.tunnelPortal)) return;
-          if (obj.userData.portalCrown) return;
+          if (obj.userData.portalLintel || obj.userData.portalBoreLiner) return;
           portalMeshes += 1;
           obj.updateWorldMatrix(true, false);
           const e = obj.matrixWorld.elements;
