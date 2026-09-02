@@ -140,27 +140,28 @@ check(
 );
 check(
   "tunnel mouth collider scrub covers entrance + exit",
-  /tunStart - 42/.test(trackSrc) && /tunEnd - 32/.test(trackSrc),
+  /tunStart - 58/.test(trackSrc) && /tunEnd - 38/.test(trackSrc),
   "ribbon-sample scrub must clear both mouths"
 );
 check(
   "desert tunnel portal has buried embankment footing",
   /tunnelPortal/.test(trackSrc) &&
     /_scrubTunnelPortalDrive/.test(trackSrc) &&
-    /Approach blend/.test(trackSrc),
+    /_scrubPortalBoreWorld/.test(trackSrc) &&
+    /tunnelMouthCrownGeometry/.test(trackSrc),
   "portal must plant into the hillside, not float as a gate"
 );
 check(
   "tunnel portal wings plant onto tunnel terrain Y",
   /groundLocalY\(/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
     /_tunnelTerrainY/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
-    /Inner cheek/.test(trackSrc),
-  "cheek/ramp toes must embed into dunes, not sit at fixed roadY"
+    /cheekGeo/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))),
+  "cheek toes must embed into dunes, not sit at fixed roadY"
 );
 check(
   "mouth embankment fills thin gaps (no canyon slots)",
   /gap < 0\.35/.test(trackSrc) &&
-    /along <= 44; along \+= 2\.5/.test(trackSrc) &&
+    /along = 32; along <= 48/.test(trackSrc) &&
     /target = p\.y \+ 11\.5/.test(trackSrc) &&
     /_plantBoxY\(gy, h, 0\.95\)/.test(trackSrc) &&
     /_buryPortalMeshesToLand/.test(trackSrc),
@@ -373,6 +374,7 @@ async function main() {
       if (group) {
         group.traverse((obj) => {
           if (!(obj.isMesh && obj.userData && obj.userData.tunnelPortal)) return;
+          if (obj.userData.portalCrown) return;
           portalMeshes += 1;
           obj.updateWorldMatrix(true, false);
           const e = obj.matrixWorld.elements;
@@ -381,6 +383,7 @@ async function main() {
           const bb = geo && geo.boundingBox;
           if (!bb) return;
           let minY = Infinity;
+          let maxGy = -Infinity;
           const corners = [
             [bb.min.x, bb.min.y, bb.min.z],
             [bb.min.x, bb.min.y, bb.max.z],
@@ -391,25 +394,13 @@ async function main() {
             const lx = corners[c][0];
             const ly = corners[c][1];
             const lz = corners[c][2];
-            const y = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
-            if (y < minY) minY = y;
+            const wx = e[0] * lx + e[4] * ly + e[8] * lz + e[12];
+            const wy = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+            const wz = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+            if (wy < minY) minY = wy;
+            maxGy = Math.max(maxGy, track._tunnelTerrainY(wx, wz));
           }
-          // Footing vs the portal mouth deck (group.position.y), not a folded
-          // Desert arm that _nearestRoad may pick at a wing's world XZ.
-          let deckY = null;
-          let p = obj.parent;
-          while (p) {
-            if (p.userData && p.userData.tunnelPortal && p.isGroup) {
-              deckY = p.position.y;
-              break;
-            }
-            p = p.parent;
-          }
-          if (deckY == null) {
-            const near = track._nearestRoad(e[12], e[14]);
-            deckY = near.roadY;
-          }
-          if (minY < deckY - 1.2) portalBuried += 1;
+          if (minY <= maxGy + 0.55) portalBuried += 1;
         });
       }
       return {
@@ -469,13 +460,13 @@ async function main() {
     console.log(
       `  ok  tunnel cut formula raises ridge (${probe.ridgeOk}/${probe.ridgeN}; worst lift ${probe.worstRidge.toFixed(2)} m)`
     );
-    if (!probe.portalMeshes || probe.portalBuried < Math.max(4, (probe.portalMeshes * 0.25) | 0)) {
+    if (!probe.portalMeshes || probe.portalBuried < Math.max(8, (probe.portalMeshes * 0.55) | 0)) {
       throw new Error(
-        `tunnel portal footing not buried (${probe.portalBuried}/${probe.portalMeshes} meshes below deck-1.2 m)`
+        `tunnel portal footing not grounded (${probe.portalBuried}/${probe.portalMeshes} meshes on terrain)`
       );
     }
     console.log(
-      `  ok  tunnel portal footing buried (${probe.portalBuried}/${probe.portalMeshes} meshes below deck)`
+      `  ok  tunnel portal grounded on terrain (${probe.portalBuried}/${probe.portalMeshes} meshes)`
     );
 
     const fatal = errors.filter((e) => !/mergeGeometries/.test(String(e.text || "")));

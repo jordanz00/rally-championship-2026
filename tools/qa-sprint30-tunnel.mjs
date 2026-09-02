@@ -41,11 +41,21 @@ check(
   /tunnelMouthSlopeGeometry/.test(track) && /portalSlope/.test(track),
   "terrain-conforming skins"
 );
-check("portal openH 8.0", /openH = 8\.0/.test(track), "8 m clearance");
+check("portal openH 8.2", /openH: 8\.2/.test(track), "8.2 m clearance");
 check(
   "mouth collider scrub at entrance + exit",
-  /tunStart - 42/.test(track) && /tunEnd - 32/.test(track),
+  /tunStart - 58/.test(track) && /tunEnd - 38/.test(track),
   "both mouths ribbon-scrubbed"
+);
+check(
+  "no floating cap box",
+  !/BoxGeometry\(p\.width \+ 48/.test(portalSlice),
+  "cap box removed"
+);
+check(
+  "crown lintel + bore scrub",
+  /tunnelMouthCrownGeometry/.test(track) && /_scrubPortalBoreWorld/.test(track),
+  "natural cut finish"
 );
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");

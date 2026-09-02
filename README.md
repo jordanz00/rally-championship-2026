@@ -6,7 +6,7 @@ Browser arcade rally inspired by classic Sega Rally immediacy — original stage
 
 **https://jordanz00.github.io/rally-championship-2026/**
 
-Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=561` if assets look stale.
+Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=562` if assets look stale.
 
 ## Controls
 
