@@ -34,8 +34,8 @@ export const GFX = {
    * when the machine cannot, present every second vsync (even 30) rather than
    * free-running below that.
    */
-  maxPixelRatio: 1.1,
-  maxPixels: 1650000,
+  maxPixelRatio: 1.15,
+  maxPixels: 1800000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
   titleMaxPixelRatio: 1.0,
   titleMaxPixels: 1200000,
@@ -59,7 +59,7 @@ export const GFX = {
    * Race sun ortho half-width (metres). Tight chase frustum — denser contact
    * under the car and fewer mid-ground casters in the atlas (fill-rate win).
    */
-  shadowExtentRace: 32,
+  shadowExtentRace: 28,
   shadowNear: 2,
   shadowFar: 160,
   /**
@@ -112,11 +112,10 @@ export const GFX = {
    */
   lock30AboveMs: 20,
   /**
-   * Prefer locking to an even 30 before spending the last quality tiers.
-   * With the Sprint 547 pixel budget, chasing 60 down to `min` looked worse
-   * than medium-quality presents at a steady 30.
+   * Prefer locking to an even 30 only after EMA evidence (perf-tier).
+   * Forcing lock-30 at settle made capable machines feel laggy from GO.
    */
-  preferLock30: true,
+  preferLock30: false,
   /** Sprint 39 / 536 — integrated GPU / M-series targets. */
   integratedFloorMs: 17.5,
   integratedEmergencyMs: 20,
@@ -141,12 +140,12 @@ export const VISUAL = {
    * Depth comes from ACES + IBL + texture, not saturation/bloom boosts.
    */
   postFx: true,
-  bloomStrength: 0.15,
-  bloomThreshold: 0.74,
-  vignette: 0.18,
-  gradeContrast: 1.12,
-  gradeSaturation: 1.02,
-  gradeWarmth: 0.06,
+  bloomStrength: 0.18,
+  bloomThreshold: 0.72,
+  vignette: 0.16,
+  gradeContrast: 1.14,
+  gradeSaturation: 1.04,
+  gradeWarmth: 0.08,
   /** Film grain off — it read as crawling static on the volumetric sky. */
   sharpen: 0,
   fxaa: false,
@@ -159,9 +158,9 @@ export const VISUAL = {
   cameraOcclusionFade: true,
   /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
   aerialPerspective: true,
-  aerialStrength: 0.6,
-  aerialStart: 32,
-  aerialEnd: 560,
+  aerialStrength: 0.64,
+  aerialStart: 28,
+  aerialEnd: 580,
   /** One authored silhouette cluster per stage (desert arch, forest cedars, lakeside pier). */
   heroLandmarks: true,
   /** Stronger water env response at tier 4+ (lakeside). */
@@ -179,29 +178,29 @@ export const VISUAL = {
   /** Procedural anamorphic lens flare + ghosts when the sun is in frame. */
   lensFlare: true,
   /** Tier 13 IBL — world and car read sunlit materials. */
-  worldEnvIntensity: 0.98,
-  carEnvIntensity: 1.22,
+  worldEnvIntensity: 1.08,
+  carEnvIntensity: 1.36,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
-  highlightRolloff: 0.28,
+  highlightRolloff: 0.22,
   pbrSkySigma: 0,
-  /** Screen-space crevice AO — contact between car, road, and verge. */
-  aoStrength: 0.58,
-  aoRadius: 1.42,
+  /** Screen-space crevice AO — high tier only (postfx gates balanced). */
+  aoStrength: 0.64,
+  aoRadius: 1.48,
   /** Normal strength on road/terrain. */
-  normalStrength: 1.48,
+  normalStrength: 1.55,
   /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
-  normalMapScale: 0.88,
+  normalMapScale: 0.92,
   /**
-   * Albedo ×2.65 + procedural roughness — ×4 kept Desert below 60 at min DPR.
+   * Albedo ×2.4 + procedural roughness — denser than 2.0, cheaper than 2.65.
    */
-  textureScale: 2.65,
+  textureScale: 2.4,
   roughnessMaps: true,
   /** Cone/cylinder segments for procedural foliage + trunk cards. */
-  propSegments: 20,
+  propSegments: 18,
   /** Icosahedron subdivisions for rocks, tumbleweed, shrub blobs. */
-  rockDetail: 5,
+  rockDetail: 4,
 };
 
 /**
@@ -211,38 +210,38 @@ export const VISUAL = {
  */
 export const STREAM = {
   /** Load at fog.far × this — geometry must exist before it clears the haze. */
-  loadFogFactor: 1.08,
+  loadFogFactor: 1.05,
   /** Unload beyond fog so slices stay warm until fully fogged out. */
-  unloadFogFactor: 1.16,
+  unloadFogFactor: 1.14,
   /** Fallback radii when the scene has no fog (metres). */
-  loadRadius: 900,
-  unloadRadius: 980,
+  loadRadius: 820,
+  unloadRadius: 920,
   /** Heightmap tile edge length (metres). */
   terrainTileSize: 256,
   /** Base heightmap density — cinema tier uses terrainTileSegsCinema. */
-  terrainTileSegs: 24,
-  /** Tier 13 only — smoother ridges without forcing 28 on every machine. */
-  terrainTileSegsCinema: 28,
+  terrainTileSegs: 22,
+  /** High perf / cinema only — smoother ridges without forcing on every machine. */
+  terrainTileSegsCinema: 26,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
   prefetchChunks: 2,
   /** Driving seconds to pre-warm streaming along the racing line. */
-  lookaheadSeconds: 2.5,
+  lookaheadSeconds: 2.2,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
-  boundsPadding: 80,
+  boundsPadding: 70,
   /** Minimum gap between load and unload when using fixed radii (metres). */
-  hysteresis: 80,
+  hysteresis: 70,
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
-  minLoadRadius: 280,
-  /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
-  countdownLoadRadius: 820,
+  minLoadRadius: 260,
+  /** Countdown / GPU-settle radius — start grid fully drawn, not whole stage. */
+  countdownLoadRadius: 700,
   /**
    * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
    * stops the swap strobing on a 220 m slice boundary.
    */
-  lodNear: 132,
-  lodHysteresis: 28,
+  lodNear: 110,
+  lodHysteresis: 24,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */
@@ -323,21 +322,21 @@ export const LIGHTING = {
     fogFar: 1180,
     hemiSky: 0x8cb4e4,
     hemiGround: 0xc8a068,
-    hemi: 0.62,
+    hemi: 0.68,
     sun: 0xfff4e0,
     sunKelvin: 5600,
-    sunInt: 3.25,
+    sunInt: 3.35,
     sunDir: [0.54, 0.72, 0.36],
     rimSky: 0xb0d4f4,
-    rimInt: 0.46,
+    rimInt: 0.52,
     fill: 0x98bce0,
-    fillInt: 0.24,
+    fillInt: 0.28,
     ambient: 0xa8bcd0,
-    ambientInt: 0.1,
-    exposure: 1.12,
-    gradeWarmth: 0.14,
+    ambientInt: 0.12,
+    exposure: 1.14,
+    gradeWarmth: 0.15,
     skyBack: 0x2488d0,
-    worldEnv: 1.28,
+    worldEnv: 1.38,
   },
   forest: {
     /**
@@ -389,7 +388,7 @@ export const LIGHTING = {
     ambientInt: 0.14,
     exposure: 1.12,
     gradeWarmth: 0.05,
-    worldEnv: 1.18,
+    worldEnv: 1.28,
   },
   mountain: {
     /**
@@ -1160,47 +1159,46 @@ export const JUMP = {
   airRollMax: 0.28,
   airRollDamp: 1.35,
   /**
-   * Tail-first rebound amp. Energy prefers the land spring; a large bounce
-   * read as a glitch hop, not weight.
+   * Tail-first rebound amp. Keep small — big bounce reads as floaty hop.
    */
-  landBounce: 0.22,
+  landBounce: 0.11,
   /** Descent rate (m/s) before a mismatched landing can leave the ground again. */
-  landBounceImpact: 4.8,
+  landBounceImpact: 6.8,
   /** Minimum graded bounce before re-air is allowed. */
-  landReairMin: 0.82,
+  landReairMin: 1.25,
   /** Fraction of downward vel absorbed into the land spring on pad kiss. */
-  landVelAbsorb: 0.62,
+  landVelAbsorb: 0.86,
   /**
-   * After touchdown, residual air attitude decays quickly while the land
-   * spring does one underdamped bounce — not a long float to upright.
+   * After touchdown: suspension squash + one short rebound, then snap level.
+   * Long settle windows read as floaty / late recovery.
    */
-  landSettleMin: 0.28,
-  landSettleMax: 0.72,
+  landSettleMin: 0.14,
+  landSettleMax: 0.38,
   /** Extra Three.js pitch (rad) allowed while settle is live. */
-  landSettlePitchMax: 0.2,
+  landSettlePitchMax: 0.14,
   /** Extra roll (rad) carried through the settle rock. */
-  landSettleRollMax: 0.2,
+  landSettleRollMax: 0.12,
   /** Nose-down squash (rad) per m/s of impact (seed; spring owns the curve). */
-  landImpactSquash: 0.018,
+  landImpactSquash: 0.02,
   /** Attitude offset decay (1/s) — higher = levels out faster after touchdown. */
-  landSettleDamp: 2.65,
+  landSettleDamp: 5.4,
   /** Extra damp as settle nears end (snaps the last of the rock). */
-  landSettleDampEnd: 6.8,
+  landSettleDampEnd: 11.5,
   /** Legacy squash exponential — prefer landCompress spring when present. */
-  landSquashDamp: 3.4,
+  landSquashDamp: 4.8,
   /** Visual suspension sink (m) per m/s of impact. */
-  landCompressGain: 0.078,
-  landCompressMax: 0.12,
-  /** Underdamped land spring — squash in, one rebound, settle. */
-  landCompressWn: 15.5,
-  landCompressZeta: 0.68,
+  landCompressGain: 0.09,
+  landCompressMax: 0.11,
+  /** Near-critical land spring — weight on kiss, one quick rebound, plant. */
+  landCompressWn: 20.5,
+  landCompressZeta: 0.86,
   /** Rebound extension past rest (m, negative x) for visible bounce. */
-  landCompressExtMin: -0.024,
+  landCompressExtMin: -0.014,
   /** Pitch blend rate (1/s) while land settle is live. */
-  landPitchBlend: 9.5,
+  landPitchBlend: 18,
   /** Roll spring scale while settle is live (<1 = heavier rock). */
-  landRollWnScale: 0.38,
-  landRollZeta: 0.72,
+  landRollWnScale: 0.78,
+  landRollZeta: 0.98,
 };
 
 /**

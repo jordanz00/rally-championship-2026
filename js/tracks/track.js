@@ -8,7 +8,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=176";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=178";
 import { roadMicroHeight } from "./road-micro.js?v=3";
 import {
   shadowGeometry,
@@ -29,9 +29,16 @@ import {
   upgradeWorldMaterials,
 } from "../gfx/pbr.js?v=31";
 
-/** Heightmap subdivisions — cinema tier gets denser tiles without global 24-seg cost. */
+/** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {
-  if ((VISUAL.tier || 0) >= 13 && STREAM.terrainTileSegsCinema) {
+  let wantCinema = false;
+  try {
+    const q = new URLSearchParams(globalThis.location?.search || "");
+    wantCinema = q.get("perf") === "high";
+  } catch {
+    /* ignore */
+  }
+  if (wantCinema && (VISUAL.tier || 0) >= 13 && STREAM.terrainTileSegsCinema) {
     return STREAM.terrainTileSegsCinema;
   }
   return STREAM.terrainTileSegs;
@@ -1100,7 +1107,7 @@ export class Track {
 
     const rows = [];
     for (let tz = z0; tz < maxZ; tz += tileSize) rows.push(tz);
-    const yieldWork = createWorkYielder(10);
+    const yieldWork = createWorkYielder(14);
     for (let ri = 0; ri < rows.length; ri++) {
       const tz = rows[ri];
       for (let tx = x0; tx < maxX; tx += tileSize) {
@@ -2688,7 +2695,7 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(10);
+    const yieldWork = createWorkYielder(14);
     const plantStep = def.scenery === "forest" ? 1 : 2;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;

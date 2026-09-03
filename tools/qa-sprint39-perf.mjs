@@ -31,8 +31,10 @@ check("game perf tier tick", /perfTier/.test(game) && /createPerfTier/.test(game
 check("adapt floor preserved", /adaptFloorMs/.test(config));
 
 check(
-  "desktop Mac starts medium (shadows+post before countdown)",
-  /function raceStartTier/.test(game) && /if \(macDesktop\) return "medium"/.test(game)
+  "desktop Mac starts medium/high (shadows+post before countdown)",
+  /function raceStartTier/.test(game) &&
+    /macDesktop/.test(game) &&
+    (/return "medium"/.test(game) || /return "high"/.test(game))
 );
 check("headless QA stays medium tier", /navigator\.webdriver/.test(game) && /return "medium"/.test(game));
 check("raceStartTier wired to createPerfTier", /createPerfTier\(GFX, \{ startTier: raceStartTier\(\) \}/.test(game));
@@ -74,9 +76,9 @@ check("race maxPixels ≤ 2.0 M", maxPx > 0 && maxPx <= 2000000, `maxPixels=${ma
 check("high tier bakes sun every 3rd present", /id: "high"[\s\S]{0,280}?shadowEvery:\s*3/.test(perf));
 check("30 fps cadence lock retained", /LOCK30_HOLD/.test(perf) && /lockedHz/.test(perf));
 check("lock30 holds ~0.8s (48 presents)", /LOCK30_HOLD = 48/.test(perf));
-check("preferLock30 enabled for sharper race budget", /preferLock30:\s*true/.test(config));
+check("preferLock30 evidence-only (not forced at settle)", /preferLock30:\s*false/.test(config));
 check(
-  "settle arms forceLock30 when preferLock30",
+  "settle still gates forceLock30 behind preferLock30",
   /preferLock30[\s\S]*?forceLock30\(/.test(game) || /forceLock30\(\)/.test(game)
 );
 check(

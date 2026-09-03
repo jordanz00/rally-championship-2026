@@ -20,14 +20,14 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=176";
+} from "./config.js?v=178";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=121";
+import { Vehicle } from "./physics/vehicle.js?v=123";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=146";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=246";
+import { Track } from "./tracks/track.js?v=247";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=28";
 import { Opponent } from "./ai.js?v=136";
 import { RallyAudio } from "./audio/engine.js?v=60";
@@ -39,8 +39,8 @@ import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=38";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=31";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
-import { PhotoRealPost } from "./gfx/postfx.js?v=19";
-import { createPerfTier } from "./gfx/perf-tier.js?v=46";
+import { PhotoRealPost } from "./gfx/postfx.js?v=20";
+import { createPerfTier } from "./gfx/perf-tier.js?v=47";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -750,8 +750,14 @@ export class RallyGame {
           "assets/music/mountain.mp3?v=4",
           "assets/music/lakeside.mp3?v=4",
           "assets/music/result.mp3?v=4",
+          "assets/sky/kloofendal_partly_cloudy_2k.hdr",
+          "assets/sky/kloppenheim_06_2k.hdr",
+          "assets/sky/sunflowers_2k.hdr",
         ]
-      : ["assets/music/desert.mp3?v=4"];
+      : [
+          "assets/music/desert.mp3?v=4",
+          "assets/sky/kloofendal_partly_cloudy_2k.hdr",
+        ];
     if (all) {
       if (this._bytesPrefetchedAll) return;
       this._bytesPrefetchedAll = true;
@@ -1841,14 +1847,18 @@ export class RallyGame {
     }
     if (this.tireMarks) this.tireMarks.reset();
     report(fromCache ? 0.94 : 0.88, "Applying stage lighting…");
+    // Cars + lighting overlap — do not wait for IBL before starting GLB warm.
+    const carWarm = !preview
+      ? Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
+          console.warn("[load] car warm", err);
+        })
+      : Promise.resolve();
     await tick();
     this._applyLighting(def.id);
 
     if (!preview) {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
-      await Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
-        console.warn("[load] car warm", err);
-      });
+      await carWarm;
       this._promotePlayerCar();
     }
 
@@ -1935,7 +1945,8 @@ export class RallyGame {
     this._titleKick.intensity = 0;
     this.renderer.shadowMap.enabled = true;
     this.sun.castShadow = true;
-    this._setShadowMapSize(2048);
+    // Settle owns the race atlas size — do not allocate 2048 then shrink (hitch).
+    this._setShadowMapSize(GFX.shadowMap || 1536);
     if (this.post) {
       this.post._titleShowroom = false;
       this.post.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
@@ -2322,16 +2333,15 @@ export class RallyGame {
     // draws so the first HUD frame already matches race (no snap at "1"/GO).
     this._perfDprScale = isPhonePlay() ? 0.78 : 1;
     this._lastPresentCost = 8;
-    this._raceWarmFrames = 48;
+    this._raceWarmFrames = 32;
     this._shadowTick = 0;
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
     this.perfTier = createPerfTier(GFX, { startTier: raceStartTier() });
     const tier = this.perfTier.current();
-    // Prefer a clean 30 at the start tier over chasing 60 into min while the
-    // raised Sprint 547 pixel budget is live. Arm before warm presents so the
-    // first HUD frame already matches the race cadence.
+    // Evidence-based lock-30 only (GFX.preferLock30). Do not force at settle —
+    // that made capable machines feel laggy from GO even when they can hold 60.
     if (GFX.preferLock30 && typeof this.perfTier.forceLock30 === "function") {
       this.perfTier.forceLock30();
     }

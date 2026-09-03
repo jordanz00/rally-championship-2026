@@ -15,7 +15,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=50";
-import { VISUAL } from "./config.js?v=170";
+import { VISUAL } from "./config.js?v=178";
 
 /**
  * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
