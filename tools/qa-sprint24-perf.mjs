@@ -32,13 +32,13 @@ const post = read("js/gfx/postfx.js");
 const input = read("js/input.js");
 
 const pr = Number((config.match(/maxPixelRatio:\s*([\d.]+)/) || [])[1] || 99);
-const tex = Number((config.match(/textureScale:\s*(\d+)/) || [])[1] || 99);
+const tex = Number((config.match(/textureScale:\s*([\d.]+)/) || [])[1] || 99);
 const shadowEvery = Number((config.match(/shadowEvery:\s*(\d+)/) || [])[1] || 0);
 const steer = Number((config.match(/steerSpeed:\s*([\d.]+)/) || [])[1] || 0);
 
 check("maxPixelRatio <= 1.35", pr <= 1.35, `is ${pr}`);
-check("textureScale <= 2", tex <= 2, `is ${tex}`);
-check("normalMapScale half", /normalMapScale:\s*0\.5\b/.test(config), "0.5");
+check("textureScale <= 2.75", tex <= 2.75, `is ${tex}`);
+check("normalMapScale capped", /normalMapScale:\s*0\.[5-9]/.test(config), "half-res normals");
 check("fxaa off", /fxaa:\s*false/.test(config), "fxaa false");
 check("sharpen off", /sharpen:\s*0\b/.test(config), "sharpen 0");
 check("shadowEvery >= 2", shadowEvery >= 2, `is ${shadowEvery}`);

@@ -17,7 +17,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=170";
+import { VISUAL } from "../config.js?v=176";
 
 /** @type {THREE.BufferGeometry|null} */
 let CROWN_GEO = null;
@@ -40,9 +40,12 @@ let BARK_MAT = null;
 /** @type {THREE.Material|null} */
 let SHADOW_MAT = null;
 
-const FOLIAGE_SEG = VISUAL.realisticArcade ? 12 : 9;
-const FOLIAGE_SEG_SIDE = VISUAL.realisticArcade ? 10 : 7;
-const TRUNK_SEG = VISUAL.realisticArcade ? 8 : 6;
+const FOLIAGE_SEG =
+  VISUAL.propSegments ||
+  (VISUAL.realisticArcade ? 12 : 9);
+const FOLIAGE_SEG_SIDE = Math.max(7, FOLIAGE_SEG - 4);
+const TRUNK_SEG = Math.max(6, FOLIAGE_SEG - 6);
+const ROCK_SUBDIV = Math.min(3, Math.max(1, (VISUAL.rockDetail || 3) - 1));
 
 /**
  * Card-paint kind for a GLB tree id — far LOD uses the painted 3-plane crown
@@ -116,7 +119,7 @@ export function foliageGeometry(kind) {
     ];
     for (let i = 0; i < clumpColorless.length; i++) {
       const [x, y, z, r] = clumpColorless[i];
-      const blob = new THREE.IcosahedronGeometry(r, kind === "shrub" ? 1 : 2);
+      const blob = new THREE.IcosahedronGeometry(r, kind === "shrub" ? ROCK_SUBDIV - 1 : ROCK_SUBDIV);
       blob.translate(x, y, z);
       parts.push(blob);
     }
@@ -213,7 +216,7 @@ export function trunkGeometry() {
  */
 export function shadowGeometry() {
   if (SHADOW_GEO) return SHADOW_GEO;
-  SHADOW_GEO = new THREE.CircleGeometry(1, 24);
+  SHADOW_GEO = new THREE.CircleGeometry(1, Math.max(24, FOLIAGE_SEG + 8));
   SHADOW_GEO.rotateX(-Math.PI / 2);
   SHADOW_GEO.userData.shared = true;
   return SHADOW_GEO;

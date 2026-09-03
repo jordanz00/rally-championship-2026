@@ -71,8 +71,8 @@ check(
 check(
   "rearview mirror is a physical glass + RT hook",
   /function makeRearviewMirror/.test(car) && /setCockpitMirrorMap/.test(car) &&
-    /mirrorEvery:\s*1/.test(config),
-  "mirror mesh + setCockpitMirrorMap + every-frame capture"
+    (/mirrorEveryPov:\s*1/.test(config) || /mirrorEvery:\s*1/.test(config)),
+  "mirror mesh + setCockpitMirrorMap + every-frame POV capture"
 );
 
 check(

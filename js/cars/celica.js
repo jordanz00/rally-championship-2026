@@ -906,6 +906,7 @@ async function loadCarGltf(id, url) {
   fitToRallyCar(root, spec);
   hideHeavyInterior(root);
   sanitizeGltfWheels(root);
+  isolateWheelHubMaterials(root);
   // The hero car is the single biggest draw-call consumer in the frame: a raw
   // Sketchfab export is ~187 separate meshes, measured at three quarters of all
   // draw calls on Desert. Merging by material keeps every pixel identical —
@@ -941,6 +942,7 @@ async function loadRivalGltf(id, url) {
   fitToRallyCar(root, spec);
   hideHeavyInterior(root);
   sanitizeGltfWheels(root);
+  isolateWheelHubMaterials(root);
   mergeBodyPanels(root);
   root.userData.wheels = findWheels(root);
   root.userData.carId = spec.id;
@@ -1171,30 +1173,40 @@ function shadeCarMaterial(src, obj) {
   if (!src) return paint(0xcccccc);
   const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
   const transparent = !!(src.transparent || (src.opacity != null && src.opacity < 0.9));
-  const isGlass =
-    !(src.userData && src.userData.cadOpaque) &&
-    (transparent || /glass|window|windshield|windscreen|screen|lens/.test(n));
   const isChrome =
     /chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) ||
     (src.metalness != null && src.metalness > 0.62);
   const isRubber = /tire|tyre|rubber|wheel/.test(n) && !/rim/.test(n);
+  const isGlass =
+    !(src.userData && src.userData.cadOpaque) &&
+    !isChrome &&
+    !isRubber &&
+    (transparent || /glass|window|windshield|windscreen|screen|lens/.test(n));
 
   if (src.isMeshPhysicalMaterial || src.isMeshStandardMaterial) {
     if (src.map) src.map.colorSpace = THREE.SRGBColorSpace;
-    if (isGlass) {
+    if (isChrome) {
+      src.transparent = false;
+      src.opacity = 1;
+      src.depthWrite = true;
+      src.visible = true;
+      src.metalness = Math.max(src.metalness != null ? src.metalness : 0, 0.88);
+      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.28);
+      src.envMapIntensity = 0.7;
+    } else if (isRubber) {
+      src.transparent = false;
+      src.opacity = 1;
+      src.depthWrite = true;
+      src.visible = true;
+      src.metalness = 0.04;
+      src.roughness = Math.max(src.roughness != null ? src.roughness : 0.7, 0.74);
+      src.envMapIntensity = 0.15;
+    } else if (isGlass) {
       src.transparent = true;
       src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.48);
       src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.1);
       src.metalness = Math.min(src.metalness != null ? src.metalness : 0, 0.14);
       src.envMapIntensity = 0.55;
-    } else if (isChrome) {
-      src.metalness = Math.max(src.metalness != null ? src.metalness : 0, 0.88);
-      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.28);
-      src.envMapIntensity = 0.7;
-    } else if (isRubber) {
-      src.metalness = 0.04;
-      src.roughness = Math.max(src.roughness != null ? src.roughness : 0.7, 0.74);
-      src.envMapIntensity = 0.15;
     } else if (!src.isMeshPhysicalMaterial && (src.metalness || 0) < 0.4 && !transparent) {
       // Bodywork. This used to upgrade the material to MeshPhysicalMaterial for
       // a clearcoat lacquer, via `new MeshPhysicalMaterial().copy(src)` — which
@@ -1418,6 +1430,38 @@ function sanitizeGltfWheels(root) {
   }
 }
 
+/**
+ * Delta Integrale rims often share a material with tail-light glass. Brake prep
+ * and gameShade opacity then make rear wheel chrome invisible while tires stay.
+ * Clone every material under Wheel_* hubs so lamps cannot dim the rims.
+ * @param {THREE.Object3D} root
+ */
+function isolateWheelHubMaterials(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    let underWheel = false;
+    for (let p = obj.parent; p; p = p.parent) {
+      if (/^wheel_/i.test(p.name || "")) {
+        underWheel = true;
+        break;
+      }
+    }
+    if (!underWheel) return;
+    const mats = [].concat(obj.material);
+    const next = mats.map((m) => {
+      if (!m) return m;
+      const c = m.clone();
+      c.visible = true;
+      c.transparent = false;
+      c.opacity = 1;
+      c.depthWrite = true;
+      c.needsUpdate = true;
+      return c;
+    });
+    obj.material = next.length === 1 ? next[0] : next;
+  });
+}
+
 function hideHeavyInterior(root) {
   let found = false;
   root.traverse((obj) => {
@@ -1472,12 +1516,14 @@ function findWheels(root) {
   if (named.length >= 4) {
     const hubs = named.filter((obj) => /^wheel/i.test(obj.name || ""));
     const pool = hubs.length >= 4 ? hubs : named;
-    const riggedNamed = sortWheelHubs(root, pool).slice(0, 4).map(rigWheel);
+    const riggedNamed = sortWheelHubs(root, pool)
+      .slice(0, 4)
+      .map((obj) => canonicalizeWheelKnuckle(rigWheel(obj), root));
     tagWheelLayout(root, riggedNamed);
     return riggedNamed;
   }
   const stored = (root.userData.wheels || []).filter((w) => w && w.isObject3D);
-  const riggedStored = stored.map(rigWheel);
+  const riggedStored = stored.map((w) => canonicalizeWheelKnuckle(rigWheel(w), root));
   tagWheelLayout(root, riggedStored);
   return riggedStored;
 }
@@ -1610,6 +1656,59 @@ function rigWheel(obj) {
   steer.userData.restQuat = steer.quaternion.clone();
   steer.userData.restEuler = new THREE.Euler().setFromQuaternion(steer.userData.restQuat.clone(), "YXZ");
   return steer;
+}
+
+const _bindQuat = new THREE.Quaternion();
+const _bindFwd = new THREE.Vector3();
+
+/**
+ * GLB / CAD wheels often ship with the tire disc in YZ or XY — steering around
+ * chassis Y then reads as camber instead of yaw. Bind the tire mesh inside the
+ * spin group so the axle is +X and lock stays parent-space yaw.
+ * @param {THREE.Object3D} steerHub knuckle from rigWheel
+ * @param {THREE.Object3D} root car root for forward check
+ * @returns {THREE.Object3D}
+ */
+function canonicalizeWheelKnuckle(steerHub, root) {
+  const data = steerHub.userData || {};
+  if (data.canonicalWheel) return steerHub;
+  const spin = data.spin;
+  if (!spin || !spin.isObject3D) return steerHub;
+
+  let tire = null;
+  spin.traverse((c) => {
+    if (!c.isMesh || c.userData.axleScrap || !c.visible) return;
+    if (!tire || /tire|tyre/i.test(c.name || "")) tire = c;
+  });
+  if (!tire) return steerHub;
+
+  tire.rotation.set(0, 0, 0);
+  tire.quaternion.identity();
+  const axis = detectSpinAxis(tire);
+  if (axis === "x" && !root.userData.stratosCad) {
+    data.canonicalWheel = true;
+    return steerHub;
+  }
+  if (axis === "y") {
+    _bindQuat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
+  } else if (axis === "z") {
+    _bindQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  } else {
+    _bindQuat.identity();
+  }
+  tire.quaternion.copy(_bindQuat);
+
+  _bindFwd.set(0, 0, 1).applyQuaternion(tire.quaternion);
+  if (_bindFwd.z < 0) tire.rotateX(Math.PI);
+
+  data.spinAxis = "x";
+  if (data.spinSign == null) data.spinSign = 1;
+  data.restQuat = new THREE.Quaternion();
+  data.restEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  data.canonicalWheel = true;
+  steerHub.quaternion.identity();
+  steerHub.rotation.set(0, 0, 0);
+  return steerHub;
 }
 
 /**

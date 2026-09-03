@@ -100,6 +100,14 @@ check(
 );
 
 check(
+  "POV rearview captures every presented frame",
+  /mirrorEveryPov:\s*1/.test(read("js/config.js")) &&
+    /GFX\.mirrorEveryPov/.test(game) &&
+    !/_qualityMirrorEvery[\s\S]{0,120}_renderMirror/.test(game),
+  "mirrorEveryPov bypasses quality-tier throttle in POV"
+);
+
+check(
   "empty RT always captures; last frame may defer",
   /_mirrorDefer > 0 && this\._mirrorHasImage/.test(game) &&
     /this\._mirrorHasImage = true/.test(game),

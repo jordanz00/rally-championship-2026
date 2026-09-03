@@ -34,7 +34,7 @@ const main = read("js/main.js");
 const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
-check("STREAM.lodNear / lodHysteresis", /lodNear:\s*108/.test(config) && /lodHysteresis:\s*22/.test(config));
+check("STREAM.lodNear / lodHysteresis", /lodNear:\s*132/.test(config) && /lodHysteresis:\s*28/.test(config));
 check("treeCardKind + crownGeometry exported", /export function treeCardKind/.test(trees) && /export function crownGeometry/.test(trees));
 check(
   "roadside trees plant hi GLB + lo cards",

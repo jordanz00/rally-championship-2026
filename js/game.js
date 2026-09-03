@@ -20,14 +20,14 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=173";
+} from "./config.js?v=176";
 import { Input } from "./input.js?v=41";
 import { Vehicle } from "./physics/vehicle.js?v=121";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=144";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=146";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=239";
+import { Track } from "./tracks/track.js?v=246";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=28";
 import { Opponent } from "./ai.js?v=136";
 import { RallyAudio } from "./audio/engine.js?v=60";
@@ -37,7 +37,7 @@ import { Hud, showScreen, showLoadingScreen, setLoadingProgress, formatTime } fr
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=58";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=38";
-import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=30";
+import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=31";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
 import { PhotoRealPost } from "./gfx/postfx.js?v=19";
 import { createPerfTier } from "./gfx/perf-tier.js?v=46";
@@ -101,9 +101,14 @@ function raceStartTier() {
   const macDesktop = /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
   // Headless CDP uses SwiftShader — cinema clouds stall the loop below 1 fps.
   if (macDesktop && navigator.webdriver) return "medium";
-  // Desktop Mac/PC: medium = shadows + grade before "3". Degrade to low/min
-  // only after the race is under way if the machine cannot hold the budget.
-  if (macDesktop) return "medium";
+  // Capable desktops: start high so denser env + shadows land before auto-downgrade.
+  if (macDesktop) {
+    const mem = navigator.deviceMemory;
+    if (mem >= 8) return "high";
+    return "medium";
+  }
+  const mem = navigator.deviceMemory;
+  if (mem >= 8 && (navigator.hardwareConcurrency || 4) >= 8) return "high";
   return "medium";
 }
 
@@ -4341,9 +4346,9 @@ export class RallyGame {
     }
     this._mirrorDefer = 0;
     this._mirrorTick += 1;
-    // Quality scaler stretches the capture interval before it drops the mirror.
-    const every = Math.max(1, this._qualityMirrorEvery || GFX.mirrorEvery | 0);
-    if (this._mirrorHasImage && this._mirrorTick % every !== 0) return;
+    // POV only — quality tier mirrorEvery is for chase; cabin glass needs every frame.
+    const every = Math.max(1, GFX.mirrorEveryPov != null ? GFX.mirrorEveryPov : 1);
+    if (this._mirrorHasImage && every > 1 && this._mirrorTick % every !== 0) return;
     this._captureMirror(false);
   }
 
