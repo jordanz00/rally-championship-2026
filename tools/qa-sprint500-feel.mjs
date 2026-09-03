@@ -53,12 +53,12 @@ check("GO extends race warm frames", /_raceWarmFrames = Math\.max\(this\._raceWa
 check("settle locks stage grade", /_settleRacePresent[\s\S]*?post\.syncFromConfig\(L\)/.test(game));
 
 check(
-  "JUMP settle window tuned for bounce",
-  /landSettleMin:\s*0\.2[5-9]/.test(config) && /landSettleMax:\s*0\.[67]\d/.test(config)
+  "JUMP settle window tuned for quick plant",
+  /landSettleMin:\s*0\.1[2-8]/.test(config) && /landSettleMax:\s*0\.[3-4]\d/.test(config)
 );
 check(
   "JUMP land damp knobs",
-  /landSettleDamp:\s*2\.[4-9]/.test(config) && /landSquashDamp:\s*3\.4/.test(config)
+  /landSettleDamp:\s*[4-9]\.\d/.test(config) && /landSquashDamp:\s*4\.8/.test(config)
 );
 check("vehicle uses JUMP damp", /JUMP\.landSettleDamp/.test(vehicle) && /JUMP\.landSettleDampEnd/.test(vehicle));
 

@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=170";
+import { VISUAL } from "../config.js?v=178";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -353,7 +353,7 @@ export class PhotoRealPost {
     const titlePad = !!this._titleShowroom;
     const useAo =
       !titlePad &&
-      q !== "low" &&
+      q === "high" &&
       (VISUAL.aoStrength ?? 0) > 0.001 &&
       this.aoRT &&
       this.sceneRT.depthTexture;

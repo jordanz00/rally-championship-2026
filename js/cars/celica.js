@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=170";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=178";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=30";
 
 const GARAGE = {

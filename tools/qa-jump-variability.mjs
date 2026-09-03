@@ -57,10 +57,10 @@ check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /nose
 check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle\(/.test(vehicle) && /_landSettle/.test(vehicle) && /landSettleMin/.test(config));
 check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
 check(
-  "underdamped land compress spring",
+  "near-critical land compress spring",
   /_seedLandCompress\(/.test(vehicle) &&
     /landCompressWn/.test(config) &&
-    /landCompressZeta:\s*0\.[5-8]/.test(config) &&
+    /landCompressZeta:\s*0\.[7-9]/.test(config) &&
     /landCompressExtMin/.test(config)
 );
 check("pad hit absorbs vel into spring", /landVelAbsorb/.test(config) && /_seedLandCompress\(-this\.velY/.test(vehicle));

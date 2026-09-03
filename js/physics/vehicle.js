@@ -45,10 +45,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=170";
+import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=178";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=50";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=46";
-import { JumpModel } from "./jump.js?v=22";
+import { JumpModel } from "./jump.js?v=23";
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=3";
 
 const TMP = {
@@ -1364,7 +1364,7 @@ export class Vehicle {
         this._groundVy = 0;
         this._deckSmoothY = floorY;
         this._deckFilt = floorY;
-        this._landLock = 0.18;
+        this._landLock = 0.11;
         this._armLandPad(track, q2.dist, floorY);
         this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
         return;
@@ -1400,7 +1400,7 @@ export class Vehicle {
       const reairMin = JUMP.landReairMin != null ? JUMP.landReairMin : 0.85;
       // Soft rebound only on severe mismatch — most energy is already in the spring.
       if (bounce > reairMin && impact > bounceNeed && this._landLock <= 0) {
-        this.velY = Math.min(bounce * 0.55, 1.2);
+        this.velY = Math.min(bounce * 0.35, 0.55);
         this.onGround = false;
         this._airTime = 0.04;
         this._landLock = 0.08;
@@ -1409,7 +1409,7 @@ export class Vehicle {
         this.velY = 0;
         this.onGround = true;
         this._airTime = 0;
-        this._landLock = 0.16 + impact * 0.012;
+        this._landLock = 0.1 + impact * 0.008;
       }
     }
   }
@@ -2493,39 +2493,41 @@ export class Vehicle {
     this._roadPitch = roadPitch;
     this._visPitch = roadPitch;
 
-    const pitchMax = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.22;
-    const rollMax = JUMP.landSettleRollMax != null ? JUMP.landSettleRollMax : 0.22;
+    const pitchMax = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.14;
+    const rollMax = JUMP.landSettleRollMax != null ? JUMP.landSettleRollMax : 0.12;
     const airPitch = clamp(-(this.jump.noseUp || 0), -0.5, 0.5);
     const hang = clamp((this.lastAirTime || this._airTime || 0) / 0.9, 0, 1);
-    const strength = clamp(0.28 + upset * 0.62 + hang * 0.38 + clamp(impact / 11, 0, 0.45), 0, 1);
+    // Keep a readable impact rock, but do not seed a long floaty hang.
+    const strength = clamp(0.2 + upset * 0.42 + hang * 0.18 + clamp(impact / 14, 0, 0.28), 0, 0.78);
     // Blend current mesh pitch with air pose so touchdown does not snap.
     const fromAir = clamp(airPitch - roadPitch, -pitchMax, pitchMax);
     const fromMesh = clamp(this.pitch - roadPitch, -pitchMax, pitchMax);
-    this._landPitchOff = clamp(fromMesh * 0.55 + fromAir * 0.45, -pitchMax, pitchMax) * strength;
+    this._landPitchOff = clamp(fromMesh * 0.4 + fromAir * 0.35, -pitchMax, pitchMax) * strength;
     this._landRollOff = clamp(
-      (this.jump.roll || 0) * (0.4 + strength * 0.6) + (this.roll || 0) * 0.35,
+      (this.jump.roll || 0) * (0.28 + strength * 0.4) + (this.roll || 0) * 0.22,
       -rollMax,
       rollMax
     );
     this._seedLandCompress(impact, upset);
-    const tMin = JUMP.landSettleMin != null ? JUMP.landSettleMin : 0.42;
-    const tMax = JUMP.landSettleMax != null ? JUMP.landSettleMax : 1.2;
-    this._landSettle = clamp(tMin + impact * 0.038 + upset * 0.4 + hang * 0.3, tMin, tMax);
+    const tMin = JUMP.landSettleMin != null ? JUMP.landSettleMin : 0.14;
+    const tMax = JUMP.landSettleMax != null ? JUMP.landSettleMax : 0.38;
+    this._landSettle = clamp(tMin + impact * 0.014 + upset * 0.14 + hang * 0.08, tMin, tMax);
 
     // Soft nudge — attitude spring owns the rest. Hard assign was the snap.
     // Hard impacts add a little nose-down (+Rx) so weight reads on landing;
     // land squash itself stays wheel/Y via `_applyLandWheelTravel`.
-    const noseDown = clamp(impact * (JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.016), 0, 0.08);
+    const noseDown = clamp(impact * (JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.02), 0, 0.07);
     this._landPitchOff = clamp(this._landPitchOff + noseDown, -pitchMax, pitchMax);
     const wantPitch = roadPitch + this._landPitchOff;
-    const snap = this.ai ? 0.48 : 0.72;
+    const snap = this.ai ? 0.58 : 0.82;
     this.pitch += (wantPitch - this.pitch) * snap;
-    this.pitchRate = (this.jump.noseUpRate || 0) * -0.35 + (wantPitch - this.pitch) * 3.4;
-    this.roll = clamp((this.roll || 0) * 0.55 + this._landRollOff * 0.45, -rollMax, rollMax);
-    this.rollRate = (this.jump.rollRate || 0) * 0.62;
-    this._bodyPitch += (noseDown - this._bodyPitch) * 0.45;
+    // Kill leftover air rates so the chassis does not keep tumbling after kiss.
+    this.pitchRate = (this.jump.noseUpRate || 0) * -0.12 + (wantPitch - this.pitch) * 6.5;
+    this.roll = clamp((this.roll || 0) * 0.4 + this._landRollOff * 0.35, -rollMax, rollMax);
+    this.rollRate = (this.jump.rollRate || 0) * 0.22;
+    this._bodyPitch += (noseDown - this._bodyPitch) * 0.55;
     this._bodyPitchRate = 0;
-    this._squatSmooth += (noseDown - this._squatSmooth) * 0.45;
+    this._squatSmooth += (noseDown - this._squatSmooth) * 0.55;
   }
 
   /**
@@ -2534,17 +2536,17 @@ export class Vehicle {
    * @param {number} [upset]
    */
   _seedLandCompress(impact = 0, upset = 0) {
-    const gain = JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.052;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.1;
-    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.013;
-    const seed = clamp(impact * gain + upset * 0.018, 0.01, maxC);
+    const gain = JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.09;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.11;
+    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.02;
+    const seed = clamp(impact * gain + upset * 0.012, 0.012, maxC);
     this._landCompress = Math.max(this._landCompress || 0, seed);
-    // Initial compress velocity — higher on hard hits so the spring can rebound.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.022);
+    // Initial compress velocity — enough for one rebound, not a trampoline hop.
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.016);
     this._landSquash = clamp(
-      Math.max(this._landSquash || 0, this._landCompress * 0.92 + impact * squashK * 0.35),
-      0.008,
-      0.11
+      Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.28),
+      0.01,
+      0.1
     );
   }
 
@@ -2566,18 +2568,18 @@ export class Vehicle {
     }
     if (this._landSettle > 0) this._landSettle = Math.max(0, this._landSettle - dt);
 
-    const wn = JUMP.landCompressWn != null ? JUMP.landCompressWn : 13.5;
-    const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 1.22;
+    const wn = JUMP.landCompressWn != null ? JUMP.landCompressWn : 20.5;
+    const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 0.86;
     let x = this._landCompress || 0;
     let v = this._landCompressVel || 0;
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
-    const extMin = JUMP.landCompressExtMin != null ? JUMP.landCompressExtMin : -0.024;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.1;
+    const extMin = JUMP.landCompressExtMin != null ? JUMP.landCompressExtMin : -0.014;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.11;
     if (x < extMin) {
       x = extMin;
-      if (v < 0) v *= 0.18;
+      if (v < 0) v *= 0.08;
     }
     if (x > maxC) {
       x = maxC;
@@ -2585,14 +2587,14 @@ export class Vehicle {
     }
     this._landCompress = x;
     this._landCompressVel = v;
-    this._landSquash = clamp(Math.abs(x) * 0.9, 0, 0.11);
+    this._landSquash = clamp(Math.abs(x) * 0.9, 0, 0.1);
 
-    const dampBase = JUMP.landSettleDamp != null ? JUMP.landSettleDamp : 1.55;
-    const dampEnd = JUMP.landSettleDampEnd != null ? JUMP.landSettleDampEnd : 4.2;
-    const life = clamp(this._landSettle / Math.max(0.2, JUMP.landSettleMax || 1.2), 0, 1);
-    const compressN = clamp(Math.abs(x) / 0.055, 0, 1);
-    const playerBoost = this.ai ? 1 : 1.28;
-    const damp = lerp(dampEnd, dampBase, Math.max(life, compressN * 0.85)) * playerBoost;
+    const dampBase = JUMP.landSettleDamp != null ? JUMP.landSettleDamp : 5.4;
+    const dampEnd = JUMP.landSettleDampEnd != null ? JUMP.landSettleDampEnd : 11.5;
+    const life = clamp(this._landSettle / Math.max(0.12, JUMP.landSettleMax || 0.38), 0, 1);
+    const compressN = clamp(Math.abs(x) / 0.05, 0, 1);
+    const playerBoost = this.ai ? 1.08 : 1.55;
+    const damp = lerp(dampEnd, dampBase, Math.max(life, compressN * 0.55)) * playerBoost;
     const k = Math.exp(-damp * dt);
     this._landPitchOff *= k;
     this._landRollOff *= k;
@@ -2601,9 +2603,9 @@ export class Vehicle {
 
     if (
       this._landSettle <= 0 &&
-      Math.abs(this._landCompress) < 0.002 &&
-      Math.abs(this._landCompressVel) < 0.04 &&
-      Math.abs(this._landPitchOff) + Math.abs(this._landRollOff) < 0.003
+      Math.abs(this._landCompress) < 0.0015 &&
+      Math.abs(this._landCompressVel) < 0.03 &&
+      Math.abs(this._landPitchOff) + Math.abs(this._landRollOff) < 0.002
     ) {
       this._landSettle = 0;
       this._landPitchOff = 0;
@@ -3102,14 +3104,14 @@ export class Vehicle {
       const settleOff =
         this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004 ? this._landPitchOff : 0;
       const want = this._visPitch + this._bodyPitch + settleOff;
-      const landBlend = JUMP.landPitchBlend != null ? JUMP.landPitchBlend : 5.4;
+      const landBlend = JUMP.landPitchBlend != null ? JUMP.landPitchBlend : 18;
       const landing = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
-      const playerBoost = this.ai ? 1 : 1.32;
+      const playerBoost = this.ai ? 1 : 1.45;
       const k = landing
         ? 1 - Math.exp(-landBlend * playerBoost * dt)
         : this._landLock > 0
-          ? 1 - Math.exp(-12 * dt)
-          : 1 - Math.exp(-24 * dt);
+          ? 1 - Math.exp(-16 * dt)
+          : 1 - Math.exp(-28 * dt);
       this.pitch += (want - this.pitch) * k;
       this.pitchRate = (want - this.pitch) / Math.max(dt, 1e-4);
     } else {

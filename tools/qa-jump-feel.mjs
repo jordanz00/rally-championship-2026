@@ -42,10 +42,10 @@ check("spring burst below old trampoline", /springBurst:\s*1\.85/.test(config) &
 check("aero float reduced", /aeroFloat:\s*0\.12/.test(config));
 check(
   "landing settle is snappy with bounce spring",
-  /landSettleMin:\s*0\.2[5-9]/.test(config) &&
-    /landCompressZeta:\s*0\.[5-8]/.test(config) &&
+  /landSettleMin:\s*0\.1[2-8]/.test(config) &&
+    /landCompressZeta:\s*0\.[7-9]/.test(config) &&
     /landCompressExtMin/.test(config),
-  "underdamped land spring + short settle window"
+  "near-critical land spring + short settle window"
 );
 check("land adds nose-down weight (+Rx)", /noseDown/.test(vehicle) && /landImpactSquash/.test(vehicle));
 check("chase cam lifts / pulls back in air", /airLift/.test(game) && /airBack/.test(game) && /!p\.onGround/.test(game));
@@ -54,8 +54,8 @@ check(
   "cache-bust chain",
   cacheOk &&
     Number(gameV) >= 545 &&
-    Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 119 &&
-    Number((vehicle.match(/jump\.js\?v=(\d+)/) || [])[1]) >= 22,
+    Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 122 &&
+    Number((vehicle.match(/jump\.js\?v=(\d+)/) || [])[1]) >= 23,
   `main=${mainV} game=${gameV}`
 );
 
