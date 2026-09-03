@@ -44,7 +44,7 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 245,
+  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 246,
   "stale cache keeps broken portal"
 );
 check(
@@ -58,7 +58,12 @@ check(
   "overburden crown missing"
 );
 check(
-  "recessed bore liner into mountain",
+  "recessed horseshoe mouth ring into mountain",
+  /tunnelPortalArchGeometry/.test(trackSrc) && /portalMouthRing/.test(portalSlice),
+  "need sunk arch ring with drive hole"
+);
+check(
+  "arched bore liner into mountain",
   /portalBoreLiner/.test(portalSlice),
   "dark bore mouth missing"
 );
@@ -68,14 +73,14 @@ check(
   "portal verts must snap to land"
 );
 check(
-  "no floating extruded arch gate at portal",
+  "no legacy free-standing portalFace gate tag",
   !/portalFace/.test(portalSlice),
   "extruded face floated above hillside"
 );
 check(
-  "no talus shards at portal",
-  !/talusSpots/.test(portalSlice),
-  "floating shard props at mouth"
+  "grounded scree outside drive cone",
+  /portalScree/.test(portalSlice) && /_inTunnelMouthCorridor/.test(portalSlice),
+  "scree must refuse mouth corridor"
 );
 check(
   "no box embankment at portal",
@@ -157,7 +162,7 @@ async function main() {
   }
   const { cdp } = browser;
   const { errors } = await preparePage(cdp);
-  await goto(cdp, `${server.url}/index.html?v=564&perf=medium`);
+  await goto(cdp, `${server.url}/index.html?v=565&perf=medium`);
   await waitFor(cdp, () => evaluate(cdp, () => !!window.__RALLY__), 20000).catch(() => null);
 
   try {
@@ -182,6 +187,7 @@ async function main() {
     let hillsides = 0;
     let lintels = 0;
     let liners = 0;
+    let rings = 0;
     let floaters = 0;
     const THREE = window.THREE;
     const box = THREE ? new THREE.Box3() : null;
@@ -191,6 +197,7 @@ async function main() {
         if (m.userData.portalHillside) hillsides += 1;
         if (m.userData.portalLintel) lintels += 1;
         if (m.userData.portalBoreLiner) liners += 1;
+        if (m.userData.portalMouthRing) rings += 1;
         if (!box) return;
         box.setFromObject(m);
         const gy =
@@ -203,6 +210,7 @@ async function main() {
         if (
           !m.userData.portalLintel &&
           !m.userData.portalBoreLiner &&
+          !m.userData.portalMouthRing &&
           box.min.y - gy > 1.2
         ) {
           floaters += 1;
@@ -226,6 +234,7 @@ async function main() {
       hillsides,
       lintels,
       liners,
+      rings,
       floaters,
       apronClear,
     };
@@ -239,6 +248,7 @@ async function main() {
     check("portal groups for enter+exit", probe.portals >= 2, `count=${probe.portals}`);
     check("hillside shells present", probe.hillsides >= 4, `hillsides=${probe.hillsides}`);
     check("lintel crowns present", probe.lintels >= 2, `lintels=${probe.lintels}`);
+    check("mouth rings present", probe.rings >= 2, `rings=${probe.rings}`);
     check("bore liners present", probe.liners >= 2, `liners=${probe.liners}`);
     check("no large floaters", probe.floaters === 0, `floaters=${probe.floaters}`);
     check("approach apron land is floor", probe.apronClear, "land rose into bore");

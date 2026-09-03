@@ -136,8 +136,9 @@ check(
   /tunnelMouthHillsideGeometry/.test(trackSrc) &&
     /portalHillside/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
     !/portalFrame/.test(trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"))) &&
+    /portalMouthRing/.test(trackSrc) &&
     /portalBoreLiner/.test(trackSrc),
-  "unified hillside + recessed bore"
+  "unified hillside + recessed horseshoe bore"
 );
 check(
   "tunnel mouth collider scrub covers entrance + exit",
@@ -376,7 +377,7 @@ async function main() {
       if (group) {
         group.traverse((obj) => {
           if (!(obj.isMesh && obj.userData && obj.userData.tunnelPortal)) return;
-          if (obj.userData.portalLintel || obj.userData.portalBoreLiner) return;
+          if (obj.userData.portalLintel || obj.userData.portalBoreLiner || obj.userData.portalMouthRing) return;
           portalMeshes += 1;
           obj.updateWorldMatrix(true, false);
           const e = obj.matrixWorld.elements;

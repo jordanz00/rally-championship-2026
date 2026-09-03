@@ -6972,9 +6972,9 @@ export class Track {
   }
 
   /**
-   * Realistic rock-cut mountain mouth — one terrain-welded hillside per side,
-   * lintel crown, and a recessed dark bore so the drive reads as entering the hill.
-   * No floating arch gate, talus shards, or box embankment at the portal.
+   * Realistic rock-cut mountain mouth — terrain-welded hillsides, horseshoe
+   * ring sunk into the cut, lintel overburden, arched bore shell, grounded
+   * scree. Reads as driving into a carved mountain, not a floating gate.
    * @param {{x:number,y:number,z:number,heading:number,width:number,nx:number,nz:number,dist:number}} p
    * @param {number} outward −1 entrance / +1 exit
    * @param {THREE.Material} rock
@@ -7007,7 +7007,7 @@ export class Track {
         clear,
         openH,
         (lat, along, t) => groundLocalY(lat, along, 0.35 + t * 0.45),
-        { alongMin: -16, maxAlong: 54, segsAlong: 20, segsLat: 16 }
+        { alongMin: -18, maxAlong: 58, segsAlong: 22, segsLat: 18 }
       );
       const hillside = new THREE.Mesh(hillsideGeo, side > 0 ? rock : rockDark);
       hillside.castShadow = true;
@@ -7016,7 +7016,18 @@ export class Track {
       g.add(hillside);
     }
 
-    // —— 2. Lintel / overburden crown welded above the arch spring line ——
+    // —— 2. Horseshoe mouth ring — sunk INTO the hill (not a free-standing gate) ——
+    const ringDepth = spec.faceDepth;
+    const ringGeo = tunnelPortalArchGeometry(clear, openH, ringDepth);
+    const ring = new THREE.Mesh(ringGeo, rock);
+    // Embed most of the extrusion into the mountain; only a thin lip faces the approach.
+    ring.position.set(0, -0.55, outward * (-ringDepth * 0.62));
+    ring.castShadow = true;
+    ring.receiveShadow = true;
+    ring.userData.portalMouthRing = true;
+    g.add(ring);
+
+    // —— 3. Lintel / overburden crown welded above the arch spring line ——
     const lintelGeo = tunnelMouthLintelGeometry(
       clear,
       openH,
@@ -7029,15 +7040,44 @@ export class Track {
     lintel.userData.portalLintel = true;
     g.add(lintel);
 
-    // —— 3. Recessed bore liner — dark tube segment visible through the cut ——
-    const linerLen = 12;
-    const linerGeo = new THREE.BoxGeometry(clear * 2 + 0.4, openH - 0.35, linerLen);
-    const liner = new THREE.Mesh(linerGeo, rockDark);
-    liner.position.set(0, openH * 0.5 - 0.45, outward * (-linerLen * 0.52 + 1.6));
-    liner.castShadow = true;
-    liner.receiveShadow = true;
-    liner.userData.portalBoreLiner = true;
-    g.add(liner);
+    // —— 4. Arched bore shell — dark horseshoe tube receding into the mountain ——
+    const boreLen = 14;
+    const boreGeo = tunnelPortalArchGeometry(clear * 0.98, openH - 0.2, boreLen);
+    const bore = new THREE.Mesh(boreGeo, rockDark);
+    bore.position.set(0, -0.35, outward * (-ringDepth - boreLen * 0.45));
+    bore.castShadow = true;
+    bore.receiveShadow = true;
+    bore.userData.portalBoreLiner = true;
+    g.add(bore);
+
+    // —— 5. Grounded scree / talus planted on terrain OUTSIDE the drive cone ——
+    const shardGeo = cliffShardGeometry();
+    const screeSpots = [
+      [clear + 10, 8],
+      [-(clear + 11), 9],
+      [clear + 16, 16],
+      [-(clear + 17), 17],
+      [clear + 24, 26],
+      [-(clear + 25), 27],
+      [clear + 32, 34],
+      [-(clear + 33), 35],
+    ];
+    for (let i = 0; i < screeSpots.length; i++) {
+      const lat = screeSpots[i][0];
+      const along = screeSpots[i][1];
+      if (Math.abs(lat) < clear + 6) continue;
+      const { x, z } = worldXZ(lat, along);
+      if (this._inTunnelMouthCorridor(x, z)) continue;
+      const gy = this._tunnelTerrainY(x, z);
+      const s = 1.15 + (i % 3) * 0.32;
+      const shard = new THREE.Mesh(shardGeo, i % 2 ? rockDark : rock);
+      shard.position.set(lat, gy - p.y + s * 0.22, outward * along);
+      shard.scale.setScalar(s);
+      shard.rotation.set(i * 0.18, i * 0.27, lat > 0 ? 0.1 : -0.1);
+      shard.castShadow = true;
+      shard.userData.portalScree = true;
+      g.add(shard);
+    }
 
     g.position.set(p.x, p.y, p.z);
     g.rotation.y = p.heading;
@@ -7067,7 +7107,7 @@ export class Track {
     const world = new THREE.Vector3();
     const invObj = new THREE.Matrix4();
     g.traverse((obj) => {
-      if (!obj.isMesh || !obj.geometry || obj.userData.portalBoreLiner) return;
+      if (!obj.isMesh || !obj.geometry || obj.userData.portalBoreLiner || obj.userData.portalMouthRing) return;
       const attr = obj.geometry.attributes.position;
       if (!attr || !attr.count) return;
       obj.updateWorldMatrix(true, false);
@@ -7115,7 +7155,7 @@ export class Track {
     const doomedLift = [];
     g.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
-      if (obj.userData.portalBoreLiner || obj.userData.portalLintel) return;
+      if (obj.userData.portalBoreLiner || obj.userData.portalLintel || obj.userData.portalMouthRing) return;
       box.setFromObject(obj);
       const local = box.clone().applyMatrix4(inv);
       if (local.min.y > openH - 0.4) return;
@@ -7156,7 +7196,7 @@ export class Track {
     g.updateMatrixWorld(true);
     g.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
-      if (obj.userData.portalBoreLiner) return;
+      if (obj.userData.portalBoreLiner || obj.userData.portalMouthRing) return;
       if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
       const box = obj.geometry.boundingBox.clone();
       box.applyMatrix4(obj.matrixWorld);
@@ -7198,7 +7238,7 @@ export class Track {
     g.updateMatrixWorld(true);
     g.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
-      if (obj.userData.portalBoreLiner) return;
+      if (obj.userData.portalBoreLiner || obj.userData.portalMouthRing) return;
       const attr = obj.geometry.attributes.position;
       if (!attr || !attr.count) return;
       let inv = 0;
@@ -7241,7 +7281,7 @@ export class Track {
     const doomed = [];
     g.traverse((child) => {
       if (!child.isMesh || !child.geometry) return;
-      if (child.userData.portalBoreLiner) return;
+      if (child.userData.portalBoreLiner || child.userData.portalMouthRing) return;
       child.updateWorldMatrix(true, false);
       const box = new THREE.Box3().setFromObject(child);
       const cx = (box.min.x + box.max.x) * 0.5;

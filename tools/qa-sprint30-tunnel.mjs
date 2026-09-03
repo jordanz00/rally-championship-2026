@@ -38,9 +38,10 @@ check(
   "single welded hillside per side"
 );
 check(
-  "lintel crown + recessed bore liner",
+  "lintel crown + recessed horseshoe ring + bore",
   /tunnelMouthLintelGeometry/.test(track) &&
     /portalLintel/.test(portalSlice) &&
+    /portalMouthRing/.test(portalSlice) &&
     /portalBoreLiner/.test(portalSlice),
   "mountain mouth read"
 );
