@@ -4,7 +4,8 @@
  * WHO THIS IS FOR: Track.noteAt and the Sprint 67 / 91 QA gates.
  * WHAT IT DOES: looks ahead and returns the nearest turn or jump, once per
  *   arc / crest. Easy / medium / hard / hairpin left or right, or jump.
- *   No gravel, tunnel, mud, cobbles, crest, or finish lines.
+ *   Long easy/medium arcs add LONG + MAYBE (AM3 / Kenneth Ibrahim: player
+ *   must judge the corner). No gravel, tunnel, mud, cobbles, crest, or finish.
  *   Left = positive heading (matches courses.js curve `angle`).
  * HOW IT CONNECTS: track.js sample() feeds heading / jump / landmark posts.
  */
@@ -20,6 +21,13 @@ const EASY_MAX = 42;
 const MEDIUM_MAX = 95;
 /** Tightest grade — Desert bowl / linked pins are 148–172°. */
 const HAIRPIN_MIN = 135;
+/**
+ * Arc length (m) for a "long … maybe" call — sweepers the driver must judge,
+ * not a short kink that already has a firm grade.
+ */
+const LONG_ARC_M = 64;
+/** Slightly shorter arcs can still take MAYBE when the grade is easy/medium. */
+const MAYBE_ARC_M = 48;
 
 /**
  * Wrap a heading delta onto (−π, π].
@@ -51,30 +59,40 @@ function turnWindow(sample, d, length) {
  * @param {number} at metres along the stage (arc start — stable id)
  * @param {number} dh signed heading change (radians)
  * @param {number} deg absolute degrees of the whole arc
+ * @param {number} [arcLen] metres of same-direction arc (for long/maybe)
  */
-export function makeTurnNote(at, dh, deg) {
+export function makeTurnNote(at, dh, deg, arcLen = 0) {
   const dir = dh > 0 ? "LEFT" : "RIGHT";
   const side = dir.toLowerCase();
   let severity = 1;
   let grade = "easy";
-  let text = `EASY ${dir}`;
   if (deg > HAIRPIN_MIN) {
     severity = 4;
     grade = "hairpin";
-    text = `HAIRPIN ${dir}`;
   } else if (deg > MEDIUM_MAX) {
     severity = 3;
     grade = "hard";
-    text = `HARD ${dir}`;
   } else if (deg > EASY_MAX) {
     severity = 2;
     grade = "medium";
-    text = `MEDIUM ${dir}`;
   }
-  const spoken =
+  const len = Math.max(0, arcLen || 0);
+  // Hairpins are definitive — no "maybe". Long easy/medium = judge yourself.
+  const isLong = grade !== "hairpin" && len >= LONG_ARC_M;
+  const maybe =
+    grade !== "hairpin" &&
+    severity <= 2 &&
+    (isLong || len >= MAYBE_ARC_M);
+
+  const gradeLabel = grade.toUpperCase();
+  const text = `${isLong ? "LONG " : ""}${gradeLabel} ${dir}${maybe ? " MAYBE" : ""}`;
+  let spoken =
     grade === "hairpin"
       ? `Hairpin ${side}`
       : `${grade.charAt(0).toUpperCase()}${grade.slice(1)} ${side}`;
+  if (isLong && grade !== "hairpin") spoken = `Long ${spoken.toLowerCase()}`;
+  if (maybe) spoken = `${spoken} maybe`;
+
   return {
     id: `${dir}-${severity}-${Math.round(at)}`,
     kind: "turn",
@@ -84,6 +102,9 @@ export function makeTurnNote(at, dh, deg) {
     text,
     speech: spoken,
     clip: `${grade}-${side}`,
+    long: isLong,
+    maybe,
+    arcLen: len,
   };
 }
 
@@ -173,7 +194,8 @@ export function pickPaceNote(sample, dist, look, length) {
       d = Math.max(d, arc.end);
       continue;
     }
-    turnNote = makeTurnNote(arc.start, dhTot, degTot);
+    const arcLen = Math.max(0, arc.end - arc.start);
+    turnNote = makeTurnNote(arc.start, dhTot, degTot, arcLen);
     turnAt = arc.start;
     break;
   }
@@ -189,6 +211,8 @@ export function pickPaceNote(sample, dist, look, length) {
       text: "JUMP",
       speech: "Jump",
       clip: "jump",
+      long: false,
+      maybe: false,
     };
   }
   return turnNote;

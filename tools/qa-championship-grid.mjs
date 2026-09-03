@@ -16,6 +16,7 @@ import {
   goto,
   waitFor,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 async function main() {
@@ -47,7 +48,7 @@ async function main() {
         champPlace: g.champPlace,
         pending: g._pendingNextCourse,
         stageIndex: g.stageIndex,
-        headline: document.getElementById("result-headline")?.textContent || "",
+        headline: document.getElementById("result-headline")?.textContent || ""
       };`
     );
 

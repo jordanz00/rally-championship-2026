@@ -56,10 +56,10 @@ export const GFX = {
   shadowMap: 1536,
   shadowExtent: 36,
   /**
-   * Race sun ortho half-width (metres). Tight chase frustum — denser contact
-   * under the car and fewer mid-ground casters in the atlas (fill-rate win).
+   * Race sun ortho half-width (metres). Wider frustum keeps mid-ground
+   * contact readable; soft PCF + shadowEvery still protect fill-rate.
    */
-  shadowExtentRace: 28,
+  shadowExtentRace: 48,
   shadowNear: 2,
   shadowFar: 160,
   /**
@@ -75,16 +75,16 @@ export const GFX = {
    * FOV is vertical; ~26° at 384×120 ≈ 70° horizontal — a real cabin mirror,
    * not a 130° security cam. Far covers the road/trees/rivals behind you.
    */
-  mirrorW: 256,
-  mirrorH: 80,
+  mirrorW: 384,
+  mirrorH: 120,
   /** Chase / non-POV mirror cadence (presented frames). POV uses mirrorEveryPov. */
   mirrorEvery: 2,
-  /** POV rearview — every other present keeps glass live without a full hitch. */
-  mirrorEveryPov: 2,
+  /** POV rearview — every presented frame; tier throttle made glass feel laggy. */
+  mirrorEveryPov: 1,
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
-  mirrorFar: 110,
+  mirrorFar: 200,
   mirrorNear: 0.4,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
@@ -112,10 +112,20 @@ export const GFX = {
    */
   lock30AboveMs: 20,
   /**
-   * Prefer locking to an even 30 only after EMA evidence (perf-tier).
-   * Forcing lock-30 at settle made capable machines feel laggy from GO.
+   * When the machine cannot hold 60, lock an even 30 *before* dumping the
+   * quality ladder to `min`. Photographic shadows/AO beat a soft 50 fps mush.
+   * Settle does not force 30 — capable GPUs still free-run at 60 from GO.
    */
-  preferLock30: false,
+  preferLock30: true,
+  /** Do not arm lock-30 during GPU settle; let evidence decide after GO. */
+  forceLock30AtSettle: false,
+  /**
+   * Once the race present path is armed, never downgrade post / sky / shadow /
+   * DPR mid-stage. Tunnel streaming and shader warms spike present cost for a
+   * few frames — that must not read as a graphics mode change. Cadence may
+   * still lock to 30 Hz if the machine cannot hold 60.
+   */
+  lockRaceQuality: true,
   /** Sprint 39 / 536 — integrated GPU / M-series targets. */
   integratedFloorMs: 17.5,
   integratedEmergencyMs: 20,
@@ -185,7 +195,7 @@ export const VISUAL = {
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
   highlightRolloff: 0.22,
   pbrSkySigma: 0,
-  /** Screen-space crevice AO — high tier only (postfx gates balanced). */
+  /** Screen-space crevice AO — contact between car, road, and verge. */
   aoStrength: 0.64,
   aoRadius: 1.48,
   /** Normal strength on road/terrain. */
@@ -193,14 +203,14 @@ export const VISUAL = {
   /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
   normalMapScale: 0.92,
   /**
-   * Albedo ×2.4 + procedural roughness — denser than 2.0, cheaper than 2.65.
+   * Albedo ×2.65 + procedural roughness — photographic ground grain (Sprint 23/30).
    */
-  textureScale: 2.4,
+  textureScale: 2.65,
   roughnessMaps: true,
   /** Cone/cylinder segments for procedural foliage + trunk cards. */
-  propSegments: 18,
+  propSegments: 20,
   /** Icosahedron subdivisions for rocks, tumbleweed, shrub blobs. */
-  rockDetail: 4,
+  rockDetail: 5,
 };
 
 /**
@@ -210,40 +220,40 @@ export const VISUAL = {
  */
 export const STREAM = {
   /** Load at fog.far × this — geometry must exist before it clears the haze. */
-  loadFogFactor: 1.05,
+  loadFogFactor: 1.08,
   /** Unload beyond fog so slices stay warm until fully fogged out. */
-  unloadFogFactor: 1.14,
+  unloadFogFactor: 1.16,
   /** Fallback radii when the scene has no fog (metres). */
-  loadRadius: 820,
-  unloadRadius: 920,
+  loadRadius: 900,
+  unloadRadius: 980,
   /** Heightmap tile edge length (metres). */
   terrainTileSize: 256,
   /** Base heightmap density — cinema tier uses terrainTileSegsCinema. */
-  terrainTileSegs: 22,
-  /** High perf / cinema only — smoother ridges without forcing on every machine. */
-  terrainTileSegsCinema: 26,
+  terrainTileSegs: 24,
+  /** Tier 13 only — smoother ridges without forcing 28 on every machine. */
+  terrainTileSegsCinema: 28,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
   prefetchChunks: 2,
   /** Driving seconds to pre-warm streaming along the racing line. */
-  lookaheadSeconds: 2.2,
+  lookaheadSeconds: 2.5,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
-  boundsPadding: 70,
+  boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */
-  hysteresis: 70,
+  hysteresis: 80,
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
-  minLoadRadius: 260,
-  /** Countdown / GPU-settle radius — start grid fully drawn, not whole stage. */
-  countdownLoadRadius: 700,
+  minLoadRadius: 280,
+  /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
+  countdownLoadRadius: 820,
   /**
    * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
    * stops the swap strobing on a 220 m slice boundary.
    */
-  lodNear: 110,
-  lodHysteresis: 24,
+  lodNear: 132,
+  lodHysteresis: 28,
   /** Far rivals drop castShadow beyond this (metres) — pack fill-rate win. */
-  rivalShadowFar: 70,
+  rivalShadowFar: 85,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */
@@ -276,7 +286,7 @@ export const COLORS = {
   dunePale: 0xd8c090,
   // Matches LIGHTING.desert.fog — the backdrop tint and the scene fog must be
   // the same colour or the far dunes sit in front of a differently coloured haze.
-  fogDesert: 0xd0bfa2,
+  fogDesert: 0xdcc8a0,
   fogForest: 0xb8d0e8,
   fogMountain: 0xb0cce8,
   fogLakeside: 0xa8c8dc,
@@ -290,55 +300,56 @@ export const COLORS = {
 export const LIGHTING = {
   desert: {
     /**
-     * Photographic Safari sky — deep zenith, warm aureole, fluffy cumulus islands.
+     * Safari earth bias — warm sand bounce + amber key; zenith stays blue sky,
+     * not a cold fill wash (AM3 §1 / Sprint v581).
      */
     skyGradient: [
-      [0.0, "#5a7488"],
-      [0.3, "#8cb4d8"],
-      [0.46, "#c4def4"],
-      [0.56, "#4aa0e8"],
-      [0.74, "#1e78d0"],
-      [1.0, "#063888"],
+      [0.0, "#6a7a88"],
+      [0.28, "#a0b8c8"],
+      [0.46, "#d8c8a8"],
+      [0.58, "#5aa0d8"],
+      [0.76, "#2478c0"],
+      [1.0, "#0a4088"],
     ],
-    skyZenith: 0x063888,
-    skyHorizon: 0xc4def4,
-    skyTurbidity: 1.85,
-    skyRayleigh: 1.42,
-    skyMie: 0.0048,
-    skyMieG: 0.82,
-    skyExposure: 1.16,
-    skyAtmoBlend: 0.94,
-    sunSkyBoost: 1.18,
-    sunBloom: 1.28,
-    lensFlare: 1.12,
-    zenithBoost: 0.52,
-    groundBounceMix: 0.14,
-    cloudCover: 0.32,
+    skyZenith: 0x0a4088,
+    skyHorizon: 0xd8c8a8,
+    skyTurbidity: 2.05,
+    skyRayleigh: 1.28,
+    skyMie: 0.0054,
+    skyMieG: 0.84,
+    skyExposure: 1.14,
+    skyAtmoBlend: 0.92,
+    sunSkyBoost: 1.14,
+    sunBloom: 1.22,
+    lensFlare: 1.06,
+    zenithBoost: 0.46,
+    groundBounceMix: 0.24,
+    cloudCover: 0.3,
     cloudScale: 1.72,
-    horizonGlow: 0xf0dcc0,
-    horizonStrength: 0.26,
-    dustStrength: 0.18,
+    horizonGlow: 0xf4d8b0,
+    horizonStrength: 0.34,
+    dustStrength: 0.3,
     wind: [1.85, 0, 0.65],
-    fog: 0xd4c4a8,
-    fogNear: 165,
-    fogFar: 1180,
-    hemiSky: 0x8cb4e4,
-    hemiGround: 0xc8a068,
-    hemi: 0.68,
-    sun: 0xfff4e0,
-    sunKelvin: 5600,
-    sunInt: 3.35,
+    fog: 0xdcc8a0,
+    fogNear: 155,
+    fogFar: 1140,
+    hemiSky: 0xa8c0d0,
+    hemiGround: 0xd4a870,
+    hemi: 0.74,
+    sun: 0xffecd0,
+    sunKelvin: 5050,
+    sunInt: 3.28,
     sunDir: [0.54, 0.72, 0.36],
-    rimSky: 0xb0d4f4,
-    rimInt: 0.52,
-    fill: 0x98bce0,
-    fillInt: 0.28,
-    ambient: 0xa8bcd0,
-    ambientInt: 0.12,
-    exposure: 1.14,
-    gradeWarmth: 0.15,
-    skyBack: 0x2488d0,
-    worldEnv: 1.38,
+    rimSky: 0xd0c4a8,
+    rimInt: 0.38,
+    fill: 0xc8b090,
+    fillInt: 0.32,
+    ambient: 0xc4b090,
+    ambientInt: 0.14,
+    exposure: 1.12,
+    gradeWarmth: 0.24,
+    skyBack: 0x3a88b8,
+    worldEnv: 1.34,
   },
   forest: {
     /**
@@ -664,22 +675,23 @@ export const SURFACES = {
   tarmac: {
     id: "tarmac",
     label: "TARMAC",
-    muPeak: 1.58,
+    muPeak: 1.64,
     /**
      * AM3: brake on tarmac and you STOP. Peak/slide gap still allows a tidy
      * attitude, but brakeHold keeps the stop short and mostly straight.
+     * Sprint v581: widen STOP vs mud POWER-SLIDE — almost no brake yaw, snap recovery.
      */
-    muSlide: 1.08,
-    slipPeak: 0.072,
+    muSlide: 1.14,
+    slipPeak: 0.068,
     /** Threshold braking holds: shortest stop on the championship, arrow-straight. */
     brakeHold: 1.0,
-    brakeYaw: 0.06,
-    slideHold: 0.78,
-    gripSnap: 1.72,
-    bumpSteer: 0.35,
-    roll: 0.014,
+    brakeYaw: 0.02,
+    slideHold: 0.58,
+    gripSnap: 1.88,
+    bumpSteer: 0.32,
+    roll: 0.011,
     sink: 0,
-    bump: 0.014,
+    bump: 0.012,
     dust: 0,
     speedScale: 1.0,
     driftEase: 0.82,
@@ -692,21 +704,21 @@ export const SURFACES = {
   gravel: {
     id: "gravel",
     label: "GRAVEL",
-    muPeak: 1.14,
-    muSlide: 0.68,
-    slipPeak: 0.135,
+    muPeak: 1.1,
+    muSlide: 0.6,
+    slipPeak: 0.142,
     /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
-    brakeHold: 0.38,
-    brakeYaw: 0.82,
-    slideHold: 1.55,
-    gripSnap: 1.28,
-    bumpSteer: 0.82,
-    roll: 0.026,
-    sink: 0.014,
-    bump: 0.048,
-    dust: 0.85,
-    speedScale: 0.94,
-    driftEase: 1.55,
+    brakeHold: 0.3,
+    brakeYaw: 0.92,
+    slideHold: 1.7,
+    gripSnap: 1.22,
+    bumpSteer: 0.88,
+    roll: 0.03,
+    sink: 0.02,
+    bump: 0.054,
+    dust: 1.12,
+    speedScale: 0.93,
+    driftEase: 1.58,
     pacejkaB: 3.5,
     pacejkaC: 1.26,
     pacejkaE: 0.13,
@@ -780,43 +792,44 @@ export const SURFACES = {
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.94,
-    muSlide: 0.6,
-    slipPeak: 0.145,
-    brakeHold: 0.3,
-    brakeYaw: 0.9,
-    slideHold: 1.82,
-    gripSnap: 1.18,
-    bumpSteer: 0.75,
-    roll: 0.04,
-    sink: 0.038,
-    bump: 0.02,
-    dust: 1.15,
-    speedScale: 0.9,
-    driftEase: 1.65,
+    muPeak: 0.88,
+    muSlide: 0.52,
+    slipPeak: 0.158,
+    brakeHold: 0.22,
+    brakeYaw: 0.98,
+    slideHold: 2.05,
+    gripSnap: 1.08,
+    bumpSteer: 0.8,
+    roll: 0.048,
+    sink: 0.055,
+    bump: 0.024,
+    dust: 1.48,
+    speedScale: 0.88,
+    driftEase: 1.72,
     pacejkaB: 3.1,
     pacejkaC: 1.22,
     pacejkaE: 0.17,
+    color: COLORS.sand,
     ribbon: COLORS.ribbonSand,
   },
   mud: {
     id: "mud",
     label: "MUD",
-    muPeak: 0.8,
-    muSlide: 0.52,
-    slipPeak: 0.155,
-    /** AM3 headline: brake on mud and you begin a power slide. */
-    brakeHold: 0.12,
-    brakeYaw: 1.0,
-    slideHold: 1.95,
-    gripSnap: 1.08,
-    bumpSteer: 0.9,
-    roll: 0.06,
-    sink: 0.055,
-    bump: 0.03,
-    dust: 0.7,
-    speedScale: 0.74,
-    driftEase: 1.72,
+    muPeak: 0.7,
+    muSlide: 0.4,
+    slipPeak: 0.178,
+    /** AM3 headline: brake on mud and you begin a power slide — not a stop. */
+    brakeHold: 0.03,
+    brakeYaw: 1.28,
+    slideHold: 2.48,
+    gripSnap: 0.92,
+    bumpSteer: 0.98,
+    roll: 0.09,
+    sink: 0.095,
+    bump: 0.036,
+    dust: 1.15,
+    speedScale: 0.7,
+    driftEase: 1.95,
     pacejkaB: 2.8,
     pacejkaC: 1.2,
     pacejkaE: 0.2,
@@ -948,15 +961,16 @@ export const HANDLING = {
   /**
    * Sakamoto gear-drift: downshift while turning unloads the rear.
    * Manual and auto both use this kick so the default auto box still drifts.
+   * Lower/abrupt downshift while turning = tighter drift (doc transcript).
    */
-  gearDriftKick: 0.52,
-  gearDriftKickMax: 1.12,
-  gearDriftYaw: 0.72,
+  gearDriftKick: 0.66,
+  gearDriftKickMax: 1.35,
+  gearDriftYaw: 0.95,
   /**
    * Brake+steer rotation scale (multiplies surface.brakeYaw). AM3: brake on
    * mud begins a power slide; tarmac still mostly stops straight.
    */
-  brakeSteerYaw: 1.35,
+  brakeSteerYaw: 1.58,
   /**
    * GTA analog: fTractionCurveMin / fTractionCurveMax gap
    * (handling.dat Wc- / Wc+). Scales muSlide so once you break away you
@@ -1034,16 +1048,16 @@ export const HANDLING = {
  */
 export const JUMP = {
   /** Seconds of lift + brake before the lip that count as full technique. */
-  techniqueWindow: 0.38,
+  techniqueWindow: 0.3,
   /**
    * Fraction of launch velocity kept by a perfectly executed lift.
    * Good technique lands flatter/lower; flat-out throws higher and arrives wrong.
    */
-  liftLaunchCut: 0.64,
+  liftLaunchCut: 0.56,
   /** Flat-out launch bonus (multiplies raw before technique cut). */
-  flatOutLaunchBoost: 1.08,
+  flatOutLaunchBoost: 1.2,
   /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
-  liftNoseDrop: 0.18,
+  liftNoseDrop: 0.26,
   /**
    * Apex height multiplier (h ∝ vy²). High enough that a Safari lip hangs
    * like a real throw — not a stubby hop, not a floaty hang.
@@ -1081,10 +1095,10 @@ export const JUMP = {
    * throttle keeps the wheels driving and the nose up; braking spins them
    * down and the reaction torque tips the nose over. Soft — not RC-plane.
    */
-  airPitchUp: 0.22,
-  airPitchDown: 0.28,
+  airPitchUp: 0.26,
+  airPitchDown: 0.38,
   airPitchRate: 3.2,
-  airPitchMax: 0.42,
+  airPitchMax: 0.46,
   /** In-air pitch inertia — higher = coasts like a heavy chassis. */
   airPitchInertia: 2.05,
   airPitchDamp: 1.05,
@@ -1111,7 +1125,7 @@ export const JUMP = {
   airLatBleed: 0.28,
   airYawBleed: 0.35,
   /** Pitch/path mismatch (rad) that counts as a fully botched arrival. */
-  mismatchFull: 0.28,
+  mismatchFull: 0.22,
   /**
    * Speed kept on a flat landing vs a fully mismatched one.
    *
@@ -1122,11 +1136,13 @@ export const JUMP = {
    * therefore drags off nearly a fifth of it in one hit, on top of the grip the
    * unsettled pool takes away afterwards. Widen the gap to make the technique
    * matter more; narrow it to make crests more forgiving.
+   *
+   * Sprint v581 (Fujimoto): flat keep ≈ all speed; flat-out mismatch dumps ~40%.
    */
-  flatScrub: 0.997,
-  worstScrub: 0.7,
+  flatScrub: 0.998,
+  worstScrub: 0.58,
   /** Yaw kick (rad/s) a fully botched landing throws at you. */
-  landUpsetYaw: 0.68,
+  landUpsetYaw: 0.85,
   /**
    * "Teetering on the edge of control": each bad landing tops up an unsettled
    * pool that bleeds grip and adds yaw noise. It decays over this many
@@ -1139,7 +1155,7 @@ export const JUMP = {
    * jump SEQUENCE bite: the corner after a botched crest is where you actually
    * pay for it, because the pool is still draining when you get there.
    */
-  balanceGripLoss: 0.2,
+  balanceGripLoss: 0.3,
   /**
    * RAGE-style rigid-body air (GTA IV/V vehicle, not ped Euphoria).
    * Variation is state at the lip — speed, attitude, compress, line — never RNG.

@@ -15,7 +15,7 @@
  * pedal at the lip fly different — GTA IV/V vehicle air.
  */
 
-import { JUMP } from "../config.js?v=179";
+import { JUMP } from "../config.js?v=183";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -80,7 +80,9 @@ export class JumpModel {
   ground(dt, throttle, brake) {
     const lift = 1 - clamp(throttle, 0, 1);
     const stab = clamp(brake, 0, 1);
-    const want = lift * (0.45 + 0.55 * stab);
+    // Fujimoto: lift before the crest AND brake so the nose drops.
+    // Lift alone is partial credit; brake seals the flat, fast landing.
+    const want = lift * (0.3 + 0.7 * stab);
     const k = 1 - Math.exp(-dt / Math.max(0.05, JUMP.techniqueWindow));
     this.technique += (want - this.technique) * k;
     this.noseUp = 0;

@@ -17,7 +17,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=179";
+import { VISUAL } from "../config.js?v=183";
 
 /** @type {THREE.BufferGeometry|null} */
 let CROWN_GEO = null;
@@ -515,8 +515,9 @@ function rngAt(seed) {
 }
 
 const SUMMER_GREEN = ["#142a10", "#2e5018", "#5a8430"];
-const AUTUMN_RUST = ["#4a2410", "#8a4416", "#c47420"];
-const AUTUMN_GOLD = ["#5a3a0e", "#a8761a", "#e0b03a"];
+/** Northern-Europe autumn — richer rust / copper for Lakeside + Forest cards. */
+const AUTUMN_RUST = ["#3a1808", "#7a3010", "#c45818", "#e07828"];
+const AUTUMN_GOLD = ["#4a2c08", "#9a6814", "#d4a028", "#f0c040"];
 
 /**
  * European rally conifer — layered whorls, needle stipple, trunk read at base.

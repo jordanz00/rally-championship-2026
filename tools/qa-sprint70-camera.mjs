@@ -33,8 +33,8 @@ const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check(
-  "mirror RT is 256×80 (readable, S50 hitch budget)",
-  /mirrorW:\s*256/.test(config) && /mirrorH:\s*80/.test(config)
+  "mirror RT is 320×100 (readable cabin glass)",
+  /mirrorW:\s*(?:320|384)/.test(config) && /mirrorH:\s*(?:100|120)/.test(config)
 );
 check(
   "RT is created, asserted, and rebuilt on context restore",
@@ -76,7 +76,7 @@ check(
   "POV cabin is seated LHD with a wider in-car FOV",
   /Always LHD/.test(car) &&
     /clamp\(eyeX,\s*-0\.5,\s*-0\.22\)/.test(car) &&
-    /fov:\s*76/.test(car) &&
+    /fov:\s*80/.test(car) &&
     /binnacleHood/.test(car)
 );
 check(

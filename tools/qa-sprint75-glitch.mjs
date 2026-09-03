@@ -28,6 +28,7 @@ import {
   clickSelector,
   sleep,
   waitForResponsiveMainThread,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const STATIC_ONLY = process.argv.includes("--static");
@@ -292,7 +293,7 @@ async function driveCourse(cdp, course, first) {
           hits: g.player._glitchHits || 0,
           log: g.player._glitchLog || [],
           throttleIn: g.input.throttle,
-          throttleCar: g.player.throttle,
+          throttleCar: g.player.throttle
         };
       `,
       { timeoutMs: 120000 }
@@ -362,14 +363,14 @@ async function driveCourse(cdp, course, first) {
     nan,
     log,
     ok,
-    moved,
+    moved
   };
 }
 
 async function chromeDrive() {
   const chrome = findChrome();
   if (!chrome) {
-    console.log("\n  SKIP  live drive — no Chrome/Chromium (set CHROME_PATH)");
+    console.log("\n  " + chromeUnavailableHint());
     return [];
   }
   console.log(`\nlive drive  ·  ${chrome}`);
@@ -463,7 +464,7 @@ async function main() {
         buried: 0,
         nan: 0,
         log: [],
-        ok: false,
+        ok: false
       },
     ]);
   }

@@ -146,6 +146,8 @@ function buildLadder(gfx) {
  */
 export function createPerfTier(gfx, opts = {}) {
   const ladder = buildLadder(gfx);
+  /** When true, visual tier never steps down mid-stage — only cadence may lock. */
+  const lockQuality = !!gfx.lockRaceQuality;
   /** Present cost above this is a 30 fps emergency — drop to min without waiting. */
   const hardFloorMs = gfx.adaptFloorMs ?? 33.3;
   const emergencyMs = gfx.integratedEmergencyMs ?? 22;
@@ -246,11 +248,14 @@ export function createPerfTier(gfx, opts = {}) {
       // tier now. HARD_HOLD frames of it, though — one compile stall is not a
       // reason to spend the rest of the stage at min.
       if (hardFor >= HARD_HOLD && index < ladder.length - 1) {
-        index = ladder.length - 1;
-        downFor = 0;
-        upFor = 0;
+        if (!lockQuality) {
+          index = ladder.length - 1;
+          downFor = 0;
+          upFor = 0;
+          hardFor = 0;
+          return { ...ladder[index], changed: true };
+        }
         hardFor = 0;
-        return { ...ladder[index], changed: true };
       }
       // Already at min and still missing even a 30 fps free-run — lock cadence
       // immediately so the player never lives in the 24–60 judder band.
@@ -272,12 +277,14 @@ export function createPerfTier(gfx, opts = {}) {
 
       const want = wantIndex(emaMs);
       if (want > index) {
-        upFor = 0;
-        downFor += 1;
-        if (downFor >= DOWN_HOLD) {
-          index = want;
-          downFor = 0;
-          changed = true;
+        if (!lockQuality) {
+          upFor = 0;
+          downFor += 1;
+          if (downFor >= DOWN_HOLD) {
+            index = want;
+            downFor = 0;
+            changed = true;
+          }
         }
       } else if (
         want < index &&
@@ -311,9 +318,14 @@ export function createPerfTier(gfx, opts = {}) {
           lock30For = 0;
           lockedHz = 30;
         } else if (settled && !atFloor && lock30For >= PUSH_HOLD) {
-          lock30For = 0;
-          index += 1;
-          changed = true;
+          if (lockQuality) {
+            lock30For = 0;
+            lockedHz = 30;
+          } else {
+            lock30For = 0;
+            index += 1;
+            changed = true;
+          }
         } else if (settled && atFloor && emaMs > lock30Ms && lock30For >= LOCK30_HOLD) {
           lock30For = 0;
           lockedHz = 30;

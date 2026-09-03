@@ -91,10 +91,10 @@ check(
 );
 check(
   "S50-class mirror budget (readable, not a hitch)",
-  /mirrorW:\s*256/.test(config) &&
-    /mirrorH:\s*80/.test(config) &&
-    /mirrorFar:\s*110/.test(config) &&
-    /mirrorEveryPov:\s*2/.test(config)
+  /mirrorW:\s*320/.test(config) &&
+    /mirrorH:\s*100/.test(config) &&
+    /mirrorFar:\s*160/.test(config) &&
+    /mirrorEveryPov:\s*1/.test(config)
 );
 check("celica.js cache-bust v>=140", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 140);
 check("cache-bust chain", cacheOk && Number(gameV) >= 378, `main=${mainV} game=${gameV}`);

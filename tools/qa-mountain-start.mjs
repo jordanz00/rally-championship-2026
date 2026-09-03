@@ -19,6 +19,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 async function main() {
@@ -39,12 +40,12 @@ async function main() {
     await pressKey(cdp, "Enter");
     await waitFor(cdp, `return document.querySelector("#screen-menu.active") ? 1 : null;`, {
       timeout: 8000,
-      label: "menu",
+      label: "menu"
     });
     await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
     await waitFor(cdp, `return document.querySelector("#screen-cars.active") ? 1 : null;`, {
       timeout: 12000,
-      label: "cars",
+      label: "cars"
     });
     await waitFor(
       cdp,
@@ -54,7 +55,7 @@ async function main() {
     await clickSelector(cdp, "[data-car='celica']", "CELICA");
     await waitFor(cdp, `return document.querySelector("#screen-courses.active") ? 1 : null;`, {
       timeout: 15000,
-      label: "courses",
+      label: "courses"
     });
     await clickSelector(cdp, "[data-course='mountain']", "MOUNTAIN");
     await waitFor(
@@ -95,7 +96,7 @@ async function main() {
         roadY: road.roadY,
         worst,
         maxTrenchDelta,
-        sweepPoints: track.points.filter((p) => p.sweep).length,
+        sweepPoints: track.points.filter((p) => p.sweep).length
       };`
     );
 

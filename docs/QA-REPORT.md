@@ -32,6 +32,13 @@ Rather than ship untested scaffolding, the harness speaks the Chrome DevTools
 Protocol directly over the `WebSocket` built into Node 22+, driving the Chrome
 already on the machine. **Nothing was installed.** Every tool below actually ran.
 
+**macOS Chrome policy (2026-09-03):** spawning Google Chrome under Cursor's
+`node` aborts in `HIServices TransformProcessType` / `_RegisterApplication`
+(SIGABRT) and pops a crash dialog. `tools/lib/qa-harness.mjs` now
+**default-denies** Chrome on darwin unless `RALLY_QA_ALLOW_CHROME=1`. Proof:
+`node tools/qa-chrome-safe.mjs`. Headed/boot CDP probes belong in Terminal.app
+with that env set — never from a Cursor agent shell.
+
 Two operational notes. The harness serves the repo on an OS-assigned ephemeral
 port and explicitly refuses 8765; it kills only the browser process it spawned.
 And Chrome cannot be launched from inside the agent sandbox (`nice(5) failed:
@@ -5000,7 +5007,199 @@ node tools/qa-frame-probe.mjs --seconds=8
 |--------|---------------|-------------|
 | 50 | Instant POV + cheap mirror | Mirror **256×80**, far **110**, POV every **2** presents |
 | 51 | Desert closed underpass | Marked **Cut (S524)** in report — tunnel bumps stay |
-| 52–55 | Tunnel walls, plant, POV gauges | Retained (no regression) |
+
+**Note (v569):** The v568 STREAM/texture/AO cuts read as a visible graphics downgrade. Restored photographic terrain, LOD, stream radii, AO on balanced+high, wider shadow frustum, and cabin mirror quality. Prefer lock-30 to protect quality instead of dumping the ladder to `min`. Hard-refresh `?v=572`.
+
+---
+
+# Tunnel enter/exit realism — v572 (3 Sep 2026)
+
+**Player moment:** Approach the Desert tunnel. You see a rock-cut cliff with a dark horseshoe punched through it, wing walls funneling the road, and a deep throat. Drive in — the bore stays arched (no box-wall shape swap). Exit reads the same cut face with daylight returning over ~64 m.
+
+| Item | State |
+|---|---|
+| Vertical cut-face cliff + horseshoe aperture | **Done** |
+| Deep throat liner + approach wings | **Done** |
+| Arched bore lining (replaces box walls/ceiling) | **Done** |
+| Softer shade ramp enter 32 m / exit 64 m | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs`
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=572`** · `track.js?v=248`
+
+---
+
+# Desert road width + tunnel mountain carve — v573 (3 Sep 2026)
+
+**Player moment:** Stage 1 roads read wider (+2 m across sand/gravel/mud; tunnel 13–13.5 m). Approaching the ridge tunnel you see a full mountain cut: backdrop mass behind the cliff, graded approach apron, sculpted retaining walls, quarry shoulder pylons, deeper throat, and arched bore lining scaled to corridor width.
+
+| Item | State |
+|---|---|
+| Desert spline widths widened | **Done** (`courses.js` +2 m; tunnel explicit 13–13.5) |
+| Dynamic portal openH from road width | **Done** (`_tunnelOpenHeight`) |
+| Cut face + backdrop + apron + retaining walls + pylons | **Done** |
+| Arched bore lining matches portal spec | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=573`** · `track.js?v=249` · `courses.js?v=69`
+
+---
+### Sprint v579 — Tunnel mouth full overhaul (rock-cut portal)
+
+| Item | State |
+|---|---|
+| Single battered mountain mass with horseshoe hole | **Done** |
+| Thick sealed bore tube + black far plug | **Done** |
+| Removed stacked lintel/wing/cheek/bench boxes | **Done** |
+| Fixed inverted hole arc (was filling the mouth solid) | **Done** |
+| Shoulder berms only (apron no longer spans drive) | **Done** |
+| Deep+wide mouth land prism (no sand cliff across opening) | **Done** |
+| No camera-fade on portal meshes | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · mountain-only probe shows open aperture to sky; full portal builds mass+throat+plug
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=579`** · `track.js?v=262`
+
+---
+### Sprint v580 — AM3 documentary audio + surface contrast
+
+**Source:** PandaMonium *Sega Rally Championship* doc ([transcript](AM3-DOC-TRANSCRIPT.md); directives in [AM3-RESEARCH.md](AM3-RESEARCH.md) §2 / §6).
+
+| Item | State |
+|---|---|
+| Full caption transcript archived | **Done** (`docs/AM3-DOC-TRANSCRIPT.md`) |
+| Mizuguchi gravel→door stereo pan on yaw | **Done** (`js/audio/skid.js` StereoPanner from signed `driftAngle`) |
+| Sharper mud / gravel / sand brake+slide contrast | **Done** (`SURFACES` in `config.js`) |
+| Research brief points at transcript + impl note | **Done** |
+
+**Player moment:** sliding left/right on gravel/mud, grit moves to the travel-side ear; mud brakes start the slide harder vs tarmac stop.
+
+**Proof:** `node tools/qa-static-audit.mjs` · hard-refresh `?v=580` · drive Desert gravel hairpin with headphones
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=580`** · `config.js?v=182` · `engine.js?v=61` · `skid.js?v=7`
+
+---
+### Sprint v581 — AM3 Visual (Art Direction + Lighting)
+
+**Source:** [AM3-RESEARCH.md](AM3-RESEARCH.md) §1 (earth not asphalt), §4 Mountain rock face, §5 silhouette/colour.
+
+| Item | State |
+|---|---|
+| Stronger sand / gravel / mud dust + tire-mark read | **Done** (`effects.js` profiles + alpha; sand `SURFACES.color` restored) |
+| Desert warm earth lighting (not bloom fake) | **Done** (`LIGHTING.desert` Kelvin/fill/hemi/fog; bloom slightly down) |
+| Mountain hairpin rock-face silhouette | **Done** (`_relightCliff` contrast + modest crest height) |
+| Pool size / shadow maps unchanged (perf-tier safe) | **Done** |
+
+**Player moments:**
+1. Desert sand slide — warm hanging plume behind the car, not grey mist.
+2. Gravel hairpin — sharp grit spray vs mud’s dark sticky clods.
+3. Desert start grid / open Safari — amber key + sand bounce, not cold blue fill.
+4. Mountain first hairpin — rock cutting reads as a dark/lit faceted wall against sky.
+
+**Proof:** hard-refresh `?v=581` · drive Desert sand→gravel→mud · Mountain first hairpin chase cam · `node tools/qa-static-audit.mjs`
+
+**Perf risk:** Low — same dust pool (no count bump); emission caps unchanged; cliff is existing mesh with vertex-colour retune only.
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `effects.js?v=60` · `track.js?v=263` · `sky.js?v=39` · `lighting-rig.js?v=10`
+
+---
+### Sprint v581 — AM3 Audio (co-driver maybe + course beds)
+
+**Source:** [AM3-RESEARCH.md](AM3-RESEARCH.md) §6; Kenneth Ibrahim / gravel-to-door / GAME OVER YEAH themes in [AM3-DOC-TRANSCRIPT.md](AM3-DOC-TRANSCRIPT.md).
+
+| Item | State |
+|---|---|
+| Co-driver "maybe" on long/uncertain easy–medium arcs | **Done** (`pace-call.mjs` flags; `codriver.js` + `engine.paceCall` chain `long`→grade→`maybe`) |
+| Recorded `long.mp3` / `maybe.mp3` (Daniel VO, not Sega) | **Done** (`assets/sfx/nav/`, `build-nav-grade-vo.sh`) |
+| Per-course music identity (EQ/trim, no Sega music) | **Done** (`soundtrack.js` `DISC_MIX`) |
+| GAME OVER YEAH *role* sting (CC0 result bed + overrun/checkpoint) | **Done** (`engine.gameOverYeah` + `result.mp3`) |
+| Gravel→door stereo pan still wired | **Verified** (`skid.js` → `engine.setState` → `game.js` `driftAngle`) |
+| AM3-RESEARCH §6 marked Implemented | **Done** |
+
+**How to hear "maybe":** hard-refresh `?v=581`, unmute NAVIGATOR, race Desert — hold for the long gravel sweep / linked medium arcs; HUD shows `LONG … MAYBE` and VO says "long … maybe" after the grade. Pause-menu NAVIGATOR slider preview also chains `easy-left` + `maybe`.
+
+**Proof:** `node tools/qa-sprint67-pace-vo.mjs` · headphones on Desert long sweep · timeout for result sting
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `engine.js?v=62` · `codriver.js?v=38` · `soundtrack.js?v=135` · `pace-call.mjs?v=4` · `track.js?v=263` · nav clips `?v=5` · `skid.js?v=7`
+
+---
+### Sprint v581 — AM3 Gameplay
+
+**Charter:** Close AM3 research §2 into player-visible handling — surface STOP vs POWER-SLIDE, Fujimoto jump reward/punish, wall glance (no championship hard-fail), manual downshift drift.
+
+| Item | State |
+|---|---|
+| Tarmac STOP vs mud POWER-SLIDE contrast | **Done** (`SURFACES`: tarmac `brakeYaw` 0.02 / `slideHold` 0.58 vs mud `brakeYaw` 1.28 / `slideHold` 2.48; mud `dust`/`sink`/`roll` high) |
+| `brakeSteerYaw` amplifies surface brake→yaw | **Done** (`HANDLING.brakeSteerYaw` 1.58) |
+| Fujimoto lift+brake technique | **Done** (`JUMP` scrub 0.998↔0.58; `jump.js` ground wants brake; `airPitchDown` 0.38) |
+| Walls glance, keep forward speed | **Done** (`collide.js` `applyGlance` wall keep 0.62; only clock `_dnf`) |
+| Manual downshift-while-turning drift | **Done** (`gearDriftKick` 0.66 / yaw 0.95; lower steer threshold) |
+| Research **Implemented (clone)** notes | **Done** (`docs/AM3-RESEARCH.md` §2) |
+
+**Player moments:**
+1. Mountain tarmac — full brake stops short and mostly straight.
+2. Desert mud — brake+steer starts a long holdable power slide with thick dust/sink.
+3. Crest — lift+brake → flat fast land; flat-out → speed scrub + unsettled grip loss.
+4. Barrier scrape — car glances and keeps along-nose speed; championship continues.
+5. Manual — downshift mid-corner lights the rear without needing the e-brake.
+
+**Proof:** `node tools/qa-am3-handling.mjs` · `node tools/qa-jump-feel.mjs` · hard-refresh `?v=581`
+
+**Risks:** Flat-out crests punish harder (`worstScrub` 0.58) — may feel harsh on multi-jump sequences until human stopwatch. Wall keep 0.62 can preserve speed into a second scrape if the barrier is long.
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `vehicle.js?v=125` · `jump.js?v=24` · `collide.js?v=47` · `surfaces.js?v=51` · `effects.js?v=61` · `track.js?v=264`
+
+---
+### Sprint v581 — AM3 Environment (course identity)
+
+**Charter:** Environment Art + Course Design — close AM3 §4 player-visible stage identity gaps without new frameworks. Earth not asphalt; no Sega assets.
+
+| Item | State |
+|---|---|
+| Desert Safari wildlife gallery denser / closer / larger | **Done** (`_addSafariHerd`; prop-kit zebra/elephant/gazelle scales) |
+| Desert Act 6 long-easy-right embankment continuous + taller | **Done** (`_addDriftSweepBerms` desert path + shards) |
+| Forest tight corridor + chicane→open contrast | **Done** (`courses.js` widths/radii; `_addForestCorridorWalls`) |
+| Forest puddles (visual + micro dips) | **Done** (`_addForestPuddles`; `road-micro` `puddleDip`) |
+| Mountain rock face across first hairpin | **Done** (landmark pin; taller cliff; authored landmark prefer) |
+| Lakeside northern-Europe autumn colour | **Done** (land paint; autumn card/canopy tints; subtitle) |
+| Deeper mud/sand wheel ruts | **Done** (`surface-deform` DEPTH_CAP) |
+| AM3-RESEARCH §4 Implemented notes | **Done** |
+
+**Player moments:**
+1. Desert teaching straights + open finale — zebra/elephant herds readable off the verge.
+2. Desert Act 6 long right — outside sand embankment to lean on through the slide.
+3. Forest Act 1–2 — close trees/understory + chicane, then wide meadow into Glade Bowl.
+4. Forest dirt/gravel/mud — dark puddle discs + soft chassis dips.
+5. Mountain first hairpin — tall rock cutting across the inside apex.
+6. Lakeside — rust/gold floor and canopy, not summer green.
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=582`** · `courses.js?v=70` · `track.js?v=266` · `prop-kit.js?v=29` · `trees.js?v=38` · `road-micro.js?v=4` · `surface-deform.js?v=2` · `crowd.js?v=18`
+
+**Proof:** `node tools/qa-static-audit.mjs` · hard-refresh `?v=582` · drive Desert Act 6 + Safari gallery · Forest corridor→glade · Mountain first hairpin · Lakeside shore trees
+
+**Still human-only / remaining gaps:** herd GLB silhouette fidelity at far chase; Forest canopy overhang vs corridor scrub at race speed; Mountain cliff only on first landmark hairpin (not every pin); Lakeside autumn still uses Kenney/pack greens on some GLB trunks; no original procedural wildlife meshes beyond scaled kit GLBs.
+
+---
+### Sprint v583 — CTO closeout (AM3 studio ship)
+
+**Org:** Parallel departments → CTO merge → CEO ship to GitHub Pages.
+
+| Dept | Lead | Deliverable |
+|---|---|---|
+| Gameplay / Physics | [Gameplay](cb1c9636-dd86-46bf-9c9d-7c7022adfda2) | Tarmac stop vs mud slide; Fujimoto crest; wall glance; gear-drift |
+| Audio | [Audio](cd77de34-7401-4d64-a9e2-b2d9b3e6e491) | Long…maybe VO; course EQ beds; gravel→door pan verified |
+| Environment | [Environment](3975f5ae-2107-4bca-9ec5-5d6bc56af923) | Desert herd/berm; Forest corridor/puddles; Mountain rock; Lakeside autumn |
+| Visual | [Visual](603a1b3a-4459-49ee-a51d-dac37d9584b5) | Surface dust identity; warm Desert light; cliff silhouette |
+| CTO | merge | Unified `?v=583`; `pbr.js` single version; static + handling + pace VO green |
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-sprint67-pace-vo.mjs`
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=583`** · `config.js?v=183` · `engine.js?v=63` · `soundtrack.js?v=136` · `pbr.js?v=32` (celica+game)
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/ (deploys from `main`)
+
+---
 | 56–57 | Settle / title hitch | Deferred `_warmCarMeshes` after PRESS START |
 | 58–60 | Title LOD / mesh LOD / smooth C | QA contracts fixed; rival shadow via `STREAM.rivalShadowFar` |
 | Driving | Snappier plant + catch | `groundPlantRate 54`, `counterAuthority 3.35`, `tireYawBlend 0.36`, `steerSpeed 126` |

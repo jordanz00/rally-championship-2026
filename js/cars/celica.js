@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=179";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=30";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=183";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=32";
 
 const GARAGE = {
   celica: {
@@ -4944,6 +4944,11 @@ export function setCockpitMirrorMap(root, texture) {
   mat.depthTest = false;
   mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
+  if (mat.map) {
+    mat.map.minFilter = THREE.LinearFilter;
+    mat.map.magFilter = THREE.LinearFilter;
+    mat.map.anisotropy = Math.min(4, mat.map.anisotropy || 1);
+  }
   texture.colorSpace = THREE.LinearSRGBColorSpace;
   texture.needsUpdate = false;
 }

@@ -5,11 +5,14 @@
  * WHAT IT DOES: always plays a quiet road texture from speed + surface,
  *   then adds a heavier scrape when the car is in a yaw slide. Asphalt
  *   is a real tire loop; gravel/dirt/sand use a recorded gravel road;
- *   mud is that bed through a dark filter. No oscillators.
-   * HOW IT CONNECTS: game.js passes driftAngle, slip, surfaceId, speed,
-   *   onGround, surfaceDust, bump, and shock through RallyAudio.setState().
+ *   mud is that bed through a dark filter. During a drift, gravel spatialize
+ *   to the travel-side door (AM3 / Mizuguchi: grit hits the door on the
+ *   direction of travel, not from the front).
+ * HOW IT CONNECTS: game.js passes driftAngle, slip, surfaceId, speed,
+ *   onGround, surfaceDust, bump, and shock through RallyAudio.setState().
  *
  * See assets/sfx/ATTRIBUTION.txt for licenses.
+ * See docs/AM3-RESEARCH.md §6 and docs/AM3-DOC-TRANSCRIPT.md.
  */
 
 import { loadSample } from "./bank.js?v=2";
@@ -60,6 +63,7 @@ export class SkidVoice {
 
   /**
    * Road rumble from speed; extra scrape only on a heavy yaw slide.
+   * Signed driftAngle pans grit toward the travel-side door (AM3).
    *
    * @param {{
    *   slip?: number,
@@ -78,7 +82,8 @@ export class SkidVoice {
     const now = this.ctx.currentTime;
     const live = s.active !== false && s.onGround !== false;
     const speed = s.speed || 0;
-    const yaw = Math.abs(s.driftAngle || 0);
+    const signedYaw = Number(s.driftAngle) || 0;
+    const yaw = Math.abs(signedYaw);
     const slip = s.slip || 0;
     const target = MIX[s.surfaceId] || MIX.dirt;
     this._mix.asphalt += (target.asphalt - this._mix.asphalt) * 0.12;
@@ -101,6 +106,15 @@ export class SkidVoice {
     this.gravelGain.gain.setTargetAtTime((road * g * 0.22 + skid * g * 0.42) * rumble, now, 0.06);
     this.mudGain.gain.setTargetAtTime((road * m * 0.2 + skid * m * 0.36) * rumble, now, 0.09);
 
+    // AM3: gravel/mud spatialize to the door on the direction of travel.
+    // Vehicle driftAngle: + = body-left slip → StereoPanner −1 = left ear.
+    if (this.pan) {
+      const loose = clamp(g + m * 0.85, 0, 1);
+      const strength = skid * (0.35 + loose * 0.65);
+      const pan = clamp((-signedYaw / 0.32) * strength, -0.92, 0.92);
+      this.pan.pan.setTargetAtTime(pan, now, 0.07);
+    }
+
     const aRate = clamp(0.82 + speed * 0.01 + skid * 0.12, 0.7, 1.45);
     const gRate = clamp(0.78 + speed * 0.012 + skid * 0.08, 0.65, 1.5);
     if (this.asphaltSrc) this.asphaltSrc.playbackRate.setTargetAtTime(aRate, now, 0.1);
@@ -121,10 +135,22 @@ export class SkidVoice {
       g.gain.setValueAtTime(g.gain.value, now);
       g.gain.linearRampToValueAtTime(0.0001, now + dur);
     }
+    if (this.pan) {
+      this.pan.pan.cancelScheduledValues(now);
+      this.pan.pan.setValueAtTime(this.pan.pan.value, now);
+      this.pan.pan.linearRampToValueAtTime(0, now + Math.min(0.4, dur));
+    }
   }
 
   _build() {
     const ctx = this.ctx;
+
+    this.pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (this.pan) {
+      this.pan.pan.value = 0;
+      this.pan.connect(this.dest);
+    }
+    const out = this.pan || this.dest;
 
     this.asphaltIn = ctx.createGain();
     this.asphaltIn.gain.value = 1;
@@ -139,7 +165,7 @@ export class SkidVoice {
     this.asphaltIn.connect(ashHp);
     ashHp.connect(ashLp);
     ashLp.connect(this.asphaltGain);
-    this.asphaltGain.connect(this.dest);
+    this.asphaltGain.connect(out);
 
     this.gravelIn = ctx.createGain();
     this.gravelIn.gain.value = 1;
@@ -154,7 +180,7 @@ export class SkidVoice {
     this.gravelIn.connect(grHp);
     grHp.connect(grLp);
     grLp.connect(this.gravelGain);
-    this.gravelGain.connect(this.dest);
+    this.gravelGain.connect(out);
 
     const mudHp = ctx.createBiquadFilter();
     mudHp.type = "highpass";
@@ -168,7 +194,7 @@ export class SkidVoice {
     this.gravelIn.connect(mudHp);
     mudHp.connect(this.mudLp);
     this.mudLp.connect(this.mudGain);
-    this.mudGain.connect(this.dest);
+    this.mudGain.connect(out);
   }
 
   /**

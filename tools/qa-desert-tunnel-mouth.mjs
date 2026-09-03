@@ -23,11 +23,14 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
 const gameSrc = fs.readFileSync(path.join(ROOT, "js/game.js"), "utf8");
-const portalSlice = trackSrc.slice(trackSrc.indexOf("_addTunnelPortal"));
+const portalStart = trackSrc.indexOf("_addTunnelPortal");
+const portalEnd = trackSrc.indexOf("_weldPortalVerticesToTerrain", portalStart);
+const portalSlice = trackSrc.slice(portalStart, portalEnd > portalStart ? portalEnd : undefined);
 const runSlice = trackSrc.slice(trackSrc.indexOf("_addTunnelRun"));
 
 let fail = 0;
@@ -44,18 +47,70 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 246,
+  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 262,
   "stale cache keeps broken portal"
+);
+check(
+  "one continuous mountain mass with horseshoe hole",
+  /tunnelMountainMassGeometry/.test(trackSrc) &&
+    /portalMountainMass/.test(portalSlice),
+  "need single ridge silhouette with open bore — not stacked boxes"
+);
+check(
+  "horseshoe hole arcs through crown (not inverted)",
+  /absarc\(0, spring, clearHalfW, 0, Math\.PI, false\)/.test(trackSrc),
+  "inverted arc filled the mouth solid"
+);
+check(
+  "battered cliff face (not cardboard plate)",
+  /batterTunnelMountainFace/.test(trackSrc),
+  "front face must lean into the hill"
+);
+check(
+  "no stacked solid wing / lintel / cheek / bench boxes at portal",
+  !/portalSolidWing/.test(portalSlice) &&
+    !/portalSolidLintel/.test(portalSlice) &&
+    !/portalSolidCheek/.test(portalSlice) &&
+    !/portalQuarryBench/.test(portalSlice),
+  "legacy box pieces closed the mouth"
+);
+check(
+  "thick sealed bore tube (no sky-through rings)",
+  /tunnelBoreAssembly/.test(trackSrc) &&
+    /tunnelThickBoreTubeGeometry/.test(trackSrc) &&
+    /portalBorePlug/.test(trackSrc),
+  "bore must be a thick tube with far plug"
+);
+check(
+  "portal openH scales with road width",
+  /_tunnelOpenHeight/.test(trackSrc) && /openH = this\._tunnelOpenHeight/.test(trackSrc),
+  "clearance must scale with wider corridor"
+);
+check(
+  "shoulder berms never span the drive opening",
+  /tunnelMouthShoulderBermGeometry/.test(trackSrc) &&
+    /portalApron/.test(portalSlice),
+  "apron across the bore closed the mouth"
+);
+check(
+  "no floating backdrop cards at mouth",
+  !/portalBackdrop/.test(portalSlice),
+  "flat backdrop cards forbidden"
+);
+check(
+  "no shoulder pylon cards",
+  !/portalShoulder/.test(portalSlice),
+  "pylon cards forbidden"
+);
+check(
+  "arched bore lining (not box walls)",
+  /tunnelBoreLining/.test(trackSrc) && /tunnelPortalArchGeometry\(liningHalf/.test(trackSrc),
+  "box walls made enter/exit shape-swap fake"
 );
 check(
   "unified terrain-welded hillside shells",
   /tunnelMouthHillsideGeometry/.test(trackSrc) && /portalHillside/.test(portalSlice),
   "need single welded hillside per side"
-);
-check(
-  "lintel crown above arch spring",
-  /tunnelMouthLintelGeometry/.test(trackSrc) && /portalLintel/.test(portalSlice),
-  "overburden crown missing"
 );
 check(
   "recessed horseshoe mouth ring into mountain",
@@ -64,7 +119,7 @@ check(
 );
 check(
   "arched bore liner into mountain",
-  /portalBoreLiner/.test(portalSlice),
+  /portalBoreLiner/.test(trackSrc) && /tunnelBoreAssembly/.test(portalSlice),
   "dark bore mouth missing"
 );
 check(
@@ -110,6 +165,11 @@ check(
   "prisms must exist before land tiles"
 );
 check(
+  "mouth land prism reaches deep into bore",
+  /along0:\s*-78/.test(trackSrc),
+  "shallow prism left a sand cliff across the opening"
+);
+check(
   "land refuse uses mouth corridor",
   /_inTunnelMouthCorridor/.test(trackSrc) && /_tunnelMouthFloorY/.test(trackSrc),
   "heightmap must stay a floor through the opening"
@@ -121,8 +181,8 @@ check(
 );
 check(
   "interior lining inset from mouths",
-  /wallStart/.test(trackSrc) && /start \+ 1/.test(trackSrc),
-  "box walls poked into the approach"
+  /wallStart/.test(trackSrc) && /start \+ 8/.test(trackSrc),
+  "lining must leave mouths to the cut face / throat"
 );
 check(
   "entrance + exit collider scrub widened",
@@ -130,9 +190,9 @@ check(
   "ribbon scrub must cover both mouths"
 );
 check(
-  "portal openH 8.2",
-  /openH: 8\.2/.test(trackSrc),
-  "clearance spec"
+  "portal openH scales with road width",
+  /_tunnelOpenHeight/.test(trackSrc),
+  "dynamic clearance spec"
 );
 
 if (fail) {
@@ -162,8 +222,8 @@ async function main() {
   }
   const { cdp } = browser;
   const { errors } = await preparePage(cdp);
-  await goto(cdp, `${server.url}/index.html?v=565&perf=medium`);
-  await waitFor(cdp, () => evaluate(cdp, () => !!window.__RALLY__), 20000).catch(() => null);
+  await goto(cdp, `${server.url}/index.html?v=577&perf=medium`);
+  await waitFor(cdp, () => evaluate(cdp, () => !!window.game), 20000).catch(() => null);
 
   try {
     await clickSelector(cdp, "#btn-play, .btn-play, [data-action=play]");
@@ -173,7 +233,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 2500));
 
   const probe = await evaluate(cdp, () => {
-    const g = window.__RALLY__;
+    const g = window.game;
     const track = g && (g.track || g._track);
     if (!track || !track._tunnels || !track._tunnels.length) {
       return { ok: false, reason: "no tunnel runs" };
@@ -184,20 +244,29 @@ async function main() {
     track.group.traverse((o) => {
       if (o.userData && o.userData.tunnelPortal && o.isGroup) portals.push(o);
     });
+    let masses = 0;
     let hillsides = 0;
-    let lintels = 0;
     let liners = 0;
     let rings = 0;
+    let boxPieces = 0;
     let floaters = 0;
     const THREE = window.THREE;
     const box = THREE ? new THREE.Box3() : null;
     for (let i = 0; i < portals.length; i++) {
       portals[i].traverse((m) => {
         if (!m.isMesh) return;
+        if (m.userData.portalMountainMass) masses += 1;
         if (m.userData.portalHillside) hillsides += 1;
-        if (m.userData.portalLintel) lintels += 1;
         if (m.userData.portalBoreLiner) liners += 1;
         if (m.userData.portalMouthRing) rings += 1;
+        if (
+          m.userData.portalSolidWing ||
+          m.userData.portalSolidLintel ||
+          m.userData.portalSolidCheek ||
+          m.userData.portalQuarryBench
+        ) {
+          boxPieces += 1;
+        }
         if (!box) return;
         box.setFromObject(m);
         const gy =
@@ -208,9 +277,9 @@ async function main() {
               )
             : box.min.y;
         if (
-          !m.userData.portalLintel &&
           !m.userData.portalBoreLiner &&
           !m.userData.portalMouthRing &&
+          !m.userData.portalMountainMass &&
           box.min.y - gy > 1.2
         ) {
           floaters += 1;
@@ -231,12 +300,13 @@ async function main() {
       endDist: run.endDist,
       prisms: prisms.length,
       portals: portals.length,
+      masses,
       hillsides,
-      lintels,
       liners,
       rings,
+      boxPieces,
       floaters,
-      apronClear,
+      apronClear
     };
   });
 
@@ -246,8 +316,9 @@ async function main() {
     check("tunnel start near climb", probe.startDist > 1100 && probe.startDist < 1450, `at ${probe.startDist}`);
     check("mouth prisms present", probe.prisms >= 2, `count=${probe.prisms}`);
     check("portal groups for enter+exit", probe.portals >= 2, `count=${probe.portals}`);
+    check("mountain mass present", probe.masses >= 2, `masses=${probe.masses}`);
+    check("no stacked box pieces", probe.boxPieces === 0, `boxPieces=${probe.boxPieces}`);
     check("hillside shells present", probe.hillsides >= 4, `hillsides=${probe.hillsides}`);
-    check("lintel crowns present", probe.lintels >= 2, `lintels=${probe.lintels}`);
     check("mouth rings present", probe.rings >= 2, `rings=${probe.rings}`);
     check("bore liners present", probe.liners >= 2, `liners=${probe.liners}`);
     check("no large floaters", probe.floaters === 0, `floaters=${probe.floaters}`);

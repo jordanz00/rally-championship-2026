@@ -14,8 +14,8 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=50";
-import { VISUAL } from "./config.js?v=179";
+import { getSurface } from "./physics/surfaces.js?v=51";
+import { VISUAL } from "./config.js?v=183";
 
 /**
  * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
@@ -23,10 +23,11 @@ import { VISUAL } from "./config.js?v=179";
  * Lift stays low — rally spray kicks backward and sideways, not skyward.
  */
 const PROFILE = {
-  sand: { rate: 155, size: [0.14, 0.58], life: [0.35, 0.95], gravity: 5.8, drag: 0.84, spread: 2.6, lift: 0.75, kick: 12.5, chunks: 0.28, plume: 0.38 },
-  dirt: { rate: 105, size: [0.12, 0.48], life: [0.28, 0.78], gravity: 8.5, drag: 0.87, spread: 2.0, lift: 0.55, kick: 10.5, chunks: 0.38, plume: 0.3 },
-  gravel: { rate: 72, size: [0.08, 0.32], life: [0.18, 0.55], gravity: 14, drag: 0.91, spread: 1.6, lift: 0.35, kick: 9.2, chunks: 0.62, plume: 0.14 },
-  mud: { rate: 58, size: [0.1, 0.38], life: [0.22, 0.62], gravity: 15, drag: 0.93, spread: 1.2, lift: 0.28, kick: 8.0, chunks: 0.72, plume: 0.1 },
+  // Sand = long warm hanging plume; gravel = sharp grit spray; mud = heavy dark clods.
+  sand: { rate: 188, size: [0.16, 0.68], life: [0.42, 1.12], gravity: 4.9, drag: 0.82, spread: 2.95, lift: 0.88, kick: 13.8, chunks: 0.18, plume: 0.52 },
+  dirt: { rate: 112, size: [0.12, 0.5], life: [0.28, 0.8], gravity: 8.2, drag: 0.86, spread: 2.1, lift: 0.58, kick: 10.8, chunks: 0.36, plume: 0.32 },
+  gravel: { rate: 96, size: [0.09, 0.38], life: [0.2, 0.62], gravity: 15.5, drag: 0.9, spread: 1.85, lift: 0.32, kick: 11.2, chunks: 0.72, plume: 0.1 },
+  mud: { rate: 78, size: [0.12, 0.44], life: [0.28, 0.72], gravity: 16.5, drag: 0.94, spread: 1.35, lift: 0.24, kick: 9.0, chunks: 0.82, plume: 0.06 },
   grass: { rate: 36, size: [0.1, 0.34], life: [0.2, 0.55], gravity: 9.5, drag: 0.89, spread: 1.4, lift: 0.32, kick: 7.5, chunks: 0.24, plume: 0.16 },
 };
 
@@ -69,9 +70,9 @@ void main() {
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   float mask = texture2D(uMap, uv).a;
   // Soft birth + linger — plumes must read as volume, not spark pops.
-  float fade = smoothstep(0.0, 0.12, vLife) * smoothstep(0.0, 0.32, vLife);
-  float alpha = mask * fade * 0.72;
-  if (alpha < 0.025) discard;
+  float fade = smoothstep(0.0, 0.1, vLife) * smoothstep(0.0, 0.28, vLife);
+  float alpha = mask * fade * 0.84;
+  if (alpha < 0.022) discard;
   float fog = clamp((vDepth - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
   gl_FragColor = vec4(mix(vColor, uFogColor, fog * 0.92), alpha * (1.0 - fog * 0.88));
 }
@@ -275,15 +276,19 @@ export class Dust {
       this.drag[i] = grit ? 0.965 : plume ? profile.drag * 0.94 : profile.drag * 0.98;
 
       let shade;
-      if (grit) shade = 0.28 + Math.random() * 0.22;
-      else if (speck) shade = 0.52 + Math.random() * 0.18;
-      else if (plume) shade = 0.62 + Math.random() * 0.22;
-      else shade = 0.44 + Math.random() * 0.28;
-      const warm = id === "sand" || id === "dirt" ? 1.04 + Math.random() * 0.08 : 1;
-      const cool = id === "mud" ? 0.88 + Math.random() * 0.06 : 1;
-      this.col[i * 3] = br * shade * warm;
-      this.col[i * 3 + 1] = bg * shade * warm * cool;
-      this.col[i * 3 + 2] = bb * shade * cool;
+      if (grit) shade = 0.32 + Math.random() * 0.26;
+      else if (speck) shade = 0.55 + Math.random() * 0.2;
+      else if (plume) shade = 0.7 + Math.random() * 0.24;
+      else shade = 0.48 + Math.random() * 0.3;
+      // Surface colour signature — sand warm plume, gravel grey grit, mud cool clods.
+      const warm =
+        id === "sand" ? 1.14 + Math.random() * 0.1 : id === "dirt" ? 1.06 + Math.random() * 0.08 : 1;
+      const cool =
+        id === "mud" ? 0.78 + Math.random() * 0.08 : id === "gravel" ? 0.92 + Math.random() * 0.05 : 1;
+      const gritGrey = id === "gravel" && grit ? 0.88 + Math.random() * 0.08 : 1;
+      this.col[i * 3] = br * shade * warm * gritGrey;
+      this.col[i * 3 + 1] = bg * shade * warm * cool * gritGrey;
+      this.col[i * 3 + 2] = bb * shade * cool * (id === "sand" ? 0.9 : gritGrey);
     }
     this.geo.attributes.aColor.needsUpdate = true;
     this.geo.attributes.aSize.needsUpdate = true;
@@ -486,11 +491,11 @@ void main() {
 const MARK_PROFILE = {
   tarmac: { type: "hard", life: 10.5, width: 0.18, alpha: 0.44, dark: 0.12, slip: 0.24, steer: 0.2, speed: 12 },
   cobble: { type: "hard", life: 8.5, width: 0.17, alpha: 0.32, dark: 0.18, slip: 0.26, steer: 0.24, speed: 11 },
-  gravel: { type: "soft", life: 7.2, width: 0.21, alpha: 0.28, dark: 0.72, slip: 0.08, steer: 0.08, speed: 4 },
+  gravel: { type: "soft", life: 8.0, width: 0.23, alpha: 0.36, dark: 0.68, slip: 0.07, steer: 0.07, speed: 3.5 },
   dirt: { type: "soft", life: 8.8, width: 0.23, alpha: 0.3, dark: 0.74, slip: 0.06, steer: 0.08, speed: 3.5 },
   grass: { type: "soft", life: 5.8, width: 0.2, alpha: 0.18, dark: 0.7, slip: 0.05, steer: 0.08, speed: 4.5 },
-  sand: { type: "soft", life: 11.5, width: 0.26, alpha: 0.24, dark: 0.82, slip: 0.04, steer: 0.06, speed: 3 },
-  mud: { type: "soft", life: 12.5, width: 0.27, alpha: 0.38, dark: 0.68, slip: 0.03, steer: 0.05, speed: 2.5 },
+  sand: { type: "soft", life: 12.5, width: 0.3, alpha: 0.32, dark: 0.86, slip: 0.03, steer: 0.05, speed: 2.5 },
+  mud: { type: "soft", life: 14.0, width: 0.3, alpha: 0.48, dark: 0.58, slip: 0.025, steer: 0.04, speed: 2 },
 };
 
 export class TireMarks {
@@ -555,11 +560,11 @@ export class TireMarks {
     const working = slip > profile.slip || drift > 0.05 || steer > profile.steer;
     const active = soft
       ? vehicle.ai
-        ? speed > Math.max(2.4, profile.speed * 0.5)
-        : speed > profile.speed && working
+        ? speed > Math.max(2.2, profile.speed * 0.35)
+        : speed > Math.max(2.5, profile.speed * 0.35)
       : speed > profile.speed &&
         (slip > profile.slip || drift > 0.16 || (steer > profile.steer && slip > profile.slip * 0.75) || vehicle.drifting);
-    const rollOnly = soft && vehicle.ai && !working;
+    const rollOnly = soft && vehicle.ai && !working && speed > 2;
 
     if (!active) {
       this._last.delete(vehicle);
@@ -601,7 +606,8 @@ export class TireMarks {
         prev[i] = null;
         continue;
       }
-      const here = { x, y: q.height + this._up, z, heading: w.heading, surface: q.surface };
+      const baseH = (q.baseHeight != null ? q.baseHeight : q.height - (q.wheelDeform || 0));
+      const here = { x, y: baseH + this._up, z, heading: w.heading, surface: q.surface };
       const last = prev[i];
       prev[i] = here;
       if (!last || last.surface !== here.surface) continue;
@@ -609,7 +615,7 @@ export class TireMarks {
       const dz = here.z - last.z;
       const len = Math.hypot(dx, dz);
       if (len < stride * 0.65 || len > 2.4) continue;
-      this._writeSegment(last, here, profile, slip, drift, speed, i >= 2, rollOnly);
+      this._writeSegment(last, here, profile, slip, drift, speed, i >= 2, rollOnly, track);
     }
     this._last.set(vehicle, prev);
   }
@@ -623,74 +629,43 @@ export class TireMarks {
    * @param {number} speed
    * @param {boolean} rear
    * @param {boolean} [rollOnly]
+   * @param {{wheelDeform?:object,wheelRuts?:object}} [track]
    */
-  _writeSegment(a, b, profile, slip, drift, speed, rear, rollOnly = false) {
+  _writeSegment(a, b, profile, slip, drift, speed, rear, rollOnly = false, track = null) {
     const dirX = b.x - a.x;
     const dirZ = b.z - a.z;
     const len = Math.hypot(dirX, dirZ) || 1;
     const nx = dirZ / len;
     const nz = -dirX / len;
-    const width =
+    const halfW =
       profile.width *
-      (profile.type === "soft" ? 1.1 + Math.min(0.55, slip * 0.45 + drift * 0.35) : 1 + Math.min(0.25, slip * 0.18)) *
+      (profile.type === "soft" ? 0.52 : 0.5) *
       (rear ? 1.03 : 0.97);
-    const alpha =
-      profile.alpha *
-      Math.min(1, 0.35 + speed / 26 + slip * (profile.type === "hard" ? 1.45 : 0.7) + drift * 0.9) *
-      (rollOnly ? 0.58 : 1);
-    if (profile.type === "soft") {
-      const sink = Math.min(0.034, 0.008 + slip * 0.012 + drift * 0.018 + speed * 0.00022);
-      const ridgeLift = sink * 0.7;
-      const centerHalf = width * 0.62;
-      const ridgeHalf = width * 0.18;
-      const ridgeOffset = width * 0.82;
-      this._writeQuad(
-        a.x,
-        a.y - sink,
-        a.z,
-        b.x,
-        b.y - sink,
-        b.z,
-        nx,
-        nz,
-        centerHalf,
-        0x6e5434,
-        profile.dark * 0.9,
-        alpha * 1.05,
-        profile.life
+
+    if (profile.type === "soft" && track && track.wheelDeform) {
+      const surface = a.surface || b.surface || "dirt";
+      const pressure = rollOnly ? 0.55 : 1;
+      track.wheelDeform.stampSegment(
+        a,
+        b,
+        halfW,
+        surface,
+        slip * pressure,
+        drift * pressure,
+        speed
       );
-      this._writeQuad(
-        a.x + nx * ridgeOffset,
-        a.y + ridgeLift,
-        a.z + nz * ridgeOffset,
-        b.x + nx * ridgeOffset,
-        b.y + ridgeLift,
-        b.z + nz * ridgeOffset,
-        nx,
-        nz,
-        ridgeHalf,
-        profile.type === "soft" && profile.width > 0.25 ? 0xc4aa72 : 0xb09062,
-        0.88,
-        alpha * 0.62,
-        profile.life * 0.85
-      );
-      this._writeQuad(
-        a.x - nx * ridgeOffset,
-        a.y + ridgeLift,
-        a.z - nz * ridgeOffset,
-        b.x - nx * ridgeOffset,
-        b.y + ridgeLift,
-        b.z - nz * ridgeOffset,
-        nx,
-        nz,
-        ridgeHalf,
-        profile.type === "soft" && profile.width > 0.25 ? 0xc4aa72 : 0xb09062,
-        0.88,
-        alpha * 0.62,
-        profile.life * 0.85
-      );
+      if (track.wheelRuts) {
+        track.wheelRuts.writeSegment(a, b, halfW, surface, slip * pressure, drift * pressure);
+      }
       return;
     }
+
+    const width =
+      profile.width * (1 + Math.min(0.25, slip * 0.18)) * (rear ? 1.03 : 0.97);
+    const alpha =
+      profile.alpha *
+      Math.min(1, 0.35 + speed / 26 + slip * 1.45 + drift * 0.9) *
+      (rollOnly ? 0.58 : 1);
     this._writeQuad(a.x, a.y, a.z, b.x, b.y, b.z, nx, nz, width, 0x111111, profile.dark, alpha, profile.life);
   }
 

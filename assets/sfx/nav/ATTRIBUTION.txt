@@ -7,4 +7,5 @@ Rebuild: `tools/build-nav-grade-vo.sh`
 
 Turn grades: easy / medium / hard / hairpin, left and right
 Jump: "jump"
+Qualifiers: "long" / "maybe" (AM3 Kenneth Ibrahim style — judge the corner)
 Countdown: "three" / "two" / "one" / "go"

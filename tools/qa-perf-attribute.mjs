@@ -25,6 +25,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickResilient, installFrameRecorder, startRecording, stopRecording, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2).join(" ");
@@ -54,7 +55,7 @@ async function sample(cdp) {
     mean: deltas.reduce((a, b) => a + b, 0) / deltas.length,
     p50: pct(sorted, 0.5),
     p95: pct(sorted, 0.95),
-    over: deltas.filter((d) => d > 16.6).length / deltas.length,
+    over: deltas.filter((d) => d > 16.6).length / deltas.length
   };
 }
 
@@ -63,49 +64,49 @@ const TOGGLES = [
   {
     label: "post-process stack",
     off: `if (window.game.post) { window.__post = window.game.post.enabled; window.game.post.enabled = false; } 1`,
-    on: `if (window.game.post) window.game.post.enabled = window.__post; 1`,
+    on: `if (window.game.post) window.game.post.enabled = window.__post; 1`
   },
   {
     label: "sun shadow map",
     off: `window.__sh = window.game.renderer.shadowMap.enabled; window.game.renderer.shadowMap.enabled = false; 1`,
-    on: `window.game.renderer.shadowMap.enabled = window.__sh; 1`,
+    on: `window.game.renderer.shadowMap.enabled = window.__sh; 1`
   },
   {
     label: "cabin mirror + cube reflections",
     off: `window.__mir = window.game._renderMirror; window.__ref = window.game._updateReflections;
           window.game._renderMirror = function(){}; window.game._updateReflections = function(){}; 1`,
-    on: `window.game._renderMirror = window.__mir; window.game._updateReflections = window.__ref; 1`,
+    on: `window.game._renderMirror = window.__mir; window.game._updateReflections = window.__ref; 1`
   },
   {
     label: "volumetric sky / clouds",
     off: `if (window.game.sky) { window.__sky = window.game.sky.visible; window.game.sky.visible = false; } 1`,
-    on: `if (window.game.sky) window.game.sky.visible = window.__sky; 1`,
+    on: `if (window.game.sky) window.game.sky.visible = window.__sky; 1`
   },
   {
     label: "rival pack (14 cars)",
     off: `window.__op = []; for (const o of window.game.opponents) { if (o.mesh) { window.__op.push([o.mesh, o.mesh.visible]); o.mesh.visible = false; } } 1`,
-    on: `for (const p of (window.__op || [])) p[0].visible = p[1]; 1`,
+    on: `for (const p of (window.__op || [])) p[0].visible = p[1]; 1`
   },
   {
     label: "pixel ratio → 1.0",
     off: `window.__d1 = window.game._perfDprScale;
           window.game._perfDprScale = (window.__d1 == null ? 1 : window.__d1) * (1.0 / window.game.renderer.getPixelRatio());
           window.game._onResize(); 1`,
-    on: `window.game._perfDprScale = window.__d1; window.game._onResize(); 1`,
+    on: `window.game._perfDprScale = window.__d1; window.game._onResize(); 1`
   },
   {
     label: "pixel ratio → 0.75",
     off: `window.__d2 = window.game._perfDprScale;
           window.game._perfDprScale = (window.__d2 == null ? 1 : window.__d2) * (0.75 / window.game.renderer.getPixelRatio());
           window.game._onResize(); 1`,
-    on: `window.game._perfDprScale = window.__d2; window.game._onResize(); 1`,
+    on: `window.game._perfDprScale = window.__d2; window.game._onResize(); 1`
   },
 ];
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`RALLY PERF ATTRIBUTION  ·  ${new Date().toISOString()}`);
   const server = await startServer(ROOT);
@@ -171,7 +172,7 @@ async function main() {
     const drove = await evaluate(cdp, `return {
       speed: Math.round(window.game.player.speed),
       onRoad: !!(window.game.player._q && window.game.player._q.onRoad),
-      progress: Math.round(window.game.player.progress),
+      progress: Math.round(window.game.player.progress)
     };`);
     console.log(`autopilot: speed ${drove.speed}, progress ${drove.progress} m, onRoad ${drove.onRoad}`);
 
@@ -194,7 +195,7 @@ async function main() {
       dpr: window.game.renderer.getPixelRatio(),
       w: window.game.renderer.domElement.width,
       h: window.game.renderer.domElement.height,
-      speed: Math.round(window.game.player.speed),
+      speed: Math.round(window.game.player.speed)
     };`);
     const mpix = (info.w * info.h) / 1e6;
     console.log(`racing desert · ${info.opponents} rivals · speed ${info.speed}`);

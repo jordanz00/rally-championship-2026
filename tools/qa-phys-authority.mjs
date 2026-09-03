@@ -25,6 +25,7 @@ import {
   pressKey,
   evaluate,
   sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const STATIC_ONLY = process.argv.includes("--static");
@@ -127,7 +128,7 @@ const PROBE = `
     envDeep,
     envHit,
     minDelta,
-    glitch: (p._glitchLog && p._glitchLog.length) || 0,
+    glitch: (p._glitchLog && p._glitchLog.length) || 0
   };
 `;
 

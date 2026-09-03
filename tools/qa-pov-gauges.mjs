@@ -17,6 +17,7 @@ import {
   goto,
   waitFor,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function read(rel) {
@@ -188,7 +189,7 @@ async function live() {
         rpmHalfErr: Math.abs(wrap(halfRpmZ - halfExpect)),
         vmax: mesh.userData.gaugeVmax,
         rpmMax: mesh.userData.gaugeRpmMax,
-        mphLabel: true,
+        mphLabel: true
       };
     `);
     check(

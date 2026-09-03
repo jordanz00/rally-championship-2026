@@ -29,6 +29,7 @@ import fs from "node:fs";
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 import { lumaStats } from "./lib/png-luma.mjs";
 
@@ -77,7 +78,7 @@ const BAND = {
   /** Share of near-white pixels that counts as "washed out". */
   maxClipped: 0.3,
   /** Speed under which a sample counts as stationary. */
-  stationarySpeed: 1.5,
+  stationarySpeed: 1.5
 };
 
 /**
@@ -97,7 +98,7 @@ const FLAT_GLOBALS = {
   skyRim: 0.01,
   contrast: 0.005,
   saturation: 0.005,
-  skyExposure: 0.005,
+  skyExposure: 0.005
 };
 
 let fail = 0;
@@ -133,12 +134,12 @@ const GLOBALS_EXPR = `(() => {
     skyExposure: g.sky && g.sky.material && g.sky.material.uniforms
       ? g.sky.material.uniforms.uExposure.value : null,
     raceTime: g.raceTime != null ? Math.round(g.raceTime * 100) / 100 : null,
-    speed: g.player ? Math.round(g.player.speed * 10) / 10 : null,
+    speed: g.player ? Math.round(g.player.speed * 10) / 10 : null
   };
 })()`;
 
 async function main() {
-  if (!findChrome()) throw new Error("no Chrome/Chromium found — set CHROME_PATH");
+  if (!findChrome()) throw new Error(chromeUnavailableHint());
   console.log(`EXPOSURE STABILITY  ·  ${COURSE} · ${MODE}  ·  ${new Date().toISOString()}\n`);
 
   const server = await startServer(ROOT);

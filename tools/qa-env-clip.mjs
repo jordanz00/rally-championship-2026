@@ -22,6 +22,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
@@ -302,7 +303,7 @@ const PROBE_JS = `const g = window.game;
         corridorScrubbed,
         meshHits,
         worstMesh,
-        instHits,
+        instHits
       };`;
 
 async function bootCourse(cdp, courseId) {

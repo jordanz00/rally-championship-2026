@@ -8,6 +8,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, pressKey, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function assert(cond, message) {
@@ -26,15 +27,15 @@ const SNAP = `
     active,
     pct: Number.isFinite(n) ? n : -1,
     status: status ? status.textContent || "" : "",
-    state: g ? g.state : "",
+    state: g ? g.state : ""
   };
 `;
 
 async function main() {
   const chrome = findChrome();
   if (!chrome) {
-    console.error("FAIL  no Chrome/Chromium binary found.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: true });
@@ -45,11 +46,11 @@ async function main() {
   await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 15000, label: "game boot" });
   await pressKey(cdp, "Enter");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`, {
-    timeout: 5000, label: "SELECT MODE",
+    timeout: 5000, label: "SELECT MODE"
   });
   await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {
-    timeout: 5000, label: "cars",
+    timeout: 5000, label: "cars"
   });
   await waitFor(
     cdp,
@@ -58,7 +59,7 @@ async function main() {
   );
   await clickSelector(cdp, "[data-car='celica']", "CELICA");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-courses" ? 1 : null;`, {
-    timeout: 20000, label: "courses",
+    timeout: 20000, label: "courses"
   });
 
   // Drop idle preload so we measure a cold build (accurate % path), not the cache jump.

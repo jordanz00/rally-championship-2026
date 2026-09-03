@@ -105,6 +105,8 @@ export async function startServer(root = ROOT) {
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
+  // Prefer Chrome for Testing / headless shell when present — no GUI registration.
+  path.join(os.homedir(), ".cache/puppeteer/chrome-headless-shell"),
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -113,16 +115,85 @@ const CHROME_CANDIDATES = [
   "/usr/bin/google-chrome",
   "/usr/bin/chromium",
   "/usr/bin/chromium-browser",
+  "/usr/bin/google-chrome-stable",
 ].filter(Boolean);
+
+/**
+ * Why launching Google Chrome would abort and dump a macOS crash dialog.
+ *
+ * Cursor's agent (and other sandboxed IDE hosts) spawn `node` → Chrome.
+ * On macOS, Chrome then calls HIServices `TransformProcessType` /
+ * `_RegisterApplication` and SIGABRTs almost immediately — the crash report
+ * the user keeps seeing. Static QA stays green; headed probes are for a real
+ * Terminal session with an explicit opt-in.
+ *
+ * Opt in:  RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs
+ * Opt out: RALLY_QA_NO_CHROME=1   (always skip)
+ *
+ * @returns {string|null} human reason, or null if launch is allowed
+ */
+export function chromeLaunchBlockedReason() {
+  if (process.env.RALLY_QA_ALLOW_CHROME === "1") return null;
+  if (process.env.RALLY_QA_NO_CHROME === "1") return "RALLY_QA_NO_CHROME=1";
+
+  // Explicit Cursor / Composer agent markers (any OS).
+  if (
+    process.env.CURSOR_AGENT ||
+    process.env.CURSOR_TRACE_ID ||
+    process.env.CURSOR_SESSION_ID ||
+    process.env.COMPOSER_SESSION
+  ) {
+    return "Cursor agent host (Chrome aborts in TransformProcessType)";
+  }
+
+  // VS Code / Cursor inject these into task + agent shells.
+  const ideHost = !!(process.env.VSCODE_PID || process.env.VSCODE_INJECTION);
+  if (ideHost && !process.stdin.isTTY) {
+    return "IDE agent shell without TTY (Chrome GUI registration crashes)";
+  }
+
+  // macOS hard rule: never spawn Chrome without an explicit opt-in.
+  // Cursor does not always set CURSOR_* in every shell, and Chrome still
+  // SIGABRTs in HIServices TransformProcessType when nested under Cursor's
+  // node. Env sniffing alone failed — default-deny is the only reliable fix.
+  if (process.platform === "darwin") {
+    return "macOS Chrome QA requires RALLY_QA_ALLOW_CHROME=1 (prevents Cursor crash dialog)";
+  }
+
+  if (ideHost) {
+    return "IDE host (set RALLY_QA_ALLOW_CHROME=1 in a real terminal)";
+  }
+
+  return null;
+}
 
 /** @returns {string|null} path to a usable Chromium-family binary */
 export function findChrome() {
+  if (chromeLaunchBlockedReason()) return null;
   for (const c of CHROME_CANDIDATES) {
     try {
-      if (fs.existsSync(c)) return c;
-    } catch { /* ignore */ }
+      // Puppeteer cache is a directory — look for the binary inside if needed.
+      if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
+    } catch {
+      /* ignore */
+    }
   }
   return null;
+}
+
+/**
+ * Human message when {@link findChrome} is null — distinguishes policy block
+ * (Cursor/macOS) from a missing binary so agents do not chase CHROME_PATH.
+ */
+export function chromeUnavailableHint() {
+  const blocked = chromeLaunchBlockedReason();
+  if (blocked) {
+    return (
+      `SKIP  Chrome blocked: ${blocked}. ` +
+      `Static QA only. For CDP probes: RALLY_QA_ALLOW_CHROME=1 node tools/… in Terminal.app`
+    );
+  }
+  return "FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.";
 }
 
 async function freePort() {
@@ -142,15 +213,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Launch headless Chrome and attach to its first page target.
  * Only the process we spawn is ever killed.
  *
+ * Never spawns Chrome when {@link chromeLaunchBlockedReason} is set — that is
+ * what stopped the recurring macOS crash dialog under Cursor.
+ *
  * @param {{headless?:boolean, width?:number, height?:number}} [opts]
  */
 export async function launchChrome(opts = {}) {
+  const blocked = chromeLaunchBlockedReason();
+  if (blocked) {
+    throw new Error(
+      `Chrome launch blocked: ${blocked}. Static checks only. ` +
+        `Run headed QA from Terminal.app with RALLY_QA_ALLOW_CHROME=1.`
+    );
+  }
+
   const bin = findChrome();
   if (!bin) throw new Error("No Chrome/Chromium found. Set CHROME_PATH to a browser binary.");
   const port = await freePort();
   const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "rally-qa-"));
   const width = opts.width || 1280;
   const height = opts.height || 720;
+
+  // Always headless unless the caller AND the environment both allow headed.
+  // Headed under Cursor is what triggers TransformProcessType → SIGABRT.
+  const wantHeadless = opts.headless !== false;
 
   const args = [
     `--remote-debugging-port=${port}`,
@@ -162,35 +248,87 @@ export async function launchChrome(opts = {}) {
     "--disable-renderer-backgrounding",
     "--disable-backgrounding-occluded-windows",
     "--mute-audio",
-    "--disable-features=CalculateNativeWinOcclusion",
+    "--disable-features=CalculateNativeWinOcclusion,Crashpad",
+    // Never show OS crash UI / dialogs from a QA child process.
+    "--disable-breakpad",
+    "--disable-crash-reporter",
+    "--disable-in-process-stack-traces",
+    "--noerrdialogs",
+    "--disable-hang-monitor",
+    "--disable-component-update",
+    "--use-mock-keychain",
     "about:blank",
   ];
-  if (opts.headless !== false) {
+  if (wantHeadless) {
     // Headless has no GPU, so WebGL must fall back to the SwiftShader software
     // rasteriser or nothing renders at all. It works, but it caps this game at
     // roughly 2 fps — fine for correctness assertions, useless for measuring
-    // frame time. Run headed (real GPU) for anything performance related.
+    // frame time. Run headed (real GPU) for anything performance related —
+    // only from Terminal.app with RALLY_QA_ALLOW_CHROME=1.
     args.unshift("--headless=new");
-    args.push("--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader");
+    args.push(
+      "--enable-unsafe-swiftshader",
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--ozone-platform=headless"
+    );
   }
 
-  const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+  const proc = spawn(bin, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      // Keep Crashpad from writing ~/Library/Logs/DiagnosticReports spam.
+      CHROME_HEADLESS: "1",
+      BREAKPAD_DUMP_LOCATION: path.join(userDataDir, "crashes"),
+    },
+  });
   let stderr = "";
-  proc.stderr.on("data", (d) => { stderr += d.toString().slice(0, 400); });
+  proc.stderr.on("data", (d) => {
+    stderr += d.toString().slice(0, 400);
+  });
 
-  // Wait for the debugging endpoint to answer.
+  // Wait for the debugging endpoint — bail immediately if Chrome aborts
+  // (the old path waited 12s then left a macOS crash dialog on screen).
   let version = null;
+  let launchErr = null;
+  proc.once("exit", (code, signal) => {
+    if (!version) {
+      launchErr = new Error(
+        `Chrome exited before CDP ready (code=${code} signal=${signal}). ` +
+          `stderr: ${stderr.trim() || "(none)"}`
+      );
+    }
+  });
   for (let i = 0; i < 120; i++) {
+    if (launchErr) break;
+    if (proc.exitCode !== null) break;
     try {
       const r = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (r.ok) { version = await r.json(); break; }
-    } catch { /* not up yet */ }
-    if (proc.exitCode !== null) break;
+      if (r.ok) {
+        version = await r.json();
+        break;
+      }
+    } catch {
+      /* not up yet */
+    }
     await sleep(100);
   }
-  if (!version) {
-    try { proc.kill("SIGKILL"); } catch { /* ignore */ }
-    throw new Error(`Chrome did not open a debugging port in 12s. stderr: ${stderr.trim() || "(none)"}`);
+  if (launchErr || !version) {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      /* ignore */
+    }
+    try {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    throw (
+      launchErr ||
+      new Error(`Chrome did not open a debugging port in 12s. stderr: ${stderr.trim() || "(none)"}`)
+    );
   }
 
   // Find the page target.
@@ -198,11 +336,23 @@ export async function launchChrome(opts = {}) {
   for (let i = 0; i < 60; i++) {
     const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
     const page = list.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
-    if (page) { pageWs = page.webSocketDebuggerUrl; break; }
+    if (page) {
+      pageWs = page.webSocketDebuggerUrl;
+      break;
+    }
     await sleep(100);
   }
   if (!pageWs) {
-    try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      /* ignore */
+    }
+    try {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
     throw new Error("Chrome started but exposed no page target to attach to.");
   }
 
@@ -212,12 +362,30 @@ export async function launchChrome(opts = {}) {
     browserVersion: version.Browser,
     cdp,
     async close() {
-      try { await cdp.close(); } catch { /* ignore */ }
-      try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+      try {
+        await cdp.close();
+      } catch {
+        /* ignore */
+      }
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
       // Give it a moment, then make sure only *our* process is gone.
       await sleep(300);
-      if (proc.exitCode === null) { try { proc.kill("SIGKILL"); } catch { /* ignore */ } }
-      try { await fsp.rm(userDataDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      if (proc.exitCode === null) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        await fsp.rm(userDataDir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
     },
   };
 }

@@ -17,6 +17,7 @@ import {
   goto,
   waitFor,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function read(rel) {
@@ -120,7 +121,7 @@ async function live() {
         parentName,
         z,
         hubMove,
-        steer: g.player.steer,
+        steer: g.player.steer
       };
     `);
     check(

@@ -38,6 +38,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const HEADED = process.argv.includes("--headed");
@@ -58,7 +59,7 @@ const KEYS = {
   right: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
   gas: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
   brake: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
-  hand: { key: " ", code: "Space", vk: 32 },
+  hand: { key: " ", code: "Space", vk: 32 }
 };
 
 let fail = 0;
@@ -83,7 +84,7 @@ async function key(cdp, type, name) {
     key: k.key,
     code: k.code,
     windowsVirtualKeyCode: k.vk,
-    nativeVirtualKeyCode: k.vk,
+    nativeVirtualKeyCode: k.vk
   });
 }
 
@@ -142,7 +143,7 @@ async function hold(cdp, names, steps) {
       inHand: Math.round((g.input.handbrake || 0) * 100) / 100,
       rack: Math.round((p.steer || 0) * 100) / 100,
       rearSlide,
-      xzWarps: (p._glitchLog || []).filter((e) => e.kind === "xz-warp").length,
+      xzWarps: (p._glitchLog || []).filter((e) => e.kind === "xz-warp").length
     };
   `);
   for (const n of names) await key(cdp, "keyUp", n);
@@ -156,8 +157,8 @@ async function realFrames(ms) {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`PLAYER CONTROLS  ·  ${new Date().toISOString()}\n`);
 
@@ -257,7 +258,7 @@ async function main() {
       return {
         keys: Array.from(g.input._keys || []),
         qaReleased: !!g.input.qaReleased,
-        qaHold: !!g.input._qaHold,
+        qaHold: !!g.input._qaHold
       };
     `);
     await realFrames(1500);

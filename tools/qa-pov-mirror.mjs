@@ -17,6 +17,7 @@ import {
   goto,
   waitFor,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function read(rel) {
@@ -67,10 +68,10 @@ check(
 check(
   "rearview lens is a cabin mirror (narrow VFOV, long enough far)",
   /mirrorFov:\s*26/.test(read("js/config.js")) &&
-    /mirrorFar:\s*110/.test(read("js/config.js")) &&
+    /mirrorFar:\s*(?:160|200)/.test(read("js/config.js")) &&
     /_mirrorLens\(\)/.test(game) &&
     /track\.update\(this\.player\.position, this\._mirrorCam\.position/.test(game),
-  "FOV~26°; far 110 m; stream against rear lens"
+  "FOV~26°; far 160 m; stream against rear lens"
 );
 
 check(
@@ -83,11 +84,22 @@ check(
 );
 
 check(
-  "mirror RT is a cheap fixed size (S50 budget), not the main canvas",
-  /mirrorW:\s*256/.test(read("js/config.js")) &&
-    /mirrorH:\s*80/.test(read("js/config.js")) &&
-    /Math\.min\(GFX\.mirrorW \|\| 256, 384\)/.test(game),
-  "long edge 256, height 80"
+  "mirror RT is a fixed size (readable cabin glass), not the main canvas",
+  /mirrorW:\s*(?:320|384)/.test(read("js/config.js")) &&
+    /mirrorH:\s*(?:100|120)/.test(read("js/config.js")) &&
+    /Math\.min\(GFX\.mirrorW \|\| 384, 384\)/.test(game),
+  "long edge up to 384, height up to 120"
+);
+check(
+  "POV mirror refreshes on skipped present frames",
+  /_renderMirror\(true\)/.test(game) && /onSkippedPresent/.test(game),
+  "mirror must stay 60 Hz when present locks to 30"
+);
+check(
+  "mirror capture keeps sun shadows",
+  !/shadowMap\.enabled = false/.test(game.slice(game.indexOf("_captureMirror"))) ||
+    /Keep sun shadows/.test(game),
+  "flat unshadowed mirror reads downgraded"
 );
 
 check(
@@ -100,8 +112,8 @@ check(
 );
 
 check(
-  "POV rearview captures on a live cadence (every other present)",
-  /mirrorEveryPov:\s*2/.test(read("js/config.js")) &&
+  "POV rearview captures every presented frame",
+  /mirrorEveryPov:\s*1/.test(read("js/config.js")) &&
     /GFX\.mirrorEveryPov/.test(game) &&
     !/_qualityMirrorEvery[\s\S]{0,120}_renderMirror/.test(game),
   "mirrorEveryPov bypasses quality-tier throttle in POV"
@@ -209,7 +221,7 @@ async function live() {
         hasImage: !!g._mirrorHasImage,
         mean,
         maxc,
-        mirrorVisible: !!(mesh.userData.mirror && mesh.userData.mirror.visible),
+        mirrorVisible: !!(mesh.userData.mirror && mesh.userData.mirror.visible)
       };
     `);
     check(

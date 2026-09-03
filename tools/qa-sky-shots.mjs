@@ -20,6 +20,7 @@ import fs from "node:fs";
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2);
@@ -34,7 +35,7 @@ const HEADLESS = argv.includes("--headless");
 /** The `min` rung of the ladder in js/gfx/perf-tier.js, verbatim. */
 const MIN_TIER = {
   id: "min", dpr: 0.75, shadow: 1536, post: "low", sky: "min",
-  mirrorEvery: 4, shadowEvery: 2,
+  mirrorEvery: 4, shadowEvery: 2
 };
 
 /**
@@ -75,7 +76,7 @@ async function aimSky(cdp, lift) {
 }
 
 async function main() {
-  if (!findChrome()) throw new Error("no Chrome/Chromium found — set CHROME_PATH");
+  if (!findChrome()) throw new Error(chromeUnavailableHint());
   console.log(`SKY SHOTS  ·  ${COURSE}  ·  ${new Date().toISOString()}`);
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: HEADLESS, width: 1600, height: 900 });
@@ -126,7 +127,7 @@ async function main() {
           return [d.x, d.y, d.z];
         })() : null,
         exposure: g.renderer.toneMappingExposure,
-        fog: g.scene.fog ? "#" + g.scene.fog.color.getHexString() : null,
+        fog: g.scene.fog ? "#" + g.scene.fog.color.getHexString() : null
       };
     `);
     console.log(`  DEFAULT tier=${info.tier} ema=${info.ema}ms fps=${info.fps} dpr=${info.dpr.toFixed(2)} shadow=${info.shadow} cloudSteps=${info.cloudSteps}/${info.lightSteps} exposure=${info.exposure}`);

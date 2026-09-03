@@ -76,10 +76,11 @@ check("race maxPixels ≤ 2.0 M", maxPx > 0 && maxPx <= 2000000, `maxPixels=${ma
 check("high tier bakes sun every 3rd present", /id: "high"[\s\S]{0,280}?shadowEvery:\s*3/.test(perf));
 check("30 fps cadence lock retained", /LOCK30_HOLD/.test(perf) && /lockedHz/.test(perf));
 check("lock30 holds ~0.8s (48 presents)", /LOCK30_HOLD = 48/.test(perf));
-check("preferLock30 evidence-only (not forced at settle)", /preferLock30:\s*false/.test(config));
+check("preferLock30 protects quality before dumping to min", /preferLock30:\s*true/.test(config));
 check(
-  "settle still gates forceLock30 behind preferLock30",
-  /preferLock30[\s\S]*?forceLock30\(/.test(game) || /forceLock30\(\)/.test(game)
+  "settle force-lock is opt-in (capable GPUs free-run 60 from GO)",
+  /forceLock30AtSettle:\s*false/.test(config) &&
+    /GFX\.forceLock30AtSettle[\s\S]*?forceLock30\(/.test(game)
 );
 check(
   "resetCadence keeps lock when preferLock30",

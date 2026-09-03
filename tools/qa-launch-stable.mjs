@@ -19,6 +19,7 @@ import {
   waitFor,
   clickResilient,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 let fail = 0;
@@ -33,8 +34,8 @@ function check(label, ok, detail) {
 async function main() {
   console.log(`LAUNCH STABLE GATE  ·  ${new Date().toISOString()}\n`);
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
 
   const server = await startServer(ROOT);
@@ -71,7 +72,7 @@ async function main() {
     await clickResilient(cdp, "[data-course='desert']", "DESERT");
     await waitFor(cdp, `return window.game && window.game.track ? 1 : null;`, {
       timeout: 120000,
-      label: "Desert track",
+      label: "Desert track"
     });
     await waitFor(
       cdp,
@@ -111,7 +112,7 @@ async function main() {
         pitchSpan: Number.isFinite(pMin) ? pMax - pMin : 99,
         reversals,
         lastVx: run.length ? run[run.length - 1] : 0,
-        throttle: p.throttle,
+        throttle: p.throttle
       };
     `);
 

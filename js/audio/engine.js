@@ -10,9 +10,9 @@
  * See assets/sfx/ATTRIBUTION.txt and assets/music/ATTRIBUTION.txt.
  */
 
-import { CdSoundtrack } from "./soundtrack.js?v=134";
+import { CdSoundtrack } from "./soundtrack.js?v=136";
 import { PowertrainVoice } from "./powertrain.js?v=26";
-import { SkidVoice } from "./skid.js?v=6";
+import { SkidVoice } from "./skid.js?v=7";
 import { loadSample, playHit, playClip } from "./bank.js?v=2";
 import { CrowdVoice } from "./crowd.js?v=5";
 import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
@@ -34,11 +34,25 @@ const NAV_CLIPS = [
   "hairpin-left",
   "hairpin-right",
   "jump",
+  "long",
+  "maybe",
   "count-3",
   "count-2",
   "count-1",
   "count-go",
 ];
+/** Grade clips that may chain long / maybe qualifiers. */
+const NAV_GRADE = new Set([
+  "easy-left",
+  "easy-right",
+  "medium-left",
+  "medium-right",
+  "hard-left",
+  "hard-right",
+  "hairpin-left",
+  "hairpin-right",
+  "jump",
+]);
 
 /**
  * True in Cursor / VS Code Simple Browser (and `?mute=1`).
@@ -113,6 +127,8 @@ export class RallyAudio {
     /** @type {AudioBufferSourceNode|null} */
     this._navSrc = null;
     this._navPlayingKey = "";
+    /** @type {string[]} queued long / grade / maybe phrase */
+    this._navQueue = [];
     /** Start-grid 3-2-1-GO — separate so a late pace decode cannot cut GO. */
     this._countSrc = null;
     /** @type {CrowdVoice|null} */
@@ -338,25 +354,38 @@ export class RallyAudio {
     if (this._navBooted || !this.ctx) return;
     this._navBooted = true;
     for (const key of NAV_CLIPS) {
-      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=4`).then((buf) => {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=5`).then((buf) => {
         this._navClips[key] = buf;
       });
     }
   }
 
   /**
-   * Play a recorded co-driver line. Stops the previous call so they never stack.
-   * @param {string} key
+   * Play a recorded co-driver line. Optional long / maybe chain (AM3 style).
+   * Stops the previous call so phrases never stack.
+   * @param {string} key grade or jump clip id
+   * @param {{long?:boolean, maybe?:boolean}} [opts]
    * @returns {boolean}
    */
-  paceCall(key) {
+  paceCall(key, opts = {}) {
     if (!this.ready || this._workMute || this.navVol <= 0.001) return false;
-    if (!NAV_CLIPS.includes(key)) return false;
-    const buf = this._navClips[key];
-    if (!buf || !this._navGain) return false;
+    if (!NAV_GRADE.has(key)) return false;
+    if (!this._navGain) return false;
     this._kickContext();
-    // Same line already playing — do not restart every frame while the clip loads.
-    if (this._navSrc && this._navPlayingKey === key) return true;
+
+    /** @type {string[]} */
+    const queue = [];
+    if (opts.long && this._navClips.long) queue.push("long");
+    queue.push(key);
+    if (opts.maybe && this._navClips.maybe) queue.push("maybe");
+
+    // Grade must be decoded; qualifiers are optional until their buffers land.
+    if (!this._navClips[key]) return false;
+
+    const phraseKey = queue.join("+");
+    // Same phrase already playing — do not restart every frame while buffers load.
+    if (this._navSrc && this._navPlayingKey === phraseKey) return true;
+
     if (this._navSrc) {
       try {
         this._navSrc.stop();
@@ -365,14 +394,32 @@ export class RallyAudio {
       }
       this._navSrc = null;
     }
-    this._navPlayingKey = key;
+    this._navQueue = queue.slice(1);
+    this._navPlayingKey = phraseKey;
+    return this._playNavClip(queue[0], phraseKey);
+  }
+
+  /**
+   * @param {string} key
+   * @param {string} phraseKey
+   * @returns {boolean}
+   */
+  _playNavClip(key, phraseKey) {
+    const buf = this._navClips[key];
+    if (!buf || !this._navGain) return false;
     this._navSrc = playClip(this.ctx, this._navGain, buf, { gain: 1 });
-    if (this._navSrc) {
-      this._navSrc.onended = () => {
-        if (this._navPlayingKey === key) this._navPlayingKey = "";
-      };
-    }
-    return !!this._navSrc;
+    if (!this._navSrc) return false;
+    this._navSrc.onended = () => {
+      if (this._navPlayingKey !== phraseKey) return;
+      const next = this._navQueue.shift();
+      if (next) {
+        this._playNavClip(next, phraseKey);
+        return;
+      }
+      this._navPlayingKey = "";
+      this._navSrc = null;
+    };
+    return true;
   }
 
   /**
@@ -799,19 +846,31 @@ export class RallyAudio {
     });
   }
 
-  /** Timeout sting from a recorded overrun, falling in three hits. */
+  /**
+   * Result / timeout sting role (not Sega's "GAME OVER YEAH" recording).
+   * Three falling overrun hits + a short checkpoint chirp over the CC0
+   * result music bed already started by syncMusic("result").
+   */
   gameOverYeah() {
     if (!this.ready) return;
     const t0 = this.ctx.currentTime;
-    const rates = [1.02, 0.86, 0.72];
+    const rates = [1.08, 0.9, 0.74];
     rates.forEach((rate, i) => {
       playHit(this.ctx, this._sfxIn, this._hits.overrun, {
-        gain: 0.34,
+        gain: 0.36,
         rate,
-        when: t0 + i * 0.18,
-        dur: 0.32,
+        when: t0 + i * 0.17,
+        dur: 0.3,
       });
     });
+    if (this._hits.checkpoint) {
+      playHit(this.ctx, this._sfxIn, this._hits.checkpoint, {
+        gain: 0.28,
+        rate: 0.62,
+        when: t0 + 0.52,
+        dur: 0.45,
+      });
+    }
   }
 }
 

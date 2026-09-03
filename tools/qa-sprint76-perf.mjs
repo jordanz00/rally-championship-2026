@@ -147,6 +147,8 @@ check(
   "full-res rearview was a measured hitch"
 );
 check("config keeps the mirror small", /mirrorW:\s*(?:256|320|384)/.test(config) && /mirrorH:\s*(?:80|100|120)/.test(config));
+check("race locks visual tier mid-stage", /lockRaceQuality:\s*true/.test(config));
+check("lockRaceQuality honoured in scaler", /lockQuality = !!gfx\.lockRaceQuality/.test(perf));
 check("tier can stretch mirror cadence", /_qualityMirrorEvery/.test(game));
 check(
   "mirror RT is fixed size, not the framebuffer",
@@ -222,6 +224,21 @@ check(
   "one 1100ms compile stall does not degrade the stage",
   spike.tier === "high" && spike.changes.length === 0,
   `ended at ${spike.tier} after ${spike.changes.length} change(s)`
+);
+
+const lockedRace = (() => {
+  const t = createPerfTier({ ...GFX_TEST, lockRaceQuality: true });
+  const changes = [];
+  for (let i = 0; i < 3200; i++) {
+    const r = t.tick(20);
+    if (r.changed) changes.push([i, r.id]);
+  }
+  return { tier: t.tier, changes, locked30: t.locked30 };
+})();
+check(
+  "lockRaceQuality keeps visuals on high under sustained load",
+  lockedRace.tier === "high" && lockedRace.changes.length === 0,
+  `ended at ${lockedRace.tier}, changes ${JSON.stringify(lockedRace.changes)} locked30=${lockedRace.locked30}`
 );
 
 const sustained = drive(40, 400);
