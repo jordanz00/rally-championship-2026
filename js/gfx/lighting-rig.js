@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=180";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=183";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -41,6 +41,8 @@ export function kelvinToColor(kelvin) {
 
 /**
  * Apply authored stage LIGHTING block onto the fixed light pool.
+ * Desert earth bias lives in LIGHTING.desert (warm fill/hemiGround/Kelvin) —
+ * do not compensate with bloom alone.
  *
  * @param {{ sun: THREE.DirectionalLight, fill: THREE.DirectionalLight, hemi: THREE.HemisphereLight, ambient: THREE.AmbientLight, skyRim?: THREE.DirectionalLight }} lights
  * @param {object} L LIGHTING[courseId]

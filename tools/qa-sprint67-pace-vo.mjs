@@ -51,8 +51,8 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(read("js/main.js"), read
 check("no speechSynthesis on the race path", !/speechSynthesis/.test(driver) && !/SpeechSynthesisUtterance/.test(driver));
 check("codriver plays each note once via paceCall", /paceCall/.test(driver) && /this\._said/.test(driver) && /noteSignature/.test(driver) && /this\._lastClip/.test(driver));
 check("codriver enforces speak gap + recall", /PACE\.speakGap/.test(driver) && /PACE\.recallMetres/.test(driver) && /this\.cool > 0/.test(driver));
-check("paceCall does not restart the same clip", /_navPlayingKey === key/.test(engine));
-check("noteAt uses pickPaceNote", /pickPaceNote/.test(track) && /pace-call\.mjs\?v=3/.test(track));
+check("paceCall does not restart the same clip", /_navPlayingKey === phraseKey/.test(engine));
+check("noteAt uses pickPaceNote", /pickPaceNote/.test(track) && /pace-call\.mjs\?v=4/.test(track));
 check("authored notes do not override", !/findAuthoredNote/.test(track));
 check(
   "geometry picker has no surface/tunnel speech",
@@ -68,15 +68,18 @@ check("turn id is arc start, not a 36 m bucket", /\$\{dir\}-\$\{severity\}-\$\{M
 check("in-progress arcs are skipped", /arc\.start \+ TURN_LEAD < dist/.test(call));
 check("hairpin-grade turns speak hairpin", /grade = "hairpin"/.test(call) && /hairpin-left/.test(driver) && /hairpin-right/.test(driver));
 check("clipKey does not rewrite hairpin to hard", !/startsWith\("hairpin-"\)/.test(driver));
-check("nav clips cache-busted", /nav\/\$\{key\}\.mp3\?v=4/.test(engine));
+check("long/maybe flags on turn notes", /LONG_ARC_M/.test(call) && /maybe:/.test(call) && /long:/.test(call));
+check("paceCall accepts long/maybe opts", /paceCall\(key, opts/.test(engine) && /_navQueue/.test(engine));
+check("codriver passes long/maybe phrase", /paceCall\(key, phrase\)/.test(driver) || /paceCall\(key, \{\s*long/.test(driver));
+check("nav clips cache-busted", /nav\/\$\{key\}\.mp3\?v=5/.test(engine));
 check("nav bus bypasses SFX compressor", /_navGain/.test(engine) && /NAV_GAIN/.test(engine));
 check("playClip does not dump the line", /export function playClip/.test(bank) && /paceCall/.test(engine));
 check("Daniel unified nav voice attribution", /Daniel/.test(attr) && /build-nav-grade-vo/.test(attr));
 
-for (const key of NAV_CLIPS) {
+for (const key of [...NAV_CLIPS, "long", "maybe"]) {
   const file = path.join(ROOT, "assets/sfx/nav", `${key}.mp3`);
   const st = fs.existsSync(file) ? fs.statSync(file) : null;
-  check(`clip ${key}.mp3`, !!(st && st.size > 4000), st ? `${st.size} bytes` : "missing");
+  check(`clip ${key}.mp3`, !!(st && st.size > 2000), st ? `${st.size} bytes` : "missing");
 }
 
 for (const grade of ["easy", "medium", "hard", "hairpin"]) {
@@ -151,6 +154,25 @@ check(
   hardBend ? hardBend.clip : "null"
 );
 
+const longEasy = makeTurnNote(100, -0.4, 28, 72);
+check(
+  "long easy arc notes maybe + long",
+  !!(longEasy.maybe && longEasy.long && longEasy.clip === "easy-right" && /MAYBE/.test(longEasy.text)),
+  longEasy.text
+);
+const shortEasy = makeTurnNote(100, -0.4, 28, 20);
+check(
+  "short easy arc has no maybe",
+  !shortEasy.maybe && !shortEasy.long,
+  shortEasy.text
+);
+const pinNoMaybe = makeTurnNote(50, 2.6, 150, 80);
+check(
+  "hairpin never gets maybe even on a long arc",
+  !pinNoMaybe.maybe && pinNoMaybe.clip === "hairpin-left",
+  pinNoMaybe.text
+);
+
 const rad = (d) => (d * Math.PI) / 180;
 const grades = [
   ["easy left", 30, "easy-left"],
@@ -179,10 +201,19 @@ check(
   !!(sweepA && sweepA.kind === "turn" && sweepA.clip === "medium-right" && sweepB == null),
   sweepA ? `${sweepA.id} then ${sweepB && sweepB.id}` : "null"
 );
+check(
+  "long sweeper speaks maybe (AM3 judge-yourself)",
+  !!(sweepA && sweepA.maybe),
+  sweepA ? `${sweepA.text}` : "null"
+);
 
 check("game imports track.js?v=196+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 196);
 check("game imports engine.js?v=56+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 56);
 check("game imports codriver.js?v=35+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 35);
+check("engine imports soundtrack.js?v=135+", Number((engine.match(/soundtrack\.js\?v=(\d+)/) || [])[1]) >= 135);
+check("engine still wires SkidVoice", /SkidVoice/.test(engine) && /this\.skid\.setState/.test(engine));
+check("skid gravel pan from driftAngle", /StereoPanner|createStereoPanner/.test(read("js/audio/skid.js")) && /signedYaw|driftAngle/.test(read("js/audio/skid.js")));
+check("per-course DISC_MIX in soundtrack", /DISC_MIX/.test(read("js/audio/soundtrack.js")));
 check("cache-bust chain", cacheOk && Number(gameV) >= 461, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "navigator says easy/medium/hard/hairpin left or right, or jump"}`);

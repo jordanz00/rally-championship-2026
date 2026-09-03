@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=180";
+import { VISUAL } from "../config.js?v=183";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -231,9 +231,9 @@ const SCALE = {
   log: 0.7,
   tent: 2.4,
   house: 5.5,
-  zebra: 1.4,
-  elephant: 3.2,
-  gazelle: 1.2,
+  zebra: 1.65,
+  elephant: 3.6,
+  gazelle: 1.35,
   treeMin: 3.0,
   treeMax: 22.0,
   treeDefault: 9.0,
@@ -245,8 +245,8 @@ const COL = {
   canopyPine: [0.18, 0.38, 0.14],
   canopyCedar: [0.22, 0.42, 0.18],
   canopyOak: [0.28, 0.46, 0.16],
-  canopyAutumn: [0.62, 0.34, 0.1],
-  canopyGold: [0.72, 0.52, 0.14],
+  canopyAutumn: [0.72, 0.32, 0.08],
+  canopyGold: [0.82, 0.55, 0.12],
   canopyPalm: [0.2, 0.48, 0.18],
   bush: [0.26, 0.44, 0.16],
   bushFern: [0.3, 0.48, 0.2],

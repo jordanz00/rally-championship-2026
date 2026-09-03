@@ -17,8 +17,24 @@
 const MUSIC_GAIN = 0.44;
 
 /**
- * Per-disc linear trim. Loudnorm already matches stages; leave at 1.
+ * Per-disc linear trim + EQ so each stage bed has a distinct role in the mix
+ * (AM3: one track per course). Same CC jazz-fusion masters — no Sega audio.
  */
+const DISC_MIX = {
+  title: { trim: 1, hp: 85, mudHz: 320, mud: -2.0, midHz: 3000, mid: 2.0, air: 1.0 },
+  /** Open savannah — brighter air, slightly louder strut. */
+  desert: { trim: 1.04, hp: 92, mudHz: 300, mud: -1.6, midHz: 3400, mid: 2.8, air: 1.8 },
+  /** Canopy — darker mud scoop, less air. */
+  forest: { trim: 0.96, hp: 100, mudHz: 280, mud: -3.4, midHz: 2800, mid: 1.6, air: 0.35 },
+  /** Alpine edge — more mid presence and shelf. */
+  mountain: { trim: 1.02, hp: 110, mudHz: 340, mud: -2.2, midHz: 3600, mid: 3.2, air: 2.2 },
+  /** Lakeside — warmer, quieter, soft top. */
+  lakeside: { trim: 0.9, hp: 78, mudHz: 260, mud: -2.8, midHz: 2600, mid: 1.8, air: 0.2 },
+  /** Result / GAME OVER role — punchier bed under the procedural sting. */
+  result: { trim: 1.08, hp: 95, mudHz: 380, mud: -1.2, midHz: 3200, mid: 3.0, air: 1.6 },
+};
+
+/** @deprecated trim-only map kept for callers that read DISC_TRIM */
 const DISC_TRIM = {
   title: 1,
   desert: 1,
@@ -259,6 +275,7 @@ export class CdSoundtrack {
     }
     this._pruneDying();
     this.current = id;
+    this._applyDiscMix(id, now);
     const src = this.ctx.createBufferSource();
     src.buffer = this._buffers[id];
     src.loop = true;
@@ -266,13 +283,30 @@ export class CdSoundtrack {
     src.loopStart = Math.min(0.04, dur * 0.002);
     src.loopEnd = Math.max(src.loopStart + 0.5, dur - 0.04);
     const level = this.ctx.createGain();
-    const trim = DISC_TRIM[id] || 1;
+    const mix = DISC_MIX[id] || DISC_MIX.desert;
+    const trim = mix.trim != null ? mix.trim : DISC_TRIM[id] || 1;
     level.gain.setValueAtTime(0.0001, now);
     level.gain.linearRampToValueAtTime(trim, now + FADE_SEC);
     src.connect(level);
     level.connect(this.hp);
     src.start(now);
     this._voice = { src, level, id };
+  }
+
+  /**
+   * Stage-identity EQ on the shared music bus (not Sega's MIDI patches).
+   * @param {string} id
+   * @param {number} now
+   */
+  _applyDiscMix(id, now) {
+    const m = DISC_MIX[id] || DISC_MIX.desert;
+    const tau = 0.12;
+    this.hp.frequency.setTargetAtTime(m.hp, now, tau);
+    this.mud.frequency.setTargetAtTime(m.mudHz, now, tau);
+    this.mud.gain.setTargetAtTime(m.mud, now, tau);
+    this.mid.frequency.setTargetAtTime(m.midHz, now, tau);
+    this.mid.gain.setTargetAtTime(m.mid, now, tau);
+    this.air.gain.setTargetAtTime(m.air, now, tau);
   }
 
   /**

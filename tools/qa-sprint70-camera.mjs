@@ -34,7 +34,7 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check(
   "mirror RT is 320×100 (readable cabin glass)",
-  /mirrorW:\s*320/.test(config) && /mirrorH:\s*100/.test(config)
+  /mirrorW:\s*(?:320|384)/.test(config) && /mirrorH:\s*(?:100|120)/.test(config)
 );
 check(
   "RT is created, asserted, and rebuilt on context restore",

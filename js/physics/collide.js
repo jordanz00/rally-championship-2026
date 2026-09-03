@@ -445,8 +445,10 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   v.position.z += nz * push;
 
   // Resolve velocity against the normal — keep tangential / along-track speed.
+  // AM3: walls glance; never dump all speed into a hard stop that ends a run.
   const vn = v.velocity.x * nx + v.velocity.z * nz;
   if (vn < 0) {
+    const closed = -vn;
     v.velocity.x -= vn * nx;
     v.velocity.z -= vn * nz;
     if (v.ai) {
@@ -456,11 +458,18 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
         v.velocity.z += fz * (6 - along) * 0.35;
       }
     } else {
+      if (wall) {
+        // Redirect most of the closed normal into along-nose — a scrape, not a wall.
+        const keep = closed * 0.62;
+        v.velocity.x += fx * keep;
+        v.velocity.z += fz * keep;
+      }
       const tx = -nz;
       const tz = nx;
       const vt = v.velocity.x * tx + v.velocity.z * tz;
-      v.velocity.x -= tx * vt * 0.035;
-      v.velocity.z -= tz * vt * 0.035;
+      const scrub = wall ? 0.016 : 0.035;
+      v.velocity.x -= tx * vt * scrub;
+      v.velocity.z -= tz * vt * scrub;
     }
     v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.55 + push * 0.35);
     v.hitNx = nx;

@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { RGBELoader } from "../vendor/RGBELoader.js";
-import { VISUAL } from "./config.js?v=180";
+import { VISUAL } from "./config.js?v=183";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
@@ -44,7 +44,7 @@ export const STAGE_SKYBOX = {
 
 /** @deprecated Palette kept so older imports/QA do not crash; unused by skybox path. */
 export const STAGE_CLOUD_PALETTES = {
-  desert: { lit: 0xfffbf7, dark: 0x6a86a8, absorb: 2.15, silver: 1.22, cover: 0.26 },
+  desert: { lit: 0xfff4e4, dark: 0x7a6a58, absorb: 2.05, silver: 1.18, cover: 0.24 },
   forest: { lit: 0xf9fcff, dark: 0x647c98, absorb: 2.35, silver: 1.12, cover: 0.34 },
   mountain: { lit: 0xf8fbff, dark: 0x62809c, absorb: 2.2, silver: 1.18, cover: 0.24 },
   lakeside: { lit: 0xf5fafd, dark: 0x687e96, absorb: 2.3, silver: 1.1, cover: 0.3 },

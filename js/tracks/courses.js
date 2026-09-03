@@ -28,7 +28,7 @@
  * backwards and the co-driver reads every corner the wrong way.
  */
 
-import { COLORS } from "../config.js?v=180";
+import { COLORS } from "../config.js?v=183";
 
 export const COURSES = {
   /**
@@ -152,45 +152,44 @@ export const COURSES = {
   },
 
   /**
-   * FOREST — autumn glade rally: speed → brake → drift → exit.
-   * Longer (~1.8 km) and harder than Desert teaching: tight dirt/gravel S,
-   * crest jump, Glade Bowl (waterfall), long gravel sweep, linked mud pins,
-   * autumn corridor, finale gravel commit. Two checkpoints (AM3 budget).
+   * FOREST — AM3: tight snaky corridors + puddles; close walls sell speed;
+   * flat-out chicane, then an opening into wide space (Glade Bowl). Longer
+   * (~1.8 km) than Desert. Two checkpoints (AM3 budget).
    */
   forest: {
     id: "forest",
     name: "FOREST",
-    subtitle: "MEDIUM  ·  AUTUMN HAIRPINS  ·  WATERFALL CLEARING",
+    subtitle: "MEDIUM  ·  TREE CORRIDOR  ·  WATERFALL CLEARING",
     difficulty: "medium",
     fog: COLORS.fogForest,
     sky: 0x6aa8d4,
     offroad: "grass",
     scenery: "forest",
-    startWidth: 13.6,
+    startWidth: 12.2,
     startY: 2,
     seed: 37,
     barriers: false,
     pieces: [
-      // --- Act 1: linked dirt/gravel S — less rest, sell corridor speed.
-      { type: "straight", length: 48, surface: "dirt", width: 13.8, dy: 1 },
-      { type: "curve", radius: 58, angle: 54, surface: "dirt", width: 13.4 },
-      { type: "straight", length: 26, surface: "dirt", width: 13.2 },
-      { type: "curve", radius: 46, angle: -62, surface: "dirt", width: 12.8, surfaceOut: "gravel" },
-      { type: "straight", length: 22, surface: "gravel", width: 12.8 },
-      { type: "curve", radius: 42, angle: 68, surface: "gravel", width: 12.6 },
-      { type: "straight", length: 28, surface: "gravel", width: 13 },
+      // --- Act 1: snaky dirt/gravel corridor — narrow ribbon so walls sell speed.
+      { type: "straight", length: 42, surface: "dirt", width: 12.2, dy: 1 },
+      { type: "curve", radius: 48, angle: 58, surface: "dirt", width: 11.8 },
+      { type: "straight", length: 22, surface: "dirt", width: 11.6 },
+      { type: "curve", radius: 40, angle: -66, surface: "dirt", width: 11.4, surfaceOut: "gravel" },
+      { type: "straight", length: 18, surface: "gravel", width: 11.4 },
+      { type: "curve", radius: 36, angle: 72, surface: "gravel", width: 11.2 },
+      { type: "straight", length: 24, surface: "gravel", width: 11.6 },
 
-      // --- Act 2: crest jump + tighter chicane into CP1 meadow.
-      { type: "jump", ramp: 14, rise: 2.4, lip: 5, gap: 11, drop: 1.4, land: 28, surface: "gravel", width: 14 },
-      { type: "straight", length: 32, surface: "gravel", width: 13.6 },
-      { type: "curve", radius: 68, angle: 42, surface: "gravel", width: 13.4 },
-      { type: "curve", radius: 58, angle: -52, surface: "gravel", width: 13.2 },
-      { type: "straight", length: 30, surface: "gravel", width: 13.4, checkpoint: true },
+      // --- Act 2: crest jump + flat-out chicane, then OPEN into the meadow CP.
+      { type: "jump", ramp: 14, rise: 2.4, lip: 5, gap: 11, drop: 1.4, land: 26, surface: "gravel", width: 12.4 },
+      { type: "straight", length: 22, surface: "gravel", width: 11.8 },
+      { type: "curve", radius: 52, angle: 48, surface: "gravel", width: 11.4 },
+      { type: "curve", radius: 44, angle: -56, surface: "gravel", width: 11.2 },
+      { type: "straight", length: 36, surface: "gravel", width: 14.8, checkpoint: true },
 
-      // --- Act 3: THE GLADE BOWL — waterfall outside; commit the right hairpin.
-      { type: "straight", length: 34, surface: "dirt", width: 15.8, dy: -1 },
-      { type: "curve", radius: 44, angle: -176, surface: "dirt", width: 16.8, landmark: true },
-      { type: "straight", length: 26, surface: "dirt", width: 15.4 },
+      // --- Act 3: THE GLADE BOWL — open space after the chicane; waterfall outside.
+      { type: "straight", length: 38, surface: "dirt", width: 16.4, dy: -1 },
+      { type: "curve", radius: 44, angle: -176, surface: "dirt", width: 17.2, landmark: true },
+      { type: "straight", length: 28, surface: "dirt", width: 15.8 },
 
       // --- Act 4: THE LONG SWEEP — gravel right, hold the slide.
       { type: "curve", radius: 118, angle: -90, surface: "gravel", width: 15.8, dy: -1.2, sweep: true },
@@ -203,13 +202,13 @@ export const COURSES = {
       { type: "curve", radius: 34, angle: 160, surface: "mud", width: 14.2, landmark: true },
       { type: "straight", length: 20, surface: "mud", surfaceOut: "gravel", width: 14.4 },
 
-      // --- Act 6: AUTUMN CORRIDOR — gravel S + dirt pinch; second clock buyback.
-      { type: "curve", radius: 50, angle: 76, surface: "gravel", width: 13.6 },
-      { type: "straight", length: 22, surface: "gravel", width: 13.4 },
-      { type: "curve", radius: 44, angle: -84, surface: "gravel", width: 13.2 },
-      { type: "straight", length: 20, surface: "gravel", surfaceOut: "dirt", width: 13.6 },
-      { type: "curve", radius: 38, angle: 102, surface: "dirt", width: 13.8 },
-      { type: "straight", length: 28, surface: "dirt", width: 14, checkpoint: true },
+      // --- Act 6: AUTUMN CORRIDOR — tight again after the open glade; CP2.
+      { type: "curve", radius: 42, angle: 78, surface: "gravel", width: 12.2 },
+      { type: "straight", length: 18, surface: "gravel", width: 12 },
+      { type: "curve", radius: 38, angle: -86, surface: "gravel", width: 11.8 },
+      { type: "straight", length: 16, surface: "gravel", surfaceOut: "dirt", width: 12.2 },
+      { type: "curve", radius: 34, angle: 108, surface: "dirt", width: 12.4 },
+      { type: "straight", length: 26, surface: "dirt", width: 13.2, checkpoint: true },
 
       // --- Act 7: FINALE — gravel commit hairpin, exit sweeper, autumn sprint.
       { type: "straight", length: 18, surface: "dirt", surfaceOut: "gravel", width: 14.2 },
@@ -250,7 +249,8 @@ export const COURSES = {
     barriers: false,
     pieces: [
       { type: "straight", length: 88, surface: "tarmac", width: 9, dy: 4 },
-      { type: "curve", radius: 18, angle: 160, surface: "tarmac", dy: 2 },
+      // Establishing hairpin — rock face sits across the inside (AM3 §4).
+      { type: "curve", radius: 18, angle: 160, surface: "tarmac", dy: 2, landmark: true },
       { type: "straight", length: 62, surface: "tarmac", width: 9, dy: 3 },
       { type: "curve", radius: 16, angle: -170, surface: "tarmac", dy: 1 },
       { type: "straight", length: 58, surface: "tarmac", width: 9, dy: -2 },
@@ -330,16 +330,14 @@ export const COURSES = {
   },
 
   /**
-   * LAKESIDE — the bonus stage, northern Europe in autumn colour. Unlocked only
-   * by finishing Mountain in 1st. Fast, flowing tarmac with a cobbled lakeside
-   * section: the reward for beating Mountain is a stage that lets you use the
-   * grip instead of fighting for it. Two checkpoints of its own, outside the
-   * six-checkpoint championship budget.
+   * LAKESIDE — bonus, northern Europe autumn colour (AM3 §4). Unlocked only by
+   * finishing Mountain in 1st. Fast flowing tarmac + cobbled lakeside run.
+   * Two checkpoints of its own, outside the six-checkpoint championship budget.
    */
   lakeside: {
     id: "lakeside",
     name: "LAKESIDE",
-    subtitle: "BONUS  ·  1st AFTER MOUNTAIN",
+    subtitle: "BONUS  ·  AUTUMN  ·  1st AFTER MOUNTAIN",
     difficulty: "bonus",
     fog: COLORS.fogLakeside,
     sky: 0x8eb4c4,

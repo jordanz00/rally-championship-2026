@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=180";
+import { VISUAL } from "../config.js?v=183";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;

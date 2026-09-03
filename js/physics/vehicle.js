@@ -45,11 +45,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=180";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=50";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=46";
-import { JumpModel } from "./jump.js?v=23";
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=3";
+import { CELICA, ROAD_DECK, HANDLING, JUMP, FIXED_DT, SURFACES } from "../config.js?v=183";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=51";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=47";
+import { JumpModel } from "./jump.js?v=24";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=4";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -858,7 +858,7 @@ export class Vehicle {
       this.omegaF *= 1 - 0.12 * dt;
       this.omegaR *= 1 - 0.12 * dt;
     }
-    this._shiftKick *= Math.exp(-7.5 * dt);
+    this._shiftKick *= Math.exp(-5.6 * dt);
     if (this._shiftKick < 0.03) this._shiftKick = 0;
 
     const omegaDrive = s.drivetrain === "2wd" ? this.omegaR : this.omegaR * 0.62 + this.omegaF * 0.38;
@@ -1071,7 +1071,9 @@ export class Vehicle {
    */
   _applyGearDriftKick(steerIn, steps = 1) {
     const n = Math.max(1, steps | 0);
-    const turning = Math.abs(this.steer) > 0.08 || Math.abs(steerIn) > 0.18;
+    // Doc: "shifting down while steering puts your car in a state of drift"
+    // — aim with light lock; do not bury the trigger behind big steer.
+    const turning = Math.abs(this.steer) > 0.045 || Math.abs(steerIn) > 0.1;
     if (!turning) {
       this.omegaR *= Math.pow(0.9, Math.min(n, 2));
       return;
@@ -1080,13 +1082,13 @@ export class Vehicle {
     const kickMax = HANDLING.gearDriftKickMax != null ? HANDLING.gearDriftKickMax : 1.05;
     const top = this._topGear();
     this._shiftKick = clamp(
-      this._shiftKick + (kick + (top - this.gear) * 0.08) * n,
+      this._shiftKick + (kick + (top - this.gear) * 0.1) * n,
       0,
       kickMax
     );
     this._shiftKickDir =
-      Math.abs(this.steer) > 0.04 ? Math.sign(this.steer) : Math.sign(steerIn) || 1;
-    this.omegaR *= Math.pow(0.78, Math.min(n, 2));
+      Math.abs(this.steer) > 0.03 ? Math.sign(this.steer) : Math.sign(steerIn) || 1;
+    this.omegaR *= Math.pow(0.72, Math.min(n, 2));
   }
 
   /**
@@ -3317,7 +3319,7 @@ export class Vehicle {
       // Power oversteer: throttle dumps rear grip so the tail walks out.
       muR *= lerp(1, 0.28, clamp(Math.abs(st) * this.throttle * 2.05, 0, 1));
     }
-    if (this._shiftKick > 0.08) muR *= lerp(1, 0.68, Math.min(1, this._shiftKick));
+    if (this._shiftKick > 0.08) muR *= lerp(1, 0.5, Math.min(1, this._shiftKick));
     if (shock > 0.05) {
       muF *= lerp(1, 0.82, shock);
       muR *= lerp(1, 0.7, shock);
@@ -3465,7 +3467,7 @@ export class Vehicle {
     let latG = surface.muPeak * G * lerp(1.02, 0.88, speed01 * speed01) * jumpGrip;
     if (twoWd) latG *= 0.9;
     if (hb > hbEnter) latG *= lerp(1, 0.26, (hb - hbEnter) / Math.max(0.01, 1 - hbEnter));
-    if (this._shiftKick > 0.08) latG *= lerp(1, 0.65, Math.min(1, this._shiftKick));
+    if (this._shiftKick > 0.08) latG *= lerp(1, 0.55, Math.min(1, this._shiftKick));
     if (shock > 0.05) latG *= lerp(1, 0.88, shock);
     // Braking on loose ground spends lateral grip on rotation instead.
     if (brakeRot > 0.02) latG *= lerp(1, 0.72, brakeRot);

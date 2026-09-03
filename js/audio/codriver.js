@@ -3,11 +3,12 @@
  *
  * WHO THIS IS FOR: the race loop + pause NAVIGATOR slider.
  * WHAT IT DOES: plays spoken grade clips (easy/medium/hard/hairpin L/R + jump)
- *   once per turn or jump. Own gain bus.
+ *   once per turn or jump. Long / uncertain arcs chain "long" + grade + "maybe"
+ *   (AM3 Kenneth Ibrahim style). Own gain bus.
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 
-import { PACE } from "../config.js?v=180";
+import { PACE } from "../config.js?v=183";
 
 const VOL_NAV_KEY = "rally-vol-navigator";
 
@@ -77,7 +78,7 @@ export class CoDriver {
   }
 
   /**
-   * @param {{id:string, speech:string, text:string, severity:number, kind?:string, clip?:string}|null} note
+   * @param {{id:string, speech:string, text:string, severity:number, kind?:string, clip?:string, long?:boolean, maybe?:boolean}|null} note
    * @param {number} dt
    * @param {{paceCall?: Function}} audio
    * @param {number} [_progress]
@@ -113,8 +114,17 @@ export class CoDriver {
     }
     if (this.cool > 0) return { display, spoken: false };
 
+    const phrase = {
+      long: !!note.long,
+      maybe: !!note.maybe,
+    };
+    // Chained long+grade+maybe needs a slightly wider gap so the next call
+    // does not cut the qualifier mid-word.
+    const phraseGap =
+      this.gap + (phrase.long && phrase.maybe ? 0.55 : phrase.maybe || phrase.long ? 0.28 : 0);
+
     if (this.volume <= 0.001) {
-      this._commitSpeak(note, sig, key, progress, recall);
+      this._commitSpeak(note, sig, key, progress, recall, phraseGap);
       return { display, spoken: true };
     }
     if (!audio || !audio.paceCall) return { display, spoken: false };
@@ -123,7 +133,7 @@ export class CoDriver {
       return { display, spoken: false };
     }
 
-    if (!audio.paceCall(key)) {
+    if (!audio.paceCall(key, phrase)) {
       this._retryKey = key;
       this._retryCool = 0.1;
       return { display, spoken: false };
@@ -131,7 +141,7 @@ export class CoDriver {
 
     this._retryKey = "";
     this._retryCool = 0;
-    this._commitSpeak(note, sig, key, progress, recall);
+    this._commitSpeak(note, sig, key, progress, recall, phraseGap);
     return { display, spoken: true };
   }
 
@@ -142,13 +152,14 @@ export class CoDriver {
    * @param {string} sig
    * @param {number} progress
    * @param {number} recall
+   * @param {number} [gap]
    */
-  _commitSpeak(note, sig, key, progress, recall) {
+  _commitSpeak(note, sig, key, progress, recall, gap) {
     this._markSaid(note, sig);
     this._lastClip = key;
     this._lastClipAt = progress;
     this._lastClipUntil = (note.at != null ? note.at : progress) + recall;
-    this.cool = this.gap;
+    this.cool = gap != null ? gap : this.gap;
   }
 
   /**
@@ -189,7 +200,7 @@ export class CoDriver {
     const now = performance.now();
     if (now - this._previewAt < 520) return;
     this._previewAt = now;
-    if (audio && audio.paceCall) audio.paceCall("easy-left");
+    if (audio && audio.paceCall) audio.paceCall("easy-left", { maybe: true });
   }
 
   reset() {
@@ -239,10 +250,11 @@ function clipKey(note) {
 
 /**
  * Stable signature for one corner/jump — same clip + ~20 m bucket = one call.
- * @param {{at?:number, kind?:string}} note
+ * @param {{at?:number, kind?:string, long?:boolean, maybe?:boolean}} note
  * @param {string} key
  */
 function noteSignature(note, key) {
   const at = Math.round((note.at || 0) / 20) * 20;
-  return `${key}@${at}`;
+  const q = `${note.long ? "L" : ""}${note.maybe ? "M" : ""}`;
+  return `${key}${q}@${at}`;
 }

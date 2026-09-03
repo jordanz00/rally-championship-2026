@@ -4,12 +4,13 @@
  * WHO THIS IS FOR: Track.query height and the vehicle suspension path.
  * WHAT IT DOES: adds centimetre-to-decimetre height variation on the driving
  *   ribbon so no line is perfectly flat. Lateral offset matters — the pattern
- *   differs left vs right so you can hunt for a smoother strip.
+ *   differs left vs right so you can hunt for a smoother strip. Soft puddle
+ *   dips on mud/dirt/gravel sell AM3 wet patches under the tires.
  * HOW IT CONNECTS: track.js adds this to query height and road mesh vertices;
  *   vehicle.js uses bumpField for yaw kick and roadChatter for tiny HF bobble.
  */
 
-import { SURFACES } from "../config.js?v=180";
+import { SURFACES } from "../config.js?v=183";
 
 /** @param {number} n */
 function hash1(n) {
@@ -46,9 +47,35 @@ function surfaceMicroAmp(surface) {
   if (id === "tarmac") return b * 0.42;
   if (id === "cobble") return b * 1.28;
   if (id === "sand") return b * 0.62;
-  if (id === "mud") return b * 0.82;
+  if (id === "mud") return b * 0.92;
+  if (id === "dirt") return b * 0.88;
+  if (id === "gravel") return b * 0.78;
   if (id === "grass") return b * 0.5;
   return b;
+}
+
+/**
+ * Soft wet hollow — Forest / Desert mud puddle dips (AM3 §4).
+ * @param {number} dist
+ * @param {number} lateral
+ * @param {string} surface
+ * @param {number} amp
+ */
+function puddleDip(dist, lateral, surface, amp) {
+  const id = surface || "";
+  if (id !== "mud" && id !== "dirt" && id !== "gravel") return 0;
+  const cellLen = id === "mud" ? 22 : 36;
+  const cell = Math.floor(dist / cellLen);
+  const h = hash1(cell * 17 + 9);
+  const chance = id === "mud" ? 0.55 : 0.32;
+  if (h > chance) return 0;
+  const local = (dist % cellLen) / cellLen;
+  const env = Math.sin(local * Math.PI);
+  if (env < 0.12) return 0;
+  // Prefer near-centre wet spots so chase cam sees them.
+  const latBias = 1 - Math.min(1, Math.abs(lateral) / 5.5);
+  const depth = amp * (id === "mud" ? 1.55 : 0.95) * (0.55 + h);
+  return -env * env * depth * (0.45 + latBias * 0.55);
 }
 
 /**
@@ -90,7 +117,7 @@ export function roadMicroHeight(dist, lateral, surface, jumpKind, tunnel) {
     bumpField(dist, lateral) * amp * 0.78 +
     Math.sin(dist * 0.19 + lateral * 0.33) * amp * 0.46 +
     Math.sin(dist * 4.8 + lateral * 0.7) * amp * 0.2;
-  return continuous + patchBump(dist, lateral, amp * 1.65);
+  return continuous + patchBump(dist, lateral, amp * 1.65) + puddleDip(dist, lateral, surface, amp);
 }
 
 /**

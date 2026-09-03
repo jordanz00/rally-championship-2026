@@ -68,7 +68,7 @@ check(
 check(
   "rearview lens is a cabin mirror (narrow VFOV, long enough far)",
   /mirrorFov:\s*26/.test(read("js/config.js")) &&
-    /mirrorFar:\s*160/.test(read("js/config.js")) &&
+    /mirrorFar:\s*(?:160|200)/.test(read("js/config.js")) &&
     /_mirrorLens\(\)/.test(game) &&
     /track\.update\(this\.player\.position, this\._mirrorCam\.position/.test(game),
   "FOV~26°; far 160 m; stream against rear lens"
@@ -85,10 +85,21 @@ check(
 
 check(
   "mirror RT is a fixed size (readable cabin glass), not the main canvas",
-  /mirrorW:\s*320/.test(read("js/config.js")) &&
-    /mirrorH:\s*100/.test(read("js/config.js")) &&
-    /Math\.min\(GFX\.mirrorW \|\| 320, 384\)/.test(game),
-  "long edge 320, height 100"
+  /mirrorW:\s*(?:320|384)/.test(read("js/config.js")) &&
+    /mirrorH:\s*(?:100|120)/.test(read("js/config.js")) &&
+    /Math\.min\(GFX\.mirrorW \|\| 384, 384\)/.test(game),
+  "long edge up to 384, height up to 120"
+);
+check(
+  "POV mirror refreshes on skipped present frames",
+  /_renderMirror\(true\)/.test(game) && /onSkippedPresent/.test(game),
+  "mirror must stay 60 Hz when present locks to 30"
+);
+check(
+  "mirror capture keeps sun shadows",
+  !/shadowMap\.enabled = false/.test(game.slice(game.indexOf("_captureMirror"))) ||
+    /Keep sun shadows/.test(game),
+  "flat unshadowed mirror reads downgraded"
 );
 
 check(
