@@ -20,9 +20,9 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=178";
+} from "./config.js?v=179";
 import { Input } from "./input.js?v=41";
-import { Vehicle } from "./physics/vehicle.js?v=123";
+import { Vehicle } from "./physics/vehicle.js?v=124";
 import { getSurface } from "./physics/surfaces.js?v=50";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=146";
@@ -1217,6 +1217,8 @@ export class RallyGame {
         console.warn("[warm] rival LOD", err)
       );
     });
+    // Hero mesh clones for car select — deferred off the PRESS START click.
+    later(120, () => this._warmCarMeshes());
     later(400, () => {
       preparePropKit("desert").catch((err) => console.warn("[warm] prop kit parse", err));
     });
@@ -1993,7 +1995,8 @@ export class RallyGame {
     if (!this.camera || !this.opponents.length) return;
     const cx = this.camera.position.x;
     const cz = this.camera.position.z;
-    const far2 = 70 * 70;
+    const farM = STREAM.rivalShadowFar != null ? STREAM.rivalShadowFar : 70;
+    const far2 = farM * farM;
     for (let i = 0; i < this.opponents.length; i++) {
       const mesh = this.opponents[i].mesh;
       if (!mesh) continue;
@@ -4179,8 +4182,8 @@ export class RallyGame {
    * Fixed small size (not the main framebuffer) so C never reallocates it.
    */
   _mirrorSize() {
-    const w = Math.max(256, Math.min(GFX.mirrorW || 384, 384));
-    const h = Math.max(80, Math.min(GFX.mirrorH || 120, 120));
+    const w = Math.max(192, Math.min(GFX.mirrorW || 256, 384));
+    const h = Math.max(64, Math.min(GFX.mirrorH || 80, 120));
     return { w, h };
   }
 

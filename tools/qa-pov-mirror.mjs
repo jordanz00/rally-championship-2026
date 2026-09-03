@@ -67,10 +67,10 @@ check(
 check(
   "rearview lens is a cabin mirror (narrow VFOV, long enough far)",
   /mirrorFov:\s*26/.test(read("js/config.js")) &&
-    /mirrorFar:\s*200/.test(read("js/config.js")) &&
+    /mirrorFar:\s*110/.test(read("js/config.js")) &&
     /_mirrorLens\(\)/.test(game) &&
     /track\.update\(this\.player\.position, this\._mirrorCam\.position/.test(game),
-  "FOV~26° (~70° H at 384×120); far 200 m; stream against rear lens"
+  "FOV~26°; far 110 m; stream against rear lens"
 );
 
 check(
@@ -83,11 +83,11 @@ check(
 );
 
 check(
-  "mirror RT is a cheap fixed size (256–384 long edge), not the main canvas",
-  /mirrorW:\s*384/.test(read("js/config.js")) &&
-    /mirrorH:\s*120/.test(read("js/config.js")) &&
-    /Math\.min\(GFX\.mirrorW \|\| 384, 384\)/.test(game),
-  "long edge 384, height 120"
+  "mirror RT is a cheap fixed size (S50 budget), not the main canvas",
+  /mirrorW:\s*256/.test(read("js/config.js")) &&
+    /mirrorH:\s*80/.test(read("js/config.js")) &&
+    /Math\.min\(GFX\.mirrorW \|\| 256, 384\)/.test(game),
+  "long edge 256, height 80"
 );
 
 check(
@@ -100,8 +100,8 @@ check(
 );
 
 check(
-  "POV rearview captures every presented frame",
-  /mirrorEveryPov:\s*1/.test(read("js/config.js")) &&
+  "POV rearview captures on a live cadence (every other present)",
+  /mirrorEveryPov:\s*2/.test(read("js/config.js")) &&
     /GFX\.mirrorEveryPov/.test(game) &&
     !/_qualityMirrorEvery[\s\S]{0,120}_renderMirror/.test(game),
   "mirrorEveryPov bypasses quality-tier throttle in POV"

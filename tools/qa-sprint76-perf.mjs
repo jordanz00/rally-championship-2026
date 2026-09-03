@@ -146,7 +146,7 @@ check(
   mirrorClamped,
   "full-res rearview was a measured hitch"
 );
-check("config keeps the mirror small", /mirrorW:\s*(?:320|384)/.test(config) && /mirrorH:\s*(?:100|120)/.test(config));
+check("config keeps the mirror small", /mirrorW:\s*(?:256|320|384)/.test(config) && /mirrorH:\s*(?:80|100|120)/.test(config));
 check("tier can stretch mirror cadence", /_qualityMirrorEvery/.test(game));
 check(
   "mirror RT is fixed size, not the framebuffer",

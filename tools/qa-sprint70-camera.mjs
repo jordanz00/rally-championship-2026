@@ -33,8 +33,8 @@ const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check(
-  "mirror RT is 384×120 (readable, not full-res)",
-  /mirrorW:\s*384/.test(config) && /mirrorH:\s*120/.test(config)
+  "mirror RT is 256×80 (readable, S50 hitch budget)",
+  /mirrorW:\s*256/.test(config) && /mirrorH:\s*80/.test(config)
 );
 check(
   "RT is created, asserted, and rebuilt on context restore",
