@@ -75,16 +75,16 @@ export const GFX = {
    * FOV is vertical; ~26° at 384×120 ≈ 70° horizontal — a real cabin mirror,
    * not a 130° security cam. Far covers the road/trees/rivals behind you.
    */
-  mirrorW: 320,
-  mirrorH: 100,
+  mirrorW: 256,
+  mirrorH: 80,
   /** Chase / non-POV mirror cadence (presented frames). POV uses mirrorEveryPov. */
   mirrorEvery: 2,
-  /** POV rearview — capture every presented frame; tier throttle made it feel laggy. */
-  mirrorEveryPov: 1,
+  /** POV rearview — every other present keeps glass live without a full hitch. */
+  mirrorEveryPov: 2,
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
-  mirrorFar: 160,
+  mirrorFar: 110,
   mirrorNear: 0.4,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
@@ -242,6 +242,8 @@ export const STREAM = {
    */
   lodNear: 110,
   lodHysteresis: 24,
+  /** Far rivals drop castShadow beyond this (metres) — pack fill-rate win. */
+  rivalShadowFar: 70,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */
@@ -853,7 +855,7 @@ export const HANDLING = {
    * Countersteer authority. Opposite lock during a slide must feel like a
    * switch, not a suggestion — this is what turns the slide into a tool.
    */
-  counterAuthority: 3.15,
+  counterAuthority: 3.35,
   /**
    * How hard throttle pushes the slide wider on loose ground (and pulls it
    * straight on hard ground). Scales with the surface driftEase spread, so
@@ -942,7 +944,7 @@ export const HANDLING = {
    * Tire-moment yaw blend. Lower = snappier arcade bicycle (AM3); higher =
    * delayed mass (GTA IV). Prefer AM3 for championship fun.
    */
-  tireYawBlend: 0.42,
+  tireYawBlend: 0.36,
   /**
    * Sakamoto gear-drift: downshift while turning unloads the rear.
    * Manual and auto both use this kick so the default auto box still drifts.
@@ -990,7 +992,7 @@ export const HANDLING = {
   wheelTravelMax: 0.088,
   deckFollowRate: 62,
   /** Direct deck plant rate (1/s) — replaces spring bobble for the player. */
-  groundPlantRate: 46,
+  groundPlantRate: 54,
   groundSpringHz: 28,
   groundSpringZeta: 1.22,
   /** Landing-squash follow rate (1/s). Accel/brake do not pitch the mesh. */
@@ -1227,7 +1229,7 @@ const CHASSIS = {
   antiRollRear: 4400,
   maxSteer: 0.52,
   /** AM3 novice rack — quick into hairpins, still muted at top speed. */
-  steerSpeed: 118,
+  steerSpeed: 126,
   steerReturn: 108,
   /** High-speed mute — mild push above 180 km/h, not a rail fight. */
   steerFalloff: 0.009,

@@ -1462,23 +1462,16 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 
 **Player moment:** Late Stage 1 — drive *through* a sandstone ridge. Walls and ceiling are the front faces of closed boxes. No road/land undersides. No shard interiors. The car fits under the lintel.
 
-**Cause:** A heightmap cannot be a tunnel. Flattening land under the deck opened a trench of FrontSide backs. Open 6-vertex rock shards were non-manifold. Sweep berms were tagged as underpass, which stripped skirts for a hundred metres. Mouth boxes sat 0.9 m into the hole.
+**Status:** **Cut (Sprint 524)** — closed underpass boxes were removed from the player path (fill-rate / clipping). Desert tunnel bore + planar wall bumps (Sprint 52) remain. Do not restore full closed-box underpass on default tiers.
 
-**CEO:** Close the hole. The player must read an underpass and never see polygon backs.
+**Original cause:** A heightmap cannot be a tunnel. Flattening land under the deck opened a trench of FrontSide backs.
 
 | Change | Status |
 |--------|--------|
-| Closed box hill-cut: inner piers at ±`clearHalfW`, lintel bottom at `openH` **8.4**, depth **18** m | **Done** |
-| Mouth frames flush with the portal; outer hill may camera-fade, lining stays opaque | **Done** |
-| Land floor only the drive tube (not an 80 m plaza); sweep no longer tagged underpass | **Done** |
-| Closed road underside under the arch; debris uses `IcosahedronGeometry` | **Done** |
-| Tunnel walls sit outside the lane; portal rubble is boxes, FrontSide rock | **Done** |
+| Closed box hill-cut underpass on Desert finale | **Cut (S524)** |
+| Desert tunnel lining + planar wall bumps | **Done** (Sprint 52) |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=353`** · `track.js?v=169`
-
-**Probe (headed M1 Pro, v541):** delivered **53.8 fps** steady (51–56) at quality `min`, 60 Hz cadence, 0 hitches >33 ms — was **49.8 fps** judder (23–56) with sticky 30 Hz lock on v535.
-
-**Proof:** `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-desert-bridge-portal.mjs`
+**Proof (tunnel / solid):** `node tools/qa-sprint26-solid.mjs` · `node tools/qa-sprint30-tunnel.mjs`
 
 ---
 
@@ -4996,5 +4989,24 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Proof:** `node tools/qa-sky-skybox.mjs` · `node tools/qa-sprint39-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
 
 **Still human-only:** Hard refresh `?v=549`, Desert look-up — photo cumulus, no smoke sheets.
+
+---
+
+# Sprint 50–60 closeout — v568 (3 Sep 2026)
+
+**Charter:** Re-execute Sprints 50–60 for graphics, loading, driving, physics, and performance. Keep Done items live; close drifts without M1 fill-rate cliffs.
+
+| Sprint | Player moment | v568 action |
+|--------|---------------|-------------|
+| 50 | Instant POV + cheap mirror | Mirror **256×80**, far **110**, POV every **2** presents |
+| 51 | Desert closed underpass | Marked **Cut (S524)** in report — tunnel bumps stay |
+| 52–55 | Tunnel walls, plant, POV gauges | Retained (no regression) |
+| 56–57 | Settle / title hitch | Deferred `_warmCarMeshes` after PRESS START |
+| 58–60 | Title LOD / mesh LOD / smooth C | QA contracts fixed; rival shadow via `STREAM.rivalShadowFar` |
+| Driving | Snappier plant + catch | `groundPlantRate 54`, `counterAuthority 3.35`, `tireYawBlend 0.36`, `steerSpeed 126` |
+
+**Proof:** `qa-sprint58-title-lod` · `qa-sprint59-lod` · `qa-sprint60-smooth` · `qa-pov-mirror` · `qa-sprint39-perf` · `qa-jump-feel`
+
+**Cache:** `?v=568` · `config.js?v=179` · `vehicle.js?v=124`
 
 ---

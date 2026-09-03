@@ -29,6 +29,7 @@ const game = read("js/game.js");
 const car = read("js/cars/celica.js");
 const main = read("js/main.js");
 const index = read("index.html");
+const config = read("js/config.js");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check(
@@ -50,9 +51,6 @@ check(
     /titleLod \? "lod" : "hero"/.test(game) &&
     /this\._povWarmKey = ""/.test(game)
 );
-// Sprint 76 kept Sprint 60's intent (no oscillating reallocation) but let the
-// quality scaler step DOWN once per stage, because a machine that cannot hold
-// the tier needs to shed pixels rather than drop frames for the whole stage.
 check(
   "canvas reallocation is monotonic per stage, never oscillating",
   /Reallocating the canvas or the shadow atlas costs/.test(game) &&
@@ -71,11 +69,11 @@ check(
   /this\._qualityDprFloor = null/.test(game) && /this\._qualityShadowFloor = null/.test(game)
 );
 check(
-  "PRESS START defers dust/car warm off the click frame",
+  "PRESS START defers warm off the click frame",
   /_leaveTitle\(/.test(game) &&
+    /_idleWarmAfterTitle\(/.test(game) &&
     /_warmRaceSystems\(\)/.test(game) &&
-    /_warmCarMeshes\(\)/.test(game) &&
-    /, 8000\)/.test(game)
+    /later\(120, \(\) => this\._warmCarMeshes\(\)\)/.test(game)
 );
 check(
   "return-to-title hides the stage then disposes next frame",
@@ -91,7 +89,14 @@ check(
   "setCockpitView no-ops when already in the requested mode",
   /_cockpitOn === want/.test(car) && /_povHideReady/.test(car)
 );
-check("celica.js cache-bust v>=118", /celica\.js\?v=11[8-9]/.test(game));
+check(
+  "S50-class mirror budget (readable, not a hitch)",
+  /mirrorW:\s*256/.test(config) &&
+    /mirrorH:\s*80/.test(config) &&
+    /mirrorFar:\s*110/.test(config) &&
+    /mirrorEveryPov:\s*2/.test(config)
+);
+check("celica.js cache-bust v>=140", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 140);
 check("cache-bust chain", cacheOk && Number(gameV) >= 378, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "screen + camera hitches cut"}`);

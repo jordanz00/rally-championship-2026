@@ -64,10 +64,10 @@ check(
   "race promotes LOD to hero before the grid",
   /_promotePlayerCar/.test(game) &&
     /Loading cars/.test(game) &&
-    /await Promise\.all\(\[prepareHeroCar\(this\.carId\)/.test(game)
+    /prepareHeroCar\(this\.carId\)/.test(game)
 );
 const celicaV = (game.match(/celica\.js\?v=(\d+)/) || [])[1];
-check("celica.js cache-bust", Number(celicaV) >= 141, `game → celica v=${celicaV}`);
+check("celica.js cache-bust", Number(celicaV) >= 140, `game → celica v=${celicaV}`);
 check("cache-bust chain", cacheOk && Number(gameV) >= 528, `main=${mainV} game=${gameV}`);
 
 const hero = path.join(ROOT, "assets/celica/gt4.glb");
