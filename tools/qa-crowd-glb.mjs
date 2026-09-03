@@ -16,6 +16,7 @@ import path from "node:path";
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function assert(cond, message) {
@@ -46,7 +47,7 @@ async function main() {
   assert(/animStyle/.test(trackSrc), "spectator poses need animStyle");
 
   const chrome = findChrome();
-  if (!chrome) throw new Error("no Chrome");
+  if (!chrome) throw new Error(chromeUnavailableHint());
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: true });
   const { cdp } = browser;
@@ -127,7 +128,7 @@ async function main() {
       minS: minS === 99 ? null : minS,
       maxS,
       onRoad,
-      points: crowd && crowd.points ? crowd.points.length : 0,
+      points: crowd && crowd.points ? crowd.points.length : 0
     };
   `);
   console.log(snap);

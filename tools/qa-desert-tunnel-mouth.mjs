@@ -23,6 +23,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
@@ -44,8 +45,45 @@ console.log("static");
 
 check(
   "game imports current track.js",
-  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 246,
+  Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 248,
   "stale cache keeps broken portal"
+);
+check(
+  "rock-cut cliff face with horseshoe aperture",
+  /tunnelMouthCutFaceGeometry/.test(trackSrc) && /portalCutFace/.test(portalSlice),
+  "need vertical cut face you drive toward"
+);
+check(
+  "deep throat liner into the mountain",
+  /portalThroat/.test(portalSlice) && /throatLen/.test(portalSlice),
+  "looking in must show carved depth"
+);
+check(
+  "portal openH scales with road width",
+  /_tunnelOpenHeight/.test(trackSrc) && /openH = this\._tunnelOpenHeight/.test(trackSrc),
+  "clearance must scale with wider corridor"
+);
+check(
+  "approach apron + retaining walls",
+  /tunnelMouthApronGeometry/.test(trackSrc) &&
+    /tunnelMouthRetainingWallGeometry/.test(trackSrc) &&
+    /portalApron/.test(portalSlice),
+  "graded cut + funnel walls missing"
+);
+check(
+  "mountain backdrop behind cut face",
+  /tunnelMouthBackdropGeometry/.test(trackSrc) && /portalBackdrop/.test(portalSlice),
+  "ridge mass behind face missing"
+);
+check(
+  "shoulder pylons beside arch spring",
+  /tunnelMouthShoulderPylonGeometry/.test(trackSrc) && /portalShoulder/.test(portalSlice),
+  "quarry pillars missing"
+);
+check(
+  "arched bore lining (not box walls)",
+  /tunnelBoreLining/.test(trackSrc) && /tunnelPortalArchGeometry\(liningHalf/.test(trackSrc),
+  "box walls made enter/exit shape-swap fake"
 );
 check(
   "unified terrain-welded hillside shells",
@@ -121,8 +159,8 @@ check(
 );
 check(
   "interior lining inset from mouths",
-  /wallStart/.test(trackSrc) && /start \+ 1/.test(trackSrc),
-  "box walls poked into the approach"
+  /wallStart/.test(trackSrc) && /start \+ 2/.test(trackSrc),
+  "lining must leave mouths to the cut face / throat"
 );
 check(
   "entrance + exit collider scrub widened",
@@ -130,9 +168,9 @@ check(
   "ribbon scrub must cover both mouths"
 );
 check(
-  "portal openH 8.2",
-  /openH: 8\.2/.test(trackSrc),
-  "clearance spec"
+  "portal openH scales with road width",
+  /_tunnelOpenHeight/.test(trackSrc),
+  "dynamic clearance spec"
 );
 
 if (fail) {
@@ -236,7 +274,7 @@ async function main() {
       liners,
       rings,
       floaters,
-      apronClear,
+      apronClear
     };
   });
 

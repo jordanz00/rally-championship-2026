@@ -28,6 +28,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2).join(" ");
@@ -46,8 +47,8 @@ function check(label, ok, detail = "") {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`ROAD SPLINE CONTINUITY  ·  ${new Date().toISOString()}`);
   console.log(`step ${STEP} m\n`);
@@ -134,7 +135,7 @@ async function main() {
                 grade: Math.round(grade * 100) / 100,
                 y: Math.round(cur.y * 100) / 100,
                 x: Math.round(cur.x * 10) / 10,
-                z: Math.round(cur.z * 10) / 10,
+                z: Math.round(cur.z * 10) / 10
               });
             }
             // A centreline advancing 'step' metres of arc length cannot move
@@ -146,7 +147,7 @@ async function main() {
                 gap: Math.round(gap * 100) / 100,
                 fromX: Math.round(prev.x * 10) / 10, fromZ: Math.round(prev.z * 10) / 10,
                 toX: Math.round(cur.x * 10) / 10, toZ: Math.round(cur.z * 10) / 10,
-                dy: Math.round((cur.y - prev.y) * 100) / 100,
+                dy: Math.round((cur.y - prev.y) * 100) / 100
               });
             }
           }
@@ -164,7 +165,7 @@ async function main() {
           cliffDrop: cliffs.reduce((m, c) => Math.max(m, Math.abs(c.dy)), 0),
           nonFinite,
           maxGap: Math.round(maxGap * 100) / 100,
-          maxGapAt: Math.round(maxGapAt * 10) / 10,
+          maxGapAt: Math.round(maxGapAt * 10) / 10
         };
         `,
         { timeoutMs: 120000 }
@@ -216,7 +217,7 @@ async function main() {
               tunnel: !!p.tunnel,
               underpass: !!p.underpass,
               jumpKind: p.jumpKind || "",
-              overlapBed: p.overlapBed == null ? null : Math.round(p.overlapBed * 100) / 100,
+              overlapBed: p.overlapBed == null ? null : Math.round(p.overlapBed * 100) / 100
             });
           }
           return out;

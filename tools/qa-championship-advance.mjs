@@ -19,6 +19,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const steps = [];
@@ -56,12 +57,12 @@ async function main() {
       await pressKey(cdp, "Enter");
       await waitFor(cdp, `return document.querySelector("#screen-menu.active") ? 1 : null;`, {
         timeout: 8000,
-        label: "menu",
+        label: "menu"
       });
       await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
       await waitFor(cdp, `return document.querySelector("#screen-cars.active") ? 1 : null;`, {
         timeout: 15000,
-        label: "cars",
+        label: "cars"
       });
       await waitFor(
         cdp,
@@ -71,7 +72,7 @@ async function main() {
       await clickSelector(cdp, "[data-car='celica']", "CELICA");
       await waitFor(cdp, `return document.querySelector("#screen-courses.active") ? 1 : null;`, {
         timeout: 20000,
-        label: "courses",
+        label: "courses"
       });
       const lake = await waitFor(
         cdp,
@@ -113,7 +114,7 @@ async function main() {
         return {
           stageIndex: g.stageIndex,
           courseId: g.courseId,
-          pending: g._pendingNextCourse,
+          pending: g._pendingNextCourse
         };`
       );
       assert(after.stageIndex === 0, `RETRY advanced stageIndex to ${after.stageIndex}`);

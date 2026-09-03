@@ -6,7 +6,7 @@ Browser arcade rally inspired by classic Sega Rally immediacy — original stage
 
 **https://jordanz00.github.io/rally-championship-2026/**
 
-Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=568` if assets look stale.
+Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=573` if assets look stale.
 
 ## Controls
 
@@ -27,15 +27,25 @@ Serve the repo root over HTTP (ES modules require a server):
 python3 -m http.server 8765
 ```
 
-Open `http://127.0.0.1:8765/index.html?v=568`
+Open `http://127.0.0.1:8765/index.html?v=573`
 
 ## QA (automated)
 
+Static checks are safe from any shell (including Cursor agents):
+
 ```bash
-node tools/qa-sprint75-glitch.mjs
-node tools/qa-sprint72-road-lock.mjs
-node tools/qa-sprint76-perf.mjs
+node tools/qa-chrome-safe.mjs
 node tools/qa-static-audit.mjs
+node tools/qa-sprint75-glitch.mjs
+```
+
+**Chrome / CDP probes (boot smoke, frame probe, headed):** on macOS these are
+blocked by default so Cursor never spawns Chrome (that path SIGABRTs and pops
+the crash dialog). Run them only from Terminal.app / iTerm with an explicit opt-in:
+
+```bash
+RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs
+RALLY_QA_ALLOW_CHROME=1 node tools/qa-frame-probe.mjs
 ```
 
 ## Stack

@@ -36,6 +36,7 @@ import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, hitTest, clickSelector, pressKey, activeScreen, findOpaqueOverlays,
   installFrameRecorder, startRecording, stopRecording, screenshot, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const HEADED = process.argv.includes("--headed");
@@ -64,8 +65,8 @@ function assert(cond, message) {
 async function main() {
   const chrome = findChrome();
   if (!chrome) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`RALLY BOOT SMOKE  ·  ${new Date().toISOString()}`);
   console.log(`browser: ${chrome}`);
@@ -121,7 +122,7 @@ async function main() {
           display: cs.display,
           w: Math.round(r.width), h: Math.round(r.height),
           headingText: heading ? heading.textContent.replace(/\\s+/g, " ").trim() : null,
-          why: "",
+          why: ""
         };
       `);
       assert(info.ok, `title screen is not visible (active=${info.active}, display=${info.display}, ${info.w}x${info.h}) ${info.why}`);
@@ -223,7 +224,7 @@ async function main() {
           ready: !!au.ready,
           musicVol: au.musicVol,
           sfxVol: au.sfxVol,
-          masterGain: au.master ? au.master.gain.value : null,
+          masterGain: au.master ? au.master.gain.value : null
         };
       `,
         { timeout: 20000, label: "audio to report ready after the Start gesture" }
@@ -260,7 +261,7 @@ async function main() {
       );
       const cars = await evaluate(cdp, `
         return [...document.querySelectorAll("[data-car]")].map((b) => ({
-          id: b.dataset.car, disabled: b.disabled, label: b.textContent.trim(),
+          id: b.dataset.car, disabled: b.disabled, label: b.textContent.trim()
         }));
       `);
       const selectable = cars.filter((c) => !c.disabled);
@@ -317,7 +318,7 @@ async function main() {
       const t0 = Date.now();
       const g = await waitFor(cdp, `return window.game && window.game.state === "race" ? { t: window.game.raceTime } : null;`, {
         timeout: budget,
-        label: `game.state to become "race" after the 3-2-1 (observed ${fps.toFixed(1)} fps, budget ${(budget / 1000) | 0}s)`,
+        label: `game.state to become "race" after the 3-2-1 (observed ${fps.toFixed(1)} fps, budget ${(budget / 1000) | 0}s)`
       });
       const wall = (Date.now() - t0) / 1000;
       const detail = `raceTime=${g.t.toFixed(2)}s, took ${wall.toFixed(1)}s wall-clock at ${fps.toFixed(1)} fps`;
@@ -351,7 +352,7 @@ async function main() {
         return {
           t: g.raceTime, x: g.player.position.x, z: g.player.position.z, fps: g.fps,
           throttleIn: g.input.throttle, throttleCar: g.player.throttle,
-          speed: g.player.speed, rpm: g.player.rpm,
+          speed: g.player.speed, rpm: g.player.rpm
         };
       `);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "w", code: "KeyW", windowsVirtualKeyCode: 87 });
@@ -390,11 +391,11 @@ async function main() {
       // Keyboard this time, so both Start paths are covered.
       await pressKey(cdp, "Enter");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`, {
-        timeout: 15000, label: "Enter on the title to reach SELECT MODE",
+        timeout: 15000, label: "Enter on the title to reach SELECT MODE"
       });
       await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {
-        timeout: 15000, label: "#screen-cars after PRACTICE",
+        timeout: 15000, label: "#screen-cars after PRACTICE"
       });
       // Sprint 21 prop kit + car GLBs can still be warming after a full reload;
       // wait until Delta is actually selectable before clicking.
@@ -405,7 +406,7 @@ async function main() {
       );
       await clickSelector(cdp, "[data-car='delta']", "DELTA HF");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-courses" ? 1 : null;`, {
-        timeout: 20000, label: "#screen-courses after picking a car in PRACTICE",
+        timeout: 20000, label: "#screen-courses after picking a car in PRACTICE"
       });
       await clickSelector(cdp, "[data-course='desert']", "DESERT");
       await waitFor(

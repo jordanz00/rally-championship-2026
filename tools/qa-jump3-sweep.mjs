@@ -36,6 +36,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2).join(" ");
@@ -69,8 +70,8 @@ function check(label, ok, detail = "") {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   const cases = SPEEDS.length * LATERALS.length * YAWS.length;
   console.log(`JUMP-${JUMP_N} LANDING SWEEP  ·  ${new Date().toISOString()}`);
@@ -271,7 +272,7 @@ async function main() {
               kinds: Array.from(new Set((p._glitchLog || []).map((e) => e.kind))).join(","),
               // A case that no longer ended in "race" was cut short by race
               // flow, not by a physics defect — report it as invalid, not failed.
-              state: g.state,
+              state: g.state
             };
             `,
             { timeoutMs: 120000 }

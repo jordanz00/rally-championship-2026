@@ -38,6 +38,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const HEADED = process.argv.includes("--headed");
@@ -59,8 +60,8 @@ function check(label, ok, detail = "") {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`XZ TELEPORT GUARD  ·  ${new Date().toISOString()}\n`);
 
@@ -131,7 +132,7 @@ async function main() {
       }
       return {
         spy: proto.__qaSpy === true,
-        hasCheckpoint: typeof p._restoreCheckpoint === "function",
+        hasCheckpoint: typeof p._restoreCheckpoint === "function"
       };
     `);
 
@@ -209,7 +210,7 @@ async function main() {
         speed: Math.round(p.speed * 10) / 10,
         lateral: lateral == null ? null : Math.round(lateral * 10) / 10,
         roadHalf: line && line.width ? Math.round(line.width * 5) / 10 : null,
-        finite: typeof p._isFinitePose === "function" ? !!p._isFinitePose() : true,
+        finite: typeof p._isFinitePose === "function" ? !!p._isFinitePose() : true
       };
     `, { timeoutMs: 120000 });
 

@@ -55,7 +55,7 @@ check(
   /_weldPortalVerticesToTerrain/.test(track),
   "portal verts snap to land"
 );
-check("portal openH 8.2", /openH: 8\.2/.test(track), "8.2 m clearance");
+check("portal openH scales with road width", /_tunnelOpenHeight/.test(track), "dynamic clearance");
 check(
   "mouth collider scrub at entrance + exit",
   /tunStart - 72/.test(track) && /tunEnd \+ 72/.test(track),
@@ -78,7 +78,11 @@ check(
 );
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");
-check("interior wallH 8.2", /wallH = 8\.2/.test(track), "tube height");
+check(
+  "interior arched lining uses portal openH",
+  /liningH = portalSpec\.openH/.test(track) || /liningH = 8\.2/.test(track),
+  "tube height matches mouth"
+);
 check(
   "portal plants onto tunnel terrain",
   /groundLocalY\(/.test(portalSlice) && /_tunnelTerrainY/.test(portalSlice),

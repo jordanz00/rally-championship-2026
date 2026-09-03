@@ -13,10 +13,11 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 async function main() {
-  if (!findChrome()) throw new Error("no Chrome");
+  if (!findChrome()) throw new Error(chromeUnavailableHint());
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: true, width: 1024, height: 640 });
   const { cdp } = browser;
@@ -88,7 +89,7 @@ async function main() {
               liftMs: Math.round(window.__lift.ms * 100) / 100,
               calls: window.__lift.calls,
               ramps: window.__lift.ramps,
-              len: Math.round(g.track.length),
+              len: Math.round(g.track.length)
             };
           `, { timeoutMs: 5000 });
         } catch { /* main thread busy — keep polling */ }

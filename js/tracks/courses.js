@@ -28,7 +28,7 @@
  * backwards and the co-driver reads every corner the wrong way.
  */
 
-import { COLORS } from "../config.js?v=179";
+import { COLORS } from "../config.js?v=180";
 
 export const COURSES = {
   /**
@@ -62,92 +62,92 @@ export const COURSES = {
     sky: 0xe2d2a8,
     offroad: "sand",
     scenery: "desert",
-    startWidth: 16,
+    startWidth: 18,
     startY: 0,
     seed: 11,
     barriers: false,
     pieces: [
-      { type: "straight", length: 190, surface: "sand", width: 16 },
+      { type: "straight", length: 190, surface: "sand", width: 18 },
 
       // --- Act 1: the two teaching turns. Shallow, wide, flat out.
-      { type: "curve", radius: 132, angle: 30, surface: "sand", width: 16 },
-      { type: "straight", length: 58, surface: "sand", width: 16 },
-      { type: "curve", radius: 120, angle: -28, surface: "sand", width: 16 },
-      { type: "straight", length: 92, surface: "sand", width: 16 },
+      { type: "curve", radius: 132, angle: 30, surface: "sand", width: 18 },
+      { type: "straight", length: 58, surface: "sand", width: 18 },
+      { type: "curve", radius: 120, angle: -28, surface: "sand", width: 18 },
+      { type: "straight", length: 92, surface: "sand", width: 18 },
 
       // First jump: short hop — teaches the crest without a big throw.
-      { type: "jump", ramp: 22, rise: 2.2, lip: 5, gap: 12, drop: 1.6, land: 24, surface: "sand", width: 16 },
-      { type: "straight", length: 66, surface: "sand", surfaceOut: "gravel", width: 15 },
+      { type: "jump", ramp: 22, rise: 2.2, lip: 5, gap: 12, drop: 1.6, land: 24, surface: "sand", width: 18 },
+      { type: "straight", length: 66, surface: "sand", surfaceOut: "gravel", width: 17 },
 
       // --- Act 2: snaky gravel corridor. Narrower, alternating, real work.
-      { type: "curve", radius: 54, angle: 56, surface: "gravel", width: 13 },
-      { type: "straight", length: 52, surface: "gravel", width: 12 },
-      { type: "curve", radius: 42, angle: -64, surface: "gravel", width: 12 },
-      { type: "straight", length: 44, surface: "gravel", width: 11 },
-      { type: "curve", radius: 36, angle: 74, surface: "gravel", width: 11 },
-      { type: "straight", length: 54, surface: "gravel", surfaceOut: "sand", width: 14 },
+      { type: "curve", radius: 54, angle: 56, surface: "gravel", width: 15 },
+      { type: "straight", length: 52, surface: "gravel", width: 14 },
+      { type: "curve", radius: 42, angle: -64, surface: "gravel", width: 14 },
+      { type: "straight", length: 44, surface: "gravel", width: 13 },
+      { type: "curve", radius: 36, angle: 74, surface: "gravel", width: 13 },
+      { type: "straight", length: 54, surface: "gravel", surfaceOut: "sand", width: 16 },
 
       // Jump pair: medium then big Safari throw — heights must read different.
-      { type: "jump", ramp: 20, rise: 3.0, lip: 6, gap: 16, drop: 2.2, land: 18, surface: "sand", width: 15 },
-      { type: "straight", length: 34, surface: "sand", width: 15 },
-      { type: "jump", ramp: 30, rise: 5.2, lip: 8, gap: 26, drop: 3.6, land: 52, surface: "sand", width: 15 },
+      { type: "jump", ramp: 20, rise: 3.0, lip: 6, gap: 16, drop: 2.2, land: 18, surface: "sand", width: 17 },
+      { type: "straight", length: 34, surface: "sand", width: 17 },
+      { type: "jump", ramp: 30, rise: 5.2, lip: 8, gap: 26, drop: 3.6, land: 52, surface: "sand", width: 17 },
 
       // Long flat after the Safari throw so a fast landing stays on sand,
       // not inside the climb / tunnel.
-      { type: "straight", length: 72, surface: "sand", width: 15, checkpoint: true },
-      { type: "curve", radius: 80, angle: 44, surface: "sand", width: 14, dy: 5 },
-      { type: "straight", length: 48, surface: "sand", surfaceOut: "dirt", width: 12, dy: 6 },
+      { type: "straight", length: 72, surface: "sand", width: 17, checkpoint: true },
+      { type: "curve", radius: 80, angle: 44, surface: "sand", width: 16, dy: 5 },
+      { type: "straight", length: 48, surface: "sand", surfaceOut: "dirt", width: 14, dy: 6 },
 
-      // --- Act 3: the tunnel. Close walls, no sky, engine note changes.
-      { type: "straight", length: 40, surface: "dirt", width: 10, dy: 2, tunnel: true },
-      { type: "curve", radius: 42, angle: -40, surface: "dirt", tunnel: true },
-      { type: "straight", length: 78, surface: "dirt", width: 10.5, tunnel: true },
-      { type: "curve", radius: 46, angle: 52, surface: "dirt", tunnel: true },
-      { type: "straight", length: 58, surface: "dirt", width: 10.5, tunnel: true },
-      { type: "curve", radius: 42, angle: -44, surface: "dirt", surfaceOut: "mud", tunnel: true },
+      // --- Act 3: the tunnel. Carved through the ridge — wide enough to read, tight enough to feel.
+      { type: "straight", length: 40, surface: "dirt", width: 13, dy: 2, tunnel: true },
+      { type: "curve", radius: 42, angle: -40, surface: "dirt", width: 13, tunnel: true },
+      { type: "straight", length: 78, surface: "dirt", width: 13.5, tunnel: true },
+      { type: "curve", radius: 46, angle: 52, surface: "dirt", width: 13.5, tunnel: true },
+      { type: "straight", length: 58, surface: "dirt", width: 13.5, tunnel: true },
+      { type: "curve", radius: 42, angle: -44, surface: "dirt", surfaceOut: "mud", width: 13.5, tunnel: true },
 
       // --- Act 4: dry dirt shades into darker WET MUD out of the tunnel. Two
       // corners on it, so you have to discover that braking here rotates you
       // instead of stopping you — and then use that on the second one.
-      { type: "straight", length: 54, surface: "mud", width: 11 },
-      { type: "curve", radius: 46, angle: 58, surface: "mud", width: 11 },
-      { type: "straight", length: 42, surface: "mud", width: 11 },
-      { type: "curve", radius: 40, angle: -62, surface: "mud", width: 11 },
-      { type: "straight", length: 60, surface: "mud", surfaceOut: "sand", width: 14 },
+      { type: "straight", length: 54, surface: "mud", width: 13 },
+      { type: "curve", radius: 46, angle: 58, surface: "mud", width: 13 },
+      { type: "straight", length: 42, surface: "mud", width: 13 },
+      { type: "curve", radius: 40, angle: -62, surface: "mud", width: 13 },
+      { type: "straight", length: 60, surface: "mud", surfaceOut: "sand", width: 16 },
 
-      { type: "jump", ramp: 28, rise: 4.2, lip: 7, gap: 22, drop: 3.0, land: 26, surface: "sand", width: 15 },
-      { type: "straight", length: 44, surface: "sand", width: 16 },
+      { type: "jump", ramp: 28, rise: 4.2, lip: 7, gap: 22, drop: 3.0, land: 26, surface: "sand", width: 17 },
+      { type: "straight", length: 44, surface: "sand", width: 18 },
 
       // --- Act 5: THE BOWL. Approach at speed, flare the road, brake, rotate
       // through a wide right hairpin, sand runoff if you miss. Type C open
       // hairpin — grip line or drift line, both fit.
-      { type: "straight", length: 38, surface: "sand", width: 18, dy: -1.2 },
-      { type: "curve", radius: 44, angle: -165, surface: "sand", width: 19, landmark: true },
-      { type: "straight", length: 42, surface: "sand", width: 17 },
-      { type: "straight", length: 56, surface: "sand", width: 16 },
+      { type: "straight", length: 38, surface: "sand", width: 20, dy: -1.2 },
+      { type: "curve", radius: 44, angle: -165, surface: "sand", width: 21, landmark: true },
+      { type: "straight", length: 42, surface: "sand", width: 19 },
+      { type: "straight", length: 56, surface: "sand", width: 18 },
 
       // --- Act 6: THE LONG EASY RIGHT. Open ground, full width, 145 m radius
       // held for 78° — long enough that you cannot steer your way round it and
       // have to commit to a slide, with the outside embankment to lean on.
-      { type: "curve", radius: 145, angle: -78, surface: "sand", width: 16, dy: -2, sweep: true },
-      { type: "straight", length: 52, surface: "sand", width: 16 },
+      { type: "curve", radius: 145, angle: -78, surface: "sand", width: 18, dy: -2, sweep: true },
+      { type: "straight", length: 52, surface: "sand", width: 18 },
 
       // --- Act 7: LINKED HAIRPINS. Gravel so the slide is the default, not a
       // stunt. Right, short accel, left — the second asks for a transition.
-      { type: "straight", length: 24, surface: "sand", surfaceOut: "gravel", width: 16 },
-      { type: "curve", radius: 38, angle: -148, surface: "gravel", width: 16, landmark: true },
-      { type: "straight", length: 30, surface: "gravel", width: 15 },
-      { type: "curve", radius: 38, angle: 148, surface: "gravel", width: 16, landmark: true },
-      { type: "straight", length: 28, surface: "gravel", surfaceOut: "sand", width: 16 },
-      { type: "straight", length: 96, surface: "sand", width: 16 },
+      { type: "straight", length: 24, surface: "sand", surfaceOut: "gravel", width: 18 },
+      { type: "curve", radius: 38, angle: -148, surface: "gravel", width: 18, landmark: true },
+      { type: "straight", length: 30, surface: "gravel", width: 17 },
+      { type: "curve", radius: 38, angle: 148, surface: "gravel", width: 18, landmark: true },
+      { type: "straight", length: 28, surface: "gravel", surfaceOut: "sand", width: 18 },
+      { type: "straight", length: 96, surface: "sand", width: 18 },
 
       // --- Act 8 (Sprint 40 WRC extension): long run home — flat sand straight,
       // crest jump, final checkpoint, stadium finish straight.
-      { type: "straight", length: 120, surface: "sand", width: 17, checkpoint: true },
-      { type: "curve", radius: 160, angle: 42, surface: "sand", width: 17, sweep: true },
-      { type: "straight", length: 88, surface: "sand", width: 17 },
-      { type: "jump", ramp: 18, rise: 1.8, lip: 4, gap: 10, drop: 1.2, land: 28, surface: "sand", width: 17 },
-      { type: "straight", length: 140, surface: "sand", width: 18 },
+      { type: "straight", length: 120, surface: "sand", width: 19, checkpoint: true },
+      { type: "curve", radius: 160, angle: 42, surface: "sand", width: 19, sweep: true },
+      { type: "straight", length: 88, surface: "sand", width: 19 },
+      { type: "jump", ramp: 18, rise: 1.8, lip: 4, gap: 10, drop: 1.2, land: 28, surface: "sand", width: 19 },
+      { type: "straight", length: 140, surface: "sand", width: 20 },
     ],
   },
 

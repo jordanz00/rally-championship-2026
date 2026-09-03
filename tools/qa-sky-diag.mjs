@@ -15,6 +15,7 @@ import fs from "node:fs";
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 import { lumaStats } from "./lib/png-luma.mjs";
 
@@ -28,7 +29,7 @@ async function shot(cdp, file) {
 }
 
 async function main() {
-  if (!findChrome()) throw new Error("no Chrome");
+  if (!findChrome()) throw new Error(chromeUnavailableHint());
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: false, width: 1280, height: 720 });
   const { cdp } = browser;
@@ -56,7 +57,7 @@ async function main() {
       return g.scene.children.map((o) => ({
         name: o.name || "(anon)", type: o.type, visible: o.visible,
         kids: o.children ? o.children.length : 0,
-        isLight: !!o.isLight,
+        isLight: !!o.isLight
       }));
     `);
     for (const k of kids) console.log(`  ${k.visible ? "Y" : "n"} ${k.type.padEnd(20)} kids=${String(k.kids).padStart(4)} light=${k.isLight ? "Y" : "n"}  ${k.name}`);

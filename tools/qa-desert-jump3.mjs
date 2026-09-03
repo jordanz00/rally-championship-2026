@@ -34,6 +34,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2).join(" ");
@@ -124,11 +125,11 @@ async function driveStage(cdp) {
               window.__warps.push({
                 axis: name, from: Math.round(get() * 10) / 10, to: Math.round(v * 10) / 10,
                 progress: Math.round(p.progress * 10) / 10,
-                stack: new Error("warp").stack,
+                stack: new Error("warp").stack
               });
             }
             set(v);
-          },
+          }
         });
         trap("x", () => _x, (v) => { _x = v; });
         trap("z", () => _z, (v) => { _z = v; });
@@ -196,7 +197,7 @@ async function driveStage(cdp) {
             onGround: !!p.onGround,
             jumpKind: q.jumpKind || "",
             tunnel: !!(line && line.tunnel),
-            finite: !!finite,
+            finite: !!finite
           };
           trace.push(sample);
           if (p.progress >= ${TARGET_M}) { done = true; break; }
@@ -212,7 +213,7 @@ async function driveStage(cdp) {
         hits: p._glitchHits || 0,
         done,
         progress: p.progress,
-        warps: window.__warps || [],
+        warps: window.__warps || []
       };
       `,
       { timeoutMs: 180000 }
@@ -231,8 +232,8 @@ async function driveStage(cdp) {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`DESERT JUMP-3 / STAGE INTEGRITY DRIVE  ·  ${new Date().toISOString()}`);
   console.log(`course=${COURSE}  target=${TARGET_M} m\n`);

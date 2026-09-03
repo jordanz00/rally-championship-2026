@@ -11,6 +11,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickSelector, pressKey, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function assert(cond, message) {
@@ -19,7 +20,7 @@ function assert(cond, message) {
 
 async function main() {
   const chrome = findChrome();
-  if (!chrome) throw new Error("no Chrome");
+  if (!chrome) throw new Error(chromeUnavailableHint());
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: true });
   const { cdp } = browser;
@@ -100,7 +101,7 @@ async function main() {
       runs,
       approachDist: p ? p.dist : null,
       carY,
-      carOk,
+      carOk
     };
   `);
 

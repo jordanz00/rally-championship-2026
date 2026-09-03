@@ -17,6 +17,7 @@ import {
   goto,
   waitFor,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function read(rel) {
@@ -132,7 +133,7 @@ async function live() {
       const afterKey = {
         blendT: g._camBlendT,
         mode: g.camMode,
-        dist: cam.position.distanceTo(p0),
+        dist: cam.position.distanceTo(p0)
       };
       const steps = [];
       let maxStep = 0;
@@ -155,7 +156,7 @@ async function live() {
         maxStep,
         traveled,
         leftoverBlend: g._camBlendT,
-        views: 3,
+        views: 3
       };
     `);
     check(

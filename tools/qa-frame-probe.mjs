@@ -26,6 +26,7 @@ import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, clickResilient, mainThreadLag, waitForResponsiveMainThread,
   installFrameRecorder, startRecording, stopRecording, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const argv = process.argv.slice(2);
@@ -48,8 +49,8 @@ function percentile(sorted, p) {
 
 async function main() {
   if (!findChrome()) {
-    console.error("FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.");
-    process.exit(1);
+    console.error(chromeUnavailableHint());
+    process.exit(/SKIP/.test(chromeUnavailableHint()) ? 0 : 1);
   }
   console.log(`RALLY FRAME PROBE  ·  ${new Date().toISOString()}`);
 
@@ -123,7 +124,7 @@ async function main() {
         hz: window.game.perfTier ? window.game.perfTier.presentHz : 0,
         locked30: window.game.perfTier ? window.game.perfTier.locked30 : false,
         tier: window.game.perfTier ? window.game.perfTier.tier : "?",
-        ema: window.game.perfTier ? Math.round(window.game.perfTier.emaMs * 10) / 10 : 0,
+        ema: window.game.perfTier ? Math.round(window.game.perfTier.emaMs * 10) / 10 : 0
       };`);
       presentSamples.push(s);
     }

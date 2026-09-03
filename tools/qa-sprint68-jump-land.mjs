@@ -22,6 +22,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 function read(rel) {
@@ -67,7 +68,7 @@ while ((m = jumpRe.exec(desertBlock))) {
     lip: +m[3],
     gap: +m[4],
     drop: +m[5],
-    land: +m[6],
+    land: +m[6]
   });
 }
 
@@ -101,7 +102,7 @@ while ((m = jumpRe.exec(mountainBlock))) {
     lip: +m[3],
     gap: +m[4],
     drop: +m[5],
-    land: +m[6],
+    land: +m[6]
   });
 }
 check("Mountain (stage 3) has a crest jump", mountainJumps.length >= 1, `${mountainJumps.length} jumps`);
@@ -317,7 +318,7 @@ async function mainHeaded() {
                 onG: v.onGround,
                 pit: pit,
                 armed: !!v._landPadArmed,
-                padY: v._landPadY,
+                padY: v._landPadY
               };
             }
             if (delta > maxDelta) {
@@ -331,7 +332,7 @@ async function mainHeaded() {
                 rK: ax && ax.rear && ax.rear.kind,
                 kind: q.jumpKind || line.jumpKind || "",
                 dist: Math.round(v.progress),
-                air: Math.round((v._airTime || 0) * 1000) / 1000,
+                air: Math.round((v._airTime || 0) * 1000) / 1000
               };
             }
             const wb = (v.spec && v.spec.wheelbase) || 2.55;
@@ -364,7 +365,7 @@ async function mainHeaded() {
           stuckUnder: stuckUnder,
           samples: samples,
           worst: worst,
-          worstHigh: worstHigh,
+          worstHigh: worstHigh
         });
       }
       let carry = { ran: false };
@@ -409,7 +410,7 @@ async function mainHeaded() {
           y: Math.round(v.position.y * 1000) / 1000,
           progress: Math.round(v.progress),
           onGround: !!v.onGround,
-          speed: Math.round(v.speed * 10) / 10,
+          speed: Math.round(v.speed * 10) / 10
         };
       }
       let climb = { ran: false };
@@ -517,7 +518,7 @@ async function mainHeaded() {
           lineY: endLine && Number.isFinite(endLine.y) ? Math.round((endLine.y + 0.06) * 1000) / 1000 : null,
           here: endLine ? Math.round(Math.hypot(v.position.x - endLine.x, v.position.z - endLine.z) * 10) / 10 : null,
           qDist: endQ && Number.isFinite(endQ.dist) ? Math.round(endQ.dist) : null,
-          glitch: v._glitchHits || 0,
+          glitch: v._glitchHits || 0
         };
       }
       let desync = { ran: false };
@@ -545,7 +546,7 @@ async function mainHeaded() {
           tunnelDist: Math.round(tunnelDist),
           gapDist: Math.round(gap3.dist),
           onGround: !!v.onGround,
-          kind: (v._q && v._q.jumpKind) || "",
+          kind: (v._q && v._q.jumpKind) || ""
         };
       }
       return { jumps: jumps.length, results: results, carry: carry, climb: climb, desync: desync };`

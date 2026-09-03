@@ -32,6 +32,13 @@ Rather than ship untested scaffolding, the harness speaks the Chrome DevTools
 Protocol directly over the `WebSocket` built into Node 22+, driving the Chrome
 already on the machine. **Nothing was installed.** Every tool below actually ran.
 
+**macOS Chrome policy (2026-09-03):** spawning Google Chrome under Cursor's
+`node` aborts in `HIServices TransformProcessType` / `_RegisterApplication`
+(SIGABRT) and pops a crash dialog. `tools/lib/qa-harness.mjs` now
+**default-denies** Chrome on darwin unless `RALLY_QA_ALLOW_CHROME=1`. Proof:
+`node tools/qa-chrome-safe.mjs`. Headed/boot CDP probes belong in Terminal.app
+with that env set — never from a Cursor agent shell.
+
 Two operational notes. The harness serves the repo on an OS-assigned ephemeral
 port and explicitly refuses 8765; it kills only the browser process it spawned.
 And Chrome cannot be launched from inside the agent sandbox (`nice(5) failed:
@@ -5000,7 +5007,44 @@ node tools/qa-frame-probe.mjs --seconds=8
 |--------|---------------|-------------|
 | 50 | Instant POV + cheap mirror | Mirror **256×80**, far **110**, POV every **2** presents |
 | 51 | Desert closed underpass | Marked **Cut (S524)** in report — tunnel bumps stay |
-| 52–55 | Tunnel walls, plant, POV gauges | Retained (no regression) |
+
+**Note (v569):** The v568 STREAM/texture/AO cuts read as a visible graphics downgrade. Restored photographic terrain, LOD, stream radii, AO on balanced+high, wider shadow frustum, and cabin mirror quality. Prefer lock-30 to protect quality instead of dumping the ladder to `min`. Hard-refresh `?v=572`.
+
+---
+
+# Tunnel enter/exit realism — v572 (3 Sep 2026)
+
+**Player moment:** Approach the Desert tunnel. You see a rock-cut cliff with a dark horseshoe punched through it, wing walls funneling the road, and a deep throat. Drive in — the bore stays arched (no box-wall shape swap). Exit reads the same cut face with daylight returning over ~64 m.
+
+| Item | State |
+|---|---|
+| Vertical cut-face cliff + horseshoe aperture | **Done** |
+| Deep throat liner + approach wings | **Done** |
+| Arched bore lining (replaces box walls/ceiling) | **Done** |
+| Softer shade ramp enter 32 m / exit 64 m | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs`
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=572`** · `track.js?v=248`
+
+---
+
+# Desert road width + tunnel mountain carve — v573 (3 Sep 2026)
+
+**Player moment:** Stage 1 roads read wider (+2 m across sand/gravel/mud; tunnel 13–13.5 m). Approaching the ridge tunnel you see a full mountain cut: backdrop mass behind the cliff, graded approach apron, sculpted retaining walls, quarry shoulder pylons, deeper throat, and arched bore lining scaled to corridor width.
+
+| Item | State |
+|---|---|
+| Desert spline widths widened | **Done** (`courses.js` +2 m; tunnel explicit 13–13.5) |
+| Dynamic portal openH from road width | **Done** (`_tunnelOpenHeight`) |
+| Cut face + backdrop + apron + retaining walls + pylons | **Done** |
+| Arched bore lining matches portal spec | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=573`** · `track.js?v=249` · `courses.js?v=69`
+
+---
 | 56–57 | Settle / title hitch | Deferred `_warmCarMeshes` after PRESS START |
 | 58–60 | Title LOD / mesh LOD / smooth C | QA contracts fixed; rival shadow via `STREAM.rivalShadowFar` |
 | Driving | Snappier plant + catch | `groundPlantRate 54`, `counterAuthority 3.35`, `tireYawBlend 0.36`, `steerSpeed 126` |

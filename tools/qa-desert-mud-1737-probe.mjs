@@ -6,6 +6,7 @@
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto,
   waitFor, clickSelector, evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 async function main() {
@@ -73,7 +74,7 @@ async function main() {
               z: +c.z.toFixed(1),
               hl: c.halfLen,
               r: c.r,
-              depth: c.depth,
+              depth: c.depth
             });
           }
         }
@@ -163,7 +164,7 @@ async function main() {
         sphereCount: sphereNear.length,
         heightSpikes: heightSpikes.slice(0, 25),
         heightSpikeCount: heightSpikes.length,
-        drive: { final: +g.player.progress.toFixed(1), speed: +g.player.speed.toFixed(1), maxHit, stalled: stalled > 90, prog },
+        drive: { final: +g.player.progress.toFixed(1), speed: +g.player.speed.toFixed(1), maxHit, stalled: stalled > 90, prog }
       };
     `);
 

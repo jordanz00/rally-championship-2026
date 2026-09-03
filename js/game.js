@@ -20,16 +20,16 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=179";
+} from "./config.js?v=180";
 import { Input } from "./input.js?v=41";
 import { Vehicle } from "./physics/vehicle.js?v=124";
 import { getSurface } from "./physics/surfaces.js?v=50";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=68";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=146";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=69";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, GARAGE_CAR_IDS, POV_HUD_LAYER } from "./cars/celica.js?v=147";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=247";
+import { Track } from "./tracks/track.js?v=249";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=28";
-import { Opponent } from "./ai.js?v=136";
+import { Opponent } from "./ai.js?v=137";
 import { RallyAudio } from "./audio/engine.js?v=60";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=37";
@@ -39,7 +39,7 @@ import { resolveVehicleCollisions } from "./physics/collide.js?v=46";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=38";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=31";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=12";
-import { PhotoRealPost } from "./gfx/postfx.js?v=20";
+import { PhotoRealPost } from "./gfx/postfx.js?v=21";
 import { createPerfTier } from "./gfx/perf-tier.js?v=47";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -2343,9 +2343,9 @@ export class RallyGame {
     this._qualityMirrorEvery = 1;
     this.perfTier = createPerfTier(GFX, { startTier: raceStartTier() });
     const tier = this.perfTier.current();
-    // Evidence-based lock-30 only (GFX.preferLock30). Do not force at settle —
-    // that made capable machines feel laggy from GO even when they can hold 60.
-    if (GFX.preferLock30 && typeof this.perfTier.forceLock30 === "function") {
+    // Prefer an even 30 at the start tier only when config asks for it.
+    // Default is evidence-based lock after GO so capable machines stay at 60.
+    if (GFX.forceLock30AtSettle && typeof this.perfTier.forceLock30 === "function") {
       this.perfTier.forceLock30();
     }
     // Force atlas size even when growing from title 1024 — scaler alone is
@@ -4182,8 +4182,8 @@ export class RallyGame {
    * Fixed small size (not the main framebuffer) so C never reallocates it.
    */
   _mirrorSize() {
-    const w = Math.max(192, Math.min(GFX.mirrorW || 256, 384));
-    const h = Math.max(64, Math.min(GFX.mirrorH || 80, 120));
+    const w = Math.max(256, Math.min(GFX.mirrorW || 320, 384));
+    const h = Math.max(80, Math.min(GFX.mirrorH || 100, 120));
     return { w, h };
   }
 

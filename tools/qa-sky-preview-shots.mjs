@@ -16,6 +16,7 @@ import fs from "node:fs";
 import {
   ROOT, startServer, launchChrome, findChrome, preparePage, goto, evaluate,
   waitFor, sleep,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 import { lumaStats } from "./lib/png-luma.mjs";
 
@@ -36,7 +37,7 @@ const GRID = arg("grid", "desert:high:6,desert:medium:6,desert:low:6,desert:min:
 const EXTRA = arg("q", "");
 
 async function main() {
-  if (!findChrome()) throw new Error("no Chrome — set CHROME_PATH");
+  if (!findChrome()) throw new Error(chromeUnavailableHint());
   const server = await startServer(ROOT);
   const browser = await launchChrome({ headless: HEADLESS, width: 1280, height: 640 });
   const { cdp } = browser;

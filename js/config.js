@@ -56,10 +56,10 @@ export const GFX = {
   shadowMap: 1536,
   shadowExtent: 36,
   /**
-   * Race sun ortho half-width (metres). Tight chase frustum — denser contact
-   * under the car and fewer mid-ground casters in the atlas (fill-rate win).
+   * Race sun ortho half-width (metres). Wider frustum keeps mid-ground
+   * contact readable; soft PCF + shadowEvery still protect fill-rate.
    */
-  shadowExtentRace: 28,
+  shadowExtentRace: 48,
   shadowNear: 2,
   shadowFar: 160,
   /**
@@ -75,16 +75,16 @@ export const GFX = {
    * FOV is vertical; ~26° at 384×120 ≈ 70° horizontal — a real cabin mirror,
    * not a 130° security cam. Far covers the road/trees/rivals behind you.
    */
-  mirrorW: 256,
-  mirrorH: 80,
+  mirrorW: 320,
+  mirrorH: 100,
   /** Chase / non-POV mirror cadence (presented frames). POV uses mirrorEveryPov. */
   mirrorEvery: 2,
-  /** POV rearview — every other present keeps glass live without a full hitch. */
-  mirrorEveryPov: 2,
+  /** POV rearview — every presented frame; tier throttle made glass feel laggy. */
+  mirrorEveryPov: 1,
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
-  mirrorFar: 110,
+  mirrorFar: 160,
   mirrorNear: 0.4,
   /** PMREM sky capture far plane (internal bake is 256³). */
   pmremFar: 240,
@@ -112,10 +112,13 @@ export const GFX = {
    */
   lock30AboveMs: 20,
   /**
-   * Prefer locking to an even 30 only after EMA evidence (perf-tier).
-   * Forcing lock-30 at settle made capable machines feel laggy from GO.
+   * When the machine cannot hold 60, lock an even 30 *before* dumping the
+   * quality ladder to `min`. Photographic shadows/AO beat a soft 50 fps mush.
+   * Settle does not force 30 — capable GPUs still free-run at 60 from GO.
    */
-  preferLock30: false,
+  preferLock30: true,
+  /** Do not arm lock-30 during GPU settle; let evidence decide after GO. */
+  forceLock30AtSettle: false,
   /** Sprint 39 / 536 — integrated GPU / M-series targets. */
   integratedFloorMs: 17.5,
   integratedEmergencyMs: 20,
@@ -185,7 +188,7 @@ export const VISUAL = {
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
   highlightRolloff: 0.22,
   pbrSkySigma: 0,
-  /** Screen-space crevice AO — high tier only (postfx gates balanced). */
+  /** Screen-space crevice AO — contact between car, road, and verge. */
   aoStrength: 0.64,
   aoRadius: 1.48,
   /** Normal strength on road/terrain. */
@@ -193,14 +196,14 @@ export const VISUAL = {
   /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
   normalMapScale: 0.92,
   /**
-   * Albedo ×2.4 + procedural roughness — denser than 2.0, cheaper than 2.65.
+   * Albedo ×2.65 + procedural roughness — photographic ground grain (Sprint 23/30).
    */
-  textureScale: 2.4,
+  textureScale: 2.65,
   roughnessMaps: true,
   /** Cone/cylinder segments for procedural foliage + trunk cards. */
-  propSegments: 18,
+  propSegments: 20,
   /** Icosahedron subdivisions for rocks, tumbleweed, shrub blobs. */
-  rockDetail: 4,
+  rockDetail: 5,
 };
 
 /**
@@ -210,40 +213,40 @@ export const VISUAL = {
  */
 export const STREAM = {
   /** Load at fog.far × this — geometry must exist before it clears the haze. */
-  loadFogFactor: 1.05,
+  loadFogFactor: 1.08,
   /** Unload beyond fog so slices stay warm until fully fogged out. */
-  unloadFogFactor: 1.14,
+  unloadFogFactor: 1.16,
   /** Fallback radii when the scene has no fog (metres). */
-  loadRadius: 820,
-  unloadRadius: 920,
+  loadRadius: 900,
+  unloadRadius: 980,
   /** Heightmap tile edge length (metres). */
   terrainTileSize: 256,
   /** Base heightmap density — cinema tier uses terrainTileSegsCinema. */
-  terrainTileSegs: 22,
-  /** High perf / cinema only — smoother ridges without forcing on every machine. */
-  terrainTileSegsCinema: 26,
+  terrainTileSegs: 24,
+  /** Tier 13 only — smoother ridges without forcing 28 on every machine. */
+  terrainTileSegsCinema: 28,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
   prefetchChunks: 2,
   /** Driving seconds to pre-warm streaming along the racing line. */
-  lookaheadSeconds: 2.2,
+  lookaheadSeconds: 2.5,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
-  boundsPadding: 70,
+  boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */
-  hysteresis: 70,
+  hysteresis: 80,
   /** Floor load radius when fog is tight (tunnels, title) — avoids sudden pops. */
-  minLoadRadius: 260,
-  /** Countdown / GPU-settle radius — start grid fully drawn, not whole stage. */
-  countdownLoadRadius: 700,
+  minLoadRadius: 280,
+  /** Countdown / GPU-settle radius — the start grid must be fully drawn. */
+  countdownLoadRadius: 820,
   /**
    * Tree / prop mesh LOD (metres to chunk sphere). Inside lodNear the player
    * sees authored GLB canopies; beyond it, crossed-plane cards. Hysteresis
    * stops the swap strobing on a 220 m slice boundary.
    */
-  lodNear: 110,
-  lodHysteresis: 24,
+  lodNear: 132,
+  lodHysteresis: 28,
   /** Far rivals drop castShadow beyond this (metres) — pack fill-rate win. */
-  rivalShadowFar: 70,
+  rivalShadowFar: 85,
 };
 
 /** Visual tarmac sits this far above the spline. Physics deck must match. */

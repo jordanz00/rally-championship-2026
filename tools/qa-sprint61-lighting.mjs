@@ -73,7 +73,7 @@ check("ACES filmic path", /ACESFilmicToneMapping/.test(read("js/gfx/lighting-rig
 check("depth-aware AO pass", /tDepth/.test(postfx) && /DepthTexture/.test(postfx));
 check("vignette still scales with the uniform", /smoothstep\(0\.45, 1\.05, d\) \* vignette/.test(postfx));
 check("postfx cache-bust", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 15);
-check("lighting-rig cache-bust", /lighting-rig\.js\?v=7/.test(game));
+check("lighting-rig cache-bust", /lighting-rig\.js\?v=\d+/.test(game) && Number((game.match(/lighting-rig\.js\?v=(\d+)/) || [])[1]) >= 7);
 const configV = (game.match(/config\.js\?v=(\d+)/) || [])[1];
 check("config.js cache-bust", Number(configV) >= 148, `v=${configV}`);
 check("cache-bust chain", cacheOk && Number(gameV) >= 468, `main=${mainV} game=${gameV}`);

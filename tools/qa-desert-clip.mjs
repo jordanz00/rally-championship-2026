@@ -22,6 +22,7 @@ import {
   clickSelector,
   pressKey,
   evaluate,
+  chromeUnavailableHint
 } from "./lib/qa-harness.mjs";
 
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
@@ -422,7 +423,7 @@ async function main() {
         ridgeN,
         worstRidge,
         portalMeshes,
-        portalBuried,
+        portalBuried
       };`
     );
 
