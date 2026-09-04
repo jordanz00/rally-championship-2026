@@ -5133,7 +5133,9 @@ const _povClipN = new THREE.Vector3();
 export function setPovRoofClip(root, on, renderer) {
   if (!root) return;
   const want = !!on;
+  // WebGLRenderer is not an Object3D — userData is not guaranteed.
   if (renderer) {
+    if (!renderer.userData) renderer.userData = {};
     if (want) {
       if (renderer.userData._preLocalClip == null) {
         renderer.userData._preLocalClip = !!renderer.localClippingEnabled;
