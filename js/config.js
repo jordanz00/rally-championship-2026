@@ -1506,6 +1506,7 @@ export const CAMERA = {
   /**
    * Extra FOV at speed — Model 2 “the world rushes in,” IV chase-cam mass UI.
    * Punch ≈ speed(m/s) × speedFov, capped by maxFovPunch (~18° flat-out).
+   * Per-view `speedFovScale` can mute this (medium keeps start framing).
    */
   speedFov: 0.28,
   maxFovPunch: 16,
@@ -1520,6 +1521,8 @@ export const CAMERA = {
   springLookStiff: 36,
   springLookDamp: 0,
   springFovStiff: 28,
+  /** Extra XZ spring stiffness while accelerating so medium does not trail the car. */
+  accelFollowBoost: 1.55,
   /** Camera lean from longitudinal g (brake = nose-down look, accel = squat). */
   accelCamPitch: 0.14,
   brakeCamPitch: 0.22,
@@ -1554,11 +1557,12 @@ export const CAMERA = {
   /** Cap on |lateral kick| during a slide (metres). */
   slideKickMax: 0.045,
   /**
-   * Seconds for a C-key pose ease. Somewhat slow so POV↔chase never reads as a cut.
+   * Seconds for a C-key pose ease. Short so mode swaps feel instant, not a hang.
    */
-  viewBlendTime: 0.58,
-  /** Extra seconds when either end of the blend is POV (cabin seat must not hitch). */
-  viewBlendTimePov: 0.72,
+  viewBlendTime: 0.28,
+  /** POV↔chase ease — keep brief; hitch-free warm means we do not need a long cover.
+   */
+  viewBlendTimePov: 0.32,
   /** Chase follow while settled — snappy, no float. */
   viewBlendStiffness: 26,
   /** Seat lock once POV blend finishes (hard copy, this is a fallback). */
@@ -1570,9 +1574,9 @@ export const CAMERA = {
   /** Pull back this far before restoring the exterior body when leaving POV. */
   povDetachDist: 1.6,
   /**
-   * Blend ease when cabin/body visibility flips (0–1). Later = camera arrives first.
+   * Blend ease when cabin/body visibility flips (0–1). Early seat = no empty-shell wait.
    */
-  povSeatEase: 0.7,
+  povSeatEase: 0.18,
   /**
    * Extra frames the rearview may reuse its last image after seating.
    * Never used when the RT is empty — that path captures immediately.
@@ -1605,7 +1609,16 @@ export const CAMERA = {
       fov: 64,
       /** Mild speed squat — keeps pavement in frame without burying the roof. */
       speedDropMax: 0.14,
-      stiffness: 30,
+      /**
+       * Kill speed FOV / look stretch — accel used to make the lens feel yards farther
+       * than the start-grid framing even though `back` was fixed.
+       */
+      speedFovScale: 0.08,
+      speedLookAheadScale: 0.2,
+      /** Harder XZ follow than global so throttle does not leave the camera trailing. */
+      springPosStiff: 78,
+      springPosStiffY: 28,
+      stiffness: 34,
       near: 0.2,
     },
     {

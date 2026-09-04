@@ -7,13 +7,13 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=132";
+import { Vehicle } from "./physics/vehicle.js?v=134";
 import { getSurface } from "./physics/surfaces.js?v=51";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=75";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=158";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=161";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=289";
-import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=30";
+import { Track } from "./tracks/track.js?v=293";
+import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=31";
 import { Opponent } from "./ai.js?v=144";
 import { RallyAudio } from "./audio/engine.js?v=68";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
@@ -27,8 +27,7 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=37";
-import { wireTechShowcase, fillTechShowcase, focusTechChapter } from "./ui/dev-showcase.js?v=2";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=64";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=65";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=47";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=40";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=35";
@@ -57,7 +56,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=203";
+} from "./config.js?v=204";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -1155,11 +1154,6 @@ export class RallyGame {
     });
     const start = document.getElementById("btn-start");
     if (start) start.addEventListener("click", () => this._leaveTitle());
-    wireTechShowcase({
-      onBack: () => this._onMenu("tech-back"),
-      getPerfMon: () => this.perfMon,
-    });
-    fillTechShowcase();
     const title = document.getElementById("screen-title");
     if (title) {
       title.addEventListener("click", (e) => {
@@ -1337,31 +1331,6 @@ export class RallyGame {
       this._showCars();
     } else if (id === "controls") {
       showScreen("screen-controls", { outMs: 220, inMs: 360 });
-    } else if (id === "tech") {
-      this._techReturn =
-        this.state === "paused"
-          ? "paused"
-          : this.state === "result"
-            ? "result"
-            : "menu";
-      fillTechShowcase();
-      showScreen("screen-tech", { outMs: 220, inMs: 380 });
-      this.state = "tech";
-      // HOW IT WAS BUILT from results → jump to the story chapter.
-      const fromResult = this._techReturn === "result";
-      requestAnimationFrame(() => focusTechChapter(fromResult ? "how" : "architecture"));
-    } else if (id === "tech-back") {
-      const ret = this._techReturn || "menu";
-      if (ret === "paused") {
-        this.state = "paused";
-        showScreen("screen-paused", { outMs: 160, inMs: 240 });
-      } else if (ret === "result") {
-        this.state = "result";
-        showScreen("screen-result", { outMs: 160, inMs: 280 });
-      } else {
-        this.state = "menu";
-        showScreen("screen-menu", { outMs: 220, inMs: 360 });
-      }
     } else if (id === "modes" || id === "back") {
       showScreen("screen-menu", { outMs: 220, inMs: 360 });
       this.state = "menu";
@@ -3488,13 +3457,12 @@ export class RallyGame {
   /**
    * Cycle POV → medium → far. C only records the from-pose. Cabin / HUD /
    * mirror attach mid-blend in `_chaseCam` so this click never hitch-compiles.
+   * Never sync-compile here — load/`_warmPov` already baked cabin shaders.
    */
   _cycleCamera() {
     const prev = CAMERA.views[this.camMode];
     this.camMode = (this.camMode + 1) % CAMERA.views.length;
     const next = CAMERA.views[this.camMode];
-    // Ensure cabin shaders are hot before we ease into the seat (no-op if already warmed).
-    if (next && next.id === "pov") this._warmPov(false);
     this._startCamBlend(prev, next);
     if (this.state === "race" || this.state === "countdown") {
       this.hud.flashMessage(next.label);
@@ -3528,8 +3496,8 @@ export class RallyGame {
     }
     const povBlend =
       (fromMode && fromMode.id === "pov") || (toMode && toMode.id === "pov");
-    const base = CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.58;
-    const povExtra = CAMERA.viewBlendTimePov != null ? CAMERA.viewBlendTimePov : 0.72;
+    const base = CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.28;
+    const povExtra = CAMERA.viewBlendTimePov != null ? CAMERA.viewBlendTimePov : 0.32;
     const dur = povBlend ? Math.max(base, povExtra) : base;
     this._camBlendDur = dur;
     this._camBlendT = dur;
@@ -3856,7 +3824,9 @@ export class RallyGame {
         lookSin = Math.sin(lookYaw);
         lookCos = Math.cos(lookYaw);
       }
-      const speedPush = p.speed * (CAMERA.speedLookAhead != null ? CAMERA.speedLookAhead : 0.14);
+      const speedLookScale = mode.speedLookAheadScale != null ? mode.speedLookAheadScale : 1;
+      const speedPush =
+        p.speed * (CAMERA.speedLookAhead != null ? CAMERA.speedLookAhead : 0.14) * speedLookScale;
       const slidePush =
         sliding && CAMERA.slideLookAhead != null
           ? Math.min(1, drift * 1.8) * CAMERA.slideLookAhead
@@ -3925,15 +3895,28 @@ export class RallyGame {
       this.camera.up.copy(this._camUp);
     } else {
       this._camSnap = false;
-      const stiffXZ =
-        mode.id === "far"
-          ? CAMERA.springPosStiff != null
-            ? CAMERA.springPosStiff * 0.55
-            : 28
-          : CAMERA.springPosStiff != null
-            ? CAMERA.springPosStiff
-            : 48;
-      const stiffY = CAMERA.springPosStiffY != null ? CAMERA.springPosStiffY : 22;
+      let stiffXZ =
+        mode.springPosStiff != null
+          ? mode.springPosStiff
+          : mode.id === "far"
+            ? CAMERA.springPosStiff != null
+              ? CAMERA.springPosStiff * 0.55
+              : 28
+            : CAMERA.springPosStiff != null
+              ? CAMERA.springPosStiff
+              : 48;
+      // Accel used to leave the chase spring trailing — boost XZ catch-up under throttle.
+      const ax = p._ax || 0;
+      if (ax > 1.2 && mode.id !== "far") {
+        const boost = CAMERA.accelFollowBoost != null ? CAMERA.accelFollowBoost : 1.55;
+        stiffXZ *= boost;
+      }
+      const stiffY =
+        mode.springPosStiffY != null
+          ? mode.springPosStiffY
+          : CAMERA.springPosStiffY != null
+            ? CAMERA.springPosStiffY
+            : 22;
       const dampXZ = CAMERA.springPosDamp > 0 ? CAMERA.springPosDamp : criticalDamp(stiffXZ);
       const dampY = criticalDamp(stiffY);
       const lookStiff = CAMERA.springLookStiff != null ? CAMERA.springLookStiff : 36;
@@ -3969,9 +3952,13 @@ export class RallyGame {
     }
     this.camera.lookAt(this._camLookSmooth);
 
-    const punchScale = wantPov ? 0.45 : 1;
+    const punchScale = wantPov
+      ? 0.45
+      : mode.speedFovScale != null
+        ? mode.speedFovScale
+        : 1;
     const punch = Math.min(
-      (CAMERA.maxFovPunch || 8) * (wantPov ? 0.4 : 1),
+      (CAMERA.maxFovPunch || 8) * (wantPov ? 0.4 : punchScale),
       p.speed * (CAMERA.speedFov || 0.08) * punchScale
     );
     const wantFov = (rig && wantPov ? rig.fov : mode.fov) + punch + this._camFovKick * (wantPov ? 0.55 : 1);
@@ -3998,7 +3985,7 @@ export class RallyGame {
     }
 
     const detachDist = CAMERA.povDetachDist != null ? CAMERA.povDetachDist : 1.6;
-    const seatEase = CAMERA.povSeatEase != null ? CAMERA.povSeatEase : 0.7;
+    const seatEase = CAMERA.povSeatEase != null ? CAMERA.povSeatEase : 0.18;
     if (mesh) {
       if (wantPov) {
         // Camera eases in first; seat the cabin late so body→interior is not a mid-move pop.
@@ -4838,8 +4825,8 @@ export class RallyGame {
       this.scene.background = null;
       if (sky) sky.visible = false;
       r.autoClear = false;
-      // Keep the main-pass depth so the steering wheel occludes gauges that
-      // sit further into the dash. Mirror glass still uses depthTest:false.
+      // Wheel + gauges share POV_HUD_LAYER. Post/pipeline does not preserve
+      // main-pass depth, so the rim must depth-write in this overlay pass.
       r.toneMapping = THREE.NoToneMapping;
       r.render(this.scene, cam);
     } finally {

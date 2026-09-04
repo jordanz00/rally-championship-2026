@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=203";
+import { VISUAL } from "../config.js?v=204";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -65,6 +65,63 @@ export const PROP_KINDS = Object.freeze([
   "tree_cone",
   "tree_fir",
   "house-alpine",
+  // Kenney Racing Kit + City Kit (Roads) + Furniture — trackside authored GLBs
+  "barrier_red",
+  "barrier_white",
+  "barrier_wall",
+  "fence_straight",
+  "fence_curved",
+  "grandstand",
+  "grandstand_covered",
+  "billboard",
+  "billboard_low",
+  "gantry_overhead",
+  "gantry_overhead_lights",
+  "flag_checkers",
+  "flag_red",
+  "pylon",
+  "light_post",
+  "rail",
+  "rail_double",
+  "banner_tower",
+  "construction_barrier",
+  "construction_cone",
+  "construction_fence",
+  "road_sign_empty",
+  "road_side_barrier",
+  "sign_highway",
+  "bench",
+  "crate",
+]);
+
+/** Authored trackside / gallery / gate props (Kenney CC0 packs). */
+export const TRACKSIDE_KINDS = Object.freeze([
+  "barrier_red",
+  "barrier_white",
+  "barrier_wall",
+  "fence_straight",
+  "fence_curved",
+  "grandstand",
+  "grandstand_covered",
+  "billboard",
+  "billboard_low",
+  "gantry_overhead",
+  "gantry_overhead_lights",
+  "flag_checkers",
+  "flag_red",
+  "pylon",
+  "light_post",
+  "rail",
+  "rail_double",
+  "banner_tower",
+  "construction_barrier",
+  "construction_cone",
+  "construction_fence",
+  "road_sign_empty",
+  "road_side_barrier",
+  "sign_highway",
+  "bench",
+  "crate",
 ]);
 
 /** @type {Record<string, THREE.BufferGeometry|null>} */
@@ -168,7 +225,7 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "16";
+const KIT_ASSET_V = "17";
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([
@@ -237,6 +294,27 @@ const SCALE = {
   treeMin: 3.0,
   treeMax: 22.0,
   treeDefault: 9.0,
+  // Trackside Kenney pack — rally-readable metres
+  barrier: 0.9,
+  fence: 1.25,
+  cone: 0.78,
+  constructionBarrier: 1.05,
+  constructionFence: 1.55,
+  grandstand: 4.6,
+  grandstandCovered: 5.4,
+  gantry: 6.2,
+  billboard: 3.8,
+  billboardLow: 3.1,
+  pylon: 1.15,
+  lightPost: 5.6,
+  flag: 4.2,
+  rail: 0.55,
+  bannerTower: 6.0,
+  roadSign: 2.9,
+  roadBarrier: 0.85,
+  highwaySign: 4.4,
+  bench: 0.95,
+  crate: 0.72,
 };
 
 /** Bark / canopy tints for vertex-colour baking (linear-ish 0–1). */
@@ -377,9 +455,31 @@ export function propNatureMaterial(kind) {
 export function kindsForScenery(scenery) {
   const s = scenery || "desert";
   // Mountain never plants spectators — skip the 12 character GLBs.
-  if (s === "mountain") return MOUNTAIN_NATURE;
-  if (s === "forest" || s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE);
-  return CROWD_ALL.concat(DESERT_NATURE);
+  if (s === "mountain") return MOUNTAIN_NATURE.concat(TRACKSIDE_KINDS);
+  if (s === "forest" || s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE, TRACKSIDE_KINDS);
+  return CROWD_ALL.concat(DESERT_NATURE, TRACKSIDE_KINDS);
+}
+
+/**
+ * Material for authored Kenney / pack props (vertex colour or baked albedo).
+ * Falls back to a neutral PBR when the GLB had no usable material.
+ *
+ * @param {string} kind
+ * @returns {THREE.Material}
+ */
+export function propKitMaterial(kind) {
+  if (MAT_CACHE[kind]) return MAT_CACHE[kind];
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xb0b4b8,
+    roughness: 0.82,
+    metalness: 0.06,
+    fog: true,
+    vertexColors: true,
+  });
+  mat.userData.shared = true;
+  mat.userData.propKind = kind;
+  MAT_CACHE[kind] = mat;
+  return mat;
 }
 
 function getKitLoader() {
@@ -419,6 +519,14 @@ function ensureKind(kind) {
         // Prefer authored body + cheer arms from the densified biped GLB.
         CHAR_PARTS[kind] = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
         if (CHAR_PARTS[kind]?.body) CACHE[kind] = CHAR_PARTS[kind].body;
+      } else if (TRACKSIDE_KINDS.includes(kind) && !MAT_CACHE[kind]) {
+        // Keep Kenney pack colours / maps instead of flat grey fallback.
+        let srcMat = null;
+        root.traverse((obj) => {
+          if (srcMat || (!obj.isMesh && !obj.isSkinnedMesh)) return;
+          srcMat = obj.material;
+        });
+        if (srcMat) MAT_CACHE[kind] = adoptPackMaterial(srcMat, kind, { alphaTest: 0 });
       }
     } catch (err) {
       console.warn(`[prop-kit] missing or failed: ${url}`, err);
@@ -1367,5 +1475,25 @@ function targetHeightForKind(kind, currentHeight) {
     }
     return null;
   }
+  if (kind === "barrier_wall" || kind === "barrier_red" || kind === "barrier_white") return SCALE.barrier;
+  if (kind === "fence_straight" || kind === "fence_curved") return SCALE.fence;
+  if (kind === "construction_cone") return SCALE.cone;
+  if (kind === "construction_barrier") return SCALE.constructionBarrier;
+  if (kind === "construction_fence") return SCALE.constructionFence;
+  if (kind === "grandstand") return SCALE.grandstand;
+  if (kind === "grandstand_covered") return SCALE.grandstandCovered;
+  if (kind === "gantry_overhead" || kind === "gantry_overhead_lights") return SCALE.gantry;
+  if (kind === "billboard") return SCALE.billboard;
+  if (kind === "billboard_low") return SCALE.billboardLow;
+  if (kind === "pylon") return SCALE.pylon;
+  if (kind === "light_post") return SCALE.lightPost;
+  if (kind.startsWith("flag_")) return SCALE.flag;
+  if (kind === "rail" || kind === "rail_double") return SCALE.rail;
+  if (kind === "banner_tower") return SCALE.bannerTower;
+  if (kind === "road_sign_empty") return SCALE.roadSign;
+  if (kind === "road_side_barrier") return SCALE.roadBarrier;
+  if (kind === "sign_highway") return SCALE.highwaySign;
+  if (kind === "bench") return SCALE.bench;
+  if (kind === "crate") return SCALE.crate;
   return null;
 }

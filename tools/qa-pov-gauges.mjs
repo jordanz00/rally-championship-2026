@@ -103,12 +103,15 @@ check(
 
 check(
   "gauges sit behind the steering wheel in cabin depth",
-  /clusterZ = Math\.max\(wheelZ \+ 0\.20/.test(car) &&
+  /clusterZ = Math\.max\(wheelZ \+ 0\.1[0-9]/.test(car) &&
+    /markSteerPovLayer/.test(car) &&
+    /steeringRimForwardZ/.test(car) &&
     /povClusterZ/.test(car) &&
     /povWheelZ/.test(car) &&
     /depthTest: true/.test(car.slice(car.indexOf("function clusterMat"))) &&
+    /POV_HUD_LAYER/.test(car.slice(car.indexOf("function markSteerPovLayer"))) &&
     !/r\.clearDepth\(\)/.test(game.slice(game.indexOf("_renderPovHudOverlay"))),
-  "eye → wheel → cluster; overlay keeps main depth so the rim occludes discs"
+  "eye → wheel → cluster; rim on overlay layer so post cannot erase wheel depth"
 );
 
 const celicaV = game.match(/celica\.js\?v=(\d+)/);

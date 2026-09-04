@@ -15,7 +15,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=51";
-import { VISUAL } from "./config.js?v=203";
+import { VISUAL } from "./config.js?v=204";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 
 /**
@@ -527,10 +527,10 @@ const MARK_PROFILE = {
   tarmac: { type: "hard", life: 10.5, width: 0.18, alpha: 0.44, dark: 0.12, slip: 0.24, steer: 0.2, speed: 12 },
   cobble: { type: "hard", life: 8.5, width: 0.17, alpha: 0.32, dark: 0.18, slip: 0.26, steer: 0.24, speed: 11 },
   gravel: { type: "soft", life: 8.0, width: 0.26, alpha: 0.28, dark: 0.55, slip: 0.07, steer: 0.07, speed: 3.5 },
-  dirt: { type: "soft", life: 8.8, width: 0.27, alpha: 0.26, dark: 0.58, slip: 0.06, steer: 0.08, speed: 3.5 },
-  grass: { type: "soft", life: 5.8, width: 0.2, alpha: 0.18, dark: 0.7, slip: 0.05, steer: 0.08, speed: 4.5 },
-  sand: { type: "soft", life: 12.5, width: 0.32, alpha: 0.22, dark: 0.62, slip: 0.03, steer: 0.05, speed: 2.5 },
-  mud: { type: "soft", life: 14.0, width: 0.34, alpha: 0.36, dark: 0.42, slip: 0.025, steer: 0.04, speed: 2 },
+  dirt: { type: "soft", life: 10.5, width: 0.3, alpha: 0.32, dark: 0.52, slip: 0.04, steer: 0.06, speed: 1.2 },
+  grass: { type: "soft", life: 6.5, width: 0.22, alpha: 0.22, dark: 0.68, slip: 0.04, steer: 0.07, speed: 2.0 },
+  sand: { type: "soft", life: 14.0, width: 0.36, alpha: 0.28, dark: 0.58, slip: 0.02, steer: 0.04, speed: 1.0 },
+  mud: { type: "soft", life: 16.0, width: 0.38, alpha: 0.42, dark: 0.38, slip: 0.015, steer: 0.03, speed: 0.8 },
 };
 
 export class TireMarks {
@@ -580,7 +580,7 @@ export class TireMarks {
     this._carry = new WeakMap();
     this._last = new WeakMap();
     this._color = new THREE.Color();
-    this._up = 0.018;
+    this._up = 0.012;
     /** Reused wheel layout — no per-emit object alloc. */
     this._wheels = [
       { along: 0, lat: 0, heading: 0 },
@@ -611,13 +611,14 @@ export class TireMarks {
     const drift = Math.abs(vehicle.driftAngle || 0);
     const soft = profile.type === "soft";
     const working = slip > profile.slip || drift > 0.05 || steer > profile.steer;
+    // Soft roads leave tracks from a crawl — hard surfaces still need scrub.
     const active = soft
       ? vehicle.ai
-        ? speed > Math.max(2.2, profile.speed * 0.35)
-        : speed > Math.max(2.5, profile.speed * 0.35)
+        ? speed > Math.max(1.4, profile.speed * 0.45)
+        : speed > Math.max(0.85, profile.speed * 0.55)
       : speed > profile.speed &&
         (slip > profile.slip || drift > 0.16 || (steer > profile.steer && slip > profile.slip * 0.75) || vehicle.drifting);
-    const rollOnly = soft && vehicle.ai && !working && speed > 2;
+    const rollOnly = soft && !working && speed > (vehicle.ai ? 1.6 : 0.9);
 
     if (!active) {
       this._last.delete(vehicle);
@@ -631,7 +632,7 @@ export class TireMarks {
       if (this._aiSoftGate & 1) return;
     }
 
-    const stride = soft ? (vehicle.ai ? 0.32 : 0.22) : 0.28;
+    const stride = soft ? (vehicle.ai ? 0.28 : 0.16) : 0.28;
     const budget = (this._carry.get(vehicle) || 0) + speed * dt;
     if (budget < stride) {
       this._carry.set(vehicle, budget);
@@ -730,12 +731,12 @@ export class TireMarks {
     const nz = -dirX / len;
     const halfW =
       profile.width *
-      (profile.type === "soft" ? 0.62 : 0.5) *
-      (rear ? 1.06 : 0.98);
+      (profile.type === "soft" ? 0.72 : 0.5) *
+      (rear ? 1.08 : 1.0);
 
     if (profile.type === "soft" && track && track.wheelDeform) {
       const surface = a.surface || b.surface || "dirt";
-      const pressure = rollOnly ? 0.72 : 1;
+      const pressure = rollOnly ? 0.82 : 1.12;
       track.wheelDeform.stampSegment(
         a,
         b,
@@ -748,6 +749,30 @@ export class TireMarks {
       if (track.wheelRuts) {
         track.wheelRuts.writeSegment(a, b, halfW, surface, slip * pressure, drift * pressure);
       }
+      // Soft roads also get a dusty/dark trail so the rut reads at chase distance.
+      const softHex =
+        surface === "mud" ? 0x1a1610 : surface === "sand" ? 0x5a4834 : surface === "gravel" ? 0x2a2824 : 0x221c16;
+      const width =
+        profile.width * (1 + Math.min(0.35, slip * 0.22 + drift * 0.18)) * (rear ? 1.06 : 0.98);
+      const alpha =
+        profile.alpha *
+        Math.min(1, 0.42 + speed / 32 + slip * 1.1 + drift * 0.75) *
+        (rollOnly ? 0.7 : 1);
+      this._writeQuad(
+        a.x,
+        a.y,
+        a.z,
+        b.x,
+        b.y,
+        b.z,
+        nx,
+        nz,
+        width,
+        softHex,
+        profile.dark,
+        alpha,
+        profile.life
+      );
       return;
     }
 

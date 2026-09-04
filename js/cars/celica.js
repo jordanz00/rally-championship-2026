@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=203";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=204";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=35";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
@@ -1341,11 +1341,14 @@ function enableCarShadows(root) {
 }
 
 /**
- * Physics origin is the contact patch. Plant the lowest *tire* at y=0.
+ * Physics origin is the contact patch. Plant the lowest *tire rubber* at y=0.
  *
  * WHY NOT setFromObject(root): Sketchfab LODs often keep invisible axle / helper
  * meshes below the rubber. Planting on the full box lifts the visible car so
  * rivals look like they float above the ribbon.
+ *
+ * WHY tire meshes only: hub groups still include rims/brakes/axle scrap that
+ * can sit below the tread — planting on those leaves the rubber floating.
  *
  * @param {THREE.Object3D} root
  */
@@ -1353,13 +1356,28 @@ function plantOnContactPatch(root) {
   root.updateMatrixWorld(true);
   let minY = Infinity;
   const wheels = root.userData && root.userData.wheels;
-  if (Array.isArray(wheels)) {
-    for (let i = 0; i < wheels.length; i++) {
-      const w = wheels[i];
-      if (!w) continue;
-      const b = new THREE.Box3().setFromObject(w);
-      if (b.min.y < minY) minY = b.min.y;
+  const tmp = new THREE.Box3();
+  const measureTire = (hub) => {
+    if (!hub) return;
+    let tireMin = Infinity;
+    hub.traverse((obj) => {
+      if (!obj.isMesh || !obj.visible || !obj.geometry) return;
+      if (obj.userData && obj.userData.axleScrap) return;
+      const n = `${obj.name || ""} ${matName(obj)}`.toLowerCase();
+      const isTire = /tire|tyre|rubber/.test(n) && !/rim|disc|caliper|brake/.test(n);
+      const isWheelBody = /wheel|tire|tyre/.test(n) && !/rim|disc|caliper|brake|hub.?cap/.test(n);
+      if (!isTire && !isWheelBody) return;
+      tmp.setFromObject(obj);
+      if (tmp.min.y < tireMin) tireMin = tmp.min.y;
+    });
+    if (!Number.isFinite(tireMin)) {
+      tmp.setFromObject(hub);
+      tireMin = tmp.min.y;
     }
+    if (tireMin < minY) minY = tireMin;
+  };
+  if (Array.isArray(wheels) && wheels.length) {
+    for (let i = 0; i < wheels.length; i++) measureTire(wheels[i]);
   }
   if (!Number.isFinite(minY)) {
     const box = new THREE.Box3();
@@ -1377,7 +1395,10 @@ function plantOnContactPatch(root) {
     });
     minY = has ? box.min.y : 0;
   }
-  root.position.y -= minY;
+  // Sink past the contact plane so tread meets asphalt/dirt (not a hover gap).
+  const SINK = 0.028;
+  root.position.y -= minY + SINK;
+  root.userData.tirePlantSink = SINK;
 }
 
 function gameShade(root) {
@@ -4793,6 +4814,54 @@ function markPovHudMesh(mesh, order, opts) {
   }
 }
 
+/**
+ * Steering rim must live on the POV overlay layer with the gauges. The main
+ * present (post/pipeline) does not leave a depth buffer the overlay can use,
+ * so a layer-0 wheel cannot occlude layer-1 discs — gauges floated in front.
+ * @param {THREE.Object3D} node
+ */
+function markSteerPovLayer(node) {
+  if (!node) return;
+  node.traverse((obj) => {
+    obj.layers.set(POV_HUD_LAYER);
+    if (!obj.isMesh) return;
+    obj.frustumCulled = false;
+    // Below gauge faces (20) / needles (21) so depthTest can hide discs behind the rim.
+    obj.renderOrder = 8;
+    const mats = [].concat(obj.material || []);
+    for (let i = 0; i < mats.length; i++) {
+      const m = mats[i];
+      if (!m) continue;
+      m.depthTest = true;
+      m.depthWrite = true;
+      m.userData.povSteer = true;
+    }
+  });
+}
+
+/**
+ * Forward-most Z of the steering rim in car space (+Z = nose). Cluster must
+ * sit past this so the rim is between the eye and the dials.
+ * @param {THREE.Object3D} root
+ * @param {THREE.Object3D|null} wheel
+ * @param {number} eyeZ
+ * @returns {number}
+ */
+function steeringRimForwardZ(root, wheel, eyeZ) {
+  if (!wheel) return eyeZ + 0.4;
+  root.updateMatrixWorld(true);
+  wheel.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(wheel);
+  if (box.isEmpty()) {
+    return Number.isFinite(wheel.position.z) ? wheel.position.z : eyeZ + 0.4;
+  }
+  const a = box.min.clone();
+  const b = box.max.clone();
+  root.worldToLocal(a);
+  root.worldToLocal(b);
+  return Math.max(a.z, b.z);
+}
+
 function hudMat(opts) {
   const mat = new THREE.MeshBasicMaterial({
     depthTest: false,
@@ -4910,11 +4979,10 @@ function attachCockpit(root) {
   // Gauges used to sit at eyeZ+0.30 with the wheel at +0.36, so the cluster
   // floated in front of the rim (and HUD depthTest:false painted over it).
   const glbWheel = root.userData.steerSpin || root.userData.glbSteerWheel;
-  const wheelZ =
-    glbWheel && Number.isFinite(glbWheel.position.z)
-      ? glbWheel.position.z
-      : rig.eyeZ + 0.40;
-  const clusterZ = Math.max(wheelZ + 0.20, rig.eyeZ + 0.58);
+  if (glbWheel) markSteerPovLayer(glbWheel);
+  // Use the rim's forward face — pivot.position.z alone undershoots thick GLB wheels.
+  const wheelZ = steeringRimForwardZ(root, glbWheel, rig.eyeZ);
+  const clusterZ = Math.max(wheelZ + 0.14, rig.eyeZ + 0.52);
   // Dash bulk sits past the instruments so depthTest does not bury the discs.
   const dashZ = clusterZ + 0.22;
   // Keep the top of the dash well below the seated eye so the windshield
@@ -4972,6 +5040,7 @@ function attachCockpit(root) {
   cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.24, clusterZ);
   // Face the seated eye so the printed discs are not edge-on or windshield-facing.
   cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
+  // Draw after the rim (renderOrder 8) but depth-test against it.
   cluster.renderOrder = 20;
   cab.add(cluster);
   root.userData.povWheelZ = wheelZ;
@@ -4980,8 +5049,8 @@ function attachCockpit(root) {
   const hasGlbWheel = !!root.userData.glbSteerWheel;
   if (!hasGlbWheel) {
     const column = new THREE.Group();
-    // Closest cabin prop to the lens — gauges sit ~20 cm further into the dash.
-    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.40, wheelZ);
+    // Closest cabin prop to the lens — gauges sit further into the dash.
+    column.position.set(rig.eyeX + 0.02, rig.eyeY - 0.40, wheelZ - 0.08);
     column.rotation.x = -0.55;
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.04, 12), dark);
     hub.rotation.x = Math.PI / 2;
@@ -4995,9 +5064,17 @@ function attachCockpit(root) {
     wheel.add(hub, rim, spokeA, spokeB, spokeC);
     column.add(wheel);
     cab.add(column);
+    markSteerPovLayer(column);
     root.userData.steerWheel = wheel;
     root.userData.steerSpin = wheel;
     root.userData.steerAxis = "z";
+    // Recompute cluster past the procedural rim so eye → rim → gauges holds.
+    const rimZ = steeringRimForwardZ(root, column, rig.eyeZ);
+    const cz = Math.max(rimZ + 0.14, rig.eyeZ + 0.52);
+    cluster.position.z = cz;
+    cluster.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
+    root.userData.povWheelZ = rimZ;
+    root.userData.povClusterZ = cz;
   }
 
   const mirror = makeRearviewMirror();
@@ -5126,6 +5203,11 @@ const _povClipN = new THREE.Vector3();
  * Clip body geometry above the driver's eye so a unified GLB hull cannot fill
  * the lens even when no separate "roof" mesh exists. Planes are world-space;
  * call updatePovRoofClip each frame while seated.
+ *
+ * Hitch rule: after the first apply, materials keep their clippingPlanes and
+ * `localClippingEnabled` stays on. Chase mode parks the plane far above the
+ * car so nothing clips — toggling planes on/off was recompiling shaders on C.
+ *
  * @param {THREE.Object3D} root
  * @param {boolean} on
  * @param {THREE.WebGLRenderer} [renderer]
@@ -5136,21 +5218,14 @@ export function setPovRoofClip(root, on, renderer) {
   // WebGLRenderer is not an Object3D — userData is not guaranteed.
   if (renderer) {
     if (!renderer.userData) renderer.userData = {};
-    if (want) {
+    // Once warmed, leave clipping enabled forever so shader variants stay hot.
+    if (!renderer.localClippingEnabled) {
       if (renderer.userData._preLocalClip == null) {
-        renderer.userData._preLocalClip = !!renderer.localClippingEnabled;
+        renderer.userData._preLocalClip = false;
       }
       renderer.localClippingEnabled = true;
-    } else if (renderer.userData._preLocalClip != null) {
-      renderer.localClippingEnabled = renderer.userData._preLocalClip;
-      delete renderer.userData._preLocalClip;
     }
   }
-  if (root.userData._povRoofClipOn === want) {
-    if (want) updatePovRoofClip(root);
-    return;
-  }
-  root.userData._povRoofClipOn = want;
   const rig = getPovRig(root);
   const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.14;
   root.userData._povRoofCutY = cutY;
@@ -5159,15 +5234,16 @@ export function setPovRoofClip(root, on, renderer) {
   }
   const planeList = root.userData._povClipPlanes;
 
-  root.traverse((obj) => {
-    if (!obj.isMesh || !obj.material) return;
-    if (obj.userData.povHud || obj.userData.cabinFill) return;
-    if (inCockpitTree(obj)) return;
-    const n = (obj.name || "").toLowerCase();
-    if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
+  // First seat: clone body materials onto the shared plane list (compile happens in _warmPov).
+  if (!root.userData._povClipPrepared) {
+    root.traverse((obj) => {
+      if (!obj.isMesh || !obj.material) return;
+      if (obj.userData.povHud || obj.userData.cabinFill) return;
+      if (inCockpitTree(obj)) return;
+      const n = (obj.name || "").toLowerCase();
+      if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
 
-    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-    if (want) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       let owned = mats.slice();
       let changed = false;
       for (let i = 0; i < owned.length; i++) {
@@ -5189,25 +5265,26 @@ export function setPovRoofClip(root, on, renderer) {
       }
       if (changed) {
         obj.material = Array.isArray(obj.material) ? owned : owned[0];
-        if (!root.userData._povClipMeshes) root.userData._povClipMeshes = [];
-        root.userData._povClipMeshes.push(obj);
-      } else if (mats.some((m) => m && m.userData && m.userData._povClipApplied)) {
-        if (!root.userData._povClipMeshes) root.userData._povClipMeshes = [];
-        if (root.userData._povClipMeshes.indexOf(obj) < 0) root.userData._povClipMeshes.push(obj);
       }
-    } else {
-      for (let i = 0; i < mats.length; i++) {
-        const mat = mats[i];
-        if (!mat || !mat.userData || !mat.userData._povClipApplied) continue;
-        mat.clippingPlanes = mat.userData._preClipPlanes || null;
-        delete mat.userData._preClipPlanes;
-        delete mat.userData._povClipApplied;
-        mat.needsUpdate = true;
-      }
-    }
-  });
-  if (!want) root.userData._povClipMeshes = null;
-  else updatePovRoofClip(root);
+      if (!root.userData._povClipMeshes) root.userData._povClipMeshes = [];
+      if (root.userData._povClipMeshes.indexOf(obj) < 0) root.userData._povClipMeshes.push(obj);
+    });
+    root.userData._povClipPrepared = true;
+  }
+
+  root.userData._povRoofClipOn = want;
+  if (want) updatePovRoofClip(root);
+  else parkPovRoofClip(root);
+}
+
+/** Park the clip plane so chase/far see a full body (no material churn). */
+function parkPovRoofClip(root) {
+  const planes = root && root.userData && root.userData._povClipPlanes;
+  if (!planes || !planes[0]) return;
+  planes[0].setFromNormalAndCoplanarPoint(
+    _povClipN.set(0, -1, 0),
+    _povClipPt.set(0, 500, 0)
+  );
 }
 
 /**

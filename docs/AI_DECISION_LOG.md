@@ -4,6 +4,54 @@ Short institutional log. Newest first. Format: DATE / DECISION / WHY / REJECTED 
 
 ---
 
+### 2026-09-04 — Gate A SHIP (CEO human)
+
+| | |
+|--|--|
+| **DECISION** | **SHIP** CEO #1 catch/land dial bake. Retain `ARCADE_ASSIST` / `HANDLING` / `JUMP` / `gripSnap` changes. |
+| **WHY** | Human CEO confirmed catch feels like a switch and land wants the next jump. |
+| **REJECTED** | CUT/revert dials; starting camera-mass Call #2 without Spectator B score. |
+| **RESULT** | Gate A = PASS. Accountant C remains PASS. Full GREEN LIGHT still needs B. |
+| **NEXT** | Human Spectator gate B; then ONE of: camera fix (if B FAIL) / Desert vertical slice / headed trackside check. |
+
+---
+
+### 2026-09-04 — Intelligence Layer bootstrap (Level 200)
+
+| | |
+|--|--|
+| **DECISION** | Establish / refresh persistent AI memory: `AI_EXECUTIVE_STATE.md`, this log, `AI_PLAYER_MOMENTS.md`, `docs/ai/*` companions. No gameplay redesign. |
+| **WHY** | Affordable Cursor models lose strategy between sessions; ChatGPT/CEO reasoning must persist as institutional memory, not rediscover TypeScript/WebGPU/track rewrite. |
+| **REJECTED** | Another unbounded “make it amazing” Auto Mode; inventing parallel docs that contradict code; scoring player moments without evidence (use UNKNOWN). |
+| **RESULT** | Brain packet current through boot `?v=652`, Kenney trackside, splash credit. Active mission remains human Driver A. |
+| **NEXT** | Human SHIP/CUT A; then ONE Cursor mission from Executive Top 5. |
+
+---
+
+### 2026-09-04 — Kenney trackside GLB pack (hero-zone props)
+
+| | |
+|--|--|
+| **DECISION** | Import Kenney CC0 Racing/City/Furniture kit GLBs into `assets/props/`; wire barriers, fences, grandstands, gantries, cones via `prop-kit.js` + `track.js` with primitive fallback. Keep crowd bipeds. |
+| **WHY** | Highest visual cheapness in trackside primitives while feel gates frozen; hero-zone spend, not density spam. |
+| **REJECTED** | Replacing crowd with Mini Characters; global vegetation push; photogrammetry; track.js rewrite. |
+| **RESULT** | Shipped in working tree. Boot `main.js?v=652`. Attribution updated. Static audit + validate PASS. Racing-speed human check still open. |
+| **NEXT** | After Driver A: optional headed “props read at speed” check — not a density sprint. |
+
+---
+
+### 2026-09-04 — Splash credit + remove tech showcase page
+
+| | |
+|--|--|
+| **DECISION** | Credit Jordan Zabady + Cursor on splash; remove `#screen-tech` / TECH menu / `dev-showcase.js` / `project-stats.js` from player path. |
+| **WHY** | First-minute product identity; tech page was inventory, not arcade fun. |
+| **REJECTED** | Keeping TECH as player-facing mode; inventing new marketing screens. |
+| **RESULT** | Shipped. Boot bumped through `?v=651`–`652`. |
+| **NEXT** | Do not restore tech page unless product asks. |
+
+---
+
 ### 2026-09-04 — Pack place punch (race excitement + boot graph repair)
 
 | | |
@@ -97,3 +145,17 @@ Short institutional log. Newest first. Format: DATE / DECISION / WHY / REJECTED 
 | **REJECTED** | “Clean architecture” track rebuild; disabling validation to hide bugs. |
 | **RESULT** | Hang remains known risk. |
 | **NEXT** | Repro-first narrow patch only. |
+
+---
+
+## Protected Wins
+
+Do not casually “improve” these away.
+
+| Behavior | Why it works | Files | Regression warning |
+|----------|--------------|-------|--------------------|
+| Arcade First Boot | First minute feels like a finished arcade product | `index.html`, `game.js`, HUD CSS | Restoring garage/FPS/PHYS LAB on default path |
+| Pack place punch | Overtake flash + chirp without post-GO spam | `config` RACE_FEEDBACK, `hud.js`, `audio` | Silent place changes |
+| Worldvalidate GREEN | Road integrity = friend-test safety | validators / TrackDefinition | Loosening float/bury gates |
+| Shared Vehicle for AI | Fair rivals; one physics authority | `vehicle.js`, `ai.js` | Parallel AIPhysics |
+| Splash credit | Clear authorship without tech inventory | splash UI | Reintroducing TECH screen as player mode |
