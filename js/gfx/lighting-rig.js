@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=183";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=201";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -145,17 +145,50 @@ export function updateShadowFrustum(sun, extent, near, far) {
 /**
  * Renderer knobs for physically based outdoor lighting.
  *
+ * Visual Pass V1 — color-management contract (locked):
+ *   textures (albedo) → SRGBColorSpace
+ *   HDR / RGBE sky    → LinearSRGBColorSpace
+ *   renderer output   → SRGBColorSpace
+ *   tone mapping      → ACESFilmicToneMapping (always; never Reinhard mid-race)
+ *   exposure          → authored LIGHTING[stage].exposure (± tiny tunnel boost)
+ *   AA                → canvas MSAA when post OFF; when post ON, MSAA off
+ *                       (post RTs), rely on capped DPR + soft grade (no FXAA stack)
+ *   DPR               → min(devicePixelRatio, GFX.maxPixelRatio) + pixel budget
+ *
  * @param {THREE.WebGLRenderer} renderer
  */
 export function configurePBRRenderer(renderer) {
   if (!renderer) return;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  const cinema = (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
-  renderer.toneMapping = cinema ? THREE.ACESFilmicToneMapping : THREE.ReinhardToneMapping;
+  // V1: ACES is the production present path for every stage / title / race.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
   if (VISUAL.physicalLighting !== false && renderer.useLegacyLights != null) {
     renderer.useLegacyLights = false;
   }
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+}
+
+/**
+ * Shared soft-PCF shadow contract for championship stages (V1).
+ * Call once at race arm / title boot — stages must not drift bias independently.
+ *
+ * @param {THREE.DirectionalLight} sun
+ * @param {{ cinema?: boolean }} [opts]
+ */
+export function applyShadowQualityContract(sun, opts = {}) {
+  if (!sun || !sun.shadow) return;
+  const cinema = opts.cinema === true || (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
+  sun.shadow.bias = GFX.shadowBias != null ? GFX.shadowBias : cinema ? -0.00018 : -0.00012;
+  sun.shadow.normalBias =
+    GFX.shadowNormalBias != null ? GFX.shadowNormalBias : cinema ? 0.045 : 0.038;
+  sun.shadow.radius = GFX.shadowRadius != null ? GFX.shadowRadius : cinema ? 2.6 : 2.2;
+  if (sun.shadow.camera) {
+    const near = GFX.shadowNear != null ? GFX.shadowNear : 2.5;
+    const far = GFX.shadowFar != null ? GFX.shadowFar : 140;
+    sun.shadow.camera.near = near;
+    sun.shadow.camera.far = far;
+    sun.shadow.camera.updateProjectionMatrix();
+  }
 }
 
 /**

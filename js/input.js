@@ -245,9 +245,9 @@ export class Input {
     if (Math.abs(sx) < STICK_DEAD) {
       sx = 0;
     } else {
-      // Mild curve — keep mid-stick linear enough for accurate corrections.
+      // Mild curve — keep mid-stick linear enough for accurate corrections / flicks.
       const mag = Math.min(1, (Math.abs(sx) - STICK_DEAD) / (1 - STICK_DEAD));
-      sx = Math.sign(sx) * Math.pow(mag, 1.05);
+      sx = Math.sign(sx) * Math.pow(mag, 1.08);
     }
     this._padSteer = bounded(-sx, -1, 1);
 

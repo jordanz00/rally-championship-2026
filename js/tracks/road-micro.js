@@ -10,7 +10,7 @@
  *   vehicle.js uses bumpField for yaw kick and roadChatter for tiny HF bobble.
  */
 
-import { SURFACES } from "../config.js?v=183";
+import { SURFACES } from "../config.js?v=201";
 
 /** @param {number} n */
 function hash1(n) {
@@ -44,13 +44,14 @@ function surfaceMicroAmp(surface) {
   const s = SURFACES[surface] || SURFACES.dirt;
   const b = s.bump != null ? s.bump : 0.036;
   const id = s.id || surface;
-  if (id === "tarmac") return b * 0.42;
-  if (id === "cobble") return b * 1.28;
-  if (id === "sand") return b * 0.62;
-  if (id === "mud") return b * 0.92;
-  if (id === "dirt") return b * 0.88;
-  if (id === "gravel") return b * 0.78;
-  if (id === "grass") return b * 0.5;
+  // Visual Pass V3 — soft surfaces read more washboard; tarmac stays planted.
+  if (id === "tarmac") return b * 0.48;
+  if (id === "cobble") return b * 1.35;
+  if (id === "sand") return b * 0.78;
+  if (id === "mud") return b * 1.05;
+  if (id === "dirt") return b * 1.0;
+  if (id === "gravel") return b * 0.95;
+  if (id === "grass") return b * 0.55;
   return b;
 }
 
@@ -113,10 +114,17 @@ export function roadMicroHeight(dist, lateral, surface, jumpKind, tunnel) {
   if (jumpKind === "ramp" || jumpKind === "crest" || jumpKind === "land" || jumpKind === "gap") return 0;
   const amp = surfaceMicroAmp(surface);
   if (amp < 0.002) return 0;
-  const continuous =
+  const id = surface || "";
+  let continuous =
     bumpField(dist, lateral) * amp * 0.78 +
     Math.sin(dist * 0.19 + lateral * 0.33) * amp * 0.46 +
     Math.sin(dist * 4.8 + lateral * 0.7) * amp * 0.2;
+  // Visual Pass V3 — gravel corrugation readable in chase without kick-violence.
+  if (id === "gravel") {
+    continuous += Math.sin(dist * 7.2 + lateral * 1.4) * amp * 0.28;
+  } else if (id === "dirt" || id === "sand") {
+    continuous += Math.sin(dist * 5.6 + lateral * 1.1) * amp * 0.16;
+  }
   return continuous + patchBump(dist, lateral, amp * 1.65) + puddleDip(dist, lateral, surface, amp);
 }
 

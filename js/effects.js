@@ -15,7 +15,25 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=51";
-import { VISUAL } from "./config.js?v=183";
+import { VISUAL } from "./config.js?v=201";
+import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
+
+/**
+ * Custom GLSL particle materials are WebGL-only (Phase R native WebGPU skips them).
+ * @param {object} spec ShaderMaterial parameters
+ * @returns {THREE.Material}
+ */
+function particleMaterial(spec) {
+  if (RENDER_CAPS.glslCustom) return new THREE.ShaderMaterial(spec);
+  return new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.01,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+}
 
 /**
  * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
@@ -106,7 +124,7 @@ export class Dust {
     this.geo.setAttribute("aLife", new THREE.BufferAttribute(this.fade, 1));
     this.geo.setAttribute("aAngle", new THREE.BufferAttribute(this.angle, 1));
 
-    this.mat = new THREE.ShaderMaterial({
+    this.mat = particleMaterial({
       uniforms: {
         uMap: { value: makeDustSprite() },
         uScale: { value: 195 },
@@ -125,6 +143,7 @@ export class Dust {
     this.points = new THREE.Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 3;
+    this.points.visible = RENDER_CAPS.glslCustom;
     scene.add(this.points);
 
     this.i = 0;
@@ -133,6 +152,10 @@ export class Dust {
     this._dustStrength = 0.2;
     /** @type {WeakMap<object, number>} */
     this._carry = new WeakMap();
+    /** Live particle count — skip GPU uploads when the wake is empty. */
+    this.alive = 0;
+    this._emitDirty = false;
+    this._hadLive = false;
     for (let i = 0; i < this.count; i++) this.pos[i * 3 + 1] = -40;
   }
 
@@ -177,12 +200,14 @@ export class Dust {
       profile.rate * (0.22 + speedK * 0.9 + slipK * 2.35) * (surf.dust || 1) * focus * envBoost;
 
     const budget = (this._carry.get(vehicle) || 0) + perSec * dt;
-    const cap = vehicle.ai ? 22 : 48;
+    // AI pack shares the pool — half the spawn cadence, same player wake fidelity.
+    const cap = vehicle.ai ? 12 : 48;
     let n = Math.min(cap, budget | 0);
     this._carry.set(vehicle, budget - n);
     if (n < 1) return;
+    this._emitDirty = true;
 
-    this._color.setHex(surf.color);
+    this._color.setHex(surf.dustColor != null ? surf.dustColor : surf.color);
     const br = this._color.r;
     const bg = this._color.g;
     const bb = this._color.b;
@@ -278,18 +303,19 @@ export class Dust {
       let shade;
       if (grit) shade = 0.32 + Math.random() * 0.26;
       else if (speck) shade = 0.55 + Math.random() * 0.2;
-      else if (plume) shade = 0.7 + Math.random() * 0.24;
+      else if (plume) shade = 0.62 + Math.random() * 0.22;
       else shade = 0.48 + Math.random() * 0.3;
-      // Surface colour signature — sand warm plume, gravel grey grit, mud cool clods.
+      // Earth wake — muted browns/greys, no banana-yellow sand boost.
       const warm =
-        id === "sand" ? 1.14 + Math.random() * 0.1 : id === "dirt" ? 1.06 + Math.random() * 0.08 : 1;
+        id === "sand" ? 0.98 + Math.random() * 0.06 : id === "dirt" ? 1.02 + Math.random() * 0.05 : 1;
       const cool =
-        id === "mud" ? 0.78 + Math.random() * 0.08 : id === "gravel" ? 0.92 + Math.random() * 0.05 : 1;
-      const gritGrey = id === "gravel" && grit ? 0.88 + Math.random() * 0.08 : 1;
+        id === "mud" ? 0.82 + Math.random() * 0.08 : id === "gravel" ? 0.94 + Math.random() * 0.05 : 1;
+      const gritGrey = id === "gravel" && grit ? 0.9 + Math.random() * 0.08 : 1;
       this.col[i * 3] = br * shade * warm * gritGrey;
       this.col[i * 3 + 1] = bg * shade * warm * cool * gritGrey;
-      this.col[i * 3 + 2] = bb * shade * cool * (id === "sand" ? 0.9 : gritGrey);
+      this.col[i * 3 + 2] = bb * shade * cool * (id === "sand" ? 0.96 : gritGrey);
     }
+    this.alive = Math.max(this.alive, 1);
     this.geo.attributes.aColor.needsUpdate = true;
     this.geo.attributes.aSize.needsUpdate = true;
     this.geo.attributes.aLife.needsUpdate = true;
@@ -300,8 +326,11 @@ export class Dust {
    */
   step(dt) {
     this._syncFog();
+    if (!this.alive && !this._emitDirty) return;
+    this._emitDirty = false;
     const wx = this._wind.x;
     const wz = this._wind.z;
+    let live = 0;
     for (let i = 0; i < this.count; i++) {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;
@@ -326,10 +355,15 @@ export class Dust {
         continue;
       }
       this.fade[i] = t / (this.maxLife[i] || 1);
+      live += 1;
     }
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aLife.needsUpdate = true;
-    this.geo.attributes.aAngle.needsUpdate = true;
+    this.alive = live;
+    if (live > 0 || this._hadLive) {
+      this.geo.attributes.position.needsUpdate = true;
+      this.geo.attributes.aLife.needsUpdate = true;
+      this.geo.attributes.aAngle.needsUpdate = true;
+    }
+    this._hadLive = live > 0;
   }
 
   /**
@@ -390,7 +424,7 @@ export class ImpactSparks {
     this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute("aSize", new THREE.BufferAttribute(this.size, 1));
     this.geo.setAttribute("aLife", new THREE.BufferAttribute(this.fade, 1));
-    this.mat = new THREE.ShaderMaterial({
+    this.mat = particleMaterial({
       vertexShader: SPARK_VERT,
       fragmentShader: SPARK_FRAG,
       transparent: true,
@@ -401,6 +435,7 @@ export class ImpactSparks {
     this.points = new THREE.Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 6;
+    this.points.visible = RENDER_CAPS.glslCustom;
     scene.add(this.points);
     this.i = 0;
     this.alive = 0;
@@ -491,11 +526,11 @@ void main() {
 const MARK_PROFILE = {
   tarmac: { type: "hard", life: 10.5, width: 0.18, alpha: 0.44, dark: 0.12, slip: 0.24, steer: 0.2, speed: 12 },
   cobble: { type: "hard", life: 8.5, width: 0.17, alpha: 0.32, dark: 0.18, slip: 0.26, steer: 0.24, speed: 11 },
-  gravel: { type: "soft", life: 8.0, width: 0.23, alpha: 0.36, dark: 0.68, slip: 0.07, steer: 0.07, speed: 3.5 },
-  dirt: { type: "soft", life: 8.8, width: 0.23, alpha: 0.3, dark: 0.74, slip: 0.06, steer: 0.08, speed: 3.5 },
+  gravel: { type: "soft", life: 8.0, width: 0.26, alpha: 0.28, dark: 0.55, slip: 0.07, steer: 0.07, speed: 3.5 },
+  dirt: { type: "soft", life: 8.8, width: 0.27, alpha: 0.26, dark: 0.58, slip: 0.06, steer: 0.08, speed: 3.5 },
   grass: { type: "soft", life: 5.8, width: 0.2, alpha: 0.18, dark: 0.7, slip: 0.05, steer: 0.08, speed: 4.5 },
-  sand: { type: "soft", life: 12.5, width: 0.3, alpha: 0.32, dark: 0.86, slip: 0.03, steer: 0.05, speed: 2.5 },
-  mud: { type: "soft", life: 14.0, width: 0.3, alpha: 0.48, dark: 0.58, slip: 0.025, steer: 0.04, speed: 2 },
+  sand: { type: "soft", life: 12.5, width: 0.32, alpha: 0.22, dark: 0.62, slip: 0.03, steer: 0.05, speed: 2.5 },
+  mud: { type: "soft", life: 14.0, width: 0.34, alpha: 0.36, dark: 0.42, slip: 0.025, steer: 0.04, speed: 2 },
 };
 
 export class TireMarks {
@@ -519,19 +554,26 @@ export class TireMarks {
     this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute("aColor", new THREE.BufferAttribute(this.col, 3));
     this.geo.setAttribute("aAlpha", new THREE.BufferAttribute(this.alpha, 1));
-    this.mat = new THREE.ShaderMaterial({
-      vertexShader: MARK_VERT,
-      fragmentShader: MARK_FRAG,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-      toneMapped: false,
-    });
+    this.mat = RENDER_CAPS.glslCustom
+      ? new THREE.ShaderMaterial({
+          vertexShader: MARK_VERT,
+          fragmentShader: MARK_FRAG,
+          transparent: true,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -4,
+          polygonOffsetUnits: -4,
+          toneMapped: false,
+        })
+      : new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 2;
+    this.mesh.visible = RENDER_CAPS.glslCustom;
     scene.add(this.mesh);
     this.i = 0;
     this._query = {};
@@ -539,12 +581,23 @@ export class TireMarks {
     this._last = new WeakMap();
     this._color = new THREE.Color();
     this._up = 0.018;
+    /** Reused wheel layout — no per-emit object alloc. */
+    this._wheels = [
+      { along: 0, lat: 0, heading: 0 },
+      { along: 0, lat: 0, heading: 0 },
+      { along: 0, lat: 0, heading: 0 },
+      { along: 0, lat: 0, heading: 0 },
+    ];
+    this._gpuDirty = false;
+    this._aliveMarks = 0;
+    this._aiSoftGate = 0;
+    this._segA = { x: 0, y: 0, z: 0, heading: 0, surface: "" };
     for (let i = 0; i < this.pos.length; i += 3) this.pos[i + 1] = -40;
   }
 
   /**
    * @param {{position:{x:number,y:number,z:number}, yaw:number, speed:number, surfaceId:string, slip?:number, drifting?:boolean, driftAngle?:number, onGround?:boolean, ai?:boolean, velocity?:{x:number,z:number}, steer?:number, spec?:{wheelbase?:number, trackRear?:number, trackFront?:number}}} vehicle
-   * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object}} track
+   * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object, wheelDeform?:object, wheelRuts?:object}} track
    * @param {number} dt
    */
   emit(vehicle, track, dt) {
@@ -572,7 +625,13 @@ export class TireMarks {
       return;
     }
 
-    const stride = soft ? (vehicle.ai ? 0.18 : 0.22) : 0.28;
+    // AI soft: half-rate stamps when only rolling — same trench look, half CPU.
+    if (vehicle.ai && soft && rollOnly) {
+      this._aiSoftGate += 1;
+      if (this._aiSoftGate & 1) return;
+    }
+
+    const stride = soft ? (vehicle.ai ? 0.32 : 0.22) : 0.28;
     const budget = (this._carry.get(vehicle) || 0) + speed * dt;
     if (budget < stride) {
       this._carry.set(vehicle, budget);
@@ -589,35 +648,67 @@ export class TireMarks {
     const tf = ((vehicle.spec && vehicle.spec.trackFront) || 1.5) * 0.5;
     const tr = ((vehicle.spec && vehicle.spec.trackRear) || 1.5) * 0.5;
     const frontSteer = (vehicle.steer || 0) * 0.9;
-    const wheels = [
-      { along: wb * 0.5, lat: tf, heading: yaw + frontSteer },
-      { along: wb * 0.5, lat: -tf, heading: yaw + frontSteer },
-      { along: -wb * 0.5, lat: tr, heading: yaw },
-      { along: -wb * 0.5, lat: -tr, heading: yaw },
-    ];
-    const prev = this._last.get(vehicle) || [null, null, null, null];
+    const wheels = this._wheels;
+    wheels[0].along = wb * 0.5;
+    wheels[0].lat = tf;
+    wheels[0].heading = yaw + frontSteer;
+    wheels[1].along = wb * 0.5;
+    wheels[1].lat = -tf;
+    wheels[1].heading = yaw + frontSteer;
+    wheels[2].along = -wb * 0.5;
+    wheels[2].lat = tr;
+    wheels[2].heading = yaw;
+    wheels[3].along = -wb * 0.5;
+    wheels[3].lat = -tr;
+    wheels[3].heading = yaw;
 
-    for (let i = 0; i < wheels.length; i++) {
+    let prev = this._last.get(vehicle);
+    if (!prev) {
+      prev = [
+        { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
+        { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
+        { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
+        { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
+      ];
+      this._last.set(vehicle, prev);
+    }
+
+    // AI soft: rear tires only — fronts add little visual, cut 2× queries/stamps.
+    const w0 = soft && vehicle.ai ? 2 : 0;
+    for (let i = w0; i < 4; i++) {
       const w = wheels[i];
       const x = vehicle.position.x + fx * w.along + rx * w.lat;
       const z = vehicle.position.z + fz * w.along + rz * w.lat;
       const q = track.query(x, z, this._query, vehicle.progress || 0);
+      const slot = prev[i];
       if (!q || q.jump || q.tunnel) {
-        prev[i] = null;
+        slot.valid = false;
         continue;
       }
-      const baseH = (q.baseHeight != null ? q.baseHeight : q.height - (q.wheelDeform || 0));
-      const here = { x, y: baseH + this._up, z, heading: w.heading, surface: q.surface };
-      const last = prev[i];
-      prev[i] = here;
-      if (!last || last.surface !== here.surface) continue;
-      const dx = here.x - last.x;
-      const dz = here.z - last.z;
+      const baseH = q.baseHeight != null ? q.baseHeight : q.height - (q.wheelDeform || 0);
+      const lastValid = slot.valid;
+      const lastX = slot.x;
+      const lastY = slot.y;
+      const lastZ = slot.z;
+      const lastSurf = slot.surface;
+      slot.x = x;
+      slot.y = baseH + this._up;
+      slot.z = z;
+      slot.heading = w.heading;
+      slot.surface = q.surface;
+      slot.valid = true;
+      if (!lastValid || lastSurf !== slot.surface) continue;
+      const dx = slot.x - lastX;
+      const dz = slot.z - lastZ;
       const len = Math.hypot(dx, dz);
       if (len < stride * 0.65 || len > 2.4) continue;
-      this._writeSegment(last, here, profile, slip, drift, speed, i >= 2, rollOnly, track);
+      // Reuse last coords via temps on the slot's previous values.
+      this._segA.x = lastX;
+      this._segA.y = lastY;
+      this._segA.z = lastZ;
+      this._segA.surface = lastSurf;
+      this._writeSegment(this._segA, slot, profile, slip, drift, speed, i >= 2, rollOnly, track);
     }
-    this._last.set(vehicle, prev);
   }
 
   /**
@@ -639,12 +730,12 @@ export class TireMarks {
     const nz = -dirX / len;
     const halfW =
       profile.width *
-      (profile.type === "soft" ? 0.52 : 0.5) *
-      (rear ? 1.03 : 0.97);
+      (profile.type === "soft" ? 0.62 : 0.5) *
+      (rear ? 1.06 : 0.98);
 
     if (profile.type === "soft" && track && track.wheelDeform) {
       const surface = a.surface || b.surface || "dirt";
-      const pressure = rollOnly ? 0.55 : 1;
+      const pressure = rollOnly ? 0.72 : 1;
       track.wheelDeform.stampSegment(
         a,
         b,
@@ -685,29 +776,20 @@ export class TireMarks {
     const cz = bz0 + nz * halfWidth;
     const dx = bx0 - nx * halfWidth;
     const dz = bz0 - nz * halfWidth;
-    const verts = [
-      ax, ay0, az,
-      bx, ay0, bz,
-      cx, by0, cz,
-      cx, by0, cz,
-      bx, ay0, bz,
-      dx, by0, dz,
-    ];
+    const verts = [ax, ay0, az, bx, ay0, bz, cx, by0, cz, cx, by0, cz, bx, ay0, bz, dx, by0, dz];
     for (let v = 0; v < 18; v++) this.pos[base + v] = verts[v];
-    const cBase = i * 18;
     for (let v = 0; v < 6; v++) {
-      const ci = cBase + v * 3;
+      const ci = base + v * 3;
       this.col[ci] = r;
       this.col[ci + 1] = g;
       this.col[ci + 2] = bl;
       this.alpha[i * 6 + v] = alpha;
     }
     this.baseAlpha[i] = alpha;
-    this.life[i] = lifeOverride || this.life[i] || 8;
-    this.maxLife[i] = lifeOverride || this.maxLife[i] || 8;
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aColor.needsUpdate = true;
-    this.geo.attributes.aAlpha.needsUpdate = true;
+    this.life[i] = lifeOverride || 8;
+    this.maxLife[i] = lifeOverride || 8;
+    this._gpuDirty = true;
+    this._aliveMarks += 1;
   }
 
   /**
@@ -715,8 +797,10 @@ export class TireMarks {
    * @param {number} dt
    */
   step(dt) {
+    if (this._aliveMarks <= 0 && !this._gpuDirty) return;
     let alphaDirty = false;
     let posDirty = false;
+    let live = 0;
     for (let i = 0; i < this.count; i++) {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;
@@ -730,15 +814,26 @@ export class TireMarks {
         for (let v = 0; v < 6; v++) this.pos[p + v * 3 + 1] = -40;
         this.baseAlpha[i] = 0;
         posDirty = true;
+      } else {
+        live += 1;
       }
     }
-    if (alphaDirty) this.geo.attributes.aAlpha.needsUpdate = true;
-    if (posDirty) this.geo.attributes.position.needsUpdate = true;
+    this._aliveMarks = live;
+    if (this._gpuDirty || posDirty) {
+      this.geo.attributes.position.needsUpdate = true;
+      this.geo.attributes.aColor.needsUpdate = true;
+      this.geo.attributes.aAlpha.needsUpdate = true;
+      this._gpuDirty = false;
+    } else if (alphaDirty) {
+      this.geo.attributes.aAlpha.needsUpdate = true;
+    }
   }
 
   reset() {
     this._last = new WeakMap();
     this._carry = new WeakMap();
+    this._gpuDirty = false;
+    this._aliveMarks = 0;
     for (let i = 0; i < this.life.length; i++) this.life[i] = 0;
     for (let i = 0; i < this.baseAlpha.length; i++) this.baseAlpha[i] = 0;
     for (let i = 0; i < this.alpha.length; i++) this.alpha[i] = 0;

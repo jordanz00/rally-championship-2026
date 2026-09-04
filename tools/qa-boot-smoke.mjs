@@ -6,8 +6,8 @@
  *   everyone who has worked on this project.
  * WHAT IT DOES: launches the real game in real Chrome and walks the exact
  *   path from acceptance criterion 4 —
- *     title → PRESS START → SELECT MODE → car → Desert countdown → racing
- *   asserting at each step, then repeats through PRACTICE so that explicit
+ *     title → PRESS START → SELECT CAR (championship default) → Desert countdown → racing
+ *   asserting at each step, then repeats through PRACTICE (via MODES) so that explicit
  *   course selection is exercised too. Every console error and uncaught
  *   exception in the page is collected and fails the run.
  *
@@ -188,18 +188,18 @@ async function main() {
       return `state="${g.state}"`;
     });
 
-    /* ---------------- 7. PRESS START advances to SELECT MODE ---------------- */
-    await step("real click on PRESS START advances to SELECT MODE", async () => {
+    /* ---------------- 7. PRESS START advances to SELECT CAR (Arcade First Boot) ---------------- */
+    await step("real click on PRESS START advances to SELECT CAR", async () => {
       await clickSelector(cdp, "#btn-start", "PRESS START");
       const screen = await waitFor(
         cdp,
-        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? el.id : null;`,
-        { timeout: 15000, label: "#screen-menu to become the active screen" }
+        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
+        { timeout: 15000, label: "#screen-cars to become the active screen" }
       );
-      const mode = await evaluate(cdp, `return window.game ? window.game.state : null;`);
-      assert(screen === "screen-menu", `expected screen-menu, got ${screen}`);
-      assert(mode === "menu", `game.state should be "menu" after leaving the title, got "${mode}"`);
-      return `active screen: ${screen}`;
+      const mode = await evaluate(cdp, `return window.game ? { state: window.game.state, mode: window.game.mode } : null;`);
+      assert(screen === "screen-cars", `expected screen-cars, got ${screen}`);
+      assert(mode && mode.mode === "championship", `game.mode should be championship after Start, got "${mode && mode.mode}"`);
+      return `active screen: ${screen}, mode=${mode.mode}`;
     });
 
     /* ---------------- 8. audio actually came up ---------------- */
@@ -238,21 +238,12 @@ async function main() {
       return `music=${a.musicVol} sfx=${a.sfxVol} ${note}`;
     });
 
-    /* ---------------- 9. CHAMPIONSHIP → SELECT CAR ---------------- */
-    await step("CHAMPIONSHIP advances to SELECT CAR", async () => {
-      await clickSelector(cdp, "[data-menu='championship']", "CHAMPIONSHIP");
-      // Trusted mouse can miss in headless; the in-page handler is the same path.
-      await evaluate(cdp, `
-        const el = document.querySelector(".screen.active");
-        if (el && el.id === "screen-cars") return 1;
-        const b = document.querySelector("[data-menu='championship']");
-        if (b) b.click();
-        return 1;
-      `);
-      const screen = await waitFor(
+    /* ---------------- 9. SELECT CAR is ready (championship already defaulted) ---------------- */
+    await step("SELECT CAR has at least one selectable car", async () => {
+      await waitFor(
         cdp,
-        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
-        { timeout: 15000, label: "#screen-cars to become active" }
+        `return document.querySelector("#screen-cars.active") ? 1 : null;`,
+        { timeout: 5000, label: "#screen-cars still active" }
       );
       await waitFor(
         cdp,
@@ -266,7 +257,7 @@ async function main() {
       `);
       const selectable = cars.filter((c) => !c.disabled);
       assert(selectable.length >= 1, "SELECT CAR has no selectable car");
-      return `${screen}, ${selectable.length}/${cars.length} cars selectable`;
+      return `screen-cars, ${selectable.length}/${cars.length} cars selectable`;
     });
 
     /* ---------------- 10. car choice reaches Desert countdown ---------------- */
@@ -390,8 +381,13 @@ async function main() {
       await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 15000, label: "game to reconstruct after reload" });
       // Keyboard this time, so both Start paths are covered.
       await pressKey(cdp, "Enter");
+      await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {
+        timeout: 15000, label: "Enter on the title to reach SELECT CAR"
+      });
+      // Practice needs SELECT MODE — MODES (or BACK) opens it from car select.
+      await clickSelector(cdp, "[data-menu='modes']", "MODES");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`, {
-        timeout: 15000, label: "Enter on the title to reach SELECT MODE"
+        timeout: 15000, label: "MODES opens SELECT MODE"
       });
       await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
       await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {

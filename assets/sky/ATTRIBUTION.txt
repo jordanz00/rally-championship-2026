@@ -13,7 +13,11 @@ Equirectangular pure-sky environments used as the stage skybox
 
   assets/sky/sunflowers_2k.hdr
     Source: https://polyhaven.com/a/sunflowers_puresky
-    Stages: forest, lakeside
+    Stages: forest
+
+  assets/sky/kloofendal_28d_misty_2k.hdr
+    Source: https://polyhaven.com/a/kloofendal_28d_misty_puresky
+    Stages: lakeside
 
 All Poly Haven HDRIs are CC0 (public domain). No attribution required;
 credits retained here for maintainers.

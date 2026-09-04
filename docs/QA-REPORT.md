@@ -1,5 +1,259 @@
 # QA report — quality-control pass
 
+## SHIP 1 — Arcade First Boot (2026-09-04)
+
+**Player moment:** Title → START → Celica → Desert → 3-2-1-GO without garage/GLB/FPS/dev chrome blocking the first minute.
+
+**Before:** Title showed “Garage — drop a GLB”; START opened SELECT MODE (mode/car/course wall); race HUD exposed FPS, DIST, SURFACE, GRIP, SLIDE; PHYS LAB on course list.
+
+**After:**
+- Garage + PHYS LAB behind `?dev=1` / `?debug=1` / `localStorage rally-debug=1` (`html.is-dev` + `.dev-only`).
+- START defaults championship → SELECT CAR; Celica pick starts Desert. MODES opens Championship / Time Attack / Practice / Controls.
+- Race chrome prioritizes TIME · POSITION · SPEED · STAGE TIME; FPS/DIST/SURFACE/GRIP/SLIDE debug-only.
+- Fantasy car/course button copy (no stats screens).
+
+**Files:** `index.html`, `css/game.css`, `js/game.js`, `js/ui/hud.js`, `js/main.js`, `tools/qa-boot-smoke.mjs`
+
+**QA:** `qa-static-audit` PASS · `qa-validate` PASS · boot-smoke path updated (Chrome not required this pass)
+
+**Boot:** `main.js?v=643` · `css/game.css?v=40` · `hud.js?v=35`
+
+**Frozen / not this ship:** Desert vertical slice, deep race-feedback HUD, Driver gate A human SHIP/CUT, camera-mass Call #2, track.js Red hang.
+
+---
+
+## Executive gate — Driver / Spectator / Accountant (2026-09-04)
+
+**Mission:** Three-part validation only. No feature expansion. Maximize first-10-minute confidence.
+
+| Test | Result | Evidence |
+|---|---|---|
+| **A — Driver** (grip → slide → catch → accel) | **UNKNOWN** (machine armed) | `qa-am3-handling` PASS · CEO #1 dial bake `config.js?v=201` · human Lab/Desert catch drive **not run in this agent host** |
+| **B — Spectator** (car has weight without being told) | **UNKNOWN** | Chase springs + contact blobs + land kick present · camera-mass Call #2 **paused** · no headed spectator probe |
+| **C — Accountant** (no frame debt / no duplicate authority / QA stable) | **PASS** | `qa-static-audit` 10/10 · `qa-validate` PASS · `qa-world-geometry` GREEN · `qa-sprint70-camera` PASS · no Red / no new authority this session |
+
+**Open debt (not closable Green without human or Red):**
+- Stale Sprint 89 table still says Jump-3 **PARTIAL** — superseded by Sprints 90–98 (doc lie, not live defect).
+- Stage-build wedge (Sprint 76 #2) intermittent headed hang — **Red** (`track.js`); refuse this session.
+- Absolute 60 fps claim still open — reliability, not a feel gate FAIL.
+
+**Intervention:** none (no FAIL to fix; UNKNOWN ≠ invent busywork).
+
+**Decision:** **Defer GREEN LIGHT** until CEO human scores A + B. Boot `main.js?v=641`.
+
+**System map (brief):** Exceptional — none claimed without human. Strong — Vehicle/AM3 handling stack, TrackDefinition+worldvalidate, QualityManager/lock-30, championship progression. Acceptable — hero clearcoat+dirt, dust/marks, chase/POV, stage identity V3–V5. Weak — absolute 60 fps claim, intermittent stage-build wedge (Red). Broken — none proven live P0 this session (Sprint 89 Jump-3 PARTIAL is stale doc).
+
+**Human release instrument (Terminal.app, hard-refresh `?v=641`):**
+1. **A:** Phys Lab / F8 — induce slide → opposite-lock catch → throttle; then Desert bowl same sequence.
+2. **B:** Watch chase (no HUD coaching) — braking pitch, slide yaw follow, land compression readable?
+3. **C:** Note hitch / judder only; if frame collapses, FAIL C and stop feature spend.
+
+If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDirector → one V6 signature) as **plan-only**. If either A or B FAIL → one Cursor-contract feel/camera fix before any depth.
+
+---
+
+## CEO #1 — Physics Lab feel: catch window + land plant (2026-09-04)
+
+**Player moment:** Fast corner → brief slip → opposite-lock catch → jump → planted landing.
+
+**Change:** Config-only dial bake (`js/config.js?v=201`). No new assist layer. No camera mass (#2). No `track.js` / WebGPU.
+
+| Dial | Before → After |
+|---|---|
+| `ARCADE_ASSIST.recoveryAssist` | 0.72 → **0.76** |
+| `recoverableSlide` | 12.0 → **12.5** |
+| `driftStability` | 0.42 → **0.48** |
+| `landingAssist` | 0.45 → **0.55** |
+| `tireSlideSoft` | 2.25 → **2.4** |
+| `tirePeakBoost` | 1.05 → **1.08** |
+| `HANDLING.expertCounterMul` | 1.62 → **1.74** |
+| `limitMush` | 0.52 → **0.58** |
+| `slideExitBoost` / `slideExitAngle` | 1.38 / 0.14 → **1.46 / 0.12** |
+| `suspBumpRate` / `suspReboundRate` | 52 / 38 → **58 / 42** |
+| `JUMP.landVelAbsorb` | 0.86 → **0.90** |
+| `landSettleMin` / `Max` | 0.14 / 0.38 → **0.12 / 0.30** |
+| `landCompressWn` / `Zeta` | 24 / 0.95 → **28 / 0.98** |
+| `landCompressGain` / `ExtMin` | 0.09 / −0.014 → **0.105 / −0.008** |
+| `landImpactSquash` | 0.02 → **0.028** |
+| `landSettleDamp` / `End` | 5.4 / 11.5 → **7.0 / 14.5** |
+| gravel / dirt `gripSnap` | 1.22 / 1.24 → **1.34 / 1.36** |
+
+**QA:** `qa-am3-handling` PASS · `qa-jump-feel` PASS · `qa-sprint33-drift` PASS · `qa-static-audit` PASS · `qa-validate` PASS · `qa-jump-variability` PASS · `qa-land-sfx` PASS
+
+**Boot:** `main.js?v=641` · `config.js?v=201`
+
+**Human drive (CEO acceptance — required):**
+1. `http://127.0.0.1:8765/index.html?physlab=1` (or Practice → PHYS LAB / F8)
+2. Hairpin → gravel catch → jump → land plant on Lab loop
+3. 2-min Desert Act bowl: trail-brake → hold → opposite lock → crest land
+4. SHIP only if catch feels like a switch and land wants the next jump
+
+**Verdict pending human feel:** Automated gates GREEN. Recommend **SHIP** if the drive confirms; **CUT/revert config dials** if catch feels steered-for-you or land still mushy.
+
+---
+
+## Hotfix — camera medium + POV blend (2026-09-04)
+
+**Player report:** medium too far/high · POV switch hangs/stutters · want slow smooth ease.
+
+**Cause:** `_warmPov` skipped cabin compile unless already in POV — first C→POV compiled mid-blend.
+
+**Shipped:** medium closer/lower (`back` 4.55, `height` 1.42); blend 0.58s / POV 0.72s; always warm cabin at load; seat cabin late (`povSeatEase` 0.7); no mid-blend mirror RT alloc.
+
+**Boot:** `main.js?v=636` · `qa-sprint70-camera` PASS
+
+---
+
+## Hotfix — grounded car + shadow sync (2026-09-04)
+
+**Player report:** springy/bouncy car · contact/sun shadow lagging · float above road · rivals same.
+
+**Shipped:** `wheelTravelVisual` 1.52→1.05 + travel cap; firmer rebound; less road chatter; snappier plant; contact blobs snap when grounded; sun shadow bake every present while cars move (`shadowEvery` 1 on high/medium); land spring more overdamped; soft-scale floor 0.88. Pack uses same travel cap.
+
+**Boot:** `main.js?v=635`
+
+---
+
+## Sprint — CTO ship set (gameplay + V6 air + perf) (2026-09-04)
+
+**Charter:** Parallel specialist proposals → [CTO approval](543d9a6d-e305-4d93-bbd2-bbd9266ff5a2) → implement 6 items only.
+
+| # | Item | Lane |
+|---|---|---|
+| 1 | Nature `castShadow` cull (`STREAM.natureShadowFar` / scrub) | Perf |
+| 2 | Soft QualityManager render-scale under `lockRaceQuality` | Perf |
+| 3 | Tier-scaled `lodNear` + `VISUAL.veg` via `armVegBudget` | Perf |
+| 4 | Catch-window `ARCADE_ASSIST` bake + Lab “Catch Window” dial | Gameplay |
+| 5 | Camera mass punch (`brakePitchMul` / `landKickScale`) | Gameplay |
+| 6 | Depth haze stage curves (`VISUAL.aerialByScenery`) | Graphics V6 |
+
+**Deferred:** AI hairpin flicks · tunnel exit cinema · sun shafts · trail-brake gate · exit surge
+
+| Check | Result |
+|---|---|
+| `qa-validate` / `qa-static-audit` / `qa-world-geometry` / `qa-am3-handling` / `qa-sprint70-camera` | PASS |
+| Headed worldvalidate | run after boot (Forest recommended) |
+
+**Boot:** `main.js?v=634` · `track.js?v=289` · `config.js?v=198`
+
+---
+
+## Sprint — Visual Pass V5 vegetation (2026-09-04)
+
+**Goal:** Density · ecological clusters · pack-card far LOD · instancing (not V6 lighting).
+
+| Check | Result |
+|---|---|
+| `node tools/qa-validate.mjs` | PASS |
+| `node tools/qa-static-audit.mjs` | PASS |
+| `node tools/qa-am3-handling.mjs` | PASS |
+| `node tools/qa-world-geometry.mjs` | PASS |
+| Headed Forest `?worldvalidate=1` | **GREEN** (float/bury 0) |
+| Headed Desert `?worldvalidate=1` | **GREEN** (float/bury 0) |
+| Headed Mountain `?worldvalidate=1` | **GREEN** (float/bury 0 · tunnels=1) |
+
+**Shipped:** `forestCardForTree` → far LOD + HD backdrop use pack atlas cards; `_treePackCardPoses`; forest/mountain micro-clusters (4–9 m siblings); desert cactus clumps; `VISUAL.veg` density table; anti-clone pack palette; `STREAM.lodNear` 148. Clearance / trench / mouth untouched.
+
+**Boot:** `main.js?v=632` · `track.js?v=288` · `config.js?v=197` · `prop-kit.js?v=30`
+
+**Must not:** V6 lighting · WebGPU · track rewrite · loosening float/bury tols.
+
+---
+
+## Sprint — Visual Pass V4 terrain (2026-09-04)
+
+**Goal:** Believable mid/far landforms + materials; keep road–terrain conformity GREEN.
+
+| Check | Result |
+|---|---|
+| `node tools/qa-validate.mjs` | PASS |
+| `node tools/qa-static-audit.mjs` | PASS |
+| `node tools/qa-am3-handling.mjs` | PASS |
+| `node tools/qa-world-geometry.mjs` | PASS |
+| Headed Desert `?worldvalidate=1` | **GREEN** (land normalScale 1.85) |
+| Headed Mountain `?worldvalidate=1` | **GREEN** (land normalScale 1.45) |
+
+**Shipped:** far mound/spine/mass/knoll amp; desert windward/lee; mountain mid-rise + biome fold; lakeside shore lip; `landMapTiles` span/15; per-scenery land normals; crest/scree tint; roughness wet/rock flecks. Trench / mouth / overlapBed contracts untouched.
+
+**Boot:** `main.js?v=631` · `track.js?v=287`
+
+**Must not:** V5 veg · WebGPU · track rewrite · loosening float/bury tols.
+
+---
+
+## Sprint — Visual Pass V3 road (2026-09-04)
+
+**Goal:** Macro/medium/micro road read · shoulders · surface identity (not V4 terrain).
+
+| Check | Result |
+|---|---|
+| `node tools/qa-validate.mjs` | PASS |
+| `node tools/qa-static-audit.mjs` | PASS |
+| `node tools/qa-am3-handling.mjs` | PASS |
+| `node tools/qa-world-geometry.mjs` | PASS |
+| Headed Desert `?worldvalidate=1` | **GREEN** |
+| Road mats | albedo + normal + roughnessMap; sand/gravel roughness 0.90 / 0.76 |
+| Skirt | grain map + normal + UVs (DoubleSide apron) |
+
+**Shipped:** `paintSurface` / `paintEdgeErosion`; `paintSkirtGrain` + `worldSkirtMaterial(map)`; shoulder/ribbon tint contrast; `road-micro` soft amp + gravel corrugation; `ROAD_ROUGH` spread. Cache `main.js?v=630` · `track.js?v=286`.
+
+**Must not:** track rewrite · WebGPU · V4+ without “Begin Visual Pass V4”.
+
+---
+
+## Sprint — Visual Pass V2 hero car (2026-09-04)
+
+**Goal:** Player car clearcoat lacquer + cheap dirt + readable suspension (not V3 road).
+
+| Check | Result |
+|---|---|
+| `node tools/qa-validate.mjs` | PASS |
+| `node tools/qa-static-audit.mjs` | PASS |
+| `node tools/qa-am3-handling.mjs` | PASS |
+| `node tools/qa-world-geometry.mjs` | PASS |
+| Headed Desert `?worldvalidate=1` | **GREEN** (Celica race path) |
+| Clearcoat probe | Celica / Delta / Stratos `createPlayerCar` → MeshPhysical paint (cc=1) |
+| Dirt | `js/cars/car-dirt.js` bound after race IBL; soils on mud/sand/dirt; washes on tarmac |
+
+**Shipped:** `dressPlayerCarRace` (safe Standard→Physical, paint-name + Stratos `wire_*` CAD body); `car-dirt.js`; `HANDLING.wheelTravelVisual` 1.52; cache `main.js?v=628` / `celica.js?v=156`.
+
+**Must not:** WebGPU cutover · track rewrite · V3+ without “Begin Visual Pass V3”.
+
+**Boot smoke:** SKIP under Cursor (Chrome.app blocked) — static gates + headed IDE browser used.
+
+---
+
+## Sprint — Quality gates (2026-09-04)
+
+**Goal:** Production pipeline so bad geometry is hard to ship — not repair-after-drive.
+
+| Check | Result |
+|---|---|
+| `node tools/qa-validate.mjs` | PASS (Desert/Forest/Mountain/Lakeside data + static audit) |
+| `node tools/qa-world-geometry.mjs` | PASS |
+
+**Shipped:** `docs/QUALITY_STANDARD.md`, `js/tracks/world-config.js`, `stage-data-validate.js`, `segment-kinds.js`, `tools/qa-validate.mjs`, fail-fast Mountain compile gate, centralized tolerances.
+
+**Milestones still open:** screenshot golden frames, measured StagePerformanceProfile, full visual debug overlay set, Desert/Forest/Lakeside TrackDefinition migration.
+
+---
+
+## Sprint — TrackDefinition / Mountain showcase (2026-09-04)
+
+**Goal:** Stop random env asset churn; build authored stage architecture; Mountain as showcase.
+
+| Check | Result |
+|---|---|
+| `node tools/qa-world-geometry.mjs` | PASS |
+| `node tools/qa-static-audit.mjs` | PASS |
+| In-game Mountain + `?worldvalidate=1` | **Human / headed** — not run in this agent pass |
+
+**Shipped:** `track-definition.js`, `track-clearance.js`, `tunnel-volume.js`, `world-geometry-validator.js`, `stages/mountain-definition.js`, `docs/WORLD_GEOMETRY_RULES.md`. Mountain ~1.5 km compiled pieces (3 CP, tunnel, 2 jumps, bank/S/off-camber). Desert/Forest/Lakeside piece lists unchanged. No renderer/post/car changes.
+
+**Remaining:** Live float/clip validation on Mountain; shoulder blend polish; prop AABB float checks (validator future); do not redesign other stages yet.
+
+---
+
 **Date:** 2026-08-18 · **Scope:** boot path, acceptance criteria in
 [`docs/AM3-RESEARCH.md`](AM3-RESEARCH.md) §7, static hygiene.
 **Machine:** macOS 24.0.0, Apple M1 Pro, 120 Hz ProMotion.
@@ -5200,6 +5454,22 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Public:** https://jordanz00.github.io/rally-championship-2026/ (deploys from `main`)
 
 ---
+### Sprint v585 — Tunnel interior unblocked (mouth only)
+
+**Player defect:** Driveable bore was filled with solid geometry — black far plug + ~57 m throat from each mouth, and lining arch hole winding that extruded solid horseshoes every segment.
+
+| Fix | State |
+|---|---|
+| Remove solid `portalBorePlug` | **Done** |
+| Short mouth throat (`throatLen` 7, `faceDepth` 16) | **Done** |
+| Hollow lining arch hole (crown winding, no bevel) | **Done** |
+| Lining clear = paint half + 0.45 m | **Done** |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=585` · `track.js?v=268`
+
+---
 | 56–57 | Settle / title hitch | Deferred `_warmCarMeshes` after PRESS START |
 | 58–60 | Title LOD / mesh LOD / smooth C | QA contracts fixed; rival shadow via `STREAM.rivalShadowFar` |
 | Driving | Snappier plant + catch | `groundPlantRate 54`, `counterAuthority 3.35`, `tireYawBlend 0.36`, `steerSpeed 126` |
@@ -5209,3 +5479,294 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Cache:** `?v=568` · `config.js?v=179` · `vehicle.js?v=124`
 
 ---
+
+---
+### Sprint v590 — Realistic suspension + tires
+
+
+**Date:** 2026-09-03 · **Player moment:** bumps plant hard, rebound floats; tires load-sensitize grip and camber from road roll.
+
+| Item | Status | Proof |
+|---|---|---|
+| Asymmetric bump/rebound wheel travel + anti-roll | **Done** | `_wheelCornerProbe` uses `suspBumpRate`/`suspReboundRate`; CHASSIS spring/ARB retuned |
+| Suspension compression → axle load | **Done** | `suspLoadGain` in `_integrate` |
+| Load-sensitive Pacejka + camber thrust | **Done** | `combinedTire(..., camber)`; FZ0 load sens |
+| Load-dependent rolling radius → kappa | **Done** | Rf/Rr from compress |
+| AM3 slide tools preserved | **Done** | `node tools/qa-am3-handling.mjs` PASS |
+| Cache / static | **Done** | boot `?v=590` · `config.js?v=186` · `vehicle.js?v=127` · static audit PASS |
+
+---
+
+---
+### Sprint v591 — Realistic tire ruts (not yellow paint)
+
+**Player defect:** Soft-surface trails read as bright yellow strips instead of compressed earth, and lacked clear 3D tire trenches.
+
+| Fix | State |
+|---|---|
+| Mute sand/dirt/mud/gravel rut tints (earth browns) | **Done** |
+| Cooler `dustColor` + no banana sand plume boost | **Done** |
+| Deeper accumulating deform field + finer cells | **Done** |
+| Sculpted trench cross-section mesh (berm/wall/floor) + real normals | **Done** |
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=591` · `config.js?v=187` · `effects.js?v=62` · `surface-deform.js?v=3` · `track.js?v=270`
+
+---
+### Sprint v592 — Perf: batch GPU uploads, kill deform GC (keep fidelity)
+
+**Player defect:** Soft-surface races hitch/hang; dust + rut meshes re-uploaded full buffers every stamp; Map string keys GC'd; pack fade toggled `mat.needsUpdate`.
+
+| Fix | State |
+|---|---|
+| WheelRutMesh `flush()` + `updateRange` (one upload/frame) | **Done** |
+| Integer Map keys in WheelDeformField (no string GC) | **Done** |
+| Empty-field sample early-out | **Done** |
+| Dust skip uploads when wake empty; AI spawn cap 12 | **Done** |
+| TireMarks zero-alloc emit; AI soft rear-only + half-rate roll | **Done** |
+| Crowd cheer ~20 Hz | **Done** |
+| Pack see-through: arm transparent once (no mid-race recompile) | **Done** |
+| Graphics fidelity unchanged (tier 13 / DEPTH_CAP / wake pool) | **Kept** |
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs`
+
+**Cache:** `?v=592` · `surface-deform.js?v=4` · `effects.js?v=63` · `crowd.js?v=19` · `occlusion-fade.js?v=14` · `track.js?v=271`
+
+---
+### Sprint v593 — Title car glass + glossy showroom
+
+**Player defect:** Title orbit car windows showed flipped / inverted polygons; paint lacked wet clearcoat reflections.
+
+| Fix | State |
+|---|---|
+| Glass `FrontSide` (no DoubleSide two-pass) | **Done** |
+| Never merge cabin glass into body panels (LOD) | **Done** |
+| `dressTitleCarShowroom` — clearcoat lacquer + reflective glass | **Done** |
+| Hide cabin clutter through windows | **Done** |
+| Showcase always boosts glass env; stronger title IBL | **Done** |
+| Still LOD-first (fast title load, no 7MB hero) | **Kept** |
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=593` · `celica.js?v=150` · `pbr.js?v=34` · `config.js?v=188`
+
+---
+### Sprint v594 — Tunnel bore continuity + clean mouth (no clip)
+
+**Player defect:** Clip through geometry inside the Desert tunnel; env rocks/sand through the entrance; mouth looked unclean.
+
+**Already fixed (v585, kept):** no solid `portalBorePlug`; short mouth throat; hollow lining arches (correct winding); no stacked wing/lintel/cheek boxes.
+
+**Remaining causes this sprint closed:**
+
+| Cause | Fix |
+|---|---|
+| ~17 m gap after throat before lining (`start+8`) → sky/ridge through rock | Lining starts at `start+2` / `end-2`; throat tube extended to meet it |
+| Mouth prism `halfLat≈43 m` planted hillsides in a trench | Split `driveHalfLat` (floor) vs `halfLat` (refuse) |
+| Stadium `clearHalfW = half+VERGE+2.2` then snap to tight lining | `clearHalfW = half+ROAD_COLLIDER_CLEAR+1.55` |
+| Chase-cam `cameraFade` on lining read as clipping through rock | `bores.userData.cameraFade = false` |
+| Rocks/dunes allowed inside horseshoe | `_ribbonClear` / `_laneKeepout` refuse mouth corridor |
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=594` · `track.js?v=272`
+
+
+### Sprint v595–596 — Smooth screen fades + load bar
+
+**Player moment:** Menus, stage loads, and race reveal fade through black instead of hard cuts. The load bar eases and trickles smoothly; the shell fades in; championship next-stage / retry uses the same soft path.
+
+| Change | Status |
+|---|---|
+| Curtain swap order: fade out → swap → hold → fade in | **Done** |
+| Menu / cars / courses / controls / result / pause soft fades | **Done** |
+| Loading screen soft entry (`outMs`/`inMs`, not instant) | **Done** |
+| `waitLoadingBarSettled` then soft HUD reveal after settle | **Done** |
+| Softer progress lerp + stall trickle; % text updates on integer change | **Done** |
+| Load shell opacity/translate entrance | **Done** |
+| `prefers-reduced-motion` still instant | **Kept** |
+
+**Proof:** `node tools/qa-sprint88-car-pick.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=596` · `hud.js?v=33` · `css/game.css?v=37`
+
+### Sprint v597 — Realistic stage backgrounds
+
+**Player moment:** Far country reads as real landscape — misty lakeside sky, sand haze, alpine ridges, forest hills — not a flat HDR card behind props.
+
+| Change | Status |
+|---|---|
+| Unique lakeside misty HDR (`kloofendal_28d_misty_2k`) | **Done** |
+| Stage fog/haze tightened + horizon glow seam | **Done** |
+| `COLORS.fog*` aligned with `LIGHTING` | **Done** |
+| Stronger aerial dissolve + far land mass | **Done** |
+| Extra backdrop rings (mountain/desert/forest/lakeside) | **Done** |
+| Wider land pad under horizon props | **Done** |
+
+**Proof:** `node tools/qa-sky-skybox.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=598` · `sky.js?v=40` · `track.js?v=273` · `config.js?v=189`
+
+### Sprint v599–600 — Phase 1: vehicle feel + camera springs + PerformanceMonitor
+
+**Player moment:** Celica/Delta/Stratos feel distinct in 10 s; chase camera has weight (springs, road look-ahead, speed FOV); suspension dive/squat/roll reads; handbrake starts a slide; `?debug=1` shows perf overlay.
+
+| Change | Status |
+|---|---|
+| `CameraSpring` (pos/look/FOV) + road look-ahead | **Done** |
+| Car identity separation (Celica planted / Delta snappy / Stratos RWD) | **Done** |
+| Handbrake initiation (lower yawKick/powerMul) | **Done** |
+| Visible brake dive / accel squat + wheel travel visual | **Done** |
+| `PerformanceMonitor` (`?debug=1` / `?perfmon=1`) | **Done** |
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-sprint70-camera.mjs`
+
+**Cache:** `?v=600` · `config.js?v=191` · `vehicle.js?v=128` · `camera-spring.js?v=1` · `performance-monitor.js?v=1`
+
+**Phase 1 exit:** awaiting human 10-second car-identity drive + Desert hairpin/jump. Do not auto-start Phase 2.
+
+### Sprint v605 — Phase R.1: renderer foundation (WebGPU-ready)
+
+**Player moment:** Same driving path; present path is now a `RenderPipeline` with explicit API caps. Production stays WebGL r160 so Pages/CDP do not strand. `vendor/three.webgpu.js` (r170) is on disk for R.2 cutover.
+
+| Change | Status |
+|---|---|
+| `renderer-factory` + `RENDER_CAPS` + async `_bootGfx` join | **Done** |
+| `RenderPipeline` present/resize/compile facade | **Done** |
+| `QualityManager` dynamic-scale helper | **Done** |
+| GLSL post/FX/occlusion gated when `glslCustom=false` | **Done** |
+| Vendored `three.webgpu.js` | **Done** |
+| Default THREE cutover / native WebGPU | **Deferred R.2** (TSL post + particles) |
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs` → title→menu→cars→Desert countdown PASS (SwiftShader race handover still 0 fps / budget — pre-existing headless limit)
+
+**Cache:** `?v=605` · `renderer-factory.js?v=2` · `postfx.js?v=23` · `effects.js?v=64` · `occlusion-fade.js?v=15` · `track.js?v=274` · `performance-monitor.js?v=2`
+
+### Sprint v606 — Sega Rally feel dial (AM3 handling pass)
+
+**Player moment:** Wider tire sweet spot (grip→slide→recover), progressive surface grip loss, countersteer still a switch, subtle yaw/recovery/landing assists without a drift button.
+
+| Change | Status |
+|---|---|
+| `ARCADE_ASSIST` config dial (yaw / recovery / driftStability / landing / tire soft) | **Done** |
+| Progressive Pacejka falloff + wider tarmac/dirt/gravel peaks | **Done** |
+| Slower felt-µ when *losing* grip (surface transitions) | **Done** |
+| `Vehicle.physSnapshot` + `?physdebug=1` overlay | **Done** |
+| No drift button; initiation remains brake / lift / power / gear / handbrake | **Preserved** |
+
+**Proof:** `node tools/qa-am3-handling.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `?v=607` · `config.js?v=191` · `vehicle.js?v=129` · `jump.js?v=25` · `physics-debug.js?v=1` · `input.js?v=42`
+
+**Tune next (human drive):** If too slippery → raise `ARCADE_ASSIST.recoveryAssist` / lower `tireSlideSoft`. If too grippy → raise `tireSlideSoft` / `powerSlidePitch`. If twitchy → lower `yawAssist`.
+
+### Sprint v613 — Sega Rally driving model + Physics Lab (Stage 4 start)
+
+**Player moment:** Binding arcade-rally feel contract (not sim); live Physics Lab dials + torture track so tuning happens against hairpin/gravel/jump/mud rhythm instead of code-only edits.
+
+| Change | Status |
+|---|---|
+| `docs/SEGA_RALLY_DRIVING_MODEL.md` binding contract | **Done** |
+| Physics Lab UI (`?physlab=1` / F8) — telemetry + live `ARCADE_ASSIST`/`HANDLING` dials | **Done** |
+| `COURSES.physlab` torture track + Practice menu entry | **Done** |
+| Directive / roadmap Stage 4 status + studio anchors | **Done** |
+| Hardcore sim rewrite | **Rejected** (by contract) |
+
+**Proof:** `node tools/qa-validate.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-static-audit.mjs`
+
+**Cache:** `main.js?v=613` · `config.js?v=192` · `vehicle.js?v=130` · `courses.js?v=74` · `physics-debug.js?v=2`
+
+**How to use:** Practice → PHYS LAB with `?physlab=1` (or press F8 in-race). Scrub dials; drive the sequence; only then commit HANDLING defaults.
+
+### Sprint v614 — Pass 1 complete (all stages TrackDefinition) + tunnel volume wire
+
+**Player moment:** Every championship stage uses the same authoring path; tunnel mouths/props share TunnelVolume margins; `?worldvalidate=1` shows an on-screen GREEN/RED badge.
+
+| Change | Status |
+|---|---|
+| Desert / Forest / Lakeside → TrackDefinition (geometry-faithful) | **Done** |
+| Fail-fast mount in `courses.js` + qa-validate Pass 1 check | **Done** |
+| TunnelVolume → mouth prisms, prop exclusion, trench sizing | **Done** |
+| `?worldvalidate=1` in-game badge | **Done** |
+| Title-car cabin clutter hide (glass flipped-poly debt) | **Done** |
+| Visual Pass V1 start (boot ACES + sRGB) | **Started** |
+| Phase R.2 WebGPU production cutover | **Not started** (correct — stay WebGL; see RENDERER_MIGRATION) |
+| ARCADE_ASSIST modest forgiveness re-bake | **Done** (lab human drive still recommended) |
+| Visual Passes V2–V10 / Passes 2–5 AAA polish | **Not started** (name a pass to continue) |
+
+**Proof:** `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-am3-handling.mjs`
+
+**Cache:** `main.js?v=615` · `courses.js?v=75` · `track.js?v=277` · `tunnel-volume.js?v=3` · `world-geometry-validator.js?v=3` · `celica.js?v=151` · `config.js?v=193` · `hud.js?v=34`
+
+**Headed:** hard-refresh `?worldvalidate=1` on Desert / Forest / Mountain / Lakeside — expect GREEN badge bottom-left.
+
+### Sprint v619 — Headed world-validation PASS (all stages GREEN)
+
+**Player moment:** Road/terrain conform no longer false-fails climbs; Desert tunnel approach land follows the climb into the portal instead of burying the ribbon.
+
+| Change | Status |
+|---|---|
+| `tools/qa-headed-worldvalidate.mjs` headed Pass-0 gate | **Done** |
+| Remove `_groundHeight` early `overlapBed` snap (climb float root cause) | **Done** |
+| Validator uses per-sample deck hint (not XZ-nearest fold arm) | **Done** |
+| Skip jump-neighbour samples in validator | **Done** |
+| Desert on-deck short-circuit before ridge/dune | **Done** |
+| Tunnel mouth floor `min(portal, localDeck)` on climbing approach | **Done** |
+| Headed GREEN: desert · forest · mountain · lakeside | **PASS** |
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-headed-worldvalidate.mjs` → PASS  
+**Cache:** `main.js?v=619` · `track.js?v=281` · `world-geometry-validator.js?v=5`
+
+**Next (Director sequence):** Begin Visual Pass V1 · or Begin performance baseline.
+
+### Sprint v622 — Headed world-validation (Desert + Mountain tunnels)
+
+**Player moment:** Mountain tunnel mouth no longer has land tris folding through the aperture. Desert/Mountain share one TunnelVolume mouth-floor contract. Bore lining overlaps so curve rings do not open to sky as easily.
+
+| Change | Status |
+|---|---|
+| Mouth apron land floor for **all** tunnel stages (was Desert-only) | **Done** |
+| `_groundHeight` shared mouth-floor before biome ridge | **Done** |
+| Mountain TunnelVolume lateral exclusion → land stays bed | **Done** |
+| `_tunnelTerrainY` uses stage scenery (not hardcoded desert) | **Done** |
+| Validator `TUNNEL_APERTURE` probes at entrance/exit | **Done** |
+| Bore lining full-run + heavier Z overlap | **Done** |
+| Headed `?worldvalidate=1`: desert · mountain · forest · lakeside | **GREEN** |
+
+**Issues closed**
+- Mountain: terrain folding up through tunnel mouth floor (root: Desert-only mouth corridor in `_addLandTile` / `_groundHeight`).
+
+**Remaining (not blocking GREEN; not V1)**
+- Desert portal ridge silhouette stays intentionally jagged (arcade quarry) — do not flatten the ridge.
+- Title showroom floating rocks (menu, not stage tunnels).
+- Perfect horseshoe/portal mesh seal is portal-geometry polish, not heightmap conformity.
+
+**Proof:** headed Cursor browser `?worldvalidate=1` all four stages · `node tools/qa-validate.mjs` · `qa-static-audit` · `qa-am3-handling` · `qa-world-geometry`  
+**Cache:** `main.js?v=622` · `game.js?v=622` · `track.js?v=284` · `world-geometry-validator.js?v=6`
+
+**Next approval phrase:** Begin Visual Pass V1
+
+### Sprint v623 — Visual Pass V1 COMPLETE (rendering foundation)
+
+**Player moment:** Stages share one ACES + sRGB contract; tunnel entry no longer pumps exposure (~4% vs ~22%); shadows use one bias/frustum contract; post grade is quieter so the image reads cleaner, not punchier.
+
+| Change | Status |
+|---|---|
+| ACESFilmic locked in `configurePBRRenderer` (no Reinhard fallback) | **Done** |
+| Tunnel `exposureBoost` 1.22 → **1.04** (lamps dim lights, not ACES) | **Done** |
+| Shared `applyShadowQualityContract` + tighter race frustum (40 m) | **Done** |
+| Restrained post (bloom/AO/vignette/contrast) | **Done** |
+| Championship exposure unified at **1.12** | **Done** |
+| DPR ceiling documented (`GFX.maxPixelRatio` 1.15) | **Done** |
+| Worldvalidate remains GREEN ×4 | **PASS** |
+
+**Color-management contract:** albedo SRGB · HDR LinearSRGB · output SRGB · tone ACES · exposure authored per stage · AA = canvas MSAA when post off, else capped DPR (no FXAA stack).
+
+**Proof:** headed Cursor browser · `qa-validate` · `qa-static-audit` · `qa-am3-handling` · `qa-world-geometry`  
+**Cache:** `main.js?v=623` · `config.js?v=194` · `lighting-rig.js?v=11` · `postfx.js?v=24` · `game.js?v=623`
+
+**Next approval phrase:** Begin Visual Pass V2
+
+
+

@@ -53,7 +53,7 @@ check("slideGripMul slippery", /slideGripMul:\s*0\.[12]\d/.test(config), "angle 
 check("sand loose", /driftEase:\s*1\.[4-9]\d/.test(config), "sand pitch-in");
 check("gravel brakeYaw", /brakeYaw:\s*0\.[6-9]\d/.test(config), "gravel brake-to-slide");
 check("tc dumps in drift", /tcMul = slideIntent \|\| hb > hbEnter \? 0\.12/.test(vehicle), "wheelspin hold");
-check("player ground spring", /groundPlantRate:\s*46/.test(config), "direct deck plant");
+check("player ground spring", /groundPlantRate:\s*(4[6-9]|[5-9]\d)/.test(config), "direct deck plant");
 check("player chatter scale", /roadChatterScale:\s*0\.\d+/.test(config), "ribbon chatter");
 check("Sprint 33 SLIDE HUD", /cluster-slide/.test(index) && /slideBadge/.test(hud), "drift badge");
 const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];

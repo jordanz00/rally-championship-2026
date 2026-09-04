@@ -57,17 +57,21 @@ check(
     !/this\._scheduleTrackPreload\(next\);\s*this\._beginRace\(next\)/.test(game)
 );
 check(
-  "loading screen swaps instantly (no 800ms black curtain)",
-  /showScreen\("screen-loading", \{ instant: true \}\)/.test(hud)
+  "loading screen fades through a short curtain (not a hard cut)",
+  /return showScreen\("screen-loading", \{ outMs:/.test(hud) && !/showScreen\("screen-loading", \{ instant: true \}\)/.test(hud)
+);
+check(
+  "load→HUD waits for the progress bar, then soft-reveals",
+  /waitLoadingBarSettled/.test(game) && /showScreen\("screen-hud", \{ outMs:/.test(game)
 );
 check(
   "_beginRace paints loading, then yields, then boots SFX / race",
-  /showLoadingScreen\(\{[\s\S]*?await yieldFrame\(\);\s*await yieldFrame\(\);[\s\S]*?_bootSfxGraph[\s\S]*?this\._startRace\(/.test(
+  /await showLoadingScreen\(\{[\s\S]*?await yieldFrame\(\);\s*await yieldFrame\(\);[\s\S]*?_bootSfxGraph[\s\S]*?this\._startRace\(/.test(
     game
   )
 );
 check("game imports track.js?v=185+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 185);
-check("game imports hud.js?v=29+", Number((game.match(/hud\.js\?v=(\d+)/) || [])[1]) >= 29);
+check("game imports hud.js?v=33+", Number((game.match(/hud\.js\?v=(\d+)/) || [])[1]) >= 33);
 check("cache-bust chain", cacheOk && Number(gameV) >= 425, `main=${mainV} game=${gameV}`);
 
 console.log(

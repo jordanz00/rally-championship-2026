@@ -11,14 +11,14 @@
  */
 
 import { CdSoundtrack } from "./soundtrack.js?v=136";
-import { PowertrainVoice } from "./powertrain.js?v=26";
-import { SkidVoice } from "./skid.js?v=7";
-import { loadSample, playHit, playClip } from "./bank.js?v=2";
+import { PowertrainVoice } from "./powertrain.js?v=28";
+import { SkidVoice } from "./skid.js?v=9";
+import { loadSample, playHit, playClip } from "./bank.js?v=3";
 import { CrowdVoice } from "./crowd.js?v=5";
 import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
 
 /** Default SFX bus level (slider at 100%). */
-const SFX_GAIN = 0.58;
+const SFX_GAIN = 0.64;
 /** Navigator VO sits off the SFX compressor so calls stay intelligible. */
 const NAV_GAIN = 0.82;
 const VOL_MUSIC_KEY = "rally-vol-music";
@@ -191,29 +191,29 @@ export class RallyAudio {
 
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass";
-    hp.frequency.value = 70;
-    hp.Q.value = 0.7;
+    hp.frequency.value = 55;
+    hp.Q.value = 0.65;
 
     const sfxMerge = ctx.createGain();
     sfxMerge.gain.value = 1;
 
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.value = 7600;
-    lp.Q.value = 0.65;
+    lp.frequency.value = 9800;
+    lp.Q.value = 0.6;
 
     const airCut = ctx.createBiquadFilter();
     airCut.type = "peaking";
-    airCut.frequency.value = 4200;
-    airCut.Q.value = 0.9;
-    airCut.gain.value = -3.5;
+    airCut.frequency.value = 4500;
+    airCut.Q.value = 0.85;
+    airCut.gain.value = -2.2;
 
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -18;
-    comp.knee.value = 10;
-    comp.ratio.value = 2.4;
-    comp.attack.value = 0.01;
-    comp.release.value = 0.18;
+    comp.threshold.value = -16;
+    comp.knee.value = 12;
+    comp.ratio.value = 2.2;
+    comp.attack.value = 0.008;
+    comp.release.value = 0.16;
 
     const sfx = ctx.createGain();
     sfx.gain.value = SFX_GAIN * this.sfxVol;
@@ -225,6 +225,18 @@ export class RallyAudio {
     this.master = sfx;
     this._sfxIn = sfxMerge;
     this._sfxHp = hp;
+    this._sfxLp = lp;
+    // Impacts / landings bypass the surface high-pass (180–320 Hz) that was
+    // killing body thumps — join at the shared low-pass with a gentle HP.
+    const impactIn = ctx.createGain();
+    impactIn.gain.value = 1;
+    const impactHp = ctx.createBiquadFilter();
+    impactHp.type = "highpass";
+    impactHp.frequency.value = 42;
+    impactHp.Q.value = 0.55;
+    impactIn.connect(impactHp);
+    impactHp.connect(lp);
+    this._impactIn = impactIn;
     this._reverb = new ReverbZones(ctx, hp);
     this._reverb.connectSource(sfxMerge);
 
@@ -240,10 +252,34 @@ export class RallyAudio {
     this._bootHits();
     this._hits.noise = makeNoiseBuffer(ctx, 0.18);
     this._hits.thump = makeNoiseBuffer(ctx, 0.28, 0.55);
-    this._hits.landSoft = makeNoiseBuffer(ctx, 0.42, 0.88);
-    this._hits.landMid = makeNoiseBuffer(ctx, 0.22, 0.62);
-    this._hits.landHard = makeNoiseBuffer(ctx, 0.12, 0.28);
-    this._hits.landScrape = makeNoiseBuffer(ctx, 0.2, 0.12);
+    // Multi-band land buffers — body knock + tire plant; impact bus keeps bass.
+    this._hits.landSoftPool = [
+      makeLandNoise(ctx, 0.32, "soft"),
+      makeLandNoise(ctx, 0.28, "soft"),
+      makeLandNoise(ctx, 0.36, "soft"),
+      makeLandNoise(ctx, 0.26, "soft"),
+    ];
+    this._hits.landMidPool = [
+      makeLandNoise(ctx, 0.2, "mid"),
+      makeLandNoise(ctx, 0.18, "mid"),
+      makeLandNoise(ctx, 0.22, "mid"),
+      makeLandNoise(ctx, 0.16, "mid"),
+    ];
+    this._hits.landHardPool = [
+      makeLandNoise(ctx, 0.12, "hard"),
+      makeLandNoise(ctx, 0.1, "hard"),
+      makeLandNoise(ctx, 0.14, "hard"),
+      makeLandNoise(ctx, 0.11, "hard"),
+    ];
+    this._hits.landScrapePool = [
+      makeLandNoise(ctx, 0.18, "scrape"),
+      makeLandNoise(ctx, 0.15, "scrape"),
+      makeLandNoise(ctx, 0.2, "scrape"),
+    ];
+    this._hits.landSoft = this._hits.landSoftPool[0];
+    this._hits.landMid = this._hits.landMidPool[0];
+    this._hits.landHard = this._hits.landHardPool[0];
+    this._hits.landScrape = this._hits.landScrapePool[0];
   }
 
   /**
@@ -517,23 +553,30 @@ export class RallyAudio {
     if (this._sfxHp && this.ctx && s.surfaceId) {
       const now = this.ctx.currentTime;
       const id = String(s.surfaceId);
-      let hpHz = 240;
-      if (/mud|sand|grass|dirt/.test(id)) hpHz = 180;
-      else if (/tarmac|cobble/.test(id)) hpHz = 320;
-      else if (/gravel/.test(id)) hpHz = 260;
-      this._sfxHp.frequency.setTargetAtTime(hpHz, now, 0.18);
+      // Keep cabin/road beds dark enough for body weight — old 180–320 Hz
+      // floors erased landings and suspension knocks on the shared bus.
+      let hpHz = 72;
+      if (/mud|sand|grass|dirt/.test(id)) hpHz = 55;
+      else if (/tarmac|cobble/.test(id)) hpHz = 95;
+      else if (/gravel/.test(id)) hpHz = 70;
+      this._sfxHp.frequency.setTargetAtTime(hpHz, now, 0.2);
+    }
+    if (this._sfxLp && this.ctx) {
+      const now = this.ctx.currentTime;
+      const spd = mix.speed || 0;
+      const open = live ? Math.min(1, spd / 42) : 0;
+      this._sfxLp.frequency.setTargetAtTime(7200 + open * 3200, now, 0.15);
     }
     if (this._windGain && this.ctx) {
       const spd = mix.speed || 0;
       /**
        * Cabin rush: open earlier (~22 km/h) and hit a clear hiss by ~120 km/h.
-       * Before: (spd-10)/44 × 0.2 → ~0.11 at 33 m/s. After: (spd-6)/28 × 0.34 → ~0.33.
        */
       const air = live ? Math.min(1.15, Math.max(0, (spd - 6) / 28)) : 0;
       const now = this.ctx.currentTime;
-      this._windGain.gain.setTargetAtTime(air * 0.34 * this.sfxVol, now, 0.08);
+      this._windGain.gain.setTargetAtTime(air * 0.28 * this.sfxVol, now, 0.08);
       if (this._windFilt) {
-        this._windFilt.frequency.setTargetAtTime(480 + spd * 32, now, 0.12);
+        this._windFilt.frequency.setTargetAtTime(420 + spd * 38, now, 0.12);
       }
     }
     if (this.cd) {
@@ -649,13 +692,9 @@ export class RallyAudio {
   }
 
   /**
-   * Jump landing one-shot — varies by fall speed, surface, and how flat the
-   * chassis arrived. Soft hops, packed hard landings, and botched nose-high
-   * scrapes use different body + grit layers so consecutive jumps never sound
-   * like one looped thump. Subtle: sits under engine/tires, not a punch.
-   *
-   * Samples: procedural landSoft/Mid/Hard/Scrape noise + bank overrun / gravel /
-   * chirp (see assets/sfx/ATTRIBUTION.txt). No new binaries.
+   * Jump landing one-shot — short subtle body/tire plant. Varies by fall
+   * speed, surface, hang time, and recipe so consecutive lands never match.
+   * Plays on the impact bus so the cabin high-pass cannot mute it.
    *
    * @param {number} impact descent rate m/s
    * @param {string} [surfaceId]
@@ -664,123 +703,157 @@ export class RallyAudio {
   landThump(impact, surfaceId, meta = {}) {
     if (!this.ready || this._workMute || !this._sfxIn) return;
     if (this.sfxVol <= 0.001) return;
+    const dest = this._impactIn || this._sfxIn;
     const now = this.ctx.currentTime;
-    if (now - this._landAt < 0.09) return;
+    if (now - this._landAt < 0.065) return;
     const airRaw = Math.max(0, meta.airTime || 0);
-    // Reject curb ticks / false lands that slipped past vehicle gating.
-    if (airRaw < 0.08 && impact < 2.8) return;
-    const amt = Math.max(0, Math.min(1, (impact - 1.35) / 13));
-    if (amt < 0.035) return;
+    // Reject curb ticks; allow short hop landings once they leave the deck.
+    if (airRaw < 0.045 && impact < 1.8) return;
+    const amt = Math.max(0, Math.min(1, (impact - 0.75) / 11));
+    if (amt < 0.018 && airRaw < 0.09) return;
     this._landAt = now;
 
     const id = surfaceId || "dirt";
     const upset = Math.max(0, Math.min(1, meta.upset || 0));
-    const air = Math.max(0, Math.min(1.6, airRaw));
+    const air = Math.max(0, Math.min(1.8, airRaw));
     const jitter = Math.random();
+    const jitter2 = Math.random();
 
-    // Recipe bands: soft / mid / hard / scrape (botched). Prefer a different
-    // band than last time when impact sits near a boundary.
-    let recipe = amt < 0.28 ? 0 : amt < 0.55 ? 1 : 2;
+    let recipe = amt < 0.22 ? 0 : amt < 0.48 ? 1 : 2;
     if (upset > 0.42 || (amt > 0.5 && upset > 0.28)) recipe = 3;
-    if (recipe === this._landRecipe) {
-      const alts = [0, 1, 2, 3].filter((r) => r !== recipe);
-      recipe = alts[Math.floor(jitter * alts.length)] ?? recipe;
-      // Keep scrape only when the landing actually deserved it.
-      if (recipe === 3 && upset < 0.28 && amt < 0.48) recipe = amt < 0.4 ? 0 : 1;
+    if (jitter > 0.55) {
+      const nudge = jitter2 < 0.5 ? -1 : 1;
+      const next = clampInt(recipe + nudge, 0, 3);
+      if (!(next === 3 && upset < 0.22 && amt < 0.42)) recipe = next;
+    }
+    if (recipe === this._landRecipe && jitter > 0.35) {
+      const alts = [0, 1, 2].filter((r) => r !== recipe);
+      recipe = alts[Math.floor(jitter2 * alts.length)] ?? recipe;
     }
     this._landRecipe = recipe;
 
-    const soft = this._hits.landSoft || this._hits.thump;
-    const mid = this._hits.landMid || this._hits.thump;
-    const hard = this._hits.landHard || this._hits.noise;
-    const scrape = this._hits.landScrape || this._hits.noise;
+    const pick = (pool, fallback) => {
+      const list = pool && pool.length ? pool : null;
+      if (!list) return fallback;
+      return list[Math.floor(Math.random() * list.length)] || fallback;
+    };
+    const soft = pick(this._hits.landSoftPool, this._hits.landSoft || this._hits.thump);
+    const mid = pick(this._hits.landMidPool, this._hits.landMid || this._hits.thump);
+    const hard = pick(this._hits.landHardPool, this._hits.landHard || this._hits.noise);
+    const scrape = pick(this._hits.landScrapePool, this._hits.landScrape || this._hits.noise);
     const body =
       recipe === 0 ? soft : recipe === 1 ? mid : recipe === 2 ? hard : scrape;
 
-    // Surface character — hard pack vs muffling sand/mud vs grit gravel.
     let rateMul = 1;
     let gainMul = 1;
     let grit = 0;
     let chirp = 0;
     let gritRate = 1.1;
+    let bodyLp = 4200;
     if (id === "tarmac" || id === "cobble") {
-      rateMul = 1.14 + jitter * 0.1;
-      gainMul = 1.05;
+      rateMul = 1.08 + jitter * 0.14;
+      gainMul = 1.12;
       chirp = 0.28 + amt * 0.4;
-      gritRate = 1.5;
+      gritRate = 1.4 + jitter * 0.18;
+      bodyLp = 5200;
     } else if (id === "gravel") {
-      rateMul = 0.96 + jitter * 0.12;
-      gainMul = 1.0;
-      grit = 0.5 + amt * 0.38;
-      gritRate = 0.9 + jitter * 0.22;
+      rateMul = 0.9 + jitter * 0.16;
+      gainMul = 1.05;
+      grit = 0.55 + amt * 0.38;
+      gritRate = 0.82 + jitter * 0.26;
+      bodyLp = 3800;
     } else if (id === "sand" || id === "dirt") {
-      rateMul = 0.76 + jitter * 0.14;
-      gainMul = 0.86;
-      grit = 0.24 + amt * 0.32;
-      gritRate = 0.68 + jitter * 0.16;
+      rateMul = 0.76 + jitter * 0.16;
+      gainMul = 0.98;
+      grit = 0.32 + amt * 0.32;
+      gritRate = 0.62 + jitter * 0.18;
+      bodyLp = 3400;
     } else if (id === "mud" || id === "grass") {
-      rateMul = 0.6 + jitter * 0.12;
-      gainMul = 0.78;
-      grit = 0.15 + amt * 0.2;
-      gritRate = 0.52;
+      rateMul = 0.6 + jitter * 0.14;
+      gainMul = 0.9;
+      grit = 0.2 + amt * 0.22;
+      gritRate = 0.46 + jitter * 0.12;
+      bodyLp = 2800;
     } else {
       rateMul = 0.86 + jitter * 0.12;
-      grit = 0.2 + amt * 0.22;
+      grit = 0.24 + amt * 0.22;
     }
 
-    const airBoost = 0.82 + Math.min(0.32, air * 0.2);
-    // Subtle body — master SFX_GAIN already scales the bus.
-    const bodyGain = (0.055 + amt * 0.2 + recipe * 0.018) * gainMul * airBoost;
-    const bodyRate = (0.36 + amt * 0.26 + recipe * 0.055) * rateMul;
+    const airBoost = 0.92 + Math.min(0.4, air * 0.24);
+    // Short + subtle — readable under the engine, never a slam unless hard.
+    const bodyGain = (0.14 + amt * 0.28 + recipe * 0.028) * gainMul * airBoost;
+    const bodyRate = (0.52 + amt * 0.28 + recipe * 0.05) * rateMul;
     const bodyDur =
-      recipe === 0 ? 0.3 + amt * 0.1 : recipe === 3 ? 0.24 + upset * 0.1 : 0.14 + amt * 0.12;
+      recipe === 0 ? 0.14 + amt * 0.08 + jitter * 0.03 : recipe === 3 ? 0.16 + upset * 0.1 : 0.1 + amt * 0.1;
 
-    playHit(this.ctx, this._sfxIn, body, {
+    playHit(this.ctx, dest, body, {
       gain: bodyGain,
-      rate: bodyRate + (jitter - 0.5) * 0.1,
+      rate: bodyRate + (jitter - 0.5) * 0.14,
       dur: bodyDur,
+      attack: 0.003,
+      lp: bodyLp,
+      hp: 38,
     });
 
-    // Recorded body knock — different rates so soft vs hard do not share pitch.
+    // Soft second layer — suspension settle, detuned.
+    if (jitter2 > 0.22 && body) {
+      playHit(this.ctx, dest, body, {
+        gain: bodyGain * (0.28 + jitter * 0.16),
+        rate: bodyRate * (0.72 + jitter2 * 0.26),
+        dur: bodyDur * (0.65 + jitter * 0.2),
+        attack: 0.01,
+        lp: bodyLp * 0.85,
+        when: now + 0.012,
+      });
+    }
+
     if (this._hits.overrun) {
       const knockGain =
         recipe === 0
-          ? 0.035 + amt * 0.07
+          ? 0.07 + amt * 0.1
           : recipe === 3
-            ? 0.06 + amt * 0.11
-            : 0.07 + amt * 0.18;
-      playHit(this.ctx, this._sfxIn, this._hits.overrun, {
+            ? 0.09 + amt * 0.14
+            : 0.1 + amt * 0.18;
+      playHit(this.ctx, dest, this._hits.overrun, {
         gain: knockGain * gainMul,
-        rate: (0.4 + amt * 0.2 + recipe * 0.05) * rateMul + (jitter - 0.5) * 0.08,
-        dur: recipe === 0 ? 0.28 : 0.15 + amt * 0.09,
+        rate: (0.4 + amt * 0.22 + recipe * 0.05) * rateMul + (jitter - 0.5) * 0.1,
+        dur: recipe === 0 ? 0.18 + jitter * 0.04 : 0.11 + amt * 0.08,
+        attack: 0.004,
+        lp: 3600,
+        hp: 55,
       });
     }
 
-    // Suspension bottom-out on hard landings.
     if (recipe >= 2 && this._hits.thump) {
-      playHit(this.ctx, this._sfxIn, this._hits.thump, {
-        gain: 0.04 + amt * 0.12,
-        rate: 0.46 + amt * 0.14 + (jitter - 0.5) * 0.06,
-        dur: 0.12 + amt * 0.07,
+      playHit(this.ctx, dest, this._hits.thump, {
+        gain: 0.07 + amt * 0.12,
+        rate: 0.48 + amt * 0.16 + (jitter - 0.5) * 0.08,
+        dur: 0.09 + amt * 0.07,
+        attack: 0.002,
+        lp: 2400,
       });
     }
 
-    // Loose-surface grit / scrub (gravel bed slice or noise).
     if (grit > 0.12) {
       const gritBuf = this._hits.gravel || this._hits.noise || this._hits.overrun;
-      playHit(this.ctx, this._sfxIn, gritBuf, {
-        gain: (0.025 + grit * 0.08) * (0.65 + amt),
-        rate: gritRate + (jitter - 0.5) * 0.14,
-        dur: 0.1 + grit * 0.14 + amt * 0.07,
+      playHit(this.ctx, dest, gritBuf, {
+        gain: (0.045 + grit * 0.11) * (0.75 + amt),
+        rate: gritRate + (jitter - 0.5) * 0.18,
+        dur: 0.08 + grit * 0.12 + amt * 0.06,
+        attack: 0.005,
+        hp: 120,
+        lp: 5200,
       });
     }
 
-    // Tarmac slap / botched scrape chirp.
     if ((chirp > 0.2 || recipe === 3) && this._hits.chirp) {
-      playHit(this.ctx, this._sfxIn, this._hits.chirp, {
-        gain: 0.012 + (chirp + upset) * 0.04,
-        rate: recipe === 3 ? 0.52 + upset * 0.28 : 0.82 + amt * 0.35,
-        dur: recipe === 3 ? 0.12 + upset * 0.09 : 0.06 + amt * 0.045,
+      playHit(this.ctx, dest, this._hits.chirp, {
+        gain: 0.02 + (chirp + upset) * 0.05,
+        rate: recipe === 3 ? 0.48 + upset * 0.3 + jitter * 0.08 : 0.75 + amt * 0.38 + jitter * 0.1,
+        dur: recipe === 3 ? 0.1 + upset * 0.08 : 0.05 + amt * 0.04,
+        attack: 0.003,
+        hp: 400,
+        lp: 7000,
       });
     }
   }
@@ -790,22 +863,38 @@ export class RallyAudio {
    * @param {number} mag
    */
   wallGlance(mag) {
-    if (!this.ready) return;
+    if (!this.ready || this._workMute || this.sfxVol <= 0.001) return;
+    const dest = this._impactIn || this._sfxIn;
     const now = this.ctx.currentTime;
-    if (now - this._wallAt < 0.11) return;
+    if (now - this._wallAt < 0.1) return;
     const amt = Math.max(0, Math.min(1, mag / 14));
     if (amt < 0.08) return;
     this._wallAt = now;
-    playHit(this.ctx, this._sfxIn, this._hits.noise || this._hits.overrun, {
-      gain: 0.07 + amt * 0.2,
-      rate: 1.7 + amt * 0.5,
-      dur: 0.07 + amt * 0.07,
+    playHit(this.ctx, dest, this._hits.noise || this._hits.overrun, {
+      gain: 0.09 + amt * 0.22,
+      rate: 1.55 + amt * 0.55,
+      dur: 0.06 + amt * 0.07,
+      attack: 0.002,
+      hp: 280,
+      lp: 7800,
     });
-    playHit(this.ctx, this._sfxIn, this._hits.chirp, {
-      gain: 0.03 + amt * 0.08,
-      rate: 0.62 + amt * 0.2,
-      dur: 0.08,
+    playHit(this.ctx, dest, this._hits.chirp || this._hits.overrun, {
+      gain: 0.04 + amt * 0.1,
+      rate: 0.58 + amt * 0.22,
+      dur: 0.07 + amt * 0.04,
+      attack: 0.003,
+      hp: 200,
+      lp: 5500,
     });
+    if (amt > 0.35 && this._hits.overrun) {
+      playHit(this.ctx, dest, this._hits.overrun, {
+        gain: 0.05 + amt * 0.1,
+        rate: 0.55 + amt * 0.15,
+        dur: 0.09,
+        attack: 0.004,
+        lp: 3200,
+      });
+    }
   }
 
   /**
@@ -813,22 +902,28 @@ export class RallyAudio {
    * @param {number} mag
    */
   carBump(mag) {
-    if (!this.ready) return;
+    if (!this.ready || this._workMute || this.sfxVol <= 0.001) return;
+    const dest = this._impactIn || this._sfxIn;
     const now = this.ctx.currentTime;
-    if (now - this._carAt < 0.18) return;
+    if (now - this._carAt < 0.16) return;
     const amt = Math.max(0, Math.min(1, mag / 9));
     if (amt < 0.04) return;
     this._carAt = now;
-    playHit(this.ctx, this._sfxIn, this._hits.overrun, {
-      gain: 0.07 + amt * 0.16,
-      rate: 0.34 + amt * 0.1,
-      dur: 0.1 + amt * 0.08,
+    playHit(this.ctx, dest, this._hits.overrun, {
+      gain: 0.09 + amt * 0.18,
+      rate: 0.32 + amt * 0.12,
+      dur: 0.1 + amt * 0.09,
+      attack: 0.004,
+      lp: 2800,
+      hp: 50,
     });
     if (this._hits.thump) {
-      playHit(this.ctx, this._sfxIn, this._hits.thump, {
-        gain: 0.05 + amt * 0.1,
-        rate: 0.42 + amt * 0.06,
-        dur: 0.12 + amt * 0.06,
+      playHit(this.ctx, dest, this._hits.thump, {
+        gain: 0.07 + amt * 0.12,
+        rate: 0.4 + amt * 0.08,
+        dur: 0.11 + amt * 0.07,
+        attack: 0.003,
+        lp: 1800,
       });
     }
   }
@@ -928,4 +1023,54 @@ function makeNoiseBuffer(ctx, seconds, low = 0) {
     data[i] = (low > 0 ? acc : n) * env * env;
   }
   return buf;
+}
+
+/**
+ * Landing body noise — multi-band plant (sub thump + body + tire tick).
+ * @param {AudioContext} ctx
+ * @param {number} seconds
+ * @param {"soft"|"mid"|"hard"|"scrape"} [kind]
+ * @returns {AudioBuffer}
+ */
+function makeLandNoise(ctx, seconds, kind = "mid") {
+  const len = Math.max(64, Math.floor(ctx.sampleRate * seconds));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  const sr = ctx.sampleRate;
+  let acc = 0;
+  let acc2 = 0;
+  const low =
+    kind === "soft" ? 0.72 : kind === "hard" ? 0.28 : kind === "scrape" ? 0.12 : 0.48;
+  const tone = kind === "soft" ? 70 + Math.random() * 40 : 95 + Math.random() * 90;
+  const tickHz = 420 + Math.random() * 380;
+  const bright = kind === "scrape" ? 0.7 : kind === "hard" ? 0.55 : 0.32 + Math.random() * 0.25;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const n = i / len;
+    // Fast attack, short body — "subtle plant", not a long whoosh.
+    const env =
+      kind === "soft"
+        ? Math.pow(1 - n, 1.15) * (0.55 + 0.45 * Math.min(1, n * 18))
+        : Math.pow(1 - n, 1.45 + (kind === "hard" ? 0.35 : 0)) * (0.4 + 0.6 * Math.min(1, n * 28));
+    const white = Math.random() * 2 - 1;
+    acc = acc * low + white * (1 - low);
+    acc2 = acc2 * 0.35 + white * 0.65;
+    // Sub / body sine sweep (suspension compress).
+    const f0 = tone * (1 - n * 0.45);
+    const thump = Math.sin(2 * Math.PI * f0 * t) * Math.exp(-t * (10 + (kind === "soft" ? 4 : 14)));
+    // Contact tick at plant.
+    const tick = Math.sin(2 * Math.PI * tickHz * t) * Math.exp(-t * (28 + Math.random() * 16));
+    const grit = kind === "scrape" ? acc2 * 0.55 : acc2 * bright * 0.28;
+    data[i] = (acc * 0.42 + thump * 0.55 + tick * 0.32 + grit) * env;
+  }
+  // Soft peak normalize so recipes match loudness.
+  let peak = 0.0001;
+  for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(data[i]));
+  const norm = 0.92 / peak;
+  for (let i = 0; i < len; i++) data[i] *= norm;
+  return buf;
+}
+
+function clampInt(v, a, b) {
+  return Math.max(a, Math.min(b, v | 0));
 }

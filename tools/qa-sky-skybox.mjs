@@ -38,22 +38,26 @@ check(
   /STAGE_SKYBOX/.test(sky) &&
     /kloofendal_partly_cloudy_2k\.hdr/.test(sky) &&
     /kloppenheim_06_2k\.hdr/.test(sky) &&
-    /sunflowers_2k\.hdr/.test(sky)
+    /sunflowers_2k\.hdr/.test(sky) &&
+    /kloofendal_28d_misty_2k\.hdr/.test(sky) &&
+    /lakeside:\s*"assets\/sky\/kloofendal_28d_misty_2k\.hdr"/.test(sky)
 );
 check(
   "HDR files on disk",
   fs.existsSync(path.join(ROOT, "assets/sky/kloofendal_partly_cloudy_2k.hdr")) &&
     fs.existsSync(path.join(ROOT, "assets/sky/kloppenheim_06_2k.hdr")) &&
-    fs.existsSync(path.join(ROOT, "assets/sky/sunflowers_2k.hdr"))
+    fs.existsSync(path.join(ROOT, "assets/sky/sunflowers_2k.hdr")) &&
+    fs.existsSync(path.join(ROOT, "assets/sky/kloofendal_28d_misty_2k.hdr"))
 );
 check("ATTRIBUTION present", fs.existsSync(path.join(ROOT, "assets/sky/ATTRIBUTION.txt")));
 check("MeshBasicMaterial BackSide skybox", /MeshBasicMaterial/.test(sky) && /BackSide/.test(sky));
 check("userData.volumetricClouds false", /volumetricClouds:\s*false/.test(sky) || /volumetricClouds = false/.test(sky));
 check("setSkyQuality retained (no-op API)", /export function setSkyQuality/.test(sky));
 check("tickSky retained (no-op API)", /export function tickSky/.test(sky));
+check("sky horizon tint from LIGHTING", /horizonGlow/.test(sky) && /horizonStrength/.test(sky));
 check("game awaits/applies skybox before IBL", /applySky\(this\.sky/.test(game) && /isSkyReady/.test(game));
 check("cloud step caps are zero", /maxViewSteps:\s*0/.test(sky) && /maxCloudViewSteps:\s*0/.test(perf));
-check("sky.js?v=38+", Number((game.match(/sky\.js\?v=(\d+)/) || [])[1]) >= 38);
+check("sky.js?v=40+", Number((game.match(/sky\.js\?v=(\d+)/) || [])[1]) >= 40);
 check("boot cache ?v=549+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 549);
 check(
   "main→game lockstep",

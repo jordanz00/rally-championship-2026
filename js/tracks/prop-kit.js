@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=183";
+import { VISUAL } from "../config.js?v=201";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -294,6 +294,34 @@ export function propCharacterParts(kind) {
 export function propForestTreeParts(kind) {
   if (!Object.prototype.hasOwnProperty.call(FOREST_PARTS, kind)) return null;
   return FOREST_PARTS[kind];
+}
+
+/**
+ * Far-LOD atlas card for a near GLB tree kind.
+ * Forest pack trees map a→a … f→f; Kenney names hash onto available cards.
+ *
+ * @param {string} treeKind forest_tree_* | pine | tree_oak | …
+ * @returns {string|null} forest_card_* when the pack loaded that card
+ */
+export function forestCardForTree(treeKind) {
+  const m = String(treeKind || "").match(/forest_tree_([a-h])/i);
+  if (m) {
+    const card = `forest_card_${m[1]}`;
+    if (CACHE[card]) return card;
+  }
+  const loaded = [];
+  for (let i = 0; i < FOREST_CARD_KINDS.length; i++) {
+    const k = FOREST_CARD_KINDS[i];
+    if (CACHE[k]) loaded.push(k);
+  }
+  if (!loaded.length) return null;
+  const s = String(treeKind || "oak");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return loaded[Math.abs(h) % loaded.length];
 }
 
 /**

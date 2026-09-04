@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * qa-chrome-safe.mjs — Chrome must never be spawned under Cursor agent hosts.
+ * qa-chrome-safe.mjs — Chrome must never crash-dialog under Cursor agent hosts.
  *
- * The recurring macOS crash dialog (SIGABRT in TransformProcessType /
- * _RegisterApplication) came from tools/lib/qa-harness.mjs launching Google
- * Chrome as a child of Cursor. This gate locks the guard in place.
+ * The recurring macOS crash (SIGABRT in TransformProcessType /
+ * _RegisterApplication) came from spawning Google Chrome.app as a child of
+ * Cursor. This gate locks the guard: under Cursor, only chrome-headless-shell
+ * / CHROME_PATH non-.app binaries are allowed — never Chrome.app.
  *
  * RUN: node tools/qa-chrome-safe.mjs
  */
@@ -33,8 +34,20 @@ check(
   /export function chromeLaunchBlockedReason/.test(harness)
 );
 check(
+  "harness exports isCursorOrIdeAgentHost",
+  /export function isCursorOrIdeAgentHost/.test(harness)
+);
+check(
+  "harness exports isMacGuiBrowserApp",
+  /export function isMacGuiBrowserApp/.test(harness)
+);
+check(
   "findChrome refuses when blocked",
   /if \(chromeLaunchBlockedReason\(\)\) return null/.test(harness)
+);
+check(
+  "findChrome skips .app under Cursor",
+  /underCursor && isMacGuiBrowserApp/.test(harness)
 );
 check(
   "launchChrome throws before spawn when blocked",
@@ -46,12 +59,16 @@ check(
   /--disable-crash-reporter/.test(harness) && /--disable-breakpad/.test(harness)
 );
 check(
-  "harness exports chromeUnavailableHint",
-  /export function chromeUnavailableHint/.test(harness)
+  "SIGABRT message names TransformProcessType",
+  /TransformProcessType/.test(harness)
 );
 check(
   "opt-in override documented",
   /RALLY_QA_ALLOW_CHROME=1/.test(harness) && /RALLY_QA_NO_CHROME=1/.test(harness)
+);
+check(
+  "GUI escape hatch named (not for Cursor)",
+  /RALLY_QA_ALLOW_GUI_CHROME/.test(harness)
 );
 
 const url = pathToFileURL(path.join(ROOT, "tools/lib/qa-harness.mjs")).href;
@@ -65,15 +82,31 @@ const restoreEnv = () => {
   Object.assign(process.env, prev);
 };
 
-// Simulate Cursor agent host — must block.
+// Simulate Cursor agent host — must block without ALLOW.
 process.env.CURSOR_AGENT = "1";
 delete process.env.RALLY_QA_ALLOW_CHROME;
+delete process.env.RALLY_QA_ALLOW_GUI_CHROME;
+delete process.env.CHROME_PATH;
 const blockedAgent = mod.chromeLaunchBlockedReason();
 check("CURSOR_AGENT blocks Chrome", !!blockedAgent, blockedAgent || "not blocked");
 check("findChrome null under CURSOR_AGENT", mod.findChrome() === null);
 
+// ALLOW under Cursor must NOT unlock Google Chrome.app
 process.env.RALLY_QA_ALLOW_CHROME = "1";
-check("ALLOW overrides agent block", mod.chromeLaunchBlockedReason() === null);
+check("ALLOW clears policy block", mod.chromeLaunchBlockedReason() === null);
+check("isMacGuiBrowserApp detects Chrome.app", mod.isMacGuiBrowserApp(
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+));
+check(
+  "ALLOW under Cursor still skips Chrome.app (no shell installed)",
+  mod.findChrome() === null || !mod.isMacGuiBrowserApp(mod.findChrome()),
+  mod.findChrome() || "null (expected if no headless-shell)"
+);
+check(
+  "hint mentions TransformProcessType / headless-shell",
+  /TransformProcessType/.test(mod.chromeUnavailableHint()) &&
+    /chrome-headless-shell/.test(mod.chromeUnavailableHint())
+);
 
 // macOS: even without Cursor markers, deny unless ALLOW is set.
 delete process.env.CURSOR_AGENT;
@@ -83,19 +116,17 @@ delete process.env.COMPOSER_SESSION;
 delete process.env.VSCODE_PID;
 delete process.env.VSCODE_INJECTION;
 delete process.env.RALLY_QA_ALLOW_CHROME;
+delete process.env.RALLY_QA_FORCE_CURSOR_SAFE;
 if (process.platform === "darwin") {
   const blockedDarwin = mod.chromeLaunchBlockedReason();
   check(
-    "macOS default-denies Chrome without ALLOW",
+    "darwin default-deny without ALLOW",
     !!blockedDarwin && /RALLY_QA_ALLOW_CHROME=1/.test(blockedDarwin),
     blockedDarwin || "not blocked"
   );
-  check("findChrome null on macOS without ALLOW", mod.findChrome() === null);
-} else {
-  check("non-macOS platform noted", true, process.platform);
 }
 
 restoreEnv();
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s)" : "Chrome will not crash Cursor"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  chrome-safe gate ${fail ? `(${fail} check(s) failed)` : "locked"}`);
 process.exit(fail ? 1 : 0);

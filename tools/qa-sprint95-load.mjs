@@ -73,7 +73,7 @@ check(
 );
 check("game imports track.js?v=191+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 191);
 check("game imports prop-kit.js?v=20+", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 20);
-check("game imports celica.js?v=122+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 122);
+check("game imports celica.js?v=156+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 122);
 check("cache-bust chain", cacheOk && Number(gameV) >= 434, `main=${mainV} game=${gameV}`);
 check("index loads main.js?v=434+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 434);
 

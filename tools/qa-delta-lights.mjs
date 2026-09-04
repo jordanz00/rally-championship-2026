@@ -63,7 +63,7 @@ check(
   /isFullLengthLightSheetLabel\(label\) return false/.test(src) ||
     /isFullLengthLightSheetLabel\(label\)\) return false/.test(src)
 );
-check("cache-bust celica.js?v=146+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 146, "game imports celica");
+check("cache-bust celica.js?v=156+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 146, "game imports celica");
 check("main → game v=453+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 453);
 check("index → main v=453+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 453);
 

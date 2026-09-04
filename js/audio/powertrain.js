@@ -11,7 +11,7 @@
  * See assets/sfx/ATTRIBUTION.txt for sample licenses.
  */
 
-import { loadSample, playHit } from "./bank.js?v=2";
+import { loadSample, playHit } from "./bank.js?v=3";
 
 /** Unique recorded beds + tone profile per featured engine. */
 export const POWERTRAINS = {
@@ -30,16 +30,16 @@ export const POWERTRAINS = {
     /** High-load scream uses the load bed pitched from this RPM centre. */
     recHigh: 6200,
     rateMul: 1,
-    idleVol: 0.5,
-    loadVol: 0.88,
-    highVol: 0.62,
-    pulseVol: 0.11,
-    whistleVol: 0.07,
-    hp: 68,
-    lp: 7800,
-    body: 1.6,
-    presence: 2.2,
-    presenceHz: 2400,
+    idleVol: 0.52,
+    loadVol: 0.92,
+    highVol: 0.66,
+    pulseVol: 0.13,
+    whistleVol: 0.085,
+    hp: 62,
+    lp: 8600,
+    body: 1.85,
+    presence: 2.45,
+    presenceHz: 2350,
     spoolUp: 2.5,
     spoolDown: 6.2,
     bovDrop: 0.18,
@@ -60,16 +60,16 @@ export const POWERTRAINS = {
     recLoad: 4300,
     recHigh: 5800,
     rateMul: 0.98,
-    idleVol: 0.54,
-    loadVol: 0.92,
-    highVol: 0.55,
-    pulseVol: 0.13,
-    whistleVol: 0.055,
-    hp: 52,
-    lp: 5800,
-    body: 3.8,
-    presence: 0.55,
-    presenceHz: 1750,
+    idleVol: 0.56,
+    loadVol: 0.95,
+    highVol: 0.58,
+    pulseVol: 0.14,
+    whistleVol: 0.065,
+    hp: 48,
+    lp: 6400,
+    body: 4.0,
+    presence: 0.7,
+    presenceHz: 1700,
     spoolUp: 2.9,
     spoolDown: 7.0,
     bovDrop: 0.16,
@@ -90,16 +90,16 @@ export const POWERTRAINS = {
     recLoad: 4200,
     recHigh: 6400,
     rateMul: 1.04,
-    idleVol: 0.56,
-    loadVol: 0.84,
-    highVol: 0.72,
-    pulseVol: 0.09,
+    idleVol: 0.58,
+    loadVol: 0.88,
+    highVol: 0.76,
+    pulseVol: 0.1,
     whistleVol: 0,
-    hp: 78,
-    lp: 9200,
-    body: 0.9,
-    presence: 3.1,
-    presenceHz: 2800,
+    hp: 72,
+    lp: 9800,
+    body: 1.05,
+    presence: 3.35,
+    presenceHz: 2750,
     spoolUp: 0,
     spoolDown: 0,
     bovDrop: 1,
@@ -387,11 +387,11 @@ export class PowertrainVoice {
 
     // Soft bus compressor — recorded beds stay punchy without clipping the SFX bus.
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -18;
-    this.comp.knee.value = 12;
-    this.comp.ratio.value = 2.6;
-    this.comp.attack.value = 0.008;
-    this.comp.release.value = 0.14;
+    this.comp.threshold.value = -15;
+    this.comp.knee.value = 14;
+    this.comp.ratio.value = 2.3;
+    this.comp.attack.value = 0.006;
+    this.comp.release.value = 0.12;
 
     this.idleGain.connect(this.hp);
     this.loadGain.connect(this.hp);

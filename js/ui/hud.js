@@ -26,9 +26,13 @@ export class Hud {
     this.miniCtx = this.minimap ? this.minimap.getContext("2d") : null;
     this.fps = document.getElementById("hud-fps");
     this.distance = document.getElementById("hud-distance-val");
+    this.distanceWrap = document.getElementById("hud-distance");
+    this.surfaceRow = document.getElementById("hud-surface-row");
     this.pauseDistance = document.getElementById("pause-distance");
     this._debugHud = isDebugHud();
     if (this.fps) this.fps.hidden = !this._debugHud;
+    if (this.distanceWrap) this.distanceWrap.hidden = !this._debugHud;
+    if (this.surfaceRow) this.surfaceRow.hidden = !this._debugHud;
     this.pace = document.getElementById("hud-pace");
     this.trans = document.getElementById("hud-trans");
     this.hudRoot = document.getElementById("screen-hud");
@@ -37,10 +41,14 @@ export class Hud {
     this.clusterTrans = document.getElementById("cluster-trans");
     this.clusterSurface = document.getElementById("cluster-surface");
     this.gripFill = document.getElementById("cluster-grip-fill");
+    this.gripWrap = document.getElementById("cluster-grip");
     this.slideBadge = document.getElementById("cluster-slide");
     this.bodyFill = document.getElementById("cluster-body-fill");
     this.bodyWrap = document.getElementById("cluster-body");
     if (this.bodyWrap) this.bodyWrap.hidden = true;
+    if (this.gripWrap) this.gripWrap.hidden = !this._debugHud;
+    if (this.clusterSurface) this.clusterSurface.hidden = !this._debugHud;
+    if (this.slideBadge) this.slideBadge.hidden = true;
     this._mphShown = 0;
     this._rpmShown = 0;
     this._chase = false;
@@ -163,7 +171,7 @@ export class Hud {
       this.distance.textContent = distTxt;
     }
 
-    if (this.gripFill) {
+    if (this.gripFill && this._debugHud) {
       const grip = clamp01(s.gripUsed != null ? s.gripUsed : 0);
       const remain = 1 - grip;
       const hot = grip > 0.62 ? "1" : "0";
@@ -176,7 +184,7 @@ export class Hud {
 
     if (this.slideBadge) {
       const slide = clamp01(s.slidePct != null ? s.slidePct : 0);
-      const show = slide > 0.2 || !!s.drifting;
+      const show = this._debugHud && (slide > 0.2 || !!s.drifting);
       if (this.slideBadge.hidden === show) this.slideBadge.hidden = !show;
       const hot = slide > 0.55 ? "1" : "0";
       if (this.slideBadge.dataset.hot !== hot) this.slideBadge.dataset.hot = hot;
@@ -569,12 +577,12 @@ function clamp(v, a, b) {
 }
 
 /**
- * FPS and other developer overlays stay off during a real race.
- * Enable with `?debug=1` or localStorage `rally-debug=1`.
+ * FPS / DIST / SURFACE / GRIP / SLIDE stay off during a real race.
+ * Enable with `?debug=1`, `?dev=1`, or localStorage `rally-debug=1`.
  */
 function isDebugHud() {
   try {
-    if (typeof location !== "undefined" && /[?&]debug=1(?:&|$)/.test(location.search)) return true;
+    if (typeof location !== "undefined" && /[?&](?:debug|dev)=1(?:&|$)/.test(location.search)) return true;
     if (typeof localStorage !== "undefined" && localStorage.getItem("rally-debug") === "1") return true;
   } catch {
     /* private mode */
@@ -608,13 +616,16 @@ function waitMs(ms) {
 /** Serialise fades so title → menu → load never overlap. */
 let curtainQueue = Promise.resolve();
 
-const FADE_OUT_MS = 320;
-const FADE_IN_MS = 480;
+const FADE_OUT_MS = 280;
+const FADE_IN_MS = 420;
+/** Brief hold at full black so the swap never peeks mid-fade. */
+const FADE_HOLD_MS = 48;
 
 /**
- * Swap menus through black. `instant: true` skips the curtain (pause resume).
+ * Swap menus through black. `instant: true` skips the curtain (pause resume,
+ * reduced-motion). Default path fades out → swap → fade in.
  * @param {string} id
- * @param {{ instant?: boolean, outMs?: number, inMs?: number }} [opts]
+ * @param {{ instant?: boolean, outMs?: number, inMs?: number, holdMs?: number }} [opts]
  * @returns {Promise<void>}
  */
 export function showScreen(id, opts = {}) {
@@ -629,24 +640,30 @@ export function showScreen(id, opts = {}) {
   }
   const outMs = opts.outMs != null ? opts.outMs : FADE_OUT_MS;
   const inMs = opts.inMs != null ? opts.inMs : FADE_IN_MS;
-  curtainQueue = curtainQueue.then(() => fadeThroughBlack(id, outMs, inMs));
+  const holdMs = opts.holdMs != null ? opts.holdMs : FADE_HOLD_MS;
+  curtainQueue = curtainQueue.then(() => fadeThroughBlack(id, outMs, inMs, holdMs));
   return curtainQueue;
 }
 
 /**
+ * Fade to black, swap the active screen, then fade in.
  * @param {string} id
  * @param {number} outMs
  * @param {number} inMs
+ * @param {number} holdMs
  */
-async function fadeThroughBlack(id, outMs, inMs) {
+async function fadeThroughBlack(id, outMs, inMs, holdMs) {
   const el = curtainEl();
   if (!el) {
     applyScreen(id);
     return;
   }
   el.classList.add("is-on");
-  applyScreen(id);
+  // Retrigger CSS transition if the curtain was already mid-fade.
+  void el.offsetWidth;
   await waitMs(outMs);
+  applyScreen(id);
+  if (holdMs > 0) await waitMs(holdMs);
   el.classList.remove("is-on");
   await waitMs(inMs);
 }
@@ -661,15 +678,19 @@ const loadUi = {
 };
 
 function paintLoadBar(shown, status) {
-  const pct = shown >= 0.999 ? 100 : Math.min(99, Math.round(shown * 100));
+  const pct = shown >= 0.999 ? 100 : Math.min(99, Math.floor(shown * 100 + 1e-6));
   const bar = document.getElementById("load-bar-fill");
   const barWrap = document.getElementById("load-bar");
   const pctEl = document.getElementById("load-pct");
   const statusEl = document.getElementById("load-status");
   if (bar) bar.style.transform = `scaleX(${Math.max(0, Math.min(1, shown))})`;
   if (barWrap) barWrap.setAttribute("aria-valuenow", String(pct));
-  if (pctEl) pctEl.textContent = `${pct}%`;
-  if (status && statusEl) statusEl.textContent = status;
+  // Only rewrite % text when the integer changes — avoids flicker on lerp.
+  if (pctEl && pctEl.dataset.pct !== String(pct)) {
+    pctEl.dataset.pct = String(pct);
+    pctEl.textContent = `${pct}%`;
+  }
+  if (status && statusEl && statusEl.textContent !== status) statusEl.textContent = status;
 }
 
 function tickLoadBar(ts) {
@@ -677,26 +698,27 @@ function tickLoadBar(ts) {
   loadUi.lastTs = ts;
   const tgt = loadUi.target;
   const gap = tgt - loadUi.shown;
-  if (gap > 0.0008) {
-    const rate = gap > 0.12 ? 4.2 : gap > 0.04 ? 2.6 : 1.55;
+  if (gap > 0.0005) {
+    // Softer exponential chase — large jumps ease in instead of slamming.
+    const rate = gap > 0.22 ? 2.35 : gap > 0.1 ? 1.85 : gap > 0.035 ? 1.35 : 0.95;
     loadUi.shown += gap * (1 - Math.exp(-rate * dt));
     loadUi.stallMs = 0;
   } else {
     loadUi.stallMs += dt * 1000;
     // Main-thread stalls (terrain rows, GLB parse) used to freeze one %.
     // Trickle toward a soft cap just ahead of the last real report.
-    if (tgt < 0.992 && loadUi.stallMs > 80) {
-      const cap = Math.min(0.987, tgt + 0.055);
+    if (tgt < 0.992 && loadUi.stallMs > 90) {
+      const cap = Math.min(0.987, tgt + 0.048);
       if (loadUi.shown < cap) {
         const remain = cap - loadUi.shown;
-        const tricklePerSec = 0.022 + remain * 0.28;
+        const tricklePerSec = 0.012 + remain * 0.2;
         loadUi.shown = Math.min(cap, loadUi.shown + tricklePerSec * dt);
       }
     }
   }
   if (tgt >= 0.999) {
-    loadUi.shown += (1 - loadUi.shown) * (1 - Math.exp(-7.5 * dt));
-    if (loadUi.shown > 0.995) loadUi.shown = 1;
+    loadUi.shown += (1 - loadUi.shown) * (1 - Math.exp(-5.2 * dt));
+    if (loadUi.shown > 0.997) loadUi.shown = 1;
   }
   paintLoadBar(loadUi.shown, loadUi.status);
   const loading = document.getElementById("screen-loading");
@@ -733,7 +755,33 @@ export function setLoadingProgress(frac, status) {
   armLoadBar();
 }
 
-/** Reset monotonic high-water when a new load starts. */
+/**
+ * Wait until the painted bar has caught the final target (or timeout).
+ * Call after `setLoadingProgress(1, …)` so the reveal doesn't cut mid-fill.
+ * @param {number} [timeoutMs]
+ * @returns {Promise<void>}
+ */
+export function waitLoadingBarSettled(timeoutMs = 1200) {
+  const t0 = performance.now();
+  return new Promise((resolve) => {
+    const step = () => {
+      if (loadUi.target >= 0.999 && loadUi.shown >= 0.995) {
+        resolve();
+        return;
+      }
+      if (performance.now() - t0 > timeoutMs) {
+        paintLoadBar(1, loadUi.status);
+        resolve();
+        return;
+      }
+      armLoadBar();
+      requestAnimationFrame(step);
+    };
+    step();
+  });
+}
+
+/** Reset monotonic high-water when a new load starts; fade onto the load UI. */
 export function showLoadingScreen(opts = {}) {
   loadUi.target = 0;
   loadUi.shown = 0;
@@ -743,10 +791,16 @@ export function showLoadingScreen(opts = {}) {
   const title = document.getElementById("load-stage");
   const sub = document.getElementById("load-sub");
   const status = document.getElementById("load-status");
+  const pctEl = document.getElementById("load-pct");
   if (title) title.textContent = opts.title || "LOADING STAGE";
   if (sub) sub.textContent = opts.subtitle || "";
   if (status) status.textContent = loadUi.status;
+  if (pctEl) {
+    pctEl.dataset.pct = "0";
+    pctEl.textContent = "0%";
+  }
   paintLoadBar(0, loadUi.status);
   armLoadBar();
-  return showScreen("screen-loading", { instant: true });
+  // Soft curtain into loading — short enough that cold builds still feel snappy.
+  return showScreen("screen-loading", { outMs: 240, inMs: 360, holdMs: 40 });
 }

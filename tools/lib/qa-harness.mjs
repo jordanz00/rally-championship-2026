@@ -107,6 +107,8 @@ const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   // Prefer Chrome for Testing / headless shell when present — no GUI registration.
   path.join(os.homedir(), ".cache/puppeteer/chrome-headless-shell"),
+  path.join(os.homedir(), ".cache/puppeteer/chrome"),
+  "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -119,49 +121,125 @@ const CHROME_CANDIDATES = [
 ].filter(Boolean);
 
 /**
- * Why launching Google Chrome would abort and dump a macOS crash dialog.
- *
- * Cursor's agent (and other sandboxed IDE hosts) spawn `node` → Chrome.
- * On macOS, Chrome then calls HIServices `TransformProcessType` /
- * `_RegisterApplication` and SIGABRTs almost immediately — the crash report
- * the user keeps seeing. Static QA stays green; headed probes are for a real
- * Terminal session with an explicit opt-in.
- *
- * Opt in:  RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs
- * Opt out: RALLY_QA_NO_CHROME=1   (always skip)
- *
- * @returns {string|null} human reason, or null if launch is allowed
+ * True when this Node process is nested under Cursor / VS Code agent (not a
+ * user Terminal.app session). Spawning Google Chrome.app here SIGABRTs in
+ * HIServices `TransformProcessType` / `_RegisterApplication` and pops the
+ * macOS crash dialog the user keeps seeing.
+ * @returns {boolean}
  */
-export function chromeLaunchBlockedReason() {
-  if (process.env.RALLY_QA_ALLOW_CHROME === "1") return null;
-  if (process.env.RALLY_QA_NO_CHROME === "1") return "RALLY_QA_NO_CHROME=1";
-
-  // Explicit Cursor / Composer agent markers (any OS).
+export function isCursorOrIdeAgentHost() {
+  if (process.env.RALLY_QA_FORCE_CURSOR_SAFE === "1") return true;
   if (
     process.env.CURSOR_AGENT ||
     process.env.CURSOR_TRACE_ID ||
     process.env.CURSOR_SESSION_ID ||
     process.env.COMPOSER_SESSION
   ) {
-    return "Cursor agent host (Chrome aborts in TransformProcessType)";
+    return true;
   }
+  // Cursor Desktop / VS Code inject these into agent + task shells.
+  if (process.env.VSCODE_PID && !process.stdin.isTTY) return true;
+  if (process.env.VSCODE_INJECTION && !process.stdin.isTTY) return true;
+  if (process.env.TERM_PROGRAM === "vscode" && !process.stdin.isTTY) return true;
+  return false;
+}
 
-  // VS Code / Cursor inject these into task + agent shells.
-  const ideHost = !!(process.env.VSCODE_PID || process.env.VSCODE_INJECTION);
-  if (ideHost && !process.stdin.isTTY) {
-    return "IDE agent shell without TTY (Chrome GUI registration crashes)";
+/**
+ * macOS .app bundle Chrome — triggers GUI registration (crash under Cursor).
+ * @param {string} bin
+ * @returns {boolean}
+ */
+export function isMacGuiBrowserApp(bin) {
+  return /\.app\/Contents\/MacOS\//i.test(String(bin || ""));
+}
+
+/**
+ * Resolve a candidate path to an executable file (Puppeteer caches are dirs).
+ * @param {string} candidate
+ * @returns {string|null}
+ */
+function resolveChromeBinary(candidate) {
+  try {
+    if (!fs.existsSync(candidate)) return null;
+    const st = fs.statSync(candidate);
+    if (st.isFile()) return candidate;
+    if (!st.isDirectory()) return null;
+    // Puppeteer: ~/.cache/puppeteer/chrome-headless-shell/mac_arm-*/chrome-headless-shell
+    const names = [
+      "chrome-headless-shell",
+      "headless_shell",
+      "chrome",
+      "Google Chrome for Testing",
+      "Chromium",
+    ];
+    const stack = [candidate];
+    let guard = 0;
+    while (stack.length && guard++ < 80) {
+      const dir = stack.pop();
+      let ents;
+      try {
+        ents = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const ent of ents) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          if (ent.name === "node_modules" || ent.name === ".git") continue;
+          stack.push(full);
+          continue;
+        }
+        if (ent.isFile() && names.includes(ent.name)) {
+          try {
+            fs.accessSync(full, fs.constants.X_OK);
+            return full;
+          } catch {
+            /* not executable */
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
   }
+  return null;
+}
 
-  // macOS hard rule: never spawn Chrome without an explicit opt-in.
-  // Cursor does not always set CURSOR_* in every shell, and Chrome still
-  // SIGABRTs in HIServices TransformProcessType when nested under Cursor's
-  // node. Env sniffing alone failed — default-deny is the only reliable fix.
-  if (process.platform === "darwin") {
-    return "macOS Chrome QA requires RALLY_QA_ALLOW_CHROME=1 (prevents Cursor crash dialog)";
-  }
+/**
+ * Why launching Google Chrome would abort and dump a macOS crash dialog.
+ *
+ * Cursor's agent (and other sandboxed IDE hosts) spawn `node` → Chrome.
+ * On macOS, Chrome.app then calls HIServices `TransformProcessType` /
+ * `_RegisterApplication` and SIGABRTs almost immediately — the crash report
+ * the user keeps seeing. Static QA stays green; headed probes are for a real
+ * Terminal session with an explicit opt-in.
+ *
+ * Opt in (Terminal.app):  RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs
+ * Under Cursor: install chrome-headless-shell and set CHROME_PATH (see hint).
+ * Opt out: RALLY_QA_NO_CHROME=1
+ *
+ * @returns {string|null} human reason, or null if launch is allowed
+ */
+export function chromeLaunchBlockedReason() {
+  if (process.env.RALLY_QA_NO_CHROME === "1") return "RALLY_QA_NO_CHROME=1";
 
-  if (ideHost) {
-    return "IDE host (set RALLY_QA_ALLOW_CHROME=1 in a real terminal)";
+  const allow = process.env.RALLY_QA_ALLOW_CHROME === "1";
+  const underCursor = isCursorOrIdeAgentHost();
+
+  // Under Cursor: ALLOW unlocks headless-shell / CHROME_PATH only.
+  // Google Chrome.app stays filtered out in findChrome() — never spawn it.
+  if (!allow) {
+    if (underCursor) {
+      return "Cursor agent host (Chrome.app aborts in TransformProcessType)";
+    }
+    // macOS hard rule: never spawn Chrome without an explicit opt-in.
+    if (process.platform === "darwin") {
+      return "macOS Chrome QA requires RALLY_QA_ALLOW_CHROME=1 (prevents Cursor crash dialog)";
+    }
+    const ideHost = !!(process.env.VSCODE_PID || process.env.VSCODE_INJECTION);
+    if (ideHost) {
+      return "IDE host (set RALLY_QA_ALLOW_CHROME=1 in a real terminal)";
+    }
   }
 
   return null;
@@ -170,13 +248,18 @@ export function chromeLaunchBlockedReason() {
 /** @returns {string|null} path to a usable Chromium-family binary */
 export function findChrome() {
   if (chromeLaunchBlockedReason()) return null;
+  const underCursor = isCursorOrIdeAgentHost();
+  // Escape hatch only for debugging — re-enables the crash dialog under Cursor.
+  const allowGuiApp = process.env.RALLY_QA_ALLOW_GUI_CHROME === "1";
+
   for (const c of CHROME_CANDIDATES) {
-    try {
-      // Puppeteer cache is a directory — look for the binary inside if needed.
-      if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
-    } catch {
-      /* ignore */
+    const bin = resolveChromeBinary(c);
+    if (!bin) continue;
+    if (underCursor && isMacGuiBrowserApp(bin) && !allowGuiApp) {
+      // Never spawn Google Chrome.app under Cursor — SIGABRT + crash dialog.
+      continue;
     }
+    return bin;
   }
   return null;
 }
@@ -190,7 +273,19 @@ export function chromeUnavailableHint() {
   if (blocked) {
     return (
       `SKIP  Chrome blocked: ${blocked}. ` +
-      `Static QA only. For CDP probes: RALLY_QA_ALLOW_CHROME=1 node tools/… in Terminal.app`
+      `Static QA only. For CDP probes from Terminal.app: RALLY_QA_ALLOW_CHROME=1 node tools/…`
+    );
+  }
+  if (isCursorOrIdeAgentHost()) {
+    return (
+      "FAIL  Under Cursor, Google Chrome.app cannot be launched " +
+      "(macOS TransformProcessType → SIGABRT crash dialog).\n" +
+      "  Fix A (recommended): install a headless shell and point CHROME_PATH at it:\n" +
+      "    npx --yes @puppeteer/browsers install chrome-headless-shell@stable\n" +
+      "    export CHROME_PATH=\"$(find ~/.cache/puppeteer/chrome-headless-shell -type f -name chrome-headless-shell | head -1)\"\n" +
+      "    RALLY_QA_ALLOW_CHROME=1 node tools/qa-headed-worldvalidate.mjs\n" +
+      "  Fix B: run the same command in Terminal.app (outside Cursor) with RALLY_QA_ALLOW_CHROME=1.\n" +
+      "  Do NOT set RALLY_QA_ALLOW_GUI_CHROME=1 under Cursor — that re-enables the crash."
     );
   }
   return "FAIL  no Chrome/Chromium binary found. Set CHROME_PATH.";
@@ -223,20 +318,28 @@ export async function launchChrome(opts = {}) {
   if (blocked) {
     throw new Error(
       `Chrome launch blocked: ${blocked}. Static checks only. ` +
-        `Run headed QA from Terminal.app with RALLY_QA_ALLOW_CHROME=1.`
+        `Run CDP QA from Terminal.app with RALLY_QA_ALLOW_CHROME=1, ` +
+        `or under Cursor install chrome-headless-shell and set CHROME_PATH.`
     );
   }
 
+  const underCursor = isCursorOrIdeAgentHost();
   const bin = findChrome();
-  if (!bin) throw new Error("No Chrome/Chromium found. Set CHROME_PATH to a browser binary.");
+  if (!bin) throw new Error(chromeUnavailableHint());
+
+  // Absolute last line of defense: never spawn a macOS .app Chrome under Cursor.
+  if (underCursor && isMacGuiBrowserApp(bin) && process.env.RALLY_QA_ALLOW_GUI_CHROME !== "1") {
+    throw new Error(chromeUnavailableHint());
+  }
+
   const port = await freePort();
   const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "rally-qa-"));
   const width = opts.width || 1280;
   const height = opts.height || 720;
 
-  // Always headless unless the caller AND the environment both allow headed.
-  // Headed under Cursor is what triggers TransformProcessType → SIGABRT.
-  const wantHeadless = opts.headless !== false;
+  // Under Cursor always headless (no WindowServer / TransformProcessType).
+  // Headed is Terminal.app + real GPU only.
+  const wantHeadless = underCursor || opts.headless !== false;
 
   const args = [
     `--remote-debugging-port=${port}`,
@@ -294,9 +397,15 @@ export async function launchChrome(opts = {}) {
   let launchErr = null;
   proc.once("exit", (code, signal) => {
     if (!version) {
+      const abrt =
+        signal === "SIGABRT" || code === 134
+          ? " This is the macOS TransformProcessType / _RegisterApplication abort " +
+            "from spawning Google Chrome.app under Cursor — use chrome-headless-shell " +
+            "or Terminal.app (see chromeUnavailableHint)."
+          : "";
       launchErr = new Error(
         `Chrome exited before CDP ready (code=${code} signal=${signal}). ` +
-          `stderr: ${stderr.trim() || "(none)"}`
+          `stderr: ${stderr.trim() || "(none)"}.${abrt}`
       );
     }
   });

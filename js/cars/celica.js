@@ -19,8 +19,11 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=183";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=32";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=201";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=35";
+import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
+
+export { bindCarDirt, updateCarDirt, resetCarDirt };
 
 const GARAGE = {
   celica: {
@@ -382,6 +385,9 @@ function cloneCar(id, tint = {}) {
  */
 export function createPlayerCar(carId = "celica") {
   const root = enableCarShadows(cloneCar(carId));
+  // Visual Pass V2 — player-only clearcoat. Dirt binds after applyEnvMap so
+  // lacquer env intensity matches race IBL (see game.js _bindPlayerCarDirt).
+  dressPlayerCarRace(root);
   const glow = new THREE.PointLight(0xff2a14, 0, 6.2, 2);
   // Deliberately left visible with zero intensity. three.js skips invisible
   // lights when it builds the light list, so toggling `visible` changes
@@ -428,6 +434,7 @@ export function createTitleCar(carId = "celica") {
     }
   });
   hideHeavyInterior(clone);
+  dressTitleCarShowroom(clone);
   setCockpitView(clone, false);
   rebindClonedWheels(clone);
   clone.userData.wheels = findWheels(clone);
@@ -444,6 +451,222 @@ export function createTitleCar(carId = "celica") {
     }
   });
   return clone;
+}
+
+/**
+ * Race hero dress (Visual Pass V2): upgrade body paint Standard → Physical
+ * clearcoat via field assign (never MeshPhysicalMaterial.copy(Standard) —
+ * that crash path wiped Delta/Stratos). Glass gets a slight env bump.
+ * Materials are already instance clones from cloneCar().
+ * @param {THREE.Object3D} root
+ */
+function dressPlayerCarRace(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const list = [].concat(obj.material || []);
+    const next = list.map((src) => upgradeRacePaint(src, obj));
+    obj.material = next.length === 1 ? next[0] : next;
+  });
+}
+
+/**
+ * @param {THREE.Material} src
+ * @param {THREE.Mesh} obj
+ * @returns {THREE.Material}
+ */
+function upgradeRacePaint(src, obj) {
+  if (!src) return src;
+  const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
+  const lamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
+  const isGlass =
+    !lamp &&
+    (src.userData.kind === "glass" ||
+      !!(src.transparent && (src.opacity == null || src.opacity < 0.9)) ||
+      /glass|window|windshield|windscreen|glazing/.test(n));
+  if (isGlass) {
+    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.2);
+    src.userData.kind = "glass";
+    src.needsUpdate = true;
+    return src;
+  }
+  // Sketchfab often author paint as metalness=1. Name wins over the metalness
+  // heuristic — otherwise Car_Body_Paint never gets clearcoat. Stratos CAD
+  // exports body albedo as wire_######## + metalness 1 (gameShade stamps chrome).
+  const matName = (src.name || "").trim();
+  const isWheelMesh = /wheel|tyre|tire|rim|hub|disc/.test(n);
+  const isCadBody =
+    !isWheelMesh &&
+    (/^wire[_\d.]*$/i.test(matName) || /_lancia_stratos\d*|stratos.?body/.test(n));
+  const isPaintName =
+    isCadBody || /paint|lacquer|car_body|body_paint|carbody|shiny_painted/.test(n);
+  const isInterior =
+    /cabin|leather|cloth|suede|stitch|dial|carpet|seat|dash|interior|cockpit/.test(n);
+  const isChrome =
+    !isPaintName &&
+    (src.userData.kind === "chrome" ||
+      (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55) ||
+      (!isInterior && (src.metalness || 0) > 0.72 && !/plastic|carbon|matte|matt|rubber|tyre|tire/.test(n)));
+  const isRubber = src.userData.kind === "rubber" || (/tire|tyre|rubber/.test(n) && !/rim/.test(n));
+  if (isChrome) {
+    src.userData.kind = "chrome";
+    return src;
+  }
+  if (isRubber) {
+    src.userData.kind = "rubber";
+    return src;
+  }
+  const wantClearcoat =
+    !src.transparent &&
+    src.isMeshStandardMaterial &&
+    !src.isMeshPhysicalMaterial &&
+    !isInterior &&
+    (isPaintName ||
+      src.userData.kind === "paint" ||
+      src.metalness == null ||
+      src.metalness < 0.55);
+  if (wantClearcoat) {
+    const phys = new THREE.MeshPhysicalMaterial();
+    phys.name = src.name || "paint";
+    phys.color.copy(src.color);
+    if (src.map) phys.map = src.map;
+    if (src.normalMap) {
+      phys.normalMap = src.normalMap;
+      if (src.normalScale) phys.normalScale.copy(src.normalScale);
+    }
+    if (src.roughnessMap) phys.roughnessMap = src.roughnessMap;
+    if (src.metalnessMap) phys.metalnessMap = src.metalnessMap;
+    if (src.aoMap) {
+      phys.aoMap = src.aoMap;
+      phys.aoMapIntensity = src.aoMapIntensity != null ? src.aoMapIntensity : 1;
+    }
+    if (src.envMap) phys.envMap = src.envMap;
+    if (src.emissive) phys.emissive.copy(src.emissive);
+    if (src.emissiveMap) phys.emissiveMap = src.emissiveMap;
+    phys.emissiveIntensity = src.emissiveIntensity != null ? src.emissiveIntensity : 1;
+    // Author metalness=1 on paint is wrong for lacquer — clamp to automotive range.
+    const srcMetal = src.metalness != null ? src.metalness : 0.1;
+    phys.roughness = Math.min(Math.max(src.roughness != null ? src.roughness : 0.42, 0.18), 0.42);
+    phys.metalness = Math.min(Math.max(isPaintName ? Math.min(srcMetal, 0.22) : srcMetal, 0.08), 0.28);
+    phys.clearcoat = 1;
+    phys.clearcoatRoughness = 0.07;
+    phys.clearcoatEnvMapIntensity = 1.4;
+    phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 0.85);
+    phys.side = src.side != null ? src.side : THREE.FrontSide;
+    phys.userData.kind = "paint";
+    phys.userData.lockEnv = false;
+    phys.needsUpdate = true;
+    return phys;
+  }
+  if (src.isMeshPhysicalMaterial && !src.transparent && !isInterior) {
+    src.clearcoat = Math.max(src.clearcoat != null ? src.clearcoat : 0, 0.92);
+    src.clearcoatRoughness = Math.min(src.clearcoatRoughness != null ? src.clearcoatRoughness : 0.12, 0.1);
+    src.clearcoatEnvMapIntensity = Math.max(
+      src.clearcoatEnvMapIntensity != null ? src.clearcoatEnvMapIntensity : 1,
+      1.25
+    );
+    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 0.72);
+    src.userData.kind = src.userData.kind || "paint";
+    src.needsUpdate = true;
+  } else if (!src.transparent && (isPaintName || src.metalness == null || src.metalness < 0.55)) {
+    src.userData.kind = src.userData.kind || "paint";
+  }
+  return src;
+}
+
+/**
+ * Title-only dress: FrontSide reflective glass, clearcoat lacquer, hide cabin
+ * clutter that reads as flipped polygons through the windows. Materials are
+ * already cloned for this instance — safe to mutate.
+ * @param {THREE.Object3D} root
+ */
+function dressTitleCarShowroom(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const name = `${obj.name || ""} ${obj.parent && obj.parent.name ? obj.parent.name : ""}`.toLowerCase();
+    // Cabin clutter through translucent glass = "flipped polygon" read.
+    if (
+      /cage|roll.?cage|roll.?bar|harness|seatbelt|seat.?belt|carpet|pedal|floorpan|cabin.?floor|interior.?trim|dashboard|dash.?board|instrument|gauge|needle|steering.?wheel|steerwheel|cabin|cockpit.?mesh|seat(?!belt)/.test(
+        name
+      )
+    ) {
+      obj.visible = false;
+      obj.userData.interior = true;
+      obj.userData.interiorKeepHidden = true;
+      return;
+    }
+    const list = [].concat(obj.material || []);
+    const next = list.map((src) => {
+      if (!src) return src;
+      const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
+      const lamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
+      const isGlass =
+        !lamp &&
+        (src.userData.kind === "glass" ||
+          !!(src.transparent && (src.opacity == null || src.opacity < 0.9)) ||
+          /glass|window|windshield|windscreen|glazing/.test(n));
+      if (isGlass) {
+        src.transparent = true;
+        src.opacity = Math.min(src.opacity != null ? src.opacity : 0.38, 0.34);
+        if (src.roughness != null) src.roughness = Math.min(src.roughness, 0.03);
+        if (src.metalness != null) src.metalness = Math.min(src.metalness, 0.06);
+        src.depthWrite = false;
+        src.side = THREE.FrontSide;
+        src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.4);
+        src.userData.kind = "glass";
+        src.userData.lockEnv = false;
+        if ("forceSinglePass" in src) src.forceSinglePass = true;
+        src.needsUpdate = true;
+        return src;
+      }
+      const isChrome =
+        src.userData.kind === "chrome" ||
+        (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55);
+      const isRubber = src.userData.kind === "rubber" || (/tire|tyre|rubber/.test(n) && !/rim/.test(n));
+      // Upgrade Standard body paint → Physical clearcoat for wet showroom lacquer.
+      if (
+        !isChrome &&
+        !isRubber &&
+        !src.transparent &&
+        src.isMeshStandardMaterial &&
+        !src.isMeshPhysicalMaterial &&
+        (src.metalness == null || src.metalness < 0.55)
+      ) {
+        const phys = new THREE.MeshPhysicalMaterial();
+        phys.color.copy(src.color);
+        if (src.map) phys.map = src.map;
+        if (src.normalMap) phys.normalMap = src.normalMap;
+        if (src.roughnessMap) phys.roughnessMap = src.roughnessMap;
+        if (src.metalnessMap) phys.metalnessMap = src.metalnessMap;
+        if (src.aoMap) phys.aoMap = src.aoMap;
+        if (src.envMap) phys.envMap = src.envMap;
+        phys.roughness = Math.min(src.roughness != null ? src.roughness : 0.4, 0.2);
+        phys.metalness = Math.max(src.metalness != null ? src.metalness : 0.1, 0.14);
+        phys.clearcoat = 1;
+        phys.clearcoatRoughness = 0.04;
+        phys.clearcoatEnvMapIntensity = 1.6;
+        phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.5, 1.55);
+        phys.userData.kind = "paint";
+        phys.userData.lockEnv = false;
+        phys.needsUpdate = true;
+        return phys;
+      }
+      if (src.isMeshPhysicalMaterial && !isChrome && !isRubber && !src.transparent) {
+        src.clearcoat = Math.max(src.clearcoat != null ? src.clearcoat : 0, 1);
+        src.clearcoatRoughness = Math.min(src.clearcoatRoughness != null ? src.clearcoatRoughness : 0.1, 0.045);
+        src.clearcoatEnvMapIntensity = Math.max(
+          src.clearcoatEnvMapIntensity != null ? src.clearcoatEnvMapIntensity : 1,
+          1.55
+        );
+        src.roughness = Math.min(src.roughness != null ? src.roughness : 0.35, 0.2);
+        src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.5, 1.45);
+        src.userData.kind = src.userData.kind || "paint";
+        src.userData.lockEnv = false;
+        src.needsUpdate = true;
+      }
+      return src;
+    });
+    obj.material = next.length === 1 ? next[0] : next;
+  });
 }
 
 /**
@@ -973,6 +1196,13 @@ function isUnmergeable(obj, root, protectPov) {
   // shared with the tail — merging would bake headlights into one blob and
   // the dummy fascia boxes would no longer line up with the model.
   if (isLampMaterial(obj)) return true;
+  const mats = [].concat(obj.material || []);
+  for (let i = 0; i < mats.length; i++) {
+    const m = mats[i];
+    if (!m) continue;
+    if (m.userData && m.userData.kind === "glass") return true;
+    if (m.userData && m.userData.windshield) return true;
+  }
   for (let p = obj; p && p !== root.parent; p = p.parent) {
     const n = (p.name || "").toLowerCase();
     if (/wheel|tire|tyre|rim/.test(n)) return true;
@@ -985,8 +1215,15 @@ function isUnmergeable(obj, root, protectPov) {
     ) {
       return true;
     }
-    // POV mode reveals these individually on the player's car, so they must
-    // stay addressable there. Nobody ever sits inside a rival.
+    // Cabin / exterior glass must stay separate meshes — merging transparent
+    // panes into one AABB breaks sort order and draws flipped interior faces
+    // in the window aperture (title orbit + rivals).
+    if (
+      /windshield|windscreen|window|glazing|side.?glass|(^|[^a-z])glass([^a-z]|$)/.test(n) &&
+      !/light|lamp|lens|head|tail|brake/.test(n)
+    ) {
+      return true;
+    }
     if (
       protectPov &&
       /mirror|cockpit|cabin|interior|steering.?wheel|steer.?wheel/.test(n)
@@ -995,15 +1232,6 @@ function isUnmergeable(obj, root, protectPov) {
     }
     // Celica/Accord name the rim STEER_HR, not "steering wheel".
     if (protectPov && /steer/.test(n) && !/power.?steer|rack/.test(n)) return true;
-    // Cabin glass must stay a separate mesh so POV can hide the windows
-    // without also hiding the body they would otherwise merge into.
-    if (
-      protectPov &&
-      /windshield|windscreen|window|glazing|side.?glass/.test(n) &&
-      !/light|lamp|lens|head|tail/.test(n)
-    ) {
-      return true;
-    }
     if (p.userData && p.userData.spin) return true;
   }
   return false;
@@ -1203,10 +1431,15 @@ function shadeCarMaterial(src, obj) {
       src.envMapIntensity = 0.15;
     } else if (isGlass) {
       src.transparent = true;
-      src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.48);
-      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.1);
-      src.metalness = Math.min(src.metalness != null ? src.metalness : 0, 0.14);
-      src.envMapIntensity = 0.55;
+      src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.36);
+      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.04);
+      src.metalness = Math.min(src.metalness != null ? src.metalness : 0, 0.08);
+      src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.15);
+      src.depthWrite = false;
+      src.side = THREE.FrontSide;
+      src.userData.kind = "glass";
+      src.userData.lockEnv = false;
+      if ("forceSinglePass" in src) src.forceSinglePass = true;
     } else if (!src.isMeshPhysicalMaterial && (src.metalness || 0) < 0.4 && !transparent) {
       // Bodywork. This used to upgrade the material to MeshPhysicalMaterial for
       // a clearcoat lacquer, via `new MeshPhysicalMaterial().copy(src)` — which
@@ -2638,9 +2871,13 @@ function assembleLoftCar(spec) {
   const sideR = new THREE.Mesh(side, glassMat);
   sideR.position.x = 0.84;
   sideR.userData.windshield = true;
-  const sideL = new THREE.Mesh(side, glassMat);
+  // Mirror verts into a new geo — scale.x = -1 flips winding and looks like
+  // inverted window panes once glass is FrontSide-only.
+  const sideLGeo = side.clone();
+  sideLGeo.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1));
+  sideLGeo.computeVertexNormals();
+  const sideL = new THREE.Mesh(sideLGeo, glassMat);
   sideL.position.x = -0.84;
-  sideL.scale.x = -1;
   sideL.userData.windshield = true;
   g.add(sideR, sideL);
 
@@ -4137,7 +4374,7 @@ function isExteriorMirrorGlass(obj, hull, c) {
  */
 function buildPovHideCache(root) {
   if (!root) return;
-  const POV_HIDE_VER = 3;
+  const POV_HIDE_VER = 4;
   if (root.userData._povHideReady && root.userData._povHideVer === POV_HIDE_VER) return;
   // Re-tag so roofs marked interior still get povShell (Sprint 543).
   tagPovShell(root);
@@ -4161,7 +4398,7 @@ function buildPovHideCache(root) {
     // Interior roofs / headers that tagPovShell missed on older tags.
     if (obj.isMesh && obj.userData.interior && !inCockpitTree(obj)) {
       const n = (obj.name || "").toLowerCase();
-      if (/roof|headliner|ceiling|cabin.?top|header|canopy/.test(n)) {
+      if (/roof|headliner|ceiling|cabin.?top|header|canopy|top.?shell|cabin.?shell/.test(n)) {
         hide.push(obj);
         return;
       }
@@ -4169,9 +4406,9 @@ function buildPovHideCache(root) {
       box.getCenter(c);
       box.getSize(s);
       root.worldToLocal(c);
-      const high = c.y > hull.minY + spanY * 0.68;
-      const midCabin = c.z > hull.minZ + spanZ * 0.2 && c.z < hull.maxZ - spanZ * 0.06;
-      const slab = s.y < 0.35 && s.x > spanY * 0.4;
+      const high = c.y > hull.minY + spanY * 0.58;
+      const midCabin = c.z > hull.minZ + spanZ * 0.18 && c.z < hull.maxZ - spanZ * 0.05;
+      const slab = s.y < 0.42 && s.x > spanY * 0.35;
       if (high && midCabin && slab) hide.push(obj);
     }
   });
@@ -4226,21 +4463,21 @@ function buildPovRig(root) {
 
   // Clear the cowl without sitting inside the roof (FOV 80 + roof−0.12 clipped
   // the underside of the cabin top into the lens — Sprint 543).
-  const seated = ground + 1.18;
-  let eyeY = THREE.MathUtils.clamp(ground + 1.22, seated, roof - 0.32);
+  const seated = ground + 1.15;
+  let eyeY = THREE.MathUtils.clamp(ground + 1.18, seated, roof - 0.4);
   if (marks.dash) {
-    eyeY = Math.max(eyeY, marks.dash.maxY + 0.1);
-    eyeY = Math.min(eyeY, roof - 0.32);
+    eyeY = Math.max(eyeY, marks.dash.maxY + 0.08);
+    eyeY = Math.min(eyeY, roof - 0.4);
   }
   if (marks.wheel) {
-    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.16, seated, roof - 0.32);
+    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.14, seated, roof - 0.4);
   }
 
   let hoodY = ground + Math.min(0.92, spanY * 0.48);
   if (marks.hoodY != null) hoodY = marks.hoodY;
   const lookX = eyeX * 0.12;
   // Aim at the road ahead — keep look below the eye so the roof stays out of frame.
-  const lookY = THREE.MathUtils.clamp(hoodY + 0.18, ground + 0.85, eyeY - 0.08);
+  const lookY = THREE.MathUtils.clamp(hoodY + 0.12, ground + 0.8, eyeY - 0.12);
   const lookZ = hull.maxZ + 4.2;
   const mirrorEyeX = eyeX * 0.12;
   const mirrorEyeY = THREE.MathUtils.clamp(eyeY + 0.11, eyeY + 0.08, roof - 0.1);
@@ -4284,7 +4521,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 4;
+  const POV_RIG_VER = 5;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -4316,12 +4553,16 @@ function tagPovShell(root) {
     const n = (obj.name || "").toLowerCase();
     // Roofs / headers block the lens — tag even when also marked interior
     // (procedural loft roofs set interior=true and used to stay visible in POV).
-    if (/roof|headliner|cabin.?top|interior.?roof|ceiling|header.?rail|canopy|coupe.?top/.test(n)) {
+    if (
+      /roof|headliner|cabin.?top|interior.?roof|ceiling|header.?rail|canopy|coupe.?top|top.?panel|cabin.?shell|body.?top|hardtop|targa|sunroof|skylight/.test(
+        n
+      )
+    ) {
       obj.userData.povShell = true;
       return;
     }
     if (
-      /a.?pillar|apillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage/.test(
+      /a.?pillar|apillar|b.?pillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage|header/.test(
         n
       ) &&
       !/wheel|tire|tyre|seat|steer/.test(n)
@@ -4335,10 +4576,10 @@ function tagPovShell(root) {
     box.getSize(s);
     root.worldToLocal(c);
     const spanX = hull.maxX - hull.minX;
-    const high = c.y > hull.minY + spanY * 0.68;
-    const midCabin = c.z > hull.minZ + spanZ * 0.22 && c.z < hull.maxZ - spanZ * 0.08;
-    const wide = s.x > spanY * 0.5 && s.z > spanZ * 0.28;
-    const thinSlab = s.y < 0.38 && s.x > spanY * 0.45;
+    const high = c.y > hull.minY + spanY * 0.55;
+    const midCabin = c.z > hull.minZ + spanZ * 0.18 && c.z < hull.maxZ - spanZ * 0.06;
+    const wide = s.x > spanY * 0.45 && s.z > spanZ * 0.22;
+    const thinSlab = s.y < 0.45 && s.x > spanY * 0.4;
     if (high && midCabin && (wide || thinSlab)) {
       obj.userData.povShell = true;
       return;
@@ -4878,19 +5119,126 @@ function makeRearviewMirror() {
   return g;
 }
 
+const _povClipPt = new THREE.Vector3();
+const _povClipN = new THREE.Vector3();
+
+/**
+ * Clip body geometry above the driver's eye so a unified GLB hull cannot fill
+ * the lens even when no separate "roof" mesh exists. Planes are world-space;
+ * call updatePovRoofClip each frame while seated.
+ * @param {THREE.Object3D} root
+ * @param {boolean} on
+ * @param {THREE.WebGLRenderer} [renderer]
+ */
+export function setPovRoofClip(root, on, renderer) {
+  if (!root) return;
+  const want = !!on;
+  if (renderer) {
+    if (want) {
+      if (renderer.userData._preLocalClip == null) {
+        renderer.userData._preLocalClip = !!renderer.localClippingEnabled;
+      }
+      renderer.localClippingEnabled = true;
+    } else if (renderer.userData._preLocalClip != null) {
+      renderer.localClippingEnabled = renderer.userData._preLocalClip;
+      delete renderer.userData._preLocalClip;
+    }
+  }
+  if (root.userData._povRoofClipOn === want) {
+    if (want) updatePovRoofClip(root);
+    return;
+  }
+  root.userData._povRoofClipOn = want;
+  const rig = getPovRig(root);
+  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.14;
+  root.userData._povRoofCutY = cutY;
+  if (!root.userData._povClipPlanes) {
+    root.userData._povClipPlanes = [new THREE.Plane()];
+  }
+  const planeList = root.userData._povClipPlanes;
+
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    if (obj.userData.povHud || obj.userData.cabinFill) return;
+    if (inCockpitTree(obj)) return;
+    const n = (obj.name || "").toLowerCase();
+    if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
+
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    if (want) {
+      let owned = mats.slice();
+      let changed = false;
+      for (let i = 0; i < owned.length; i++) {
+        let mat = owned[i];
+        if (!mat || mat.userData?.sharedUi) continue;
+        if (!mat.userData._povClipOwned) {
+          mat = mat.clone();
+          mat.userData = Object.assign({}, mat.userData, { _povClipOwned: true });
+          owned[i] = mat;
+          changed = true;
+        }
+        if (!mat.userData._povClipApplied) {
+          mat.userData._preClipPlanes = mat.clippingPlanes || null;
+          mat.userData._povClipApplied = true;
+          mat.clippingPlanes = planeList;
+          mat.clipShadows = false;
+          mat.needsUpdate = true;
+        }
+      }
+      if (changed) {
+        obj.material = Array.isArray(obj.material) ? owned : owned[0];
+        if (!root.userData._povClipMeshes) root.userData._povClipMeshes = [];
+        root.userData._povClipMeshes.push(obj);
+      } else if (mats.some((m) => m && m.userData && m.userData._povClipApplied)) {
+        if (!root.userData._povClipMeshes) root.userData._povClipMeshes = [];
+        if (root.userData._povClipMeshes.indexOf(obj) < 0) root.userData._povClipMeshes.push(obj);
+      }
+    } else {
+      for (let i = 0; i < mats.length; i++) {
+        const mat = mats[i];
+        if (!mat || !mat.userData || !mat.userData._povClipApplied) continue;
+        mat.clippingPlanes = mat.userData._preClipPlanes || null;
+        delete mat.userData._preClipPlanes;
+        delete mat.userData._povClipApplied;
+        mat.needsUpdate = true;
+      }
+    }
+  });
+  if (!want) root.userData._povClipMeshes = null;
+  else updatePovRoofClip(root);
+}
+
+/**
+ * Keep the POV roof clip plane glued to the car as it moves.
+ * @param {THREE.Object3D} root
+ */
+export function updatePovRoofClip(root) {
+  if (!root || !root.userData._povRoofClipOn) return;
+  const planes = root.userData._povClipPlanes;
+  if (!planes || !planes[0]) return;
+  const cutY = root.userData._povRoofCutY != null ? root.userData._povRoofCutY : 1.2;
+  _povClipPt.set(0, cutY, 0).applyMatrix4(root.matrixWorld);
+  _povClipN.set(0, 1, 0).transformDirection(root.matrixWorld).normalize().multiplyScalar(-1);
+  planes[0].setFromNormalAndCoplanarPoint(_povClipN, _povClipPt);
+}
+
 /**
  * POV: hide glass + roof shell, show the in-car cabin and any GLB interior.
  * Chase/far: restore the body and hide the cabin.
  * @param {THREE.Object3D} root
  * @param {boolean} on
  * @param {THREE.Camera} [_camera]
+ * @param {THREE.WebGLRenderer} [renderer]
  */
-export function setCockpitView(root, on, _camera) {
+export function setCockpitView(root, on, _camera, renderer) {
   if (!root) return;
   const want = !!on;
   // Force a hide-cache rebuild when the POV shell tag set changes.
-  if (root.userData._povHideVer !== 3) root.userData._povHideReady = false;
-  if (root.userData._cockpitOn === want && root.userData._povHideReady) return;
+  if (root.userData._povHideVer !== 4) root.userData._povHideReady = false;
+  if (root.userData._cockpitOn === want && root.userData._povHideReady) {
+    setPovRoofClip(root, want, renderer);
+    return;
+  }
   root.userData._cockpitOn = want;
   buildPovHideCache(root);
   const hide = root.userData._povHide || [];
@@ -4921,6 +5269,7 @@ export function setCockpitView(root, on, _camera) {
     mir.visible = want;
     mir.scale.setScalar(1);
   }
+  setPovRoofClip(root, want, renderer);
 }
 
 /**

@@ -12,6 +12,7 @@ This repository is a browser rally racing game. For this repo, treat the AI as a
 - This rule governs work inside this repository.
 - This rule supersedes inherited workspace instructions when they refer to unrelated domains such as dashboards, advocacy copy, Power BI, healthcare, or print-report workflows.
 - Keep following general safety, security, and non-destructive editing rules, but use this file as the project-specific authority for product direction and execution.
+- **Visual / rendering constitution:** [`CURSOR_GAME_DIRECTIVE.md`](CURSOR_GAME_DIRECTIVE.md) + [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) + [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) + [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) + [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md). Do not interpret vague “make it realistic” as a rewrite or unbounded poly/texture spend. Prefer hero-zone quality, LOD/instancing/streaming, screen-space importance, and measured tiers. Engineering priority: gameplay feel → visual quality → performance → maintainability → sim complexity. Never degrade fun for sim accuracy. WebGPU preferred + WebGL2 fallback; prefer TSL for *new* shaders. Full WebGPU cutover only with explicit **Phase R.2 / Stage 2** approval. Do not create a parallel `src/**/*.ts` tree without user approval — evolve `js/`.
 
 ## Executive Chain
 
@@ -115,23 +116,27 @@ Use the real project files before making architectural claims:
 - `js/ui/hud.js` — HUD readability and driving information
 - `js/audio/engine.js` and `js/audio/codriver.js` — sound response and co-driver presentation
 - `docs/AM3-RESEARCH.md` — project source-of-truth for inspiration and handling intent
+- `docs/SEGA_RALLY_DRIVING_MODEL.md` — binding Sega Rally–inspired driving model (arcade, not sim); Physics Lab contract
+- Physics Lab: `?physlab=1` / F8 · torture track `COURSES.physlab` · do not tune by code alone
 
 Do not guess what the game uses. Inspect these files first.
 
 ## Development Priority Order
 
 1. Does the game run?
-   - Fix crashes, loading failures, broken startup, fatal runtime errors.
+ - Fix crashes, loading failures, broken startup, fatal runtime errors.
 2. Is driving fun?
-   - Fix steering, braking, acceleration, physics, camera, collisions, surface response.
+ - Fix steering, braking, acceleration, physics, camera, collisions, surface response.
 3. Does it feel fast and physical?
-   - Improve camera motion, suspension, particles, audio, speed communication.
+ - Improve camera motion, suspension, particles, audio, speed communication.
 4. Does it look believable?
-   - Improve lighting, materials, terrain, vegetation, shadows, sky, atmosphere.
+ - Improve lighting, materials, terrain, vegetation, shadows, sky, atmosphere.
 5. Does the world feel alive?
-   - Add trackside variation, landmarks, weather, signage, spectators, dynamic detail.
+ - Add trackside variation, landmarks, weather, signage, spectators, dynamic detail.
 6. Is there a reason to keep playing?
-   - Improve AI, championship flow, unlocks, difficulty, challenge structure.
+ - Improve AI, championship flow, unlocks, difficulty, challenge structure.
+
+**Framework-first (when building the engine):** follow Stages 1–19 in [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md). Prefer strengthening renderer foundation, profiler, physics lab, and shared surface data **before** more world density. After major features, run **STOP AND AUDIT** from the game directive — do not feature-churn into collapse.
 
 ## Review Gates
 
