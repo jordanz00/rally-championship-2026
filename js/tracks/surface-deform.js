@@ -20,10 +20,10 @@ export const DEFORM_SURFACES = new Set(["sand", "dirt", "mud", "gravel"]);
 
 /** Max rut depth per surface (metres) — readable Group A tire trenches. */
 const DEPTH_CAP = {
-  sand: 0.078,
-  dirt: 0.062,
-  mud: 0.095,
-  gravel: 0.042,
+  sand: 0.095,
+  dirt: 0.078,
+  mud: 0.115,
+  gravel: 0.055,
 };
 
 /**
@@ -155,8 +155,8 @@ export class WheelDeformField {
     const dirX = dx / len;
     const dirZ = dz / len;
     const pressure = Math.min(
-      1,
-      0.42 + slip * 0.48 + drift * 0.58 + Math.min(0.32, speed * 0.0038)
+      1.15,
+      0.48 + slip * 0.52 + drift * 0.62 + Math.min(0.38, speed * 0.0042)
     );
     const depth = cap * pressure;
     // Slightly coarser steps than cell*0.4 — same depth, fewer stamp kernels.

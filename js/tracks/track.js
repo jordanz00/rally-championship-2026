@@ -10,9 +10,9 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=203";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=204";
 import { roadMicroHeight } from "./road-micro.js?v=5";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=4";
+import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=5";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=6";
@@ -51,8 +51,8 @@ function terrainTileSegs() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=15";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=30";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=19";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=31";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=20";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
@@ -174,6 +174,7 @@ export class Track {
     this.fogColor = def.fog;
     this.skyColor = def.sky;
     this.offroad = def.offroad || "grass";
+    this.scenery = def.scenery || "forest";
     this.checkpoints = [];
     /** @type {TrackPoint[]} */
     this.points = [];
@@ -2429,7 +2430,7 @@ export class Track {
     // Desert: short tuck that still reaches washed bed (1.15 m) — 2.6 left a
     // see-under canyon under FrontSide asphalt; 8.2 folded onto gravel corners.
     const sl =
-      desert ? 3.8 : scenery === "mountain" ? 5.4 : scenery === "forest" ? 4.8 : scenery === "lakeside" ? 3.8 : 3.6;
+      desert ? 4.6 : scenery === "mountain" ? 6.2 : scenery === "forest" ? 5.6 : scenery === "lakeside" ? 4.4 : 4.2;
     const kerbW = 0.42;
     const chunkOf = (dist) => Math.min(this._chunkCount - 1, Math.max(0, Math.floor(dist / CHUNK_LEN)));
 
@@ -2572,7 +2573,7 @@ export class Track {
       while (dHead > Math.PI) dHead -= Math.PI * 2;
       while (dHead < -Math.PI) dHead += Math.PI * 2;
       const tightBend = Math.abs(dHead) > 0.04;
-      const skirtReach =
+      let skirtReach =
         inTunnel || inUnderpass
           ? 0.85
           : atJump
@@ -2580,12 +2581,24 @@ export class Track {
             : atLandmark
               ? 1.8
               : tightBend
-                ? 1.55
+                ? Math.max(sl, 2.4)
                 : sl;
       const skirtHex = inTunnel || inUnderpass ? 0x3a3228 : terrainHex;
       const sb = skirtBucket(chunk);
       const ey = e.y - 0.04;
       const fy = f.y - 0.04;
+      // Probe land under a mid-side sample so deep drops get a longer ramp, not a cliff.
+      if (!inTunnel && !inUnderpass && !atJump) {
+        const probeX = e.lx + p.nx * Math.max(2.2, skirtReach * 0.85);
+        const probeZ = e.lz + p.nz * Math.max(2.2, skirtReach * 0.85);
+        const gyProbe = this._groundHeight(probeX, probeZ, scenery);
+        if (Number.isFinite(gyProbe)) {
+          const dropAmt = Math.max(0, ey - gyProbe);
+          // Keep slope ≤ ~0.38 so the shoulder is driveable and readable.
+          const need = dropAmt > 0.35 ? dropAmt / 0.38 : skirtReach;
+          skirtReach = Math.min(9.5, Math.max(skirtReach, need, dropAmt > 0.55 ? 4.2 : skirtReach));
+        }
+      }
       const eLx = e.lx + p.nx * skirtReach;
       const eLz = e.lz + p.nz * skirtReach;
       const eRx = e.rx - p.nx * skirtReach;
@@ -2596,22 +2609,16 @@ export class Track {
       const fRz = f.rz - q.nz * skirtReach;
       const skirtDrop = (edgeY, lx, lz) => {
         if (inTunnel || inUnderpass || atJump) return edgeY - 0.14;
-        // Long sand skirts on tight hairpins fold into camera-blocking slabs.
         if (atLandmark) return edgeY - 0.24;
         const road = this._nearestRoad(lx, lz);
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
         if (over < ROAD_COLLIDER_CLEAR + 0.35) return edgeY - 0.38;
         const gy = this._groundHeight(lx, lz, scenery);
-        // Forest/mountain: keep the outer tuck shallow so chase cam never sees a
-        // canyon under FrontSide asphalt.
-        if (scenery === "mountain") {
-          return Math.min(Math.max(gy, edgeY - 0.42), edgeY - 0.12);
-        }
-        if (scenery === "forest") {
-          return Math.min(Math.max(gy, edgeY - 0.55), edgeY - 0.14);
-        }
-        // Outer skirt must tuck under the ribbon, never rise onto the asphalt.
-        return Math.min(gy, edgeY - 0.12);
+        if (!Number.isFinite(gy)) return edgeY - 0.2;
+        // Always tuck under asphalt; follow land so deep verges get a real shoulder ramp.
+        const tucked = Math.min(gy, edgeY - 0.1);
+        // Cap extreme one-quad cliffs — reach already grew with dropAmt above.
+        return Math.max(tucked, edgeY - Math.min(3.8, skirtReach * 0.55));
       };
       const eDropL = skirtDrop(ey, eLx, eLz);
       const eDropR = skirtDrop(ey, eRx, eRz);
@@ -3348,16 +3355,22 @@ export class Track {
       this._bumpPoses(cactiShort, 0.38);
     }
 
-    // Barriers: visual posts only. Hard colliders here used to build a sliding
-    // wall along the verge and blocked legitimate off-road runoff. Sit past
-    // the painted edge so they never occupy the racing line (hairpin opposite
-    // arm included via _ribbonClear).
+    // Barriers: visual only (no hard verge wall). Prefer Kenney CC0 barrier GLBs.
     if (def.barriers) {
-      const wallMat = new THREE.MeshLambertMaterial({
-        color: def.scenery === "mountain" ? 0x9a8a76 : 0x8a7a62,
-        flatShading: true,
-      });
-      const wallGeo = new THREE.BoxGeometry(0.35, 0.85, 2.8);
+      const useGlb =
+        (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+      const wallKind = useGlb && propGeometry("barrier_wall")
+        ? "barrier_wall"
+        : useGlb && propGeometry("road_side_barrier")
+          ? "road_side_barrier"
+          : null;
+      const wallGeo = wallKind ? propGeometry(wallKind) : new THREE.BoxGeometry(0.35, 0.85, 2.8);
+      const wallMat = wallKind
+        ? propKitMaterial(wallKind)
+        : new THREE.MeshLambertMaterial({
+            color: def.scenery === "mountain" ? 0x9a8a76 : 0x8a7a62,
+            flatShading: true,
+          });
       const posts = [];
       const barrierOff = ROAD_VERGE + 1.4;
       const barrierH = 0.85;
@@ -3373,18 +3386,17 @@ export class Track {
           const bx = p.x + p.nx * side * off;
           const bz = p.z + p.nz * side * off;
           if (!this._ribbonClear(bx, bz, 0.9)) continue;
-          // Plant to land — roadY+0.4 floated posts over washed verge beds.
           const gy = this._groundHeight(bx, bz, scenery);
           posts.push({
             x: bx,
-            y: this._plantBoxY(gy, barrierH, 0.28),
+            y: wallKind ? gy : this._plantBoxY(gy, barrierH, 0.28),
             z: bz,
             ry: p.heading,
             c: chunk,
           });
         }
       }
-      this._addInstances(wallGeo, wallMat, posts);
+      this._addInstances(wallGeo, wallMat, posts, { castShadow: true, cameraFade: true });
     }
 
     if (onProgress) {
@@ -4381,16 +4393,37 @@ export class Track {
    * @param {() => number} rng
    */
   _addDesertRoadsideGallery(rng) {
-    const postMat = worldPropMaterial({ color: 0x707880, roughness: 0.72, metalness: 0.18 });
-    const tapeRed = worldPropMaterial({ color: 0xc83028, roughness: 0.78, metalness: 0.02 });
-    const tapeWhite = worldPropMaterial({ color: 0xf0ece4, roughness: 0.76, metalness: 0.02 });
-    const tireMat = worldPropMaterial({ color: 0x181818, roughness: 0.94, metalness: 0.04 });
-    const postGeo = new THREE.CylinderGeometry(0.06, 0.08, 1.15, 6);
-    const tapeGeo = new THREE.BoxGeometry(0.14, 0.22, 1.0);
-    const tireGeo = new THREE.TorusGeometry(0.42, 0.14, 8, 16);
+    const useGlb =
+      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    const fenceGeo = useGlb && propGeometry("fence_straight");
+    const barrierGeo = useGlb && (propGeometry("barrier_red") || propGeometry("construction_barrier"));
+    const coneGeo = useGlb && propGeometry("construction_cone");
+    const pylonGeo = useGlb && propGeometry("pylon");
+
+    // Fallback primitives only when the pack failed to load.
+    const postGeo = pylonGeo || new THREE.CylinderGeometry(0.06, 0.08, 1.15, 6);
+    const tapeGeo = fenceGeo || new THREE.BoxGeometry(0.14, 0.22, 1.0);
+    const tireGeo = barrierGeo || coneGeo || new THREE.TorusGeometry(0.42, 0.14, 8, 16);
+
+    const postMat = pylonGeo
+      ? propKitMaterial("pylon")
+      : worldPropMaterial({ color: 0x707880, roughness: 0.72, metalness: 0.18 });
+    const tapeMat = fenceGeo
+      ? propKitMaterial("fence_straight")
+      : worldPropMaterial({ color: 0xc83028, roughness: 0.78, metalness: 0.02 });
+    const tireKind = barrierGeo
+      ? propGeometry("barrier_red")
+        ? "barrier_red"
+        : "construction_barrier"
+      : coneGeo
+        ? "construction_cone"
+        : null;
+    const tireMat = tireKind
+      ? propKitMaterial(tireKind)
+      : worldPropMaterial({ color: 0x181818, roughness: 0.94, metalness: 0.04 });
+
     const posts = [];
-    const redTape = [];
-    const whiteTape = [];
+    const tape = [];
     const tires = [];
 
     for (let i = 6; i < this.points.length - 4; i += 1) {
@@ -4408,7 +4441,6 @@ export class Track {
       const outside = dh > 0 ? -1 : 1;
       const chunk = this._chunkOfDist(p.dist);
       const span = landmark ? 7 : 3;
-      const step = landmark ? 1.05 : 1.35;
 
       for (let k = -span; k <= span; k++) {
         const j = Math.max(0, Math.min(this.points.length - 1, i + k));
@@ -4418,20 +4450,26 @@ export class Track {
         const bz = q.z + q.nz * outside * off;
         if (!this._ribbonClear(bx, bz, 0.85)) continue;
         const gy = this._groundHeight(bx, bz, "desert");
-        posts.push({
-          c: chunk,
-          x: bx,
-          y: gy + 0.48,
-          z: bz,
-          s: 1,
-          ry: q.heading + outside * 0.08,
-        });
-        const tapeY = gy + 0.82;
-        const alt = Math.floor((k + span) / step) % 2 === 0;
-        if (alt) {
-          redTape.push({ c: chunk, x: bx, y: tapeY, z: bz, sx: 1, sy: 1, sz: 1, ry: q.heading + outside * 0.08 });
-        } else {
-          whiteTape.push({ c: chunk, x: bx, y: tapeY, z: bz, sx: 1, sy: 1, sz: 1, ry: q.heading + outside * 0.08 });
+        const ry = q.heading + outside * 0.08;
+        if (k % 2 === 0) {
+          posts.push({
+            c: chunk,
+            x: bx,
+            y: pylonGeo ? gy : gy + 0.48,
+            z: bz,
+            s: 1,
+            ry,
+          });
+        }
+        if (Math.abs(k) % 2 === 1 || fenceGeo) {
+          tape.push({
+            c: chunk,
+            x: bx,
+            y: fenceGeo ? gy : gy + 0.82,
+            z: bz,
+            s: fenceGeo ? 0.85 : 1,
+            ry,
+          });
         }
       }
 
@@ -4444,20 +4482,19 @@ export class Track {
         for (let t = 0; t < 4; t++) {
           tires.push({
             c: chunk,
-            x: bx + q.nx * outside * (t * 0.35 - 0.5),
-            y: gy + 0.08 + t * 0.28,
-            z: bz + q.nz * outside * (t * 0.35 - 0.5),
-            s: 0.95,
+            x: bx + q.nx * outside * (t * 0.55 - 0.8),
+            y: tireKind ? gy : gy + 0.08 + t * 0.28,
+            z: bz + q.nz * outside * (t * 0.55 - 0.8),
+            s: tireKind ? 0.9 + t * 0.04 : 0.95,
             ry: q.heading + (rng() - 0.5) * 0.2,
-            rx: Math.PI * 0.5,
+            rx: tireKind ? 0 : Math.PI * 0.5,
           });
         }
       }
     }
 
     if (posts.length) this._addInstances(postGeo, postMat, posts, { castShadow: true, cameraFade: true });
-    if (redTape.length) this._addInstances(tapeGeo, tapeRed, redTape, { cameraFade: true });
-    if (whiteTape.length) this._addInstances(tapeGeo, tapeWhite, whiteTape, { cameraFade: true });
+    if (tape.length) this._addInstances(tapeGeo, tapeMat, tape, { castShadow: true, cameraFade: true });
     if (tires.length) this._addInstances(tireGeo, tireMat, tires, { castShadow: true, cameraFade: true });
   }
 
@@ -6019,32 +6056,59 @@ export class Track {
     const outer = p.width * 0.5 + 92;
     const fx = Math.sin(p.heading);
     const fz = Math.cos(p.heading);
+    const useGlb =
+      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    const benchGeo = useGlb && propGeometry("bench");
+    const railGeo = useGlb && (propGeometry("rail_double") || propGeometry("rail"));
+    const houseGeo = useGlb && propGeometry("house-alpine");
     const wood = worldPropMaterial({ color: 0x5a4030, roughness: 0.88 });
     const roof = worldPropMaterial({ color: 0x3a3028, roughness: 0.92 });
     const box = new THREE.BoxGeometry(1, 1, 1);
     const posts = [];
     const planks = [];
+    const benches = [];
+    const rails = [];
     const px = p.x + p.nx * run.side * outer;
     const pz = p.z + p.nz * run.side * outer;
     const gy = this._groundHeight(px, pz, "lakeside");
-    // Deck sits ~2 m above shore; each post samples its own land so toes bury.
     const deckY = gy + 2.05;
     for (let i = 0; i < 8; i++) {
       const along = (i - 3.5) * 2.6;
       const x = px + fx * along;
       const z = pz + fz * along;
       const pgy = this._groundHeight(x, z, "lakeside");
-      const postH = Math.max(2.1, deckY - pgy + 0.55);
-      posts.push({
-        c: chunk,
-        x,
-        y: this._plantBoxY(pgy, postH, 0.55),
-        z,
-        sx: 0.38,
-        sy: postH,
-        sz: 0.38,
-        ry: p.heading,
-      });
+      if (railGeo) {
+        rails.push({
+          c: chunk,
+          x,
+          y: pgy,
+          z,
+          s: 1.1,
+          ry: p.heading,
+        });
+      } else {
+        const postH = Math.max(2.1, deckY - pgy + 0.55);
+        posts.push({
+          c: chunk,
+          x,
+          y: this._plantBoxY(pgy, postH, 0.55),
+          z,
+          sx: 0.38,
+          sy: postH,
+          sz: 0.38,
+          ry: p.heading,
+        });
+      }
+      if (benchGeo && i % 2 === 0) {
+        benches.push({
+          c: chunk,
+          x: x + p.nx * run.side * 1.2,
+          y: deckY,
+          z: z + p.nz * run.side * 1.2,
+          s: 1.15,
+          ry: p.heading + Math.PI * 0.5 * run.side,
+        });
+      }
     }
     for (let i = 0; i < 7; i++) {
       const along = (i - 3) * 2.6;
@@ -6062,21 +6126,36 @@ export class Track {
     const houseX = px + fx * 11;
     const houseZ = pz + fz * 11;
     const houseGy = this._groundHeight(houseX, houseZ, "lakeside");
-    const houseH = 3.4;
-    planks.push({
-      c: chunk,
-      x: houseX,
-      y: this._plantBoxY(houseGy, houseH, 0.4),
-      z: houseZ,
-      sx: 5.8,
-      sy: houseH,
-      sz: 4.6,
-      ry: p.heading + 0.25,
-    });
+    if (houseGeo) {
+      this._addInstances(houseGeo, propNatureMaterial("house-alpine"), [
+        { c: chunk, x: houseX, y: houseGy, z: houseZ, s: 1, ry: p.heading + 0.25 },
+      ], { castShadow: true });
+    } else {
+      const houseH = 3.4;
+      planks.push({
+        c: chunk,
+        x: houseX,
+        y: this._plantBoxY(houseGy, houseH, 0.4),
+        z: houseZ,
+        sx: 5.8,
+        sy: houseH,
+        sz: 4.6,
+        ry: p.heading + 0.25,
+      });
+    }
+    if (rails.length && railGeo) {
+      const railKind = propGeometry("rail_double") ? "rail_double" : "rail";
+      this._addInstances(railGeo, propKitMaterial(railKind), rails, { castShadow: true });
+    }
     if (posts.length) this._addInstances(box, wood, posts, { castShadow: true });
+    if (benches.length && benchGeo) {
+      this._addInstances(benchGeo, propKitMaterial("bench"), benches, { castShadow: true });
+    }
     if (planks.length) {
-      this._addInstances(box, wood, planks.slice(0, 7), { castShadow: true });
-      this._addInstances(box, roof, planks.slice(7), { castShadow: true });
+      const deckPlanks = houseGeo ? planks : planks.slice(0, 7);
+      const roofPlanks = houseGeo ? [] : planks.slice(7);
+      if (deckPlanks.length) this._addInstances(box, wood, deckPlanks, { castShadow: true });
+      if (roofPlanks.length) this._addInstances(box, roof, roofPlanks, { castShadow: true });
     }
     const heroShadows = [];
     this._pushContactShadow(heroShadows, px, gy, pz, chunk, 5.5);
@@ -8189,6 +8268,14 @@ export class Track {
   _addGrandstandCrowds(rng, def, order, tintPalette, pushSpectator) {
     const pts = this.points;
     if (!pts || pts.length < 12) return;
+    const useGlb =
+      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    const standKind =
+      useGlb && propGeometry("grandstand_covered")
+        ? "grandstand_covered"
+        : useGlb && propGeometry("grandstand")
+          ? "grandstand"
+          : null;
     const steel = worldPropMaterial({ color: 0x3a3e46, roughness: 0.82, metalness: 0.22 });
     const deck = worldPropMaterial({ color: 0x6a5848, roughness: 0.9, metalness: 0.04 });
     const rail = worldPropMaterial({ color: 0xc8c2b4, roughness: 0.55, metalness: 0.35 });
@@ -8196,6 +8283,7 @@ export class Track {
     const decks = [];
     const frames = [];
     const rails = [];
+    const stands = [];
 
     const tips = [
       { label: "start", i: Math.min(4, pts.length - 1), alongSpan: 18, rows: 4, seats: 9 },
@@ -8216,7 +8304,52 @@ export class Track {
       const chunk = this._chunkOfDist(p.dist);
       for (const side of [-1, 1]) {
         const baseLat = p.width * 0.5 + ROAD_VERGE + 3.8;
-        // Support posts + stepped decks.
+        if (standKind) {
+          const lat = baseLat + 2.2;
+          const cx = p.x + p.nx * side * lat;
+          const cz = p.z + p.nz * side * lat;
+          const gy = this._groundHeight(cx, cz, def.scenery);
+          if (!this._ribbonClear(cx, cz, 2.2)) continue;
+          stands.push({
+            c: chunk,
+            x: cx,
+            y: gy,
+            z: cz,
+            s: tip.alongSpan / 10,
+            ry: p.heading + (side > 0 ? 0 : Math.PI),
+          });
+          for (let row = 0; row < tip.rows; row++) {
+            const seatLat = baseLat + row * 1.15 + 0.4;
+            const seatY = 0.55 + row * 0.55;
+            for (let s = 0; s < tip.seats; s++) {
+              const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
+              const along = (t - 0.5) * (tip.alongSpan - 1.2);
+              const jitter = (rng() - 0.5) * 0.22;
+              const sx = p.x + p.nx * side * seatLat + fx * along + p.nx * side * jitter;
+              const sz = p.z + p.nz * side * seatLat + fz * along + p.nz * side * jitter;
+              if (!this._ribbonClear(sx, sz, 0.7)) continue;
+              const foot = gy + seatY + 0.08;
+              const kind = order[(s * 3 + row * 5 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
+              pushSpectator({
+                x: sx,
+                y: foot,
+                z: sz,
+                s: 0.88 + rng() * 0.2,
+                ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.25,
+                c: chunk,
+                kind,
+                tint: tintPalette[(s + row * tip.seats + (side > 0 ? 11 : 0)) % tintPalette.length],
+                animStyle: (s + row * 2 + tip.i) % 5,
+                animRate: 0.75 + rng() * 0.9,
+                shadow: row === 0 && s % 3 === 0,
+                phase: (s * 1.9 + row * 2.7 + tip.i * 0.3) % (Math.PI * 2),
+              });
+            }
+          }
+          continue;
+        }
+
+        // Support posts + stepped decks (primitive fallback).
         for (let row = 0; row < tip.rows; row++) {
           const lat = baseLat + row * 1.35 + 0.4;
           const seatY = 0.55 + row * 0.62;
@@ -8224,10 +8357,8 @@ export class Track {
           const cx = p.x + p.nx * side * lat;
           const cz = p.z + p.nz * side * lat;
           const gy = this._groundHeight(cx, cz, def.scenery);
-          // Structure sits outside the ribbon — small clear radius (not along-span).
           if (!this._ribbonClear(cx, cz, 2.2)) continue;
 
-          // Deck plank (oriented along the road).
           decks.push({
             c: chunk,
             x: cx,
@@ -8238,7 +8369,6 @@ export class Track {
             sz: depth,
             ry: p.heading,
           });
-          // Rear riser wall.
           frames.push({
             c: chunk,
             x: p.x + p.nx * side * (lat + 0.55),
@@ -8249,7 +8379,6 @@ export class Track {
             sz: depth * 0.92,
             ry: p.heading,
           });
-          // Front rail on top row only.
           if (row === tip.rows - 1) {
             rails.push({
               c: chunk,
@@ -8291,6 +8420,13 @@ export class Track {
       }
     }
 
+    if (stands.length && standKind) {
+      this._addInstances(propGeometry(standKind), propKitMaterial(standKind), stands, {
+        castShadow: true,
+        receiveShadow: true,
+        cameraFade: true,
+      });
+    }
     if (decks.length) {
       this._addInstances(box, deck, decks, { castShadow: true, receiveShadow: true, cameraFade: true });
     }
@@ -8319,8 +8455,17 @@ export class Track {
           : scenery === "lakeside"
             ? "#488898"
             : "#4a7848";
+    const useGlb =
+      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    const postKind =
+      useGlb && propGeometry("road_sign_empty")
+        ? "road_sign_empty"
+        : useGlb && propGeometry("billboard_low")
+          ? "billboard_low"
+          : null;
     const steel = worldPropMaterial({ color: 0x3a3a40, roughness: 0.88 });
-    const postGeo = new THREE.BoxGeometry(1, 1, 1);
+    const postGeo = postKind ? propGeometry(postKind) : new THREE.BoxGeometry(1, 1, 1);
+    const postMat = postKind ? propKitMaterial(postKind) : steel;
     const posts = [];
     const boards = [];
     const shadows = [];
@@ -8335,17 +8480,19 @@ export class Track {
       posts.push({
         c: chunk,
         x: px,
-        y: this._plantBoxY(gy, postH, 0.35),
+        y: postKind ? gy : this._plantBoxY(gy, postH, 0.35),
         z: pz,
-        sx: 0.22,
-        sy: postH,
-        sz: 0.22,
-        ry: p.heading,
+        sx: postKind ? 1 : 0.22,
+        sy: postKind ? 1 : postH,
+        sz: postKind ? 1 : 0.22,
+        s: postKind ? 1 : undefined,
+        ry: p.heading + (side > 0 ? 0 : Math.PI),
       });
+      // Stage title board stays a canvas plane so race text stays authored.
       boards.push({
         c: chunk,
         x: px + p.nx * side * 0.08,
-        y: gy + 2.55,
+        y: gy + (postKind ? 2.35 : 2.55),
         z: pz + p.nz * side * 0.08,
         sx: w,
         sy: h,
@@ -8418,7 +8565,7 @@ export class Track {
       this.group.add(mesh);
     }
 
-    if (posts.length) this._addInstances(postGeo, steel, posts, { castShadow: true });
+    if (posts.length) this._addInstances(postGeo, postMat, posts, { castShadow: true });
     if (shadows.length) {
       this._addInstances(shadowGeometry(), shadowMaterial(), shadows, { receiveShadow: false });
     }
@@ -8465,14 +8612,71 @@ export class Track {
   _addGantry(p, label) {
     const half = p.width * 0.5;
     const postX = half + 1.8;
+    const scenery = (this._def && this._def.scenery) || "forest";
+    const useGlb =
+      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    const gantryKind =
+      useGlb && propGeometry("gantry_overhead_lights")
+        ? "gantry_overhead_lights"
+        : useGlb && propGeometry("gantry_overhead")
+          ? "gantry_overhead"
+          : null;
+    const flagKind = useGlb && propGeometry("flag_checkers") ? "flag_checkers" : null;
+
+    if (gantryKind) {
+      const gyL = this._groundHeight(p.x + p.nx * -postX, p.z + p.nz * -postX, scenery);
+      const gyR = this._groundHeight(p.x + p.nx * postX, p.z + p.nz * postX, scenery);
+      const gy = Math.min(gyL, gyR);
+      const geo = propGeometry(gantryKind);
+      const mat = propKitMaterial(gantryKind);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(p.x, gy, p.z);
+      mesh.rotation.y = p.heading;
+      // Stretch across the full road width — Kenney overhead is a unit gantry.
+      const span = (p.width + 3.6) / Math.max(1e-3, geo.boundingBox?.max.x - geo.boundingBox?.min.x || 8);
+      mesh.scale.set(Math.max(1.1, span), 1, 1);
+      mesh.castShadow = true;
+      this.group.add(mesh);
+      this._bump(p.x + p.nx * -postX, p.z + p.nz * -postX, 0.55);
+      this._bump(p.x + p.nx * postX, p.z + p.nz * postX, 0.55);
+
+      if (flagKind) {
+        for (const side of [-1, 1]) {
+          const fx = p.x + p.nx * side * (half + 0.6);
+          const fz = p.z + p.nz * side * (half + 0.6);
+          const fgy = this._groundHeight(fx, fz, scenery);
+          const flag = new THREE.Mesh(propGeometry(flagKind), propKitMaterial(flagKind));
+          flag.position.set(fx, fgy, fz);
+          flag.rotation.y = p.heading;
+          flag.scale.setScalar(0.85);
+          this.group.add(flag);
+        }
+      }
+
+      const banner = new THREE.Mesh(
+        new THREE.PlaneGeometry(p.width + 1.8, 1.45),
+        new THREE.MeshBasicMaterial({ map: bannerTexture(label), side: THREE.DoubleSide })
+      );
+      banner.position.set(p.x, p.y + 4.55, p.z);
+      banner.rotation.y = p.heading + Math.PI;
+      this.group.add(banner);
+
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(p.width * 0.96, 0.05, 1.55),
+        new THREE.MeshBasicMaterial({ map: checkStripeTexture() })
+      );
+      stripe.position.set(p.x, p.y + ROAD_DECK + 0.02, p.z);
+      stripe.rotation.y = p.heading;
+      this.group.add(stripe);
+      return;
+    }
+
     const steel = new THREE.MeshLambertMaterial({ color: 0x3a3a40, flatShading: true });
     const red = new THREE.MeshLambertMaterial({ color: 0xd4121a, flatShading: true });
-    const scenery = (this._def && this._def.scenery) || "forest";
     const beamY = p.y + 5.35;
     for (const side of [-1, 1]) {
       const px = p.x + p.nx * side * postX;
       const pz = p.z + p.nz * side * postX;
-      // Plant into verge land — roadY centres floated when bed wash sits below deck.
       const gy = this._groundHeight(px, pz, scenery);
       const bot = gy - 0.4;
       const top = beamY + 0.05;
@@ -8494,8 +8698,6 @@ export class Track {
       new THREE.MeshBasicMaterial({ map: bannerTexture(label), side: THREE.DoubleSide })
     );
     banner.position.set(p.x, p.y + 4.55, p.z);
-    // PlaneGeometry faces +Z; heading is driving direction. Add PI so the
-    // printed face points at oncoming cars (otherwise FINISH reads mirrored).
     banner.rotation.y = p.heading + Math.PI;
     this.group.add(banner);
 
@@ -8627,9 +8829,39 @@ export class Track {
     if ((onRoad || tunnel) && DEFORM_SURFACES.has(blend.id) && this.wheelDeform) {
       deform = this.wheelDeform.sample(x, z);
     }
+    const roadH = y + ROAD_DECK + micro;
+    let height = roadH;
+    // Off the painted deck: plant on the shoulder / land bed. Returning ribbon
+    // height here left cars floating above lower verges (player report).
+    if (!onRoad && !tunnel && jumpKind !== "gap") {
+      const clearance = Math.abs(lateral) - half;
+      const scenery = this.scenery || (this._def && this._def.scenery) || "forest";
+      const nearHint = {
+        dist: Math.abs(lateral),
+        roadY: y,
+        roadW: width,
+        tunnel: false,
+        along: distAlong,
+        minOver: clearance,
+        overlapBed: null,
+      };
+      let landH = this._groundHeight(x, z, scenery, nearHint);
+      if (!Number.isFinite(landH)) landH = roadH;
+      // Match visual skirt: ramp from asphalt down to land over a few metres.
+      const shoulderM = scenery === "desert" ? 4.2 : scenery === "mountain" ? 5.6 : scenery === "forest" ? 5.0 : 4.0;
+      if (clearance <= 0.02) {
+        height = roadH;
+      } else if (clearance < shoulderM) {
+        const u = clearance / shoulderM;
+        const t = u * u * (3 - 2 * u);
+        height = roadH + (landH - roadH) * t;
+      } else {
+        height = landH;
+      }
+    }
     const r = out || {};
-    r.baseHeight = y + ROAD_DECK + micro;
-    r.height = r.baseHeight + deform;
+    r.baseHeight = onRoad || tunnel || jumpKind === "gap" ? roadH : height;
+    r.height = (onRoad || tunnel) && jumpKind !== "gap" ? roadH + deform : height;
     r.normalY = 1;
     r.surface = onRoad || tunnel ? blend.id : surface;
     r.surfFrom = onRoad || tunnel ? blend.from : surface;
@@ -8651,7 +8883,7 @@ export class Track {
       (a.jumpDrop != null ? a.jumpDrop : 2.6) +
       ((b.jumpDrop != null ? b.jumpDrop : 2.6) - (a.jumpDrop != null ? a.jumpDrop : 2.6)) * t;
     r.roadMicro = micro;
-    r.wheelDeform = deform;
+    r.wheelDeform = onRoad || tunnel ? deform : 0;
     return r;
   }
 

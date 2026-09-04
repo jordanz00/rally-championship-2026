@@ -1,5 +1,38 @@
 # QA report — quality-control pass
 
+## Hotfix — off-road plant + road shoulders (2026-09-04)
+
+**Player report:** leaving the asphalt left the car floating above a lower verge.
+
+**Cause:** `Track.query` always returned ribbon deck height off-road; `_solidFloorAt` treated halfWidth+11 m as “on road” and snapped Y back up. Visual skirts were capped shallow on forest/mountain.
+
+**Shipped:** off-road query blends asphalt→`_groundHeight` across a shoulder band; solid floor uses query under the car; skirts lengthen with land drop so deep verges get a driveable ramp.
+
+**Boot:** `main.js?v=650` · `qa-validate` PASS · `qa-world-geometry` GREEN
+
+---
+## Hotfix — tire plant + soft-road ruts (2026-09-04)
+
+**Player report:** wheels float above the road; soft surfaces need visible trails and 3D deformation.
+
+**Cause:** plant used full wheel-hub bbox (rim/scrap below tread) → rubber hovered; soft marks stamped height-field/rut mesh only and gated at higher speeds.
+
+**Shipped:** plant on tire rubber + 2.8 cm sink · `TIRE_PLANT` 4 cm · tighter hover cap · deeper soft ruts · soft dusty mark quads + 3D trenches from a crawl.
+
+**Boot:** `main.js?v=647`
+
+---
+## Hotfix — medium distance + POV C-key hitch (2026-09-04)
+
+**Player report:** medium chase drifts too far back under accel; POV switch lags/hangs.
+
+**Cause:** (1) speed FOV punch + spring lag made medium feel yards farther than start-grid framing; (2) C-key toggled roof-clip materials / localClipping (shader recompile) and used a long POV blend.
+
+**Shipped:** medium `speedFovScale` 0.08 · `speedLookAheadScale` 0.2 · stiffer follow + `accelFollowBoost`; POV blend ~0.32s · early seat · clip plane parks without stripping materials; C no longer sync-compiles.
+
+**Boot:** `main.js?v=646` · `qa-sprint70-camera` PASS
+
+---
 ## Pack place punch — overtake feedback (2026-09-04)
 
 **Player moment:** Pass a rival in championship — the ordinal no longer ticks silently; `2ND!` (etc.) flashes, a soft chirp plays, and `#hud-pos` punches. Getting passed only punches the glyph (no nag banner).
@@ -49,9 +82,9 @@
 
 | Test | Result | Evidence |
 |---|---|---|
-| **A — Driver** (grip → slide → catch → accel) | **UNKNOWN** (machine armed) | `qa-am3-handling` PASS · CEO #1 dial bake `config.js?v=201` · human Lab/Desert catch drive **not run in this agent host** |
-| **B — Spectator** (car has weight without being told) | **UNKNOWN** | Chase springs + contact blobs + land kick present · camera-mass Call #2 **paused** · no headed spectator probe |
-| **C — Accountant** (no frame debt / no duplicate authority / QA stable) | **PASS** | `qa-static-audit` 10/10 · `qa-validate` PASS · `qa-world-geometry` GREEN · `qa-sprint70-camera` PASS · no Red / no new authority this session |
+| **A — Driver** (grip → slide → catch → accel) | **PASS (SHIP)** | Human CEO SHIP 2026-09-04 · machine `qa-am3-handling` PASS · CEO #1 dial bake retained |
+| **B — Spectator** (car has weight without being told) | **UNKNOWN** | Chase springs + contact blobs + land kick present · camera-mass Call #2 **unpaused for human score** · no headed spectator probe yet |
+| **C — Accountant** (no frame debt / no duplicate authority / QA stable) | **PASS** | `qa-static-audit` · `qa-validate` PASS · worldvalidate GREEN · no new authority this close |
 
 **Open debt (not closable Green without human or Red):**
 - Stale Sprint 89 table still says Jump-3 **PARTIAL** — superseded by Sprints 90–98 (doc lie, not live defect).
@@ -60,7 +93,7 @@
 
 **Intervention:** none (no FAIL to fix; UNKNOWN ≠ invent busywork).
 
-**Decision:** **Defer GREEN LIGHT** until CEO human scores A + B. Boot `main.js?v=641`.
+**Decision:** Gate **A SHIP** (human 2026-09-04). **Defer full GREEN LIGHT** until CEO scores **B**. Boot pin local `main.js?v=652`.
 
 **System map (brief):** Exceptional — none claimed without human. Strong — Vehicle/AM3 handling stack, TrackDefinition+worldvalidate, QualityManager/lock-30, championship progression. Acceptable — hero clearcoat+dirt, dust/marks, chase/POV, stage identity V3–V5. Weak — absolute 60 fps claim, intermittent stage-build wedge (Red). Broken — none proven live P0 this session (Sprint 89 Jump-3 PARTIAL is stale doc).
 
@@ -109,7 +142,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 3. 2-min Desert Act bowl: trail-brake → hold → opposite lock → crest land
 4. SHIP only if catch feels like a switch and land wants the next jump
 
-**Verdict pending human feel:** Automated gates GREEN. Recommend **SHIP** if the drive confirms; **CUT/revert config dials** if catch feels steered-for-you or land still mushy.
+**Verdict:** **SHIP** (human CEO 2026-09-04). Catch/land dial bake retained. Do not revert `config.js` CEO #1 dials without a new CUT. Next gate: Spectator **B**.
 
 ---
 

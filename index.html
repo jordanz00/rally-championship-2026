@@ -19,7 +19,7 @@
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=42" />
+    <link rel="stylesheet" href="css/game.css?v=43" />
     <!-- Splash: title bed + hero Celica so the showroom is ready on first paint. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
@@ -154,9 +154,9 @@
           <div class="sr-push-wrap">
             <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
             <p class="press sr-input-hint">ENTER · SPACE · TAP</p>
-            <p class="sr-tech-credit">
-              A browser rally racing experience
-              <span class="sr-tech-credit-line">Built with Three.js · Developed with Cursor</span>
+            <p class="sr-credit">
+              Developed by Jordan Zabady
+              <span class="sr-credit-line">AI-assisted development with Cursor</span>
             </p>
           </div>
 
@@ -181,7 +181,6 @@
         <button data-menu="timeattack">TIME ATTACK</button>
         <button data-menu="practice">PRACTICE</button>
         <button data-menu="controls">CONTROLS</button>
-        <button data-menu="tech" class="ghost tech-menu-btn">TECH</button>
       </section>
 
       <section id="screen-cars" class="screen">
@@ -326,7 +325,6 @@
         </div>
         <button data-menu="resume">RESUME</button>
         <button data-menu="retry">RESTART</button>
-        <button data-menu="tech" class="ghost">TECH</button>
         <button data-menu="title">TITLE</button>
       </section>
 
@@ -337,126 +335,7 @@
         <p id="result-copy" hidden aria-hidden="true"></p>
         <button id="result-next" data-menu="next">NEXT STAGE</button>
         <button data-menu="retry">RETRY</button>
-        <button data-menu="tech" class="ghost">HOW IT WAS BUILT</button>
         <button data-menu="title">TITLE</button>
-      </section>
-
-      <section id="screen-tech" class="screen tech-screen">
-        <div class="tech-shell">
-          <p class="tech-eyebrow">BEHIND THE BUILD</p>
-          <h2>TECHNOLOGY</h2>
-          <p class="tech-lead">
-            A serious browser-based rally game — then the surprise:
-            <strong>developed with Cursor</strong> + Three.js.
-          </p>
-
-          <nav class="tech-nav" aria-label="Technology chapters">
-            <button type="button" class="tech-chip" data-tech-chapter="architecture">Architecture</button>
-            <button type="button" class="tech-chip" data-tech-chapter="how">How it was built</button>
-            <button type="button" class="tech-chip" data-tech-chapter="timeline">Timeline</button>
-            <button type="button" class="tech-chip" data-tech-chapter="live">Live engine</button>
-            <button type="button" class="tech-chip" data-tech-chapter="credits">Credits</button>
-          </nav>
-
-          <div class="tech-stats" aria-label="Repository statistics">
-            <div class="tech-stat"><strong id="tech-stat-stages">—</strong><span>Stages</span></div>
-            <div class="tech-stat"><strong id="tech-stat-cars">—</strong><span>Cars</span></div>
-            <div class="tech-stat"><strong id="tech-stat-js">—</strong><span>JS modules</span></div>
-            <div class="tech-stat"><strong id="tech-stat-loc">—</strong><span>Lines of code</span></div>
-            <div class="tech-stat"><strong id="tech-stat-qa">—</strong><span>QA scripts</span></div>
-            <div class="tech-stat"><strong id="tech-stat-glb">—</strong><span>GLB assets</span></div>
-            <div class="tech-stat"><strong id="tech-stat-gfx">—</strong><span>Gfx modules</span></div>
-            <div class="tech-stat"><strong id="tech-stat-phys">—</strong><span>Physics modules</span></div>
-            <div class="tech-stat"><strong id="tech-stat-track">—</strong><span>Track modules</span></div>
-            <div class="tech-stat"><strong id="tech-stat-audio">—</strong><span>Audio modules</span></div>
-            <div class="tech-stat"><strong id="tech-stat-docs">—</strong><span>Design docs</span></div>
-          </div>
-          <p class="tech-stat-note">Stats measured from this repository (<span id="tech-stat-generated">—</span>). Nothing invented.</p>
-
-          <article id="tech-chapter-architecture" class="tech-chapter">
-            <h3>01 — Architecture</h3>
-            <p class="tech-copy">Shared systems power every stage. Art direction differs; technology does not.</p>
-            <ul class="tech-grid">
-              <li><span>Engine</span><strong>Three.js</strong></li>
-              <li><span>Development</span><strong>Cursor</strong></li>
-              <li><span>Platform</span><strong>Web browser</strong></li>
-              <li><span>Renderer</span><strong id="tech-renderer-live">WebGL</strong></li>
-              <li><span>Assets</span><strong>GLB · LOD · instancing</strong></li>
-              <li><span>World</span><strong>Track · terrain · clearance · validation</strong></li>
-              <li><span>Vehicle</span><strong>Rally physics · suspension · surfaces · VFX</strong></li>
-              <li><span>Presentation</span><strong>PBR · lighting · atmosphere · camera</strong></li>
-              <li><span>Performance</span><strong>LOD · culling · dyn-res · profiling</strong></li>
-            </ul>
-          </article>
-
-          <article id="tech-chapter-how" class="tech-chapter">
-            <h3>02 — How Cursor built this</h3>
-            <p class="tech-copy">
-              Designed, directed and developed with Cursor — not “autonomously generated.”
-              Specialist workflows own rendering, materials, world generation, physics, VFX, camera, performance and validation.
-            </p>
-            <div class="tech-columns">
-              <div>
-                <h4>Art direction lanes</h4>
-                <p>Rendering · Materials · Lighting · Environment · Vehicle · VFX · Camera</p>
-              </div>
-              <div>
-                <h4>Engineering lanes</h4>
-                <p>Physics · Track · World gen · Performance · Validation · Integration</p>
-              </div>
-            </div>
-            <ol class="tech-story">
-              <li><strong>The car</strong> — suspension, surface grip, drifting, tire FX, physical camera.</li>
-              <li><strong>The world</strong> — authored stages, terrain conformity, placement, LOD, geometry validation.</li>
-              <li><strong>The renderer</strong> — PBR, lighting, atmosphere, shadows, post — browser real-time.</li>
-              <li><strong>The engineering</strong> — shared systems, automated QA, performance budgets, multi-agent roles.</li>
-              <li><strong>The tool</strong> — Developed with Cursor.</li>
-            </ol>
-          </article>
-
-          <article id="tech-chapter-timeline" class="tech-chapter">
-            <h3>03 — Development timeline</h3>
-            <ol class="tech-timeline">
-              <li><span>Foundation</span> Renderer · vehicle · track</li>
-              <li><span>World</span> Terrain · environment · vegetation</li>
-              <li><span>Rally systems</span> Physics · drifting · surfaces</li>
-              <li><span>AAA presentation</span> Materials · lighting · VFX · camera</li>
-              <li><span>Optimization</span> LOD · instancing · compression · culling</li>
-              <li><span>Polish</span> Visual QA · performance · UI · audio</li>
-            </ol>
-          </article>
-
-          <article id="tech-chapter-live" class="tech-chapter">
-            <h3>04 — Live technical mode</h3>
-            <p class="tech-copy">
-              This is a real interactive engine — not a fake visual demo.
-              Enable on-screen metrics (FPS, frame time, draw calls, triangles, resolution).
-            </p>
-            <button type="button" id="tech-enable-live" class="tech-action">ENABLE LIVE ENGINE METRICS</button>
-            <p id="tech-live-tip" class="tech-live-tip" hidden></p>
-            <p class="tech-copy tech-hint">
-              Tip: append <code>?debug=1</code> to the URL anytime. Geometry validation:
-              <code>?worldvalidate=1</code> after a stage loads.
-            </p>
-          </article>
-
-          <article id="tech-chapter-credits" class="tech-chapter">
-            <h3>05 — Credits</h3>
-            <p class="tech-credits-block">
-              <strong>Rally Championship 2026</strong><br />
-              Designed, directed and developed with Cursor + Three.js<br />
-              Web-based interactive experience
-            </p>
-            <p class="tech-copy">
-              Hierarchy: the rally game first · the technology second · Built with Cursor third.
-            </p>
-            <p class="tech-share">
-              Share line: AAA-inspired browser rally · 4 stages · rally physics · PBR · real-time in your browser · Cursor + Three.js
-            </p>
-          </article>
-
-          <button type="button" id="tech-back">BACK</button>
-        </div>
       </section>
 
       <section id="screen-loading" class="screen" aria-live="polite" aria-busy="true">
@@ -476,6 +355,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=645"></script>
+    <script type="module" src="js/main.js?v=653"></script>
   </body>
 </html>

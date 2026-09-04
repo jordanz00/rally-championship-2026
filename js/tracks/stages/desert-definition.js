@@ -8,7 +8,7 @@
  * Geometry fidelity: piece lengths/radii/angles match pre-migration COURSES.desert.
  */
 
-import { COLORS } from "../../config.js?v=203";
+import { COLORS } from "../../config.js?v=204";
 
 export const DESERT_DEFINITION = {
   id: "desert",

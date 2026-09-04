@@ -48,7 +48,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=203";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=204";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=51";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=47";
 import { JumpModel } from "./jump.js?v=25";
@@ -82,15 +82,15 @@ const RELAX_KAPPA = 0.28;
 const RELAX_LEN = 0.078;
 /**
  * Tiny embed through the visual tarmac (query.height already includes ROAD_DECK).
- * Origin is the contact patch after plantOnContactPatch — 9 cm used to bury
- * the sidewalls. A centimetre is enough to kill z-fight without a sink.
+ * Origin is the contact patch after plantOnContactPatch. A few centimetres kills
+ * the “floating tires” read without burying the sidewalls.
  */
-const TIRE_PLANT = 0.022;
+const TIRE_PLANT = 0.04;
 /**
  * Grounded contact may chatter a few centimetres but must never hover
  * above the painted deck after a jump (filter lag used to leave a gap).
  */
-const GROUND_HOVER_MAX = 0.05;
+const GROUND_HOVER_MAX = 0.022;
 /**
  * Metres a tire may sit into a solid deck before we lift. Anything more is a
  * clip-through — jump landings used to bury the rear by half a metre.
@@ -1567,11 +1567,28 @@ export class Vehicle {
     const padY =
       this._landPadArmed && Number.isFinite(this._landPadY) ? this._landPadY : null;
 
+    // Prefer the height under THIS XZ (shoulder/land when off the asphalt).
+    // The old halfWidth+11 m "on road" test planted cars on ribbon height while
+    // they were visually on a lower verge — classic floating-offroad bug.
+    if (typeof track.query === "function") {
+      const q = track.query(x, z, this._qFloor || (this._qFloor = {}), hint);
+      if (q && Number.isFinite(q.height) && q.jumpKind !== "gap") {
+        const half = (q.width || 12) * 0.5;
+        const lat = Math.abs(q.lateral || 0);
+        if (lat <= half + 12) {
+          return q.height - TIRE_PLANT;
+        }
+      } else if (q && q.jumpKind === "gap" && padY != null) {
+        return padY;
+      }
+    }
+
     const here = track.sample(hint, this._sReacq);
     if (here && Number.isFinite(here.y)) {
       const dist = Math.hypot(x - here.x, z - here.z);
-      const on = dist <= (here.width || 12) * 0.5 + 11;
-      if (on) {
+      const half = (here.width || 12) * 0.5;
+      // Painted deck only — not the wide shoulder band.
+      if (dist <= half + 0.45) {
         if (here.jumpKind === "gap") {
           if (padY != null) return padY;
         } else {
@@ -1601,8 +1618,8 @@ export class Vehicle {
       }
       const dist = Math.hypot(x - p.x, z - p.z);
       if (p.tunnel && dist > 14) continue;
-      const slack = (p.width || 12) * 0.5 + 11;
-      if (dist > slack) continue;
+      const half = (p.width || 12) * 0.5;
+      if (dist > half + 0.45) continue;
       const along = Math.abs(d - hint);
       if (dist < bestDist - 0.35 || (Math.abs(dist - bestDist) < 0.35 && along < bestAlong)) {
         bestDist = dist;
@@ -1616,12 +1633,7 @@ export class Vehicle {
     const atCar = Math.hypot(x - this.position.x, z - this.position.z) < 0.08;
     if (atCar) {
       const q = this._q;
-      if (
-        q &&
-        q.jumpKind !== "gap" &&
-        Number.isFinite(q.height) &&
-        this._xzOnRibbon(track, q.dist, 8).on
-      ) {
+      if (q && q.jumpKind !== "gap" && Number.isFinite(q.height)) {
         return q.height - TIRE_PLANT;
       }
       const ax = this._axles;
@@ -1634,9 +1646,6 @@ export class Vehicle {
           h = Math.max(h, ax.rear.height - TIRE_PLANT);
         }
         if (h !== -Infinity) return h;
-      }
-      if (q && Number.isFinite(q.height) && q.jumpKind !== "gap") {
-        return q.height - TIRE_PLANT;
       }
       if (Number.isFinite(this._goodY) && this._goodY > 0.05) return this._goodY;
     }
