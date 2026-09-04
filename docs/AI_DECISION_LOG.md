@@ -4,6 +4,18 @@ Short institutional log. Newest first. Format: DATE / DECISION / WHY / REJECTED 
 
 ---
 
+### 2026-09-04 — Pack place punch (race excitement + boot graph repair)
+
+| | |
+|--|--|
+| **DECISION** | Complete overtake feedback end-to-end: `RACE_FEEDBACK` export, `placeOrdinal` + `punchPlace`, `audio.placeGain`, CSS punches. Gain → `2ND!` flash + chirp; drop → glyph only. |
+| **WHY** | Highest player-visible gap with high confidence while Driver A / camera-mass frozen. Also repairs incomplete graph in `f0e5283` where `game.js` already imported `RACE_FEEDBACK` / `placeOrdinal` without matching exports — boot-breaking module load. |
+| **REJECTED** | Retuning ARCADE_ASSIST/JUMP; camera-mass Call #2; restoring `#hud-pace` / SLIDE badge; AI skill churn; Desert vertical slice this pass. |
+| **RESULT** | Shipped in working tree. Boot `main.js?v=645`. `qa-static-audit` PASS · `qa-validate` PASS · `qa-sprint33-drift` PASS. Cursor headed Chrome not asserted. |
+| **NEXT** | Human Driver A still the ONE feel objective. Hard-refresh `?v=645` — confirm title boots and first championship pass flashes place without post-GO spam. |
+
+---
+
 ### 2026-09-04 — Stop unbounded autonomy; institutional knowledge
 
 | | |

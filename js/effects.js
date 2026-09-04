@@ -15,7 +15,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=51";
-import { VISUAL } from "./config.js?v=201";
+import { VISUAL } from "./config.js?v=203";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 
 /**

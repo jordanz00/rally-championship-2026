@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=201";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=203";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=35";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 

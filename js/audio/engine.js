@@ -641,6 +641,22 @@ export class RallyAudio {
   }
 
   /**
+   * Soft chirp when the player gains a race place — lighter than checkpoint.
+   * @param {number} place 1-based pack position after the pass
+   */
+  placeGain(place) {
+    if (!this.ready) return;
+    const p = Math.max(1, place | 0);
+    const rate = p === 1 ? 1.38 : p === 2 ? 1.24 : p === 3 ? 1.14 : 1.06;
+    const gain = p <= 3 ? 0.2 : 0.12;
+    playHit(this.ctx, this._sfxIn, this._hits.chirp || this._hits.checkpoint, {
+      gain,
+      rate,
+      dur: 0.16,
+    });
+  }
+
+  /**
    * Recorded co-driver 3 / 2 / 1, locked to the HUD number. Quiet beep under
    * the line so a late decode still reads as a start light.
    * @param {number} n
