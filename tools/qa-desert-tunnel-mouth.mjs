@@ -75,11 +75,34 @@ check(
   "legacy box pieces closed the mouth"
 );
 check(
+  "short mouth throat only (no deep solid fill into the bore)",
+  /throatLen:\s*9/.test(trackSrc) &&
+    /faceDepth:\s*16/.test(trackSrc) &&
+    !/throatLen:\s*32/.test(trackSrc),
+  "long throat + plug sealed the driveable tunnel"
+);
+check(
+  "no solid far-end bore plug in the drive path",
+  !/portalBorePlug/.test(portalSlice) &&
+    !/tunnelBorePlugGeometry\(clearHalfW/.test(
+      trackSrc.slice(trackSrc.indexOf("function tunnelBoreAssembly"), trackSrc.indexOf("function batterTunnelMountainFace"))
+    ),
+  "solid plug filled the tunnel interior"
+);
+check(
   "thick sealed bore tube (no sky-through rings)",
   /tunnelBoreAssembly/.test(trackSrc) &&
-    /tunnelThickBoreTubeGeometry/.test(trackSrc) &&
-    /portalBorePlug/.test(trackSrc),
-  "bore must be a thick tube with far plug"
+    /tunnelThickBoreTubeGeometry/.test(trackSrc),
+  "bore must be a thick hollow tube at the mouth"
+);
+check(
+  "lining arch hole uses open crown winding (not solid fill)",
+  /archHollow\|/.test(trackSrc) ||
+    (/function tunnelPortalArchGeometry[\s\S]*?absarc\(0, spring, clearHalfW, 0, Math\.PI, false\)/.test(trackSrc) &&
+      !/absarc\(0, spring - 0\.04, clearHalfW, Math\.PI, 0, true\)/.test(
+        trackSrc.slice(trackSrc.indexOf("function tunnelPortalArchGeometry"), trackSrc.indexOf("function tunnelBoreStriationMap"))
+      )),
+  "inverted lining hole filled every bore segment solid"
 );
 check(
   "portal openH scales with road width",
@@ -153,9 +176,26 @@ check(
   "full-width cap box floated above mouth"
 );
 check(
-  "clearHalfW includes verge",
-  /clearHalfW:\s*half \+ ROAD_VERGE/.test(trackSrc),
-  "narrow clearHalfW left rock in the drive path"
+  "clearHalfW matches lining (not stadium verge hole)",
+  /clearHalfW:\s*half \+ ROAD_COLLIDER_CLEAR/.test(trackSrc),
+  "wide ROAD_VERGE clear left rock/env in the mouth then snapped to a tight tube"
+);
+check(
+  "mouth drive floor narrower than hillside plant zone",
+  /driveHalfLat/.test(trackSrc) && /_tunnelMouthHit/.test(trackSrc),
+  "oversized prism planted hillsides in a trench"
+);
+check(
+  "props refuse tunnel mouth corridor",
+  /_ribbonClear[\s\S]{0,220}_inTunnelMouthCorridor/.test(trackSrc),
+  "rocks/dunes must not sit in the horseshoe"
+);
+check(
+  "bore lining never camera-fades",
+  /tunnelBoreLining[\s\S]{0,80}cameraFade\s*=\s*false|cameraFade\s*=\s*false[\s\S]{0,80}tunnelBoreLining/.test(
+    trackSrc
+  ) || /bores\.userData\.cameraFade\s*=\s*false/.test(trackSrc),
+  "fading the lining reads as clipping through rock"
 );
 check(
   "mouth land prisms registered early",
@@ -180,9 +220,11 @@ check(
   "hillside wings must not survive inside bore"
 );
 check(
-  "interior lining inset from mouths",
-  /wallStart/.test(trackSrc) && /start \+ 8/.test(trackSrc),
-  "lining must leave mouths to the cut face / throat"
+  "interior lining meets mouth throat (continuous bore)",
+  /wallStart/.test(trackSrc) && /start \+ 2/.test(trackSrc) && !/start \+ 8/.test(
+    trackSrc.slice(trackSrc.indexOf("_addTunnelRun"), trackSrc.indexOf("_tunnelShade"))
+  ),
+  "lining must start immediately after the mouth — start+8 left a sky gap"
 );
 check(
   "entrance + exit collider scrub widened",

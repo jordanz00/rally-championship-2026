@@ -50,6 +50,12 @@ check("low speed understeer (easy control)", /speedUndersteer:\s*0\.001/.test(co
 check("arcade tireYawBlend (not drunk IV)", /tireYawBlend:\s*0\.[234]/.test(config));
 check("gear-drift kick armed", /gearDriftKick:\s*0\.[5-9]/.test(config) && /gearDriftYaw:\s*0\.[7-9]/.test(config));
 check("brakeSteerYaw scale", /brakeSteerYaw:\s*1\.[4-9]/.test(config));
+check("ARCADE_ASSIST dial present", /export const ARCADE_ASSIST/.test(config));
+check("yaw assist modest", /yawAssist:\s*0\.[12]\d/.test(config));
+check("tire slide soft (sweet spot)", /tireSlideSoft:\s*[12]\.\d+/.test(config));
+check("recovery assist armed", /recoveryAssist:\s*0\.[4-9]/.test(config));
+check("physSnapshot for debug", /physSnapshot\(/.test(vehicle));
+check("ARCADE_ASSIST wired in vehicle", /ARCADE_ASSIST/.test(vehicle));
 check("quick novice steer rack", /steerSpeed:\s*11[89]|steerSpeed:\s*1[2-9]\d/.test(config));
 check("_applyGearDriftKick shared", /_applyGearDriftKick\(/.test(vehicle));
 check("manual uses gear-drift kick", /_shiftGearbox[\s\S]{0,800}?_applyGearDriftKick/.test(vehicle));
@@ -61,8 +67,8 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 const vehV = Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1] || 0);
 const cfgV = Number((game.match(/config\.js\?v=(\d+)/) || [])[1] || 0);
 check("cache-bust ≥581", cacheOk && Number(gameV) >= 581, `game=${gameV} main=${mainV}`);
-check("vehicle.js cache ≥125", vehV >= 125, `v=${vehV}`);
-check("config.js cache ≥183", cfgV >= 183, `v=${cfgV}`);
+check("vehicle.js cache ≥129", vehV >= 129, `v=${vehV}`);
+check("config.js cache ≥191", cfgV >= 191, `v=${cfgV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "AM3 handling armed"}`);
 process.exit(fail ? 1 : 0);

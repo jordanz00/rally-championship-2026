@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { RGBELoader } from "../vendor/RGBELoader.js";
-import { VISUAL } from "./config.js?v=183";
+import { VISUAL } from "./config.js?v=201";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
@@ -38,7 +38,8 @@ export const STAGE_SKYBOX = {
   desert: "assets/sky/kloofendal_partly_cloudy_2k.hdr",
   forest: "assets/sky/sunflowers_2k.hdr",
   mountain: "assets/sky/kloppenheim_06_2k.hdr",
-  lakeside: "assets/sky/sunflowers_2k.hdr",
+  // Cool misty pure-sky — lakeside must not share forest's sunflower field.
+  lakeside: "assets/sky/kloofendal_28d_misty_2k.hdr",
   title: "assets/sky/kloofendal_partly_cloudy_2k.hdr",
 };
 
@@ -169,10 +170,18 @@ export function applySky(mesh, L, stageId) {
     mesh.userData.sunDir.set(L.sunDir[0], L.sunDir[1], L.sunDir[2]).normalize();
   }
 
-  // Exposure-ish: MeshBasicMaterial has no exposure; ACES on the renderer grades HDR.
-  // Optional slight color tint from stage fog toward horizon readability is skipped —
-  // photo skyboxes already match the stage intent.
-  void VISUAL;
+  // Soft sky↔haze seam: photo HDR stays dominant; slight lean toward stage
+  // horizon glow / fog so the dome does not hard-cut against land dissolve.
+  if (L && mesh.material.color) {
+    const hs = Math.max(0, Math.min(1, Number(L.horizonStrength) || 0));
+    const amount = Math.min(0.26, hs * 0.42 + (Number(L.dustStrength) || 0) * 0.18);
+    const tint = new THREE.Color(0xffffff);
+    if (L.horizonGlow != null) tint.lerp(new THREE.Color(L.horizonGlow), amount);
+    if (L.fog != null) tint.lerp(new THREE.Color(L.fog), amount * 0.4);
+    mesh.material.color.copy(tint);
+  } else {
+    void VISUAL;
+  }
 
   return loadSkyboxTexture(url)
     .then((tex) => {

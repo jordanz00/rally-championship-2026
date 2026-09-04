@@ -38,22 +38,27 @@ check("_noteLandImpact arms lastImpact before air clear", /_noteLandImpact\(/.te
 check("floor-clamp land path notes impact", /solidDeck\) \{[\s\S]*?_noteLandImpact\(impact\)/.test(vehicle));
 check("pad-hit land path notes impact", /hitting\) \{[\s\S]*?_noteLandImpact\(impact\)/.test(vehicle));
 check("axle-lift land path notes impact", /!this\.onGround && anySolid[\s\S]*?_noteLandImpact\(impact\)/.test(vehicle));
-check("authentic gate skips micro-airs", /air >= 0\.1/.test(vehicle) && /_landPadArmed \|\| this\._jumpPhase/.test(vehicle));
+check("authentic gate skips micro-airs", /air >= 0\.085/.test(vehicle) && /_landPadArmed \|\| this\._jumpPhase/.test(vehicle));
 
-check("landThump exists and uses playHit", /landThump\(impact/.test(engine) && /playHit\(this\.ctx, this\._sfxIn/.test(engine));
+check("landThump exists and uses playHit", /landThump\(impact/.test(engine) && /playHit\(this\.ctx/.test(engine));
 check("landThump respects mute / sfxVol / bus", /_workMute/.test(engine.match(/landThump[\s\S]*?wallGlance/)?.[0] || "") && /sfxVol <= 0\.001/.test(engine.match(/landThump[\s\S]*?wallGlance/)?.[0] || ""));
 check("landThump varies recipe by impact / upset / surface", /_landRecipe/.test(engine) && /surfaceId/.test(engine.match(/landThump[\s\S]*?wallGlance/)?.[0] || ""));
 check("land layers use bank overrun/gravel/chirp", /_hits\.overrun/.test(engine) && /_hits\.gravel/.test(engine) && /_hits\.chirp/.test(engine));
 check("procedural land buffers boot", /landSoft/.test(engine) && /landHard/.test(engine));
+check("impact bus bypasses cabin high-pass", /_impactIn/.test(engine) && /impactHp/.test(engine));
+check("makeLandNoise multi-band plant", /makeLandNoise\(ctx,\s*[\d.]+,\s*"soft"\)/.test(engine) || /kind === "soft"/.test(engine));
 
 check("game fires landThump once per armed impact", /landThump\(landHit/.test(game) || /audio\.landThump\(/.test(game));
-check("game gates on airTime or hard impact", /landAir > 0\.08 \|\| landHit > 2\.8/.test(game) || /lastAirTime > 0\.08/.test(game));
+check(
+  "game gates on airTime or hard impact",
+  /landAir > 0\.05 \|\| landHit > 1\.8/.test(game) || /landAir > 0\.055/.test(game)
+);
 check("game clears land telemetry after play", /lastImpact = 0/.test(game) && /lastAirTime = 0/.test(game));
 
 check("ATTRIBUTION documents land thumps", /Jump landing thumps/.test(attr));
-check("engine.js cache-bust v>=57", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 57);
-check("vehicle.js cache-bust v>=111", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 111);
-check("cache-bust chain v>=511", cacheOk && Number(gameV) >= 511 && Number(mainV) >= 511, `main=${mainV} game=${gameV}`);
+check("engine.js cache-bust v>=65", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 65);
+check("vehicle.js cache-bust v>=132", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 132);
+check("cache-bust chain v>=639", cacheOk && Number(gameV) >= 639 && Number(mainV) >= 639, `main=${mainV} game=${gameV}`);
 
 console.log(fail ? `\nFAIL  ${fail} check(s)` : "\nPASS");
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts } from "./prop-kit.js?v=29";
+import { propCharacterParts } from "./prop-kit.js?v=30";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -353,6 +353,9 @@ export class CrowdField {
    */
   update(timeSec, playerPos, playerSpeed) {
     if (!this._bodies.length || !playerPos) return;
+    // ~20 Hz cheer animation — same look, far fewer instanceMatrix uploads.
+    if (this._lastAnim != null && timeSec - this._lastAnim < 0.048) return;
+    this._lastAnim = timeSec;
 
     for (let b = 0; b < this._bodies.length; b++) {
       const body = this._bodies[b];

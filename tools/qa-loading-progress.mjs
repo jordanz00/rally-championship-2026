@@ -46,21 +46,25 @@ async function main() {
   await waitFor(cdp, `return window.game ? 1 : null;`, { timeout: 15000, label: "game boot" });
   await pressKey(cdp, "Enter");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? 1 : null;`, {
-    timeout: 5000, label: "SELECT MODE"
+    timeout: 8000, label: "SELECT MODE"
   });
+  // Curtain in-fade finishes ~400ms after the screen id flips — click after it.
+  await sleep(500);
   await clickSelector(cdp, "[data-menu='practice']", "PRACTICE");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? 1 : null;`, {
-    timeout: 5000, label: "cars"
+    timeout: 10000, label: "cars"
   });
   await waitFor(
     cdp,
     `const b = document.querySelector("[data-car='celica']"); return b && !b.disabled ? 1 : null;`,
     { timeout: 20000, label: "celica ready" }
   );
+  await sleep(400);
   await clickSelector(cdp, "[data-car='celica']", "CELICA");
   await waitFor(cdp, `const el = document.querySelector(".screen.active"); return el && el.id === "screen-courses" ? 1 : null;`, {
     timeout: 20000, label: "courses"
   });
+  await sleep(400);
 
   // Drop idle preload so we measure a cold build (accurate % path), not the cache jump.
   await evaluate(cdp, `

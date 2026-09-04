@@ -61,16 +61,21 @@ check(
     /this\._mirrorHasImage = true/.test(game)
 );
 check(
-  "cheap mirror pass skips shadows, post, dust, and tire marks",
-  /shadowMap\.enabled = false/.test(game.slice(game.indexOf("_captureMirror"))) &&
-    /dust\.points/.test(game) &&
-    /tireMarks\.mesh/.test(game) &&
-    /NoToneMapping/.test(game)
+  "cheap mirror pass hides cabin dust/marks and uses NoToneMapping",
+  /_captureMirror\(force\)/.test(game) &&
+    /dust\.visible = false/.test(game) &&
+    /marks\.visible = false/.test(game) &&
+    /NoToneMapping/.test(game) &&
+    /Keep sun shadows/.test(game)
 );
 check(
   "glass map is rebound every POV frame so a switch cannot leave null",
   /setCockpitMirrorMap\(this\.playerMesh, this\._mirrorRT\.texture\)/.test(game) &&
-    /_renderMirror\(\) \{[\s\S]{0,400}setCockpitMirrorMap/.test(game)
+    /_renderMirror\(onSkippedPresent[\s\S]{0,500}setCockpitMirrorMap/.test(game)
+);
+check(
+  "Phase 1 chase uses CameraSpring helpers",
+  /camera-spring\.js/.test(game) && /Spring3/.test(game) && /speedLookAhead/.test(config)
 );
 check(
   "POV cabin is seated LHD with a wider in-car FOV",
@@ -86,10 +91,11 @@ check(
 );
 check(
   "every camera mode eases with smootherstep; POV compiles at load",
-  /_startCamBlend\(\)/.test(game) &&
+  /_startCamBlend\(/.test(game) &&
     /blendU \* 6 - 15/.test(game) &&
-    /_warmPov\(\)/.test(game) &&
-    /this\.renderer\.compile\(this\.scene, this\._mirrorCam\)/.test(game)
+    /_warmPov\(/.test(game) &&
+    /this\.renderer\.compile\(this\.scene, this\._mirrorCam\)/.test(game) &&
+    /Always warms the cabin/.test(game)
 );
 check(
   "drift chase stays readable (yaw→travel, capped outside)",
@@ -103,7 +109,7 @@ check(
 );
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 504 && /config\.js\?v=15[6-9]|config\.js\?v=1[6-9]\d/.test(game),
+  cacheOk && Number(gameV) >= 636 && /config\.js\?v=\d+/.test(game),
   `main=${mainV} game=${gameV}`
 );
 

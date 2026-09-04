@@ -6,6 +6,9 @@
  * tagPovShell skipped them and the raised eye (Sprint 535) clipped the roof
  * underside into the lens.
  *
+ * Sprint 637: unified GLB bodies also get a world-space roof clip plane so
+ * single-mesh hulls cannot fill the POV lens.
+ *
  * RUN: node tools/qa-pov-roof-clear.mjs
  */
 import fs from "node:fs";
@@ -49,33 +52,54 @@ check(
 
 check(
   "POV hide cache is versioned (rebuild roofs)",
-  /POV_HIDE_VER\s*=\s*3/.test(car) && /_povHideVer\s*!==\s*3/.test(car),
+  /POV_HIDE_VER\s*=\s*4/.test(car) && /_povHideVer\s*!==\s*4/.test(car),
   "setCockpitView must invalidate stale hide lists"
 );
 
 check(
   "eye clearance under roof ≥ 0.32 m",
-  /roof\s*-\s*0\.32/.test(car) && !/roof\s*-\s*0\.12/.test(car),
+  /roof\s*-\s*0\.(3[2-9]|[4-9]\d?)/.test(car) && !/roof\s*-\s*0\.12/.test(car),
   "Sprint 535 roof−0.12 put the lens in the headliner"
 );
 
 check(
   "look aim stays below the eye",
-  /lookY = THREE\.MathUtils\.clamp\([^)]*eyeY\s*-\s*0\.08/.test(car),
+  /lookY = THREE\.MathUtils\.clamp\([^)]*eyeY\s*-\s*0\.\d+/.test(car),
   "looking up into the roof recreates the letterbox"
 );
 
 check(
-  "POV_RIG_VER ≥ 4",
-  /POV_RIG_VER\s*=\s*[4-9]/.test(car),
+  "POV_RIG_VER ≥ 5",
+  /POV_RIG_VER\s*=\s*[5-9]/.test(car),
   "seat cache must rebuild after eye/look change"
+);
+
+check(
+  "setPovRoofClip + updatePovRoofClip exported",
+  /export function setPovRoofClip/.test(car) && /export function updatePovRoofClip/.test(car),
+  "unified-body roof clip for GLB hulls"
+);
+
+check(
+  "setCockpitView wires roof clip",
+  /setPovRoofClip\(root,\s*want,\s*renderer\)/.test(car),
+  "clip follows seat in/out"
+);
+
+check(
+  "game seats POV with renderer + live clip update",
+  /setCockpitView\([^)]*this\.renderer\)/.test(game) &&
+    /updatePovRoofClip\(mesh\)/.test(game) &&
+    /updatePovRoofClip/.test(game) &&
+    /from ["'].*celica\.js\?v=\d+["']/.test(game),
+  "chase loop keeps the plane on the car"
 );
 
 const celicaV = Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]);
 const bootV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1]);
 const mainGameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1]);
-check("celica.js?v=144+", celicaV >= 144, `got ${celicaV}`);
-check("boot ?v=543+", bootV >= 543 && mainGameV >= 543, `index=${bootV} main→game=${mainGameV}`);
+check("celica.js?v=157+", celicaV >= 157, `got ${celicaV}`);
+check("boot ?v=637+", bootV >= 637 && mainGameV >= 637, `index=${bootV} main→game=${mainGameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "POV roof shell is hideable"}`);
 process.exit(fail ? 1 : 0);

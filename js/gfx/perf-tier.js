@@ -15,6 +15,9 @@
  * computed and then thrown away. Low-end machines therefore ran slow instead
  * of degrading. Tiers now carry the caps and game.js is the only applier.
  *
+ * Soft fill-rate under `GFX.lockRaceQuality` is owned by QualityManager
+ * (render scale only) — this ladder must not mid-race dump post/sky/shadow.
+ *
  * POWER BI MAPPING: none
  */
 
@@ -105,7 +108,7 @@ function buildLadder(gfx) {
       post: "high",
       sky: "high",
       mirrorEvery: 2,
-      shadowEvery: 3,
+      shadowEvery: 1,
     },
     {
       id: "medium",
@@ -115,7 +118,7 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "medium",
       mirrorEvery: 4,
-      shadowEvery: 4,
+      shadowEvery: 1,
     },
     {
       id: "low",
@@ -125,7 +128,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "low",
       mirrorEvery: 4,
-      shadowEvery: 4,
+      shadowEvery: 2,
     },
     {
       id: "min",
@@ -135,7 +138,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "min",
       mirrorEvery: 6,
-      shadowEvery: 8,
+      shadowEvery: 4,
     },
   ];
 }

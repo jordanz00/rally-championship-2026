@@ -12,7 +12,8 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=183";
+import { VISUAL } from "../config.js?v=201";
+import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -174,7 +175,10 @@ export class PhotoRealPost {
    */
   constructor(renderer) {
     this.renderer = renderer;
-    this.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
+    this.enabled =
+      RENDER_CAPS.glslCustom &&
+      VISUAL.postFx !== false &&
+      (VISUAL.tier || 0) >= 9;
     /** @type {'high'|'balanced'|'low'} */
     this.quality = "balanced";
     /** @type {THREE.WebGLRenderTarget|null} */
@@ -278,7 +282,10 @@ export class PhotoRealPost {
    * @param {object} [L]
    */
   syncFromConfig(L = null) {
-    this.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
+    this.enabled =
+      RENDER_CAPS.glslCustom &&
+      VISUAL.postFx !== false &&
+      (VISUAL.tier || 0) >= 9;
     const u = this._compMat.uniforms;
     u.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
     u.aoStrength.value = VISUAL.aoStrength ?? 0.55;

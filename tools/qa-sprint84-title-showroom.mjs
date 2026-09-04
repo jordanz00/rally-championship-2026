@@ -81,8 +81,11 @@ check(
 check("sphere dune blobs are gone", !/for \(let i = 0; i < 18; i\+\+\)/.test(game) && /loadTitleRocks/.test(game) && /rock_largeA/.test(game));
 check("title rocks use HD albedo + bury", /styleTitleRock/.test(game) && /bury:/.test(game) && /rock_diff\.jpg/.test(read("js/tracks/prop-kit.js")));
 check("title rocks are clustered / tilted", /sx:/.test(game) && /rx:/.test(game) && /styleTitleRock\(node/.test(game));
-check("PRESS START does not rebuild the showroom", /_idleWarmAfterTitle/.test(game) && /instant: true/.test(game));
-check("car and course menus swap instantly", /showScreen\("screen-courses", \{ instant: true \}/.test(game) && /showScreen\("screen-cars", \{ instant: true \}/.test(game));
+check("PRESS START does not rebuild the showroom", /_idleWarmAfterTitle/.test(game));
+check(
+  "car and course menus fade through the curtain",
+  /showScreen\("screen-courses", \{ outMs:/.test(game) && /showScreen\("screen-cars", \{ outMs:/.test(game)
+);
 
 const hero = path.join(ROOT, "assets/celica/gt4.glb");
 const lod = path.join(ROOT, "assets/celica/rival.glb");

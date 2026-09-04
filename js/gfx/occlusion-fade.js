@@ -11,7 +11,8 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=183";
+import { VISUAL } from "../config.js?v=201";
+import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const UNIFORMS = {
   uOccludeCam: { value: new THREE.Vector3() },
@@ -69,6 +70,8 @@ const FRAG_INJECT = /* glsl */ `
 export function patchCameraFadeMaterial(mat) {
   if (!mat) return mat;
   if (mat.userData.camFadePatched) return mat;
+  // Phase R: onBeforeCompile GLSL inject is WebGL-only.
+  if (!RENDER_CAPS.glslCustom) return mat;
   mat.userData.camFadePatched = true;
   // Keep opaque sorting / depth. Soft alpha overdraw was the tunnel hitch.
   mat.transparent = false;
@@ -153,6 +156,9 @@ function armPackSeeThrough(root) {
       if (!src) return src;
       const mat = src.clone();
       mat.userData = Object.assign({}, src.userData, { shared: false, packFadeClone: true });
+      // Stay transparent once armed — opacity/depthWrite only, never mid-race
+      // shader recompiles from toggling transparent.
+      mat.transparent = true;
       slots.push({
         mat,
         baseOp: src.opacity != null ? src.opacity : 1,
@@ -184,11 +190,6 @@ function applyPackSeeThrough(root, amount) {
       continue;
     }
     const nextOp = s.baseOp * (1 - amount * (1 - PACK_GHOST_OP));
-    const trans = ghost || s.wasTrans;
-    if (mat.transparent !== trans) {
-      mat.transparent = trans;
-      mat.needsUpdate = true;
-    }
     mat.opacity = nextOp;
     mat.depthWrite = !ghost && s.depthWrite;
   }

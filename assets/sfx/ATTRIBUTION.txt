@@ -53,10 +53,11 @@ Crowd beds (clap / cheer)
   Doppler (playbackRate from closing speed). Not licensed from Sega.
 
 Jump landing thumps
-  Procedural noise buffers in js/audio/engine.js (landSoft / landMid /
-  landHard / landScrape) layered with existing bank samples: overrun.mp3,
-  road-gravel.mp3, skid-asphalt.mp3 (same licenses as above). No new
-  third-party land binary was added.
+  Procedural multi-band plant buffers in js/audio/engine.js (soft / mid /
+  hard / scrape: sub thump + body + tire tick) layered with bank samples
+  overrun.mp3, road-gravel.mp3, skid-asphalt.mp3. One-shots play on a
+  dedicated impact bus that bypasses the cabin surface high-pass so the
+  plant stays audible. No new third-party land binary was added.
 
 Powertrain live layers (no new binary)
   js/audio/powertrain.js layers the licensed idle/load/lift beds with a

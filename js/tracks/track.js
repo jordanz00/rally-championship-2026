@@ -3,14 +3,19 @@
  *
  * WHO THIS IS FOR: course authors and the physics query.
  * WHAT IT DOES: turns piece lists into a sampled racing line, road mesh, and height/surface queries.
- * HOW IT CONNECTS: courses.js supplies pieces; Vehicle and AI call Track.query / sample.
+ * HOW IT CONNECTS: courses.js supplies pieces (or TrackDefinition compiles);
+ *   Vehicle and AI call Track.query / sample. Clearance + tunnel volumes +
+ *   WorldGeometryValidator live in sibling modules (docs/WORLD_GEOMETRY_RULES.md).
  */
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=183";
-import { roadMicroHeight } from "./road-micro.js?v=4";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=2";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=201";
+import { roadMicroHeight } from "./road-micro.js?v=5";
+import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=4";
+import { shoulderPadForScenery } from "./track-clearance.js?v=2";
+import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
+import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=6";
 import {
   shadowGeometry,
   shadowMaterial,
@@ -28,7 +33,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=32";
+} from "../gfx/pbr.js?v=35";
 
 /** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {
@@ -45,9 +50,9 @@ function terrainTileSegs() {
   return STREAM.terrainTileSegs;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=13";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, FOREST_TREE_KINDS, FOREST_CARD_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=29";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=18";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=15";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=30";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=19";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
@@ -217,6 +222,12 @@ export class Track {
     this._def = def;
     // Known before skirts / height samples so trench width matches the land grid.
     this._landCell = STREAM.terrainTileSize / terrainTileSegs();
+    /** Settle-tier LOD band (metres) — set at build from STREAM.lodNearByTier. */
+    this._lodNear =
+      STREAM._activeLodNear != null ? STREAM._activeLodNear : STREAM.lodNear;
+    /** Far-plant density scale (0.5–1) — set at build from STREAM.vegScaleByTier. */
+    this._vegScale =
+      STREAM._activeVegScale != null ? STREAM._activeVegScale : 1;
     if (!opts.deferBuild) this._build(def.pieces, def);
   }
 
@@ -275,6 +286,8 @@ export class Track {
     upgradeWorldMaterials(this.group);
     armCameraFade(this.group);
     this._initWheelDeform();
+    this._tunnelVolumes = buildTunnelVolumes(this.points);
+    runWorldGeometryValidation(this, { scenery: def.scenery });
 
     report(1, "Course ready");
     await tick();
@@ -764,9 +777,10 @@ export class Track {
       }
 
       const lod = obj.userData.lod;
-      if ((lod === "hi" || lod === "lo") && STREAM.lodNear) {
+      const lodNear = this._lodNear != null ? this._lodNear : STREAM.lodNear;
+      if ((lod === "hi" || lod === "lo") && lodNear) {
         let band = obj.userData.lodBand || 0;
-        const near = STREAM.lodNear;
+        const near = lodNear;
         const hyst = STREAM.lodHysteresis || 22;
         if (dNear < near) band = 1;
         else if (dNear > near + hyst) band = 2;
@@ -774,6 +788,15 @@ export class Track {
         obj.userData.lodBand = band;
         if (lod === "hi") want = want && band !== 2;
         else want = want && band === 2;
+      }
+
+      // V5 denser veg — drop mid/far nature from shadow atlas (keep near contact).
+      if (obj.userData.wantCastShadow) {
+        const scrub = !!obj.userData.scrubShadow;
+        const far = scrub
+          ? STREAM.scrubShadowFar ?? 28
+          : STREAM.natureShadowFar ?? 48;
+        obj.castShadow = !!(want && dNear < far);
       }
 
       const wasVisible = obj.visible;
@@ -1015,9 +1038,9 @@ export class Track {
    * @returns {number}
    */
   _landPad(scenery) {
-    if (scenery === "forest" || scenery === "mountain") return 640;
-    if (scenery === "desert") return 520;
-    if (scenery === "lakeside") return 420;
+    if (scenery === "forest" || scenery === "mountain") return 720;
+    if (scenery === "desert") return 640;
+    if (scenery === "lakeside") return 560;
     return STREAM.terrainTileSize * 0.5;
   }
 
@@ -1157,10 +1180,10 @@ export class Track {
     const pos = geo.attributes.position;
     const colors = [];
     const c = new THREE.Color();
-    // Mountain: tuck just under the deck (1.2 m left a visible canyon under
-    // FrontSide ribbon). Still ≤ −0.2 vs roadY for qa-mountain-start.
+    // Keep land tight under ribbons so FrontSide decks do not float over a
+    // deep canyon. Forest was the worst offender (1.15 m void under the paint).
     const bedDrop =
-      scenery === "mountain" ? 0.28 : scenery === "forest" ? 1.15 : desert ? 1.15 : 0.9;
+      scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : desert ? 0.95 : 0.55;
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + cx;
@@ -1181,8 +1204,9 @@ export class Track {
         // looping back would otherwise fill the hole with a sand slab.
         const floor = this._underpassFloorY(x, z);
         h = floor != null ? floor : near.roadY - 0.14;
-      } else if (desert && this._inTunnelMouthCorridor(x, z)) {
-        // Mouth apron / bore cone — never let ridge verts cover the opening.
+      } else if (this._inTunnelMouthCorridor(x, z)) {
+        // ALL stages with tunnels: mouth apron / bore cone must stay a floor.
+        // Desert-only gating left Mountain land tris folding through the aperture.
         const mouth = this._tunnelMouthFloorY(x, z);
         h = mouth != null ? mouth : near.roadY - bedDrop;
       } else if (desert && this._inTunnelCutAt(x, z)) {
@@ -1199,6 +1223,18 @@ export class Track {
         if (near.dist < chase) {
           const bed = near.roadY - bedDrop;
           h = Math.min(h, bed + Math.max(0, near.dist - this._trenchWidth(near.roadW)) * 0.015);
+        }
+        // TunnelVolume lateral keep-out: Mountain has no Desert quarry ridge —
+        // land inside exclusion must stay a floor so tris cannot fold into the bore.
+        const vol =
+          this._tunnelVolumes && this._tunnelVolumes.length
+            ? tunnelAtDist(this._tunnelVolumes, near.along || 0, 10)
+            : null;
+        if (vol) {
+          const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
+          if (over < tunnelExclusionHalf(vol)) {
+            h = Math.min(h, near.roadY - bedDrop);
+          }
         }
       } else if (scenery === "forest") {
         const chase = near.roadW * 0.5 + 28;
@@ -1262,12 +1298,16 @@ export class Track {
     const landMap = landAlbedoMap(scenery, tileSize);
     const landNorm = landNormalMap(scenery, tileSize);
     const landRough = landRoughnessMap(scenery, tileSize);
+    // Visual Pass V4 — per-scenery normal punch (sand ripples pop; forest softer).
+    const landNs =
+      desert ? 1.85 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.05;
     const land = new THREE.Mesh(
       geo,
       worldTerrainMaterial({
         map: landMap || null,
         normalMap: landNorm || null,
         roughnessMap: landRough || null,
+        normalScale: landNs,
         vertexColors: true,
         side: THREE.FrontSide,
       })
@@ -1452,7 +1492,13 @@ export class Track {
     const desert = scenery === "desert";
     const mountain = scenery === "mountain";
     const forest = scenery === "forest";
-    const drop = mountain ? 0.28 : scenery === "lakeside" ? 0.9 : 1.15;
+    const drop = mountain ? 0.28 : forest ? 0.38 : scenery === "lakeside" ? 0.55 : desert ? 0.95 : 0.55;
+    // Shared TunnelVolume mouth contract — every stage: never raise land through
+    // the drive cone. Mountain biome ridges previously skipped this (Desert-only).
+    {
+      const mouthFloorShared = this._tunnelMouthFloorY(x, z);
+      if (mouthFloorShared != null) return mouthFloorShared;
+    }
     if (desert) {
       // Land wash only — never pull the driven ribbon (or kerb skirts) down to
       // the underpass trench floor; that read as clipping through the arch deck.
@@ -1464,10 +1510,17 @@ export class Track {
         }
         return underFloor;
       }
-      // Mouth drive cone first — land must stay a floor through the opening
-      // and approach apron so heightmap tris cannot wall off the bore.
-      const mouthFloor = this._tunnelMouthFloorY(x, z);
-      if (mouthFloor != null) return mouthFloor;
+      // Mouth already handled above — keep desert ridge / cut path below.
+      // On the drive deck / verge: always the ribbon bed — never ridge/dune.
+      // Approach samples before `tunnel:true` were getting quarry-face heights
+      // and failing headed worldvalidate (float then bury into the portal).
+      {
+        const clearanceDeck =
+          near.minOver != null ? near.minOver : dist - roadW * 0.5;
+        if (clearanceDeck < ROAD_VERGE + 1.0) {
+          return roadY - drop;
+        }
+      }
       // Portal mouths first — a folded lower arm must not own the hillside
       // under the gate. Never raise over painted asphalt or the drive verge.
       const clearance = near.minOver != null ? near.minOver : dist - roadW * 0.5;
@@ -1499,7 +1552,13 @@ export class Track {
     }
     // Any vertex that can own a triangle over ANY nearby ribbon (hairpin
     // opposite arm included) stays a floor. Chase banks start past this pad.
-    if (overlapBed != null) return overlapBed - drop;
+    //
+    // IMPORTANT (headed worldvalidate 2026-09-04): do NOT `return overlapBed - drop`
+    // here. overlapBed is the LOWEST nearby ribbon Y within the land-cell pad.
+    // Using it as the returned bed snapped climbing roads to a lower hairpin /
+    // approach arm and reported massive FLOATING_ROAD (Mountain climb, Desert
+    // tunnel approach). On-deck samples must follow nearest `roadY`. Off-deck
+    // land tris are already Math.min'd against overlapBed in `_addLandTile`.
     const follow = roadW * 0.5 + (desert ? 72 : mountain ? 26 : forest ? 20 : 64);
     const blend = desert ? 220 : forest ? 64 : mountain ? 70 : 190;
     const sm = (t) => {
@@ -1539,7 +1598,13 @@ export class Track {
         return bed + bank * t * 0.2;
       }
       if (dist < trench + rise) return bed + bank * sm((dist - trench) / rise);
-      return bed + bank;
+      // Far forest hills under the treeline rings (Visual Pass V4 — taller mounds).
+      const farT = sm(Math.min(1, (dist - trench - rise) / 240));
+      const mound =
+        Math.abs(Math.sin(x * 0.0024 + z * 0.002)) * 7.4 +
+        Math.sin(x * 0.0055 - z * 0.0045) * 3.1 +
+        Math.abs(Math.sin(x * 0.0011 + z * 0.0013 + 0.8)) * 4.2;
+      return bed + bank + mound * farT * 0.92;
     }
     if (mountain) {
       // Ridges follow the climbing ribbon so hairpins are not a sky-bridge.
@@ -1560,7 +1625,8 @@ export class Track {
       // Keep amplitudes modest — trench/chaseFlat still flatten the ribbon corridor.
       if (this._terrainRealismOn()) {
         const bio = clamp(dune - 8, -1.5, 9);
-        bank = Math.max(0, bank + bio * 0.28);
+        // Visual Pass V4 — stronger biome fold past the corridor (still trench-safe).
+        bank = Math.max(0, bank + bio * 0.4);
       }
       const pin = this._landmark;
       if (pin && Math.abs((along || 0) - pin.dist) < 95 && side === pin.inside && dist > roadW * 0.5 + 18) {
@@ -1573,8 +1639,19 @@ export class Track {
         const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
         return bed + bank * t * 0.02;
       }
-      if (dist < trench + rise) return bed + bank * sm((dist - chaseFlat) / Math.max(1, rise - (chaseFlat - trench)));
-      return bed + bank * 0.85;
+      if (dist < trench + rise) {
+        // V4: mid-rise readable from chase without invading the flatten corridor.
+        const t = sm((dist - chaseFlat) / Math.max(1, rise - (chaseFlat - trench)));
+        return bed + bank * (0.42 + t * 0.58);
+      }
+      // Far alpine mass — long-wavelength ridges so the horizon is not a prop card line.
+      const farT = sm(Math.min(1, (dist - chaseFlat - rise) / 320));
+      const mass =
+        Math.abs(Math.sin(x * 0.002 + z * 0.0016)) * 19 +
+        Math.sin(x * 0.0042 - z * 0.0035) * 8 +
+        Math.abs(Math.sin(x * 0.0009 + z * 0.0011 + 1.3)) * 11 +
+        Math.abs(Math.sin(x * 0.00055 + z * 0.0007 + 2.4)) * 7;
+      return bed + bank * 0.95 + mass * farT * 0.82;
     }
     if (desert) {
       // Chase cam only sees ~20 m of verge, but a trench narrower than one
@@ -1604,7 +1681,13 @@ export class Track {
         const t = sm((dist - chaseFlat - rise) / blend);
         return bed + bank * (0.9 + 0.1 * t);
       }
-      return Math.max(dune, bed + bank * 0.85);
+      // Distant dune spines — low-frequency so the skyline reads as country, not flat haze.
+      const farT = sm(Math.min(1, (dist - chaseFlat - rise - blend) / 260));
+      const spine =
+        Math.abs(Math.sin(x * 0.0016 - z * 0.0012)) * 14 +
+        Math.sin(x * 0.0031 + z * 0.0024) * 5.8 +
+        Math.abs(Math.sin(x * 0.0007 + z * 0.0009 + 2.1)) * 7.5;
+      return Math.max(dune, bed + bank * 0.85) + spine * farT * 0.72;
     }
     if (scenery === "lakeside") {
       const cell = this._landCell || 32;
@@ -1626,6 +1709,12 @@ export class Track {
         const floor = roadY - 2.15;
         const shelf = 72;
         if (dist < trench + rise) return bed + (floor - bed) * sm((dist - trench) / rise);
+        // Visual Pass V4 — thin embankment lip before the deep shelf.
+        const lipLen = 9;
+        if (dist < trench + rise + lipLen) {
+          const lip = 0.52 * (1 - sm((dist - trench - rise) / lipLen));
+          return floor + lip;
+        }
         if (dist < trench + rise + shelf) return floor;
         const t = sm((dist - trench - rise - shelf) / 110);
         return floor * (1 - t) + (bed + 0.85 + bank) * t;
@@ -1635,7 +1724,13 @@ export class Track {
         return bed + (bank + 0.35) * t * 0.08;
       }
       if (dist < trench + rise) return bed + (bank + 0.35) * sm((dist - trench) / rise);
-      return bed + 0.55 + bank;
+      // Inland knolls beyond the shore shelf — misty hills under the tree rings.
+      const farT = sm(Math.min(1, (dist - trench - rise) / 200));
+      const knoll =
+        Math.max(0, Math.sin(x * 0.0032) * Math.sin(z * 0.0028 + 0.4)) * 9.2 +
+        Math.sin(x * 0.007 - z * 0.006) * 2.4 +
+        Math.abs(Math.sin(x * 0.0014 + z * 0.0012)) * 3.5;
+      return bed + 0.55 + bank + knoll * farT * 0.82;
     }
     let h;
     if (dist < shoulder) {
@@ -1679,21 +1774,23 @@ export class Track {
     const cinema = this._cinemaTerrainOn();
     if (scenery === "desert") {
       // Multi-scale dune field: long spines + mid wind waves + fine ripples.
-      // Amplitudes stay modest — trench/road-bed in _groundHeight still owns the ribbon.
+      // Visual Pass V4 — windward/lee bias so dunes read as ridges, not isotropic bumps.
+      const lee = 0.72 + 0.28 * Math.sin(x * 0.00115 + z * 0.00095 + 0.6);
       const dune =
-        Math.sin(x * 0.0075 + z * 0.01) * 8.2 +
-        Math.sin(x * 0.019 - z * 0.016) * 4.6 +
-        Math.sin(x * 0.042 + z * 0.031) * 1.8 +
-        Math.sin(x * 0.0028 - z * 0.0036) * 16 +
-        (hi
-          ? Math.sin(x * 0.011 - z * 0.014) * 3.4 +
-            Math.sin(x * 0.031 + z * 0.027) * 1.35 +
-            Math.sin(x * 0.058 - z * 0.049) * 0.55
-          : 0) +
-        (cinema
-          ? Math.sin(x * 0.074 + z * 0.061) * 0.38 +
-            Math.sin(x * 0.124 - z * 0.098) * 0.14
-          : 0);
+        (Math.sin(x * 0.0075 + z * 0.01) * 8.2 +
+          Math.sin(x * 0.019 - z * 0.016) * 4.6 +
+          Math.sin(x * 0.042 + z * 0.031) * 1.8 +
+          Math.sin(x * 0.0028 - z * 0.0036) * 16 +
+          (hi
+            ? Math.sin(x * 0.011 - z * 0.014) * 3.4 +
+              Math.sin(x * 0.031 + z * 0.027) * 1.35 +
+              Math.sin(x * 0.058 - z * 0.049) * 0.55
+            : 0) +
+          (cinema
+            ? Math.sin(x * 0.074 + z * 0.061) * 0.38 +
+              Math.sin(x * 0.124 - z * 0.098) * 0.14
+            : 0)) *
+        lee;
       // Close-camera grit. Kept small so the road trench still wins.
       const grit =
         Math.sin(x * 0.078 + z * 0.061) * 0.42 +
@@ -1783,15 +1880,22 @@ export class Track {
       }
       const grit = Math.abs(Math.sin(x * 0.055 + z * 0.049));
       if (grit > 0.82) c.multiplyScalar(0.9);
+      // Visual Pass V4 — stronger crest wash so tall verts read drier from chase.
+      if (lift > 0.28) {
+        const crestLift = Math.min(1, (lift - 0.28) / 0.45);
+        c.r = Math.min(1, c.r * (1 + crestLift * 0.08));
+        c.g = Math.min(1, c.g * (1 + crestLift * 0.05));
+        c.b = Math.min(1, c.b * (1 - crestLift * 0.04));
+      }
       if (hi) {
         // Wind-shadow cool bands + pale crest wash + sparse stone flecks.
         const shadow = Math.abs(Math.sin(x * 0.021 + z * 0.017));
         if (shadow > 0.78 && lift < 0.35) c.multiplyScalar(0.93);
         const crest = Math.abs(Math.sin(x * 0.014 - z * 0.019));
-        if (crest > 0.88 && lift > 0.2) {
-          c.r = Math.min(1, c.r * 1.06);
-          c.g = Math.min(1, c.g * 1.03);
-          c.b = Math.min(1, c.b * 0.98);
+        if (crest > 0.85 && lift > 0.15) {
+          c.r = Math.min(1, c.r * 1.09);
+          c.g = Math.min(1, c.g * 1.05);
+          c.b = Math.min(1, c.b * 0.96);
         }
         const stone = Math.abs(Math.sin(x * 0.11 + z * 0.097));
         if (stone > 0.93) c.multiplyScalar(0.86);
@@ -1804,11 +1908,20 @@ export class Track {
       if (maquis > 0.55 && maquis < 0.82) c.setRGB(0.34 + lift * 0.08, 0.44 + lift * 0.1, 0.24);
       const speck = Math.abs(Math.sin(x * 0.08 + z * 0.07));
       if (speck > 0.84) c.multiplyScalar(0.88);
+      // V4 — high verts read as scree/rock sooner.
+      if (lift > 0.4) {
+        const rock = Math.min(1, (lift - 0.4) / 0.5);
+        c.setRGB(
+          0.55 + lift * 0.14 + rock * 0.08,
+          0.5 + lift * 0.1 + rock * 0.05,
+          0.4 + lift * 0.06 + rock * 0.04
+        );
+      }
       if (hi) {
         // Pale scree streaks on high lift; darker basalt flecks.
-        if (lift > 0.55) {
+        if (lift > 0.48) {
           const scree = Math.abs(Math.sin(x * 0.045 + z * 0.038));
-          if (scree > 0.72) c.setRGB(0.62 + lift * 0.1, 0.58 + lift * 0.08, 0.5 + lift * 0.05);
+          if (scree > 0.68) c.setRGB(0.64 + lift * 0.1, 0.6 + lift * 0.08, 0.52 + lift * 0.05);
         }
         const basalt = Math.abs(Math.sin(x * 0.13 - z * 0.11));
         if (basalt > 0.91) c.multiplyScalar(0.82);
@@ -1828,7 +1941,8 @@ export class Track {
       if (gold > 0.78) c.setRGB(0.52 + lift * 0.08, 0.38 + lift * 0.06, 0.12);
       const wet = Math.abs(Math.sin(x * 0.03 + z * 0.028));
       if (wet > 0.88) c.setRGB(0.22, 0.36, 0.3);
-      if (h < roadY - 0.7) c.setRGB(0.16, 0.28, 0.26);
+      // V4 — stronger wet shelf read below the ribbon.
+      if (h < roadY - 0.55) c.setRGB(0.14, 0.26, 0.24);
       if (hi) {
         if (h < roadY - 0.35 && h > roadY - 1.4) {
           const mud = Math.abs(Math.sin(x * 0.022 + z * 0.019));
@@ -1910,11 +2024,14 @@ export class Track {
    * @param {number} distFromRoad
    */
   _applyAerialPerspective(c, scenery, distFromRoad) {
-    const start = VISUAL.aerialStart ?? 48;
-    const end = VISUAL.aerialEnd ?? 420;
+    const curves =
+      VISUAL.aerialByScenery && scenery ? VISUAL.aerialByScenery[scenery] : null;
+    const start = curves && curves.start != null ? curves.start : VISUAL.aerialStart ?? 48;
+    const end = curves && curves.end != null ? curves.end : VISUAL.aerialEnd ?? 420;
     const span = Math.max(1, end - start);
     const t = clamp((distFromRoad - start) / span, 0, 1);
-    const strength = (VISUAL.aerialStrength ?? 0.72) * t * t;
+    const mul = curves && curves.strength != null ? curves.strength : 1;
+    const strength = (VISUAL.aerialStrength ?? 0.72) * mul * t * t;
     if (strength <= 0.001) return;
     c.lerp(this._fogTintForScenery(scenery), strength);
   }
@@ -1937,6 +2054,7 @@ export class Track {
         { r: b.maxR + 430, n: 48, sMin: 18, sMax: 34, y: 0.2 },
         { r: b.maxR + 680, n: 38, sMin: 26, sMax: 46, y: 0.3 },
         { r: b.maxR + 860, n: 28, sMin: 32, sMax: 52, y: 0.35 },
+        { r: b.maxR + 1040, n: 22, sMin: 40, sMax: 62, y: 0.42 },
       ], "mountain");
       return;
     }
@@ -1949,6 +2067,7 @@ export class Track {
           { r: b.maxR + 420, n: 48, sMin: 12, sMax: 24, y: 0.12 },
           { r: b.maxR + 700, n: 36, sMin: 20, sMax: 36, y: 0.18 },
           { r: b.maxR + 880, n: 26, sMin: 26, sMax: 42, y: 0.22 },
+          { r: b.maxR + 1060, n: 20, sMin: 34, sMax: 52, y: 0.28 },
         ],
         "desert"
       );
@@ -1962,13 +2081,17 @@ export class Track {
           { kind: "autumn", r: b.maxR + 320, n: 64, hMin: 24, hMax: 42, wMin: 6.8, wMax: 11.8 },
           { kind: "autumnGold", r: b.maxR + 500, n: 48, hMin: 30, hMax: 48, wMin: 7.5, wMax: 12.8 },
           { kind: "oak", r: b.maxR + 700, n: 38, hMin: 28, hMax: 46, wMin: 8.5, wMax: 13.5 },
+          { kind: "oak", r: b.maxR + 900, n: 28, hMin: 32, hMax: 52, wMin: 9.0, wMax: 14.5 },
         ],
         "lakeside"
       );
       this._addBackdropRockRings(
         b,
         0x5a6c58,
-        [{ r: b.maxR + 410, n: 32, sMin: 10, sMax: 18, y: 0.14 }],
+        [
+          { r: b.maxR + 410, n: 32, sMin: 10, sMax: 18, y: 0.14 },
+          { r: b.maxR + 620, n: 24, sMin: 14, sMax: 24, y: 0.18 },
+        ],
         "lakeside"
       );
     }
@@ -1991,6 +2114,7 @@ export class Track {
       { r: b.maxR + 280, n: 108, hMin: 24, hMax: 42 },
       { r: b.maxR + 400, n: 88, hMin: 30, hMax: 52 },
       { r: b.maxR + 520, n: 68, hMin: 34, hMax: 56 },
+      { r: b.maxR + 680, n: 48, hMin: 38, hMax: 62 },
     ];
     const packReady = FOREST_TREE_KINDS.some((k) => !!propForestTreeParts(k));
     for (let ri = 0; ri < rings.length; ri++) {
@@ -2304,7 +2428,8 @@ export class Track {
      */
     // Desert: short tuck that still reaches washed bed (1.15 m) — 2.6 left a
     // see-under canyon under FrontSide asphalt; 8.2 folded onto gravel corners.
-    const sl = desert ? 3.8 : scenery === "mountain" ? 5.4 : scenery === "lakeside" ? 3.4 : 3.2;
+    const sl =
+      desert ? 3.8 : scenery === "mountain" ? 5.4 : scenery === "forest" ? 4.8 : scenery === "lakeside" ? 3.8 : 3.6;
     const kerbW = 0.42;
     const chunkOf = (dist) => Math.min(this._chunkCount - 1, Math.max(0, Math.floor(dist / CHUNK_LEN)));
 
@@ -2322,6 +2447,15 @@ export class Track {
       if (!b) {
         b = { pos: [], col: [], idx: [], n: 0 };
         map.set(chunk, b);
+      }
+      return b;
+    };
+    /** Skirt buckets carry UVs for Visual Pass V3 grain maps. */
+    const skirtBucket = (chunk) => {
+      let b = skirt.get(chunk);
+      if (!b) {
+        b = { pos: [], col: [], uv: [], idx: [], n: 0 };
+        skirt.set(chunk, b);
       }
       return b;
     };
@@ -2400,16 +2534,38 @@ export class Track {
       // slabs. Keep a short dark tuck so the kerb meets the rock, nothing else.
       const inTunnel = !!(p.tunnel || q.tunnel);
       const inUnderpass = !!(p.underpass || q.underpass);
-      // Closed deck under FrontSide ribbon — underpass, Mountain, and Desert
-      // wash (land sits ~1.15 m below the deck; open underside read as canyon).
-      if (inUnderpass || scenery === "mountain" || desert) {
-        const yDown = scenery === "mountain" ? 0.2 : desert ? 0.16 : 0.12;
-        vert(rb, e.rx, e.yR - yDown, e.rz, tintP, 1, v0);
-        vert(rb, e.lx, e.yL - yDown, e.lz, tintP, 0, v0);
-        vert(rb, f.rx, f.yR - yDown, f.rz, tintQ, 1, v1);
-        vert(rb, f.lx, f.yL - yDown, f.lz, tintQ, 0, v1);
-        quad(rb);
-      }
+      // Closed deck under FrontSide ribbon on EVERY stage — without this,
+      // elevated / overlapping decks show sky through backfaces ("seeing
+      // behind the polygons of the roads that are above"). Thickness matches
+      // land bed so the ribbon reads supported, not floating.
+      const yDown =
+        scenery === "mountain"
+          ? 0.24
+          : scenery === "forest"
+            ? 0.34
+            : desert
+              ? 0.48
+              : 0.36;
+      const underHex = mixHex(tintP, 0x2a241c, 0.45);
+      const underHexQ = mixHex(tintQ, 0x2a241c, 0.45);
+      vert(rb, e.rx, e.yR - yDown, e.rz, underHex, 1, v0);
+      vert(rb, e.lx, e.yL - yDown, e.lz, underHex, 0, v0);
+      vert(rb, f.rx, f.yR - yDown, f.rz, underHexQ, 1, v1);
+      vert(rb, f.lx, f.yL - yDown, f.lz, underHexQ, 0, v1);
+      quad(rb);
+      // Edge walls close the deck thickness so chase cam never sees an open slab.
+      const edgeHex = mixHex(tintP, 0x3a3228, 0.35);
+      const edgeHexQ = mixHex(tintQ, 0x3a3228, 0.35);
+      vert(rb, e.lx, e.yL, e.lz, edgeHex, 0, v0);
+      vert(rb, e.lx, e.yL - yDown, e.lz, underHex, 0, v0);
+      vert(rb, f.lx, f.yL, f.lz, edgeHexQ, 0, v1);
+      vert(rb, f.lx, f.yL - yDown, f.lz, underHexQ, 0, v1);
+      quad(rb);
+      vert(rb, e.rx, e.yR - yDown, e.rz, underHex, 1, v0);
+      vert(rb, e.rx, e.yR, e.rz, edgeHex, 1, v0);
+      vert(rb, f.rx, f.yR - yDown, f.rz, underHexQ, 1, v1);
+      vert(rb, f.rx, f.yR, f.rz, edgeHexQ, 1, v1);
+      quad(rb);
       const atLandmark = !!(p.landmark || q.landmark);
       const atJump = !!(p.jump || q.jump || p.jumpWash || q.jumpWash);
       let dHead = q.heading - p.heading;
@@ -2427,7 +2583,7 @@ export class Track {
                 ? 1.55
                 : sl;
       const skirtHex = inTunnel || inUnderpass ? 0x3a3228 : terrainHex;
-      const sb = plainBucket(skirt, chunk);
+      const sb = skirtBucket(chunk);
       const ey = e.y - 0.04;
       const fy = f.y - 0.04;
       const eLx = e.lx + p.nx * skirtReach;
@@ -2446,10 +2602,13 @@ export class Track {
         const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
         if (over < ROAD_COLLIDER_CLEAR + 0.35) return edgeY - 0.38;
         const gy = this._groundHeight(lx, lz, scenery);
-        // Mountain: keep the outer tuck shallow so chase cam never sees a
-        // canyon under FrontSide asphalt (bed is only ~0.28 m below).
+        // Forest/mountain: keep the outer tuck shallow so chase cam never sees a
+        // canyon under FrontSide asphalt.
         if (scenery === "mountain") {
           return Math.min(Math.max(gy, edgeY - 0.42), edgeY - 0.12);
+        }
+        if (scenery === "forest") {
+          return Math.min(Math.max(gy, edgeY - 0.55), edgeY - 0.14);
         }
         // Outer skirt must tuck under the ribbon, never rise onto the asphalt.
         return Math.min(gy, edgeY - 0.12);
@@ -2464,15 +2623,18 @@ export class Track {
       const shoulderQ = inTunnel
         ? 0x4a4034
         : shoulderTintHex(terrainHex, blendQ.from, blendQ.to, blendQ.mix);
-      vert(sb, eLx, eDropL, eLz, skirtHex);
-      vert(sb, e.lx, ey, e.lz, shoulderP);
-      vert(sb, fLx, fDropL, fLz, skirtHex);
-      vert(sb, f.lx, fy, f.lz, shoulderQ);
+      // UV: u = across skirt (0 = kerb, 1 = land), v = along ribbon.
+      const sv0 = p.dist * 0.09;
+      const sv1 = q.dist * 0.09;
+      vert(sb, eLx, eDropL, eLz, skirtHex, 1, sv0);
+      vert(sb, e.lx, ey, e.lz, shoulderP, 0, sv0);
+      vert(sb, fLx, fDropL, fLz, skirtHex, 1, sv1);
+      vert(sb, f.lx, fy, f.lz, shoulderQ, 0, sv1);
       quad(sb);
-      vert(sb, e.rx, ey, e.rz, shoulderP);
-      vert(sb, eRx, eDropR, eRz, skirtHex);
-      vert(sb, f.rx, fy, f.rz, shoulderQ);
-      vert(sb, fRx, fDropR, fRz, skirtHex);
+      vert(sb, e.rx, ey, e.rz, shoulderP, 0, sv0);
+      vert(sb, eRx, eDropR, eRz, skirtHex, 1, sv0);
+      vert(sb, f.rx, fy, f.rz, shoulderQ, 0, sv1);
+      vert(sb, fRx, fDropR, fRz, skirtHex, 1, sv1);
       quad(sb);
 
       const kb = plainBucket(kerb, chunk);
@@ -2516,11 +2678,11 @@ export class Track {
       group.add(mesh);
     }
 
-    const skirtMat = worldSkirtMaterial();
+    const skirtMat = worldSkirtMaterial(skirtTextureFor(scenery), skirtNormalFor(scenery));
     const kerbMat = worldKerbMaterial();
     for (const [chunk, b] of skirt) {
       if (!b.n) continue;
-      const mesh = new THREE.Mesh(buildGeo(b, false), skirtMat);
+      const mesh = new THREE.Mesh(buildGeo(b, true), skirtMat);
       mesh.receiveShadow = true;
       this._registerChunk(mesh, chunk);
       group.add(mesh);
@@ -2629,6 +2791,7 @@ export class Track {
 
   /**
    * GLB ground-scale poses → 3-plane card poses (metres, origin at mid-crown).
+   * Used when pack atlas cards are unavailable.
    * @param {object[]} poses
    * @returns {object[]}
    */
@@ -2657,7 +2820,36 @@ export class Track {
   }
 
   /**
-   * Near = authored GLB (or trunk+canopy pair). Far = painted crown cards.
+   * Ground-origin poses for forest-pack atlas cards (ref height ~14 m).
+   * @param {object[]} poses
+   * @returns {object[]}
+   */
+  _treePackCardPoses(poses) {
+    const refH = (VISUAL.veg && VISUAL.veg.packCardRefH) || 14;
+    const out = [];
+    for (let i = 0; i < poses.length; i++) {
+      const p = poses[i];
+      const s = p.s != null ? Math.abs(p.s) : 1;
+      const h = p.sy != null ? Math.abs(p.sy) : s * 11.5;
+      const ground = p.groundY != null ? p.groundY : p.sy != null ? p.y - h * 0.5 : p.y;
+      out.push({
+        c: p.c,
+        x: p.x,
+        y: ground,
+        z: p.z,
+        s: h / refH,
+        ry: p.ry || 0,
+        rx: (p.rx || 0) * 0.35,
+        rz: (p.rz || 0) * 0.35,
+        groundY: ground,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Near = authored GLB (or trunk+canopy pair). Far = pack atlas cards when
+   * loaded, else painted crown planes.
    * @param {string} glbKind
    * @param {object[]} poses
    * @param {{castShadow?:boolean, receiveShadow?:boolean, farOnly?:boolean}} [opts]
@@ -2666,8 +2858,6 @@ export class Track {
   _addLodTrees(glbKind, poses, opts) {
     if (!poses || !poses.length || !this._isLodTreeKind(glbKind)) return false;
     const farOnly = !!(opts && opts.farOnly);
-    const cards = this._treeCardPoses(poses);
-    const cardMat = foliageMaterial(treeCardKind(glbKind));
     const loOpts = { castShadow: false, receiveShadow: true, lod: "lo" };
     if (!farOnly) {
       const hiOpts = Object.assign({}, opts || { castShadow: true }, { lod: "hi" });
@@ -2681,7 +2871,18 @@ export class Track {
         this._addInstances(geo, propNatureMaterial(glbKind), poses, hiOpts);
       }
     }
-    this._addInstances(crownGeometry(), cardMat, cards, loOpts);
+    const packCard = forestCardForTree(glbKind);
+    const packGeo = packCard ? propGeometry(packCard) : null;
+    if (packGeo) {
+      this._addInstances(packGeo, propNatureMaterial(packCard), this._treePackCardPoses(poses), loOpts);
+    } else {
+      this._addInstances(
+        crownGeometry(),
+        foliageMaterial(treeCardKind(glbKind)),
+        this._treeCardPoses(poses),
+        loOpts
+      );
+    }
     return true;
   }
 
@@ -2695,12 +2896,23 @@ export class Track {
     if (!poses || !poses.length) return;
     if (!propReady()) return;
     if (this._isLodTreeKind(glbKind)) {
-      this._addBackdropInstances(
-        crownGeometry(),
-        foliageMaterial(treeCardKind(glbKind)),
-        this._treeCardPoses(poses),
-        origin
-      );
+      const packCard = forestCardForTree(glbKind);
+      const packGeo = packCard ? propGeometry(packCard) : null;
+      if (packGeo) {
+        this._addBackdropInstances(
+          packGeo,
+          propNatureMaterial(packCard),
+          this._treePackCardPoses(poses),
+          origin
+        );
+      } else {
+        this._addBackdropInstances(
+          crownGeometry(),
+          foliageMaterial(treeCardKind(glbKind)),
+          this._treeCardPoses(poses),
+          origin
+        );
+      }
       return;
     }
     const geo = propGeometry(glbKind);
@@ -2783,14 +2995,7 @@ export class Track {
         const spread = def.scenery === "desert" ? 18 : def.scenery === "forest" ? 18 : 12;
         // Sprint 26b: stages 2–4 keep a wide clear shoulder — 5.2 m used to put
         // trunks/bushes on the ribbon once jitter and canopy radius stacked up.
-        const finaleClear = forest || mountain;
-        const shoulderPad = def.scenery === "desert"
-          ? 16.5
-          : forest
-            ? 15.2
-            : finaleClear
-              ? 13.5
-              : 8.2;
+        const shoulderPad = shoulderPadForScenery(def.scenery || "forest");
         const off = p.width * 0.5 + shoulderPad + rng() * spread;
         const px = p.x + p.nx * side * off;
         const pz = p.z + p.nz * side * off;
@@ -3100,7 +3305,7 @@ export class Track {
     }
     const plantBush = (geoKind, bag) => {
       if (!bag || !bag.length) return;
-      this._addHdNature(geoKind, bag, { castShadow: true });
+      this._addHdNature(geoKind, bag, { castShadow: true, scrubShadow: true });
     };
     stripDrive(rocks, 3.6);
     stripDrive(cacti, 2.2);
@@ -3114,7 +3319,7 @@ export class Track {
     plantBush("plant_bushLarge", forestBush);
     plantBush("plant_bushDense", forestBushDense);
     plantBush("plant_bushRound", forestBushRound);
-    if (forestFern.length) this._addHdNature("plant_bushFern", forestFern, { castShadow: true });
+    if (forestFern.length) this._addHdNature("plant_bushFern", forestFern, { castShadow: true, scrubShadow: true });
     // Trunk cylinders only when GLB trees failed to load for a bag — HD trees include bark.
     if (!useGlb || !propGeometry("tree_pineDefaultA")) {
       /* no primitive trunks either when kit is armed */
@@ -3599,15 +3804,39 @@ export class Track {
    */
   _fillWild(def, rng, bags) {
     const scenery = def.scenery;
+    const veg = VISUAL.veg || {};
     const samples = [];
     for (let i = 0; i < this.points.length; i += 2) {
       if (!this.points[i].tunnel) samples.push(this.points[i]);
     }
     if (!samples.length) return;
-    const farTrees = scenery === "forest" ? 660 : scenery === "lakeside" ? 360 : scenery === "mountain" ? 240 : 0;
-    const farRocks = scenery === "desert" ? 210 : scenery === "mountain" ? 210 : 58;
-    const farCacti = scenery === "desert" ? 155 : 0;
-    const farBush = scenery === "desert" ? 118 : scenery === "forest" ? 125 : 68;
+    const farTrees = Math.round(
+      (scenery === "forest"
+        ? veg.forestFarTrees ?? 720
+        : scenery === "lakeside"
+          ? veg.lakesideFarTrees ?? 400
+          : scenery === "mountain"
+            ? veg.mountainFarTrees ?? 280
+            : 0) * (this._vegScale != null ? this._vegScale : 1)
+    );
+    const farRocks = Math.round(
+      (scenery === "desert"
+        ? veg.desertFarRocks ?? 220
+        : scenery === "mountain"
+          ? veg.mountainFarRocks ?? 210
+          : 58) * (this._vegScale != null ? this._vegScale : 1)
+    );
+    const farCacti = Math.round(
+      (scenery === "desert" ? veg.desertFarCacti ?? 175 : 0) *
+        (this._vegScale != null ? this._vegScale : 1)
+    );
+    const farBush = Math.round(
+      (scenery === "desert"
+        ? veg.desertFarBush ?? 135
+        : scenery === "forest"
+          ? veg.forestFarBush ?? 145
+          : 68) * (this._vegScale != null ? this._vegScale : 1)
+    );
 
     const scatter = (count, minOff, maxOff, push) => {
       for (let n = 0; n < count; n++) {
@@ -3692,18 +3921,34 @@ export class Track {
         const side = road.side >= 0 ? 1 : -1;
         if (!this._mayPlant(road.along, side, road.dist, 3.2)) return;
       }
-          bags.cacti.push({
-            c,
-            x,
-            y:
-              (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propGeometry("cactus_tall")
-                ? y
-                : y + 1.55,
-            z,
-            s: 0.8 + r() * 1.1,
-            ry: r() * 6,
-          });
-          this._bumpNearRoad(x, z, 0.85);
+      const glbCactus =
+        (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propGeometry("cactus_tall");
+      const pushCactus = (cx, cy, cz) => {
+        bags.cacti.push({
+          c,
+          x: cx,
+          y: glbCactus ? cy : cy + 1.55,
+          z: cz,
+          s: 0.8 + r() * 1.1,
+          ry: r() * 6,
+        });
+        this._bumpNearRoad(cx, cz, 0.85);
+      };
+      pushCactus(x, y, z);
+      // V5 — desert clumps read as stands, not fence posts.
+      const clumpChance = veg.cactusClusterChance ?? 0.42;
+      if (r() < clumpChance) {
+        const n = 1 + ((r() * 2) | 0);
+        for (let i = 0; i < n; i++) {
+          const a = r() * Math.PI * 2;
+          const d = 2.2 + r() * 4.2;
+          const cx = x + Math.cos(a) * d;
+          const cz = z + Math.sin(a) * d;
+          if (!this._ribbonClear(cx, cz, 1.2)) continue;
+          const cy = this._groundHeight(cx, cz, scenery);
+          pushCactus(cx, cy, cz);
+        }
+      }
     });
     scatter(farBush, 12, 70, (x, y, z, r, c) => {
       if (!this._ribbonClear(x, z, 1.2)) return;
@@ -3767,11 +4012,44 @@ export class Track {
   }
 
   /**
+   * Push one forest-pack tree pose + contact shadow (V5 cluster helper).
+   */
+  _pushPackTreePose(bags, packKind, x, ground, z, yaw, leanX, leanZ, h, w, surfaceY, chunk, rng, scenery) {
+    if (!bags[packKind]) bags[packKind] = [];
+    const refH = 11.5;
+    const scaleJitter =
+      scenery === "mountain" ? 0.92 + rng() * 0.38 : 0.78 + rng() * 0.48;
+    bags[packKind].push({
+      c: chunk,
+      x,
+      y: ground,
+      z,
+      s: (h / refH) * scaleJitter,
+      ry: yaw,
+      rx: leanX * 0.35,
+      rz: leanZ * 0.35,
+      groundY: ground,
+    });
+    bags.treeShadows.push({
+      c: chunk,
+      x,
+      y: surfaceY + 0.04,
+      z,
+      sx: w * 0.34 * this._contactShadowScale(),
+      sy: 1,
+      sz: w * 0.28 * this._contactShadowScale(),
+      ry: yaw,
+    });
+    this._bumpNearRoad(x, z, 0.95);
+  }
+
+  /**
    * One mixed-species tree. Forest + Mountain plant from
    * low_poly_forest_tree_pack variants; other biomes use Kenney / cards.
    * `y` is ground. Trunk is buried a few cm so it never hovers.
+   * @param {boolean} [allowCluster=true] V5 micro-cluster siblings (no recursion).
    */
-  _plantForestTree(bags, x, y, z, rng, near, kinds, chunk, scenery) {
+  _plantForestTree(bags, x, y, z, rng, near, kinds, chunk, scenery, allowCluster = true) {
     const foot = scenery === "forest" || scenery === "mountain" ? FOREST_TREE_CLEAR : 5.8;
     if (!this._ribbonClear(x, z, foot)) return;
     const roll = rng();
@@ -3829,6 +4107,8 @@ export class Track {
       let packKind = null;
       for (let attempt = 0; attempt < palette.length; attempt++) {
         const candidate = palette[((roll * 97 + attempt * 13) | 0) % palette.length];
+        // V5 anti-clone — skip same species as last plant when another exists.
+        if (candidate === this._lastPackKind && attempt < palette.length - 1) continue;
         if (propForestTreeParts(candidate)) {
           packKind = candidate;
           break;
@@ -3843,32 +4123,48 @@ export class Track {
         }
       }
       if (packKind) {
-        if (!bags[packKind]) bags[packKind] = [];
-        const refH = 11.5;
-        const scaleJitter =
-          scenery === "mountain" ? 0.92 + rng() * 0.38 : 0.78 + rng() * 0.48;
-        bags[packKind].push({
-          c: chunk,
-          x,
-          y: ground,
-          z,
-          s: (h / refH) * scaleJitter,
-          ry: yaw,
-          rx: leanX * 0.35,
-          rz: leanZ * 0.35,
-          groundY: ground,
-        });
-        bags.treeShadows.push({
-          c: chunk,
-          x,
-          y: y + 0.04,
-          z,
-          sx: w * 0.34 * this._contactShadowScale(),
-          sy: 1,
-          sz: w * 0.28 * this._contactShadowScale(),
-          ry: yaw,
-        });
-        this._bumpNearRoad(x, z, 0.95);
+        this._lastPackKind = packKind;
+        this._pushPackTreePose(bags, packKind, x, ground, z, yaw, leanX, leanZ, h, w, y, chunk, rng, scenery);
+        if (allowCluster) {
+          const veg = VISUAL.veg || {};
+          const chance =
+            scenery === "mountain"
+              ? veg.mountainClusterChance ?? 0.34
+              : veg.forestClusterChance ?? 0.4;
+          if (rng() < chance) {
+            const nSib = 1 + ((rng() * 2) | 0);
+            const embedSib = 0.32;
+            for (let s = 0; s < nSib; s++) {
+              const ang = rng() * Math.PI * 2;
+              const rad = 4.2 + rng() * 5.5;
+              const sx = x + Math.cos(ang) * rad;
+              const sz = z + Math.sin(ang) * rad;
+              if (!this._ribbonClear(sx, sz, foot)) continue;
+              const sy =
+                scenery === "forest"
+                  ? this._forestGround(sx, sz)
+                  : this._groundHeight(sx, sz, scenery);
+              const sh = h * (0.82 + rng() * 0.28);
+              const sw = w * (0.85 + rng() * 0.3);
+              this._pushPackTreePose(
+                bags,
+                packKind,
+                sx,
+                sy - embedSib,
+                sz,
+                rng() * Math.PI * 2,
+                (rng() - 0.5) * 0.08,
+                (rng() - 0.5) * 0.08,
+                sh,
+                sw,
+                sy,
+                chunk,
+                rng,
+                scenery
+              );
+            }
+          }
+        }
         return;
       }
     }
@@ -4021,6 +4317,10 @@ export class Track {
     mesh.userData.envProp = true;
     if (opts && opts.cameraFade) mesh.userData.cameraFade = true;
     if (opts && opts.lod) mesh.userData.lod = opts.lod;
+    if (opts && opts.castShadow) {
+      mesh.userData.wantCastShadow = true;
+      if (opts.scrubShadow) mesh.userData.scrubShadow = true;
+    }
     this._registerChunk(mesh, chunk);
     this.group.add(mesh);
   }
@@ -6112,9 +6412,33 @@ export class Track {
    * @param {number} [footprint] radius of the prop in metres
    */
   _ribbonClear(x, z, footprint = 0.6) {
+    // Rocks / dunes must never sit in the tunnel horseshoe aperture.
+    if (this._inTunnelMouthCorridor(x, z)) return false;
+    // Full tunnel volume exclusion (approach / bore / exit), not just mouth cones.
+    if (this._inTunnelVolumeExclusion(x, z, footprint)) return false;
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
     return over >= ROAD_VERGE + footprint;
+  }
+
+  /**
+   * True when (x,z) is inside a TunnelVolume lateral keep-out (shared with QA).
+   * @param {number} x
+   * @param {number} z
+   * @param {number} [footprint]
+   * @returns {boolean}
+   */
+  _inTunnelVolumeExclusion(x, z, footprint = 0) {
+    const vols = this._tunnelVolumes;
+    if (!vols || !vols.length) return false;
+    const road = this._nearestRoad(x, z);
+    if (!road || road.along == null) return false;
+    const vol = tunnelAtDist(vols, road.along, 6);
+    if (!vol) return false;
+    const half = tunnelExclusionHalf(vol);
+    const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+    // Inside or near the bore laterally — refuse props.
+    return over < half + footprint;
   }
 
   /**
@@ -6127,6 +6451,8 @@ export class Track {
    * @param {number} [halfH] vertical half-extent — tall props only skip keepout when the base clears the deck
    */
   _laneKeepout(x, z, r, y, halfH = 0) {
+    if (this._inTunnelMouthCorridor(x, z)) return true;
+    if (this._inTunnelVolumeExclusion(x, z, r)) return true;
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
     // Strip visual instances that invade the collision-safe corridor.
@@ -6580,6 +6906,8 @@ export class Track {
     this._tunnels = [];
     this._tunnelMouthPrisms = [];
     const pts = this.points;
+    // Volumes first so mouth prisms can size from tunnelExclusionHalf.
+    this._tunnelVolumes = buildTunnelVolumes(pts);
     let i = 0;
     while (i < pts.length) {
       if (!pts[i].tunnel) {
@@ -6602,9 +6930,16 @@ export class Track {
    * @param {number} outward −1 entrance / +1 exit
    */
   _registerTunnelMouthPrism(p, outward) {
-    const cell = Math.max(this._landCell || 12, 10);
-    // Wide enough that land tris cannot span from floor to ridge across the aperture.
-    const halfLat = p.width * 0.5 + ROAD_VERGE + cell * 2.4;
+    const half = p.width * 0.5;
+    // Prefer TunnelVolume exclusion half so carve / props / QA share one margin.
+    const vol =
+      this._tunnelVolumes && this._tunnelVolumes.length
+        ? tunnelAtDist(this._tunnelVolumes, p.dist, 4)
+        : null;
+    const excl = vol ? tunnelExclusionHalf(vol) : half + ROAD_COLLIDER_CLEAR + 4.8;
+    // Drive floor stays tighter than prop refuse — horseshoe aperture only.
+    const driveHalfLat = Math.min(excl, half + ROAD_COLLIDER_CLEAR + 1.8);
+    const halfLat = Math.max(excl, half + ROAD_COLLIDER_CLEAR + 4.8);
     this._tunnelMouthPrisms.push({
       x: p.x,
       z: p.z,
@@ -6618,26 +6953,39 @@ export class Track {
       along0: -78,
       along1: 62,
       halfLat,
+      driveHalfLat,
+      volId: vol?.id || null,
     });
   }
 
   /**
-   * True when (x,z) sits in a tunnel mouth drive cone (entrance or exit).
+   * True when (x,z) sits in a tunnel mouth refuse cone (entrance or exit).
+   * Wider than the drive floor so rocks/dunes cannot sit in the horseshoe.
    * @param {number} x
    * @param {number} z
    * @returns {boolean}
    */
   _inTunnelMouthCorridor(x, z) {
-    return this._tunnelMouthFloorY(x, z) != null;
+    return this._tunnelMouthHit(x, z, "refuse") != null;
   }
 
   /**
-   * Forced land / prop floor Y inside a mouth drive cone.
+   * Forced land / prop floor Y inside the driveable mouth aperture only.
    * @param {number} x
    * @param {number} z
    * @returns {number|null}
    */
   _tunnelMouthFloorY(x, z) {
+    return this._tunnelMouthHit(x, z, "floor");
+  }
+
+  /**
+   * @param {number} x
+   * @param {number} z
+   * @param {"floor"|"refuse"} mode
+   * @returns {number|null}
+   */
+  _tunnelMouthHit(x, z, mode) {
     const prisms = this._tunnelMouthPrisms;
     if (!prisms || !prisms.length) return null;
     for (let i = 0; i < prisms.length; i++) {
@@ -6647,8 +6995,22 @@ export class Track {
       const outAlong = (dx * pr.fx + dz * pr.fz) * pr.outward;
       if (outAlong < pr.along0 || outAlong > pr.along1) continue;
       const lat = Math.abs(dx * pr.nx + dz * pr.nz);
-      if (lat > pr.halfLat) continue;
-      return pr.y - 1.15;
+      const lim =
+        mode === "floor"
+          ? pr.driveHalfLat != null
+            ? pr.driveHalfLat
+            : pr.halfLat
+          : pr.halfLat;
+      if (lat > lim) continue;
+      // Portal apron floor — but never above the local ribbon on a climbing
+      // approach (headed worldvalidate: BURIED_ROAD at Desert ~1260 before mouth).
+      const portalFloor = pr.y - 1.15;
+      if (mode === "floor") {
+        const near = this._nearestRoad(x, z);
+        const deck = near.roadY - 0.95;
+        return Math.min(portalFloor, deck);
+      }
+      return portalFloor;
     }
     return null;
   }
@@ -6720,22 +7082,31 @@ export class Track {
    * @returns {number}
    */
   _tunnelTerrainY(x, z) {
-    const drop = 1.15;
+    const scenery = (this._def && this._def.scenery) || "desert";
+    const drop = scenery === "mountain" ? 0.35 : scenery === "forest" ? 0.45 : 1.15;
     const mouthFloor = this._tunnelMouthFloorY(x, z);
     if (mouthFloor != null) return mouthFloor;
-    const mouthY = this._tunnelMouthCutY(x, z, drop);
-    if (mouthY != null) return mouthY;
-    const tun = this._tunnelNeighbor(x, z);
-    if (tun) {
-      const clearance = tun.dist - tun.roadW * 0.5;
-      if (tun.tunnel && tun.dist < tun.roadW * 0.5 + 14) return tun.roadY - drop;
-      if (clearance > ROAD_VERGE + 2.4) {
-        const cut = this._tunnelCutHeight(tun.along, tun.dist, tun.roadW, tun.roadY - drop);
-        if (cut != null) return cut;
+    // Desert quarry ridge only — Mountain must not inherit Desert cut heights.
+    if (scenery === "desert") {
+      const mouthY = this._tunnelMouthCutY(x, z, drop);
+      if (mouthY != null) return mouthY;
+      const tun = this._tunnelNeighbor(x, z);
+      if (tun) {
+        const clearance = tun.dist - tun.roadW * 0.5;
+        if (tun.tunnel && tun.dist < tun.roadW * 0.5 + 14) return tun.roadY - drop;
+        if (clearance > ROAD_VERGE + 2.4) {
+          const cut = this._tunnelCutHeight(tun.along, tun.dist, tun.roadW, tun.roadY - drop);
+          if (cut != null) return cut;
+        }
+        return tun.roadY - drop;
       }
-      return tun.roadY - drop;
+    } else {
+      // Mountain / other: plant portal feet on local ground, but never above deck.
+      const tun = this._tunnelNeighbor(x, z);
+      if (tun && this._inTunnelMouthCorridor(x, z)) return tun.roadY - drop;
+      if (tun && tun.tunnel && tun.dist < tun.roadW * 0.5 + 10) return tun.roadY - drop;
     }
-    return this._groundHeight(x, z, "desert");
+    return this._groundHeight(x, z, scenery);
   }
 
   /**
@@ -6855,8 +7226,13 @@ export class Track {
    */
   _inTunnelCut(along, dist, roadW) {
     if (this._tunnelAlong(along || 0) <= 0.08) return false;
-    const cutTrench = Math.max((roadW || 10) * 0.5 + ROAD_VERGE + 4.5, 16);
-    return dist > cutTrench;
+    const vol = this._tunnelVolumes?.length
+      ? tunnelAtDist(this._tunnelVolumes, along || 0, 8)
+      : null;
+    const trench = vol
+      ? tunnelExclusionHalf(vol)
+      : Math.max((roadW || 10) * 0.5 + ROAD_VERGE + 4.5, 16);
+    return dist > trench;
   }
 
   /**
@@ -6884,8 +7260,13 @@ export class Track {
   _tunnelCutHeight(along, dist, roadW, bed) {
     const hill = this._tunnelHill(along, dist, roadW);
     if (hill < 0.35) return null;
+    const vol = this._tunnelVolumes?.length
+      ? tunnelAtDist(this._tunnelVolumes, along || 0, 8)
+      : null;
     const verge = roadW * 0.5 + ROAD_VERGE + 1.2;
-    const cutTrench = Math.max(verge + 0.8, 14);
+    const cutTrench = vol
+      ? Math.max(vol.width * 0.5 + 1.2, verge + 0.8)
+      : Math.max(verge + 0.8, 14);
     if (dist <= cutTrench) return bed;
     // Steep quarry face immediately outside the drive verge — land meets the
     // portal posts instead of leaving a floating gate over flat apron sand.
@@ -6972,16 +7353,17 @@ export class Track {
     this._addTunnelMountain(start, end, rockSun, rockSunDark);
 
     const dummy = new THREE.Object3D();
-    // Arched horseshoe lining matches the mouth — box walls read fake on enter/exit.
+    // Arched horseshoe lining — hollow rings along the bore (never solid plugs).
     const mid = Math.floor((start + end) * 0.5);
     const portalSpec = this._tunnelPortalSpec(pts[mid]);
-    const liningHalf = portalSpec.clearHalfW * 0.96;
+    // Inner clear sits just outside paint so the car never clips rock.
+    const liningHalf = portalSpec.half + 0.45;
     const liningH = portalSpec.openH - 0.15;
     const liningDepth = 4.2;
     const liningGeo = tunnelPortalArchGeometry(liningHalf, liningH, liningDepth);
-    // Keep lining well inset so the mountain mouth owns enter/exit.
-    const wallStart = Math.min(end, start + 8);
-    const wallEnd = Math.max(wallStart, end - 8);
+    // Start lining at the mouth posts — any pad left open sky / ridge through rock.
+    const wallStart = start;
+    const wallEnd = end;
     let boreCount = 0;
     for (let i = wallStart; i <= wallEnd; i += 1) boreCount += 1;
     const bores = new THREE.InstancedMesh(liningGeo, rockLining, Math.max(1, boreCount));
@@ -7000,8 +7382,8 @@ export class Track {
 
       dummy.position.set(p.x, p.y - 0.35, p.z);
       dummy.rotation.set(0, p.heading, 0);
-      // Stretch the shared extrusion along the segment so seams stay tight.
-      dummy.scale.set(1, 1, Math.max(0.9, segLen / liningDepth));
+      // Heavy Z overlap on curves — horseshoe rings otherwise open to sky.
+      dummy.scale.set(1, 1, Math.max(1.35, (segLen * 1.45) / liningDepth));
       dummy.updateMatrix();
       bores.setMatrixAt(b, dummy.matrix);
       b += 1;
@@ -7030,7 +7412,8 @@ export class Track {
     }
     bores.count = b;
     bores.instanceMatrix.needsUpdate = true;
-    bores.userData.cameraFade = true;
+    // Never camera-fade the bore — ghosting the lining reads as clipping through rock.
+    bores.userData.cameraFade = false;
     bores.userData.tunnelBoreLining = true;
     this.group.add(bores);
 
@@ -7143,11 +7526,14 @@ export class Track {
     return {
       half,
       openH,
-      clearHalfW: half + ROAD_VERGE + 2.2,
+      // Match lining (~half+0.45) with a modest rock-cut shoulder — full
+      // ROAD_VERGE+2.2 opened a stadium hole then snapped to a tight tube.
+      clearHalfW: half + ROAD_COLLIDER_CLEAR + 1.55,
       mouthAlong: 56,
-      // Deep mountain slab — one mass the bore is carved through.
-      faceDepth: 28,
-      throatLen: 32,
+      // Mouth mountain slab only — never span the driveable bore.
+      faceDepth: 16,
+      // Short throat; lining starts immediately after so the bore is continuous.
+      throatLen: 9,
     };
   }
 
@@ -8593,26 +8979,30 @@ function surfaceRibbonHex(id) {
 }
 
 function surfaceShoulderHex(id) {
-  if (id === "tarmac") return 0x5c564e;
-  if (id === "cobble") return 0x72685a;
-  if (id === "gravel") return 0x8a7456;
-  if (id === "dirt") return 0x764c2a;
-  if (id === "sand") return 0xa68852;
-  if (id === "mud") return 0x4e3828;
-  if (id === "grass") return 0x5e6e30;
-  return 0x7a6242;
+  // Visual Pass V3 — verge hues pull away from ribbon so the edge reads at speed.
+  if (id === "tarmac") return 0x6a6256;
+  if (id === "cobble") return 0x7e7260;
+  if (id === "gravel") return 0x9a8058;
+  if (id === "dirt") return 0x8a5630;
+  if (id === "sand") return 0xc09a58;
+  if (id === "mud") return 0x5a4030;
+  if (id === "grass") return 0x6a7e34;
+  return 0x8a6e48;
 }
 
 function roadTintHex(from, to, mix) {
-  const surfaceBlend = mixHex(surfaceRibbonHex(from), surfaceRibbonHex(to), mix);
-  // Tiny lift so Lambert does not crush the ribbon. 0.72 toward cream used
-  // to wash Stage 1 into loose dune sand sitting on the driving line.
-  return mixHex(surfaceBlend, 0xf2eee6, 0.08);
+  let surfaceBlend = mixHex(surfaceRibbonHex(from), surfaceRibbonHex(to), mix);
+  // Transition band — slight darkening so gravel↔dirt swaps read in chase.
+  if (from !== to && mix > 0.18 && mix < 0.82) {
+    surfaceBlend = mixHex(surfaceBlend, 0x2a2218, 0.14);
+  }
+  // Less cream lift than pre-V3 so surface identity survives vertex tint.
+  return mixHex(surfaceBlend, 0xf2eee6, 0.11);
 }
 
 function shoulderTintHex(terrainHex, from, to, mix) {
   const edgeBlend = mixHex(surfaceShoulderHex(from), surfaceShoulderHex(to), mix);
-  return mixHex(terrainHex, edgeBlend, 0.5);
+  return mixHex(terrainHex, edgeBlend, 0.68);
 }
 
 /**
@@ -8925,8 +9315,8 @@ const TUNNEL_ARCH_GEO = new Map();
 const TUNNEL_CUT_FACE_GEO = new Map();
 
 /**
- * Continuous dark bore — thick horseshoe tube flush with the cut face, plus a
- * near-black far plug so looking in shows depth, not sky (parent may rotate π).
+ * Short open throat just inside the mountain cut — hollow tube only.
+ * Never plugs the drive path; inset lining rings own the rest of the bore.
  * @param {number} clearHalfW
  * @param {number} openH
  * @param {number} throatLen
@@ -8936,8 +9326,9 @@ const TUNNEL_CUT_FACE_GEO = new Map();
  */
 function tunnelBoreAssembly(clearHalfW, openH, throatLen, rockDark, faceDepth) {
   const group = new THREE.Group();
-  const wallThick = Math.max(5.5, clearHalfW * 0.48);
-  const tubeLen = throatLen + faceDepth * 0.9;
+  const wallThick = Math.max(4.2, clearHalfW * 0.38);
+  // Reach toward the first lining rings — never plug the drive path.
+  const tubeLen = Math.min(throatLen + 4.5, Math.max(8, faceDepth * 0.72));
 
   const tubeGeo = tunnelThickBoreTubeGeometry(
     clearHalfW * 0.985,
@@ -8954,16 +9345,7 @@ function tunnelBoreAssembly(clearHalfW, openH, throatLen, rockDark, faceDepth) {
   tube.userData.portalMouthRing = true;
   group.add(tube);
 
-  // Far end: pitch-black cap so the bore reads as depth, not sky-through.
-  const plugMat = new THREE.MeshBasicMaterial({ color: 0x050403 });
-  const plugGeo = tunnelBorePlugGeometry(clearHalfW * 0.995, openH - 0.05, 3.5);
-  const plug = new THREE.Mesh(plugGeo, plugMat);
-  plug.position.set(0, -0.12, tubeLen - 0.2);
-  plug.castShadow = false;
-  plug.receiveShadow = false;
-  plug.userData.portalBoreLiner = true;
-  plug.userData.portalBorePlug = true;
-  group.add(plug);
+  // No far-end solid plug — that sealed the driveable tunnel and caused clipping.
 
   return group;
 }
@@ -9741,7 +10123,7 @@ function tunnelMouthSlopeGeometry(yAt, clearBase, side, outward, opts = {}) {
  * @returns {THREE.ExtrudeGeometry}
  */
 function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
-  const key = `${clearHalfW.toFixed(2)}|${openH}|${depth.toFixed(2)}`;
+  const key = `archHollow|${clearHalfW.toFixed(2)}|${openH}|${depth.toFixed(2)}`;
   if (TUNNEL_ARCH_GEO.has(key)) return TUNNEL_ARCH_GEO.get(key);
 
   const thick = 1.35;
@@ -9755,20 +10137,19 @@ function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
   shape.lineTo(outerW, 0);
   shape.lineTo(-outerW, 0);
 
+  // Same open horseshoe hole as the mountain mass — wrong winding filled the bore solid.
   const hole = new THREE.Path();
   hole.moveTo(-clearHalfW, 0);
-  hole.lineTo(-clearHalfW, spring - 0.04);
-  hole.absarc(0, spring - 0.04, clearHalfW, Math.PI, 0, true);
   hole.lineTo(clearHalfW, 0);
+  hole.lineTo(clearHalfW, spring);
+  hole.absarc(0, spring, clearHalfW, 0, Math.PI, false);
   hole.lineTo(-clearHalfW, 0);
   shape.holes.push(hole);
 
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
-    bevelEnabled: true,
-    bevelThickness: 0.16,
-    bevelSize: 0.1,
-    bevelSegments: 2,
+    // Bevel on holed shapes warps/fills the aperture — keep sharp.
+    bevelEnabled: false,
     curveSegments: 16,
   });
   geo.translate(0, 0, -depth * 0.5);
@@ -9840,12 +10221,22 @@ function tunnelBoreStriationMap() {
  * @param {number} span metres across the land plane
  * @returns {THREE.CanvasTexture|null}
  */
+/**
+ * Visual Pass V4 — land map UV tiles. Larger grain matches landform scale
+ * (was span/8.5 ≈ 30× repeats → obvious tiling at rest).
+ * @param {number} span
+ * @returns {number}
+ */
+function landMapTiles(span) {
+  return Math.max(16, span / 15);
+}
+
 function landAlbedoMap(scenery, span) {
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   const scale = VISUAL.textureScale || 1;
   const tier = VISUAL.tier || 1;
   const base = paintedTexture(
-    `land-albedo-t${tier}-${kind}`,
+    `land-albedo-v4-t${tier}-${kind}`,
     (g, w, h) => {
       const img = g.createImageData(w, h);
       paintLandAlbedo(kind, w, h, img.data);
@@ -9855,7 +10246,7 @@ function landAlbedoMap(scenery, span) {
   );
   if (!base) return null;
   const map = base.clone();
-  const tiles = Math.max(28, span / 8.5);
+  const tiles = landMapTiles(span);
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.repeat.set(tiles, tiles);
@@ -9887,9 +10278,10 @@ function paintLandAlbedo(kind, w, h, d) {
       let g = lum;
       let b = lum;
       if (kind === "desert") {
-        const ripple = 0.5 + 0.5 * Math.sin(y * 0.21 + x * 0.03);
-        const windRipple = 0.5 + 0.5 * Math.sin(x * 0.08 + y * 0.015);
-        lum *= 0.91 + ripple * 0.08 + windRipple * 0.05;
+        // V4 — lower-frequency ripples so grain matches dune scale at rest.
+        const ripple = 0.5 + 0.5 * Math.sin(y * 0.14 + x * 0.022);
+        const windRipple = 0.5 + 0.5 * Math.sin(x * 0.055 + y * 0.011);
+        lum *= 0.91 + ripple * 0.09 + windRipple * 0.055;
         if (hi) {
           const cross = 0.5 + 0.5 * Math.sin(x * 0.31 + y * 0.09);
           const fine = 0.5 + 0.5 * Math.sin(y * 0.55 + x * 0.12);
@@ -10183,7 +10575,7 @@ function fillRectPx(d, w, h, x0, y0, x1, y1, r, g, b) {
  */
 function paintSurface(id, w, h, d) {
   if (id === "cobble") {
-    fillRectPx(d, w, h, 0, 0, w - 1, h - 1, 42, 38, 34);
+    fillRectPx(d, w, h, 0, 0, w - 1, h - 1, 62, 56, 50);
     const cols = 7;
     const rows = 12;
     const cw = w / cols;
@@ -10195,26 +10587,27 @@ function paintSurface(id, w, h, d) {
         const y0 = row * ch + 1 + texHash(row, col, 3) * 2;
         const x1 = (col + 1) * cw - 2;
         const y1 = (row + 1) * ch - 2;
-        const shade = 0.72 + texHash(col, row, 21) * 0.28;
+        const shade = 0.78 + texHash(col, row, 21) * 0.28;
         const warm = texHash(col, row, 4);
-        const r = (118 + warm * 40) * shade;
-        const g = (112 + warm * 22) * shade;
-        const b = (102 + warm * 8) * shade;
+        const r = (152 + warm * 44) * shade;
+        const g = (142 + warm * 24) * shade;
+        const b = (128 + warm * 10) * shade;
         fillRectPx(d, w, h, x0, y0, x1, y1, r, g, b);
       }
     }
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const grime = texHash(col, row, 51);
-        const mr = 28 + grime * 18;
-        const mg = 26 + grime * 14;
-        const mb = 22 + grime * 10;
+        const mr = 42 + grime * 24;
+        const mg = 38 + grime * 20;
+        const mb = 32 + grime * 14;
         const mx = (col * cw) | 0;
         const my = (row * ch) | 0;
         fillRectPx(d, w, h, mx, my, mx + 2, my + (ch | 0), mr, mg, mb);
         fillRectPx(d, w, h, mx, my, mx + (cw | 0), my + 2, mr, mg, mb);
       }
     }
+    paintEdgeErosion(id, w, h, d);
     return;
   }
 
@@ -10228,142 +10621,161 @@ function paintSurface(id, w, h, d) {
       let b = 90;
 
       if (id === "tarmac") {
-        r = 48 + n * 22;
-        g = 50 + n * 20;
-        b = 56 + n * 18;
-        if (n2 > 0.94 && n2 < 0.975) {
+        r = 72 + n * 32;
+        g = 74 + n * 30;
+        b = 82 + n * 24;
+        if (n2 > 0.92 && n2 < 0.97) {
           const agg = texHash(x, y, 33);
-          r += agg * 35;
-          g += agg * 32;
-          b += agg * 28;
-        } else if (n2 > 0.975) {
-          r += 28;
-          g += 26;
-          b += 22;
+          r += agg * 48;
+          g += agg * 42;
+          b += agg * 34;
+        } else if (n2 > 0.97) {
+          r += 40;
+          g += 36;
+          b += 30;
         }
         const oil = texHash(x >> 3, y >> 3, 39);
-        if (oil > 0.78 && oil < 0.88) {
-          r -= 18;
-          g -= 14;
-          b -= 8;
+        if (oil > 0.76 && oil < 0.9) {
+          r -= 16;
+          g -= 12;
+          b -= 6;
         }
         const rut = Math.min(Math.abs(u - 0.32), Math.abs(u - 0.68));
-        if (rut < 0.06) {
-          const wear = 1 - rut / 0.06;
-          r -= 10 + wear * 8;
-          g -= 10 + wear * 8;
-          b -= 8 + wear * 6;
+        if (rut < 0.07) {
+          const wear = 1 - rut / 0.07;
+          r -= 8 + wear * 10;
+          g -= 8 + wear * 10;
+          b -= 5 + wear * 6;
         }
-        if (Math.abs(u - 0.5) < 0.018 && y % 36 < 16) {
-          r = 214;
-          g = 186;
-          b = 48;
+        if (Math.abs(u - 0.5) < 0.016 && y % 34 < 15) {
+          r = 222;
+          g = 192;
+          b = 42;
         }
-        if ((VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism) {
-          // Bitumen bleed + fine aggregate for photoreal tarmac.
-          const bit = texHash(x >> 2, y >> 2, 181);
-          if (bit > 0.82 && bit < 0.9) {
-            r -= 8;
-            g -= 6;
-            b -= 2;
-          }
-          const agg2 = texHash(x, y, 191);
-          if (agg2 > 0.96) {
-            r += 18;
-            g += 16;
-            b += 12;
-          }
+        // Fine bitumen flecks every tier (V3) — was cinema-only.
+        const bit = texHash(x >> 2, y >> 2, 181);
+        if (bit > 0.8 && bit < 0.91) {
+          r -= 10;
+          g -= 7;
+          b -= 2;
+        }
+        const agg2 = texHash(x, y, 191);
+        if (agg2 > 0.955) {
+          r += 22;
+          g += 18;
+          b += 14;
         }
       } else if (id === "gravel") {
-        r = 96 + n * 28;
-        g = 82 + n * 22;
-        b = 58 + n * 16;
-        if (n2 > 0.88) {
+        r = 118 + n * 36;
+        g = 102 + n * 28;
+        b = 78 + n * 20;
+        // Dark bed between chips.
+        const bed = texHash(x >> 2, y >> 2, 61);
+        if (bed < 0.22) {
+          r = 78 + n * 14;
+          g = 64 + n * 12;
+          b = 48 + n * 10;
+        }
+        if (n2 > 0.86) {
           const chip = texHash(x, y, 11);
-          r = 140 + chip * 70;
-          g = 132 + chip * 55;
-          b = 118 + chip * 40;
-        } else if (n2 > 0.82) {
+          r = 172 + chip * 72;
+          g = 158 + chip * 58;
+          b = 136 + chip * 42;
+        } else if (n2 > 0.78) {
           const chip = texHash(x, y, 55);
-          r = 118 + chip * 40;
-          g = 108 + chip * 32;
-          b = 92 + chip * 24;
-        } else if (n2 < 0.12) {
-          r = 62;
-          g = 52;
-          b = 40;
+          r = 148 + chip * 44;
+          g = 134 + chip * 36;
+          b = 112 + chip * 26;
+        } else if (n2 < 0.1) {
+          r = 82;
+          g = 68;
+          b = 52;
+        }
+        const rut = Math.min(Math.abs(u - 0.33), Math.abs(u - 0.67));
+        if (rut < 0.09) {
+          r -= 14;
+          g -= 10;
+          b -= 6;
         }
       } else if (id === "dirt") {
-        r = 92 + n * 24;
-        g = 54 + n * 16;
-        b = 28 + n * 10;
-        const streak = Math.sin(u * 18 + y * 0.2) * 10;
+        r = 118 + n * 32;
+        g = 74 + n * 20;
+        b = 42 + n * 14;
+        // Washboard streaks along-track (V3).
+        const wash = Math.sin(y * 0.55 + u * 4) * 8 + Math.sin(y * 1.4) * 4;
+        r += wash;
+        g += wash * 0.55;
+        const streak = Math.sin(u * 18 + y * 0.2) * 12;
         r += streak;
         g += streak * 0.5;
         const rut = Math.min(Math.abs(u - 0.34), Math.abs(u - 0.66));
-        if (rut < 0.08) {
-          r -= 22;
-          g -= 14;
+        if (rut < 0.09) {
+          r -= 20;
+          g -= 12;
           b -= 8;
         }
-        if (n2 > 0.93) {
-          r = 70;
-          g = 58;
-          b = 42;
+        if (n2 > 0.92) {
+          r = 90;
+          g = 72;
+          b = 50;
         }
       } else if (id === "sand") {
-        // Packed safari ribbon — darker than the dune wash so the line reads.
-        const ripple = Math.sin(y * 0.22 + u * 6) * 6 + Math.sin(y * 0.07) * 3;
-        const shimmer = Math.sin(y * 0.045 + u * 2.5) * 4 + Math.sin(y * 0.018) * 2.5;
-        r = 108 + n * 14 + ripple + shimmer;
-        g = 78 + n * 10 + ripple * 0.55 + shimmer * 0.35;
-        b = 42 + n * 7 + ripple * 0.18 + shimmer * 0.12;
+        // Wind ripples + dual frequency shimmer (V3).
+        const ripple =
+          Math.sin(y * 0.28 + u * 7.5) * 8 +
+          Math.sin(y * 0.09 + u * 2) * 4 +
+          Math.sin(y * 0.9 + u * 14) * 2.5;
+        const shimmer = Math.sin(y * 0.045 + u * 2.5) * 5 + Math.sin(y * 0.018) * 3;
+        r = 152 + n * 20 + ripple + shimmer;
+        g = 114 + n * 15 + ripple * 0.55 + shimmer * 0.35;
+        b = 66 + n * 11 + ripple * 0.18 + shimmer * 0.12;
         const rut = Math.min(Math.abs(u - 0.33), Math.abs(u - 0.67));
-        if (rut < 0.12) {
-          r -= 32;
-          g -= 24;
-          b -= 12;
+        if (rut < 0.13) {
+          r -= 24;
+          g -= 16;
+          b -= 10;
         }
       } else if (id === "mud") {
-        r = 48 + n * 14;
-        g = 36 + n * 10;
-        b = 24 + n * 8;
+        r = 72 + n * 20;
+        g = 54 + n * 15;
+        b = 38 + n * 11;
         const puddle = texHash(x >> 2, y >> 2, 5);
-        if (puddle > 0.62) {
-          r = 28 + n * 8;
-          g = 32 + n * 10;
-          b = 22 + n * 6;
+        if (puddle > 0.58) {
+          // Wet specular dark — reads flatter/wetter under sun.
+          r = 42 + n * 10;
+          g = 46 + n * 12;
+          b = 36 + n * 8;
           const edge = texHash(x, y, 45);
-          if (edge > 0.88 && edge < 0.93) {
-            r += 14;
-            g += 10;
-            b += 6;
+          if (edge > 0.86 && edge < 0.94) {
+            r += 22;
+            g += 14;
+            b += 8;
           }
         }
-        if (n2 > 0.9) {
-          r += 18;
-          g += 12;
+        if (n2 > 0.88) {
+          r += 26;
+          g += 16;
         }
         const rut = Math.min(Math.abs(u - 0.35), Math.abs(u - 0.65));
-        if (rut < 0.1) {
-          r -= 8;
-          g -= 4;
+        if (rut < 0.11) {
+          r -= 10;
+          g -= 5;
         }
       } else if (id === "grass") {
-        r = 46 + n * 18;
-        g = 92 + n * 28;
-        b = 36 + n * 12;
-        if (n2 > 0.78) {
-          r += 20;
-          g += 28;
-          b += 8;
+        r = 58 + n * 22;
+        g = 108 + n * 34;
+        b = 44 + n * 16;
+        if (n2 > 0.76) {
+          r += 22;
+          g += 32;
+          b += 10;
         }
         const rut = Math.min(Math.abs(u - 0.34), Math.abs(u - 0.66));
-        if (rut < 0.11) {
-          const k = 1 - rut / 0.11;
-          r = r * (1 - k) + (86 + n * 16) * k;
-          g = g * (1 - k) + (58 + n * 10) * k;
-          b = b * (1 - k) + (28 + n * 8) * k;
+        if (rut < 0.12) {
+          const k = 1 - rut / 0.12;
+          r = r * (1 - k) + (90 + n * 16) * k;
+          g = g * (1 - k) + (56 + n * 10) * k;
+          b = b * (1 - k) + (26 + n * 8) * k;
         }
       } else {
         r = 96 + n * 20;
@@ -10376,18 +10788,20 @@ function paintSurface(id, w, h, d) {
   }
 
   if (id === "gravel") {
-    for (let i = 0; i < 280; i++) {
+    for (let i = 0; i < 360; i++) {
       const sx = (texHash(i, 3, 19) * w) | 0;
       const sy = (texHash(i, 8, 23) * h) | 0;
       const sizeTier = texHash(i, 7, 53);
       const rad =
-        sizeTier > 0.7
-          ? (2 + texHash(i, 1, 2) * 2.5) | 0
-          : (1 + texHash(i, 1, 2) * 1.5) | 0;
+        sizeTier > 0.72
+          ? (2 + texHash(i, 1, 2) * 3) | 0
+          : sizeTier > 0.4
+            ? (1 + texHash(i, 1, 2) * 2) | 0
+            : (1 + texHash(i, 1, 2) * 1.2) | 0;
       const light = texHash(i, 4, 6);
-      const sr = 110 + light * 90;
-      const sg = 102 + light * 70;
-      const sb = 88 + light * 50;
+      const sr = 105 + light * 100;
+      const sg = 98 + light * 78;
+      const sb = 84 + light * 55;
       for (let oy = -rad; oy <= rad; oy++) {
         for (let ox = -rad; ox <= rad; ox++) {
           if (ox * ox + oy * oy <= rad * rad) {
@@ -10395,6 +10809,67 @@ function paintSurface(id, w, h, d) {
           }
         }
       }
+    }
+  }
+
+  paintEdgeErosion(id, w, h, d);
+}
+
+/**
+ * Visual Pass V3 — broken verge chips / gravel spill near u≈0 and u≈1.
+ * @param {string} id
+ * @param {number} w
+ * @param {number} h
+ * @param {Uint8ClampedArray} d
+ */
+function paintEdgeErosion(id, w, h, d) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / (w - 1);
+      const edge = Math.min(u, 1 - u);
+      if (edge > 0.13) continue;
+      const k = 1 - edge / 0.13;
+      const n = texHash(x, y, 77);
+      const n2 = texHash(x, y, 91);
+      const i = (y * w + x) * 4;
+      let r = d[i];
+      let g = d[i + 1];
+      let b = d[i + 2];
+      if (id === "tarmac" || id === "cobble") {
+        // Crumbled asphalt / stone — light chips + dark cavities.
+        if (n2 > 0.7) {
+          r = r * (1 - k * 0.35) + (150 + n * 40) * k * 0.35;
+          g = g * (1 - k * 0.35) + (140 + n * 32) * k * 0.35;
+          b = b * (1 - k * 0.35) + (120 + n * 24) * k * 0.35;
+        } else if (n2 < 0.28) {
+          r -= k * (18 + n * 14);
+          g -= k * (16 + n * 12);
+          b -= k * (12 + n * 10);
+        }
+      } else if (id === "gravel" || id === "dirt" || id === "sand") {
+        // Spill / soft shoulder lighten toward verge.
+        r = r * (1 - k * 0.4) + (168 + n * 50) * k * 0.4;
+        g = g * (1 - k * 0.4) + (138 + n * 36) * k * 0.4;
+        b = b * (1 - k * 0.4) + (92 + n * 28) * k * 0.4;
+        if (n2 > 0.88) {
+          r += k * 28;
+          g += k * 20;
+        }
+      } else if (id === "mud") {
+        r -= k * (8 + n * 10);
+        g -= k * (4 + n * 6);
+        if (n2 > 0.9) {
+          r += k * 20;
+          g += k * 12;
+        }
+      } else if (id === "grass") {
+        r = r * (1 - k * 0.45) + (96 + n * 20) * k * 0.45;
+        g = g * (1 - k * 0.45) + (72 + n * 16) * k * 0.45;
+        b = b * (1 - k * 0.45) + (36 + n * 10) * k * 0.45;
+      }
+      d[i] = Math.max(0, Math.min(255, r));
+      d[i + 1] = Math.max(0, Math.min(255, g));
+      d[i + 2] = Math.max(0, Math.min(255, b));
     }
   }
 }
@@ -10410,10 +10885,10 @@ function landNormalMap(scenery, span) {
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   const scale = VISUAL.textureScale || 1;
   const tier = VISUAL.tier || 1;
-  const hit = LAND_NORM.get(`${tier}|${kind}|${scale}`);
+  const hit = LAND_NORM.get(`v4|${tier}|${kind}|${scale}`);
   if (hit) {
     const map = hit.clone();
-    const tiles = Math.max(28, span / 8.5);
+    const tiles = landMapTiles(span);
     map.wrapS = THREE.RepeatWrapping;
     map.wrapT = THREE.RepeatWrapping;
     map.repeat.set(tiles, tiles);
@@ -10428,9 +10903,9 @@ function landNormalMap(scenery, span) {
     h
   );
   if (!tex) return null;
-  LAND_NORM.set(`${tier}|${kind}|${scale}`, tex);
+  LAND_NORM.set(`v4|${tier}|${kind}|${scale}`, tex);
   const map = tex.clone();
-  const tiles = Math.max(28, span / 8.5);
+  const tiles = landMapTiles(span);
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.repeat.set(tiles, tiles);
@@ -10514,13 +10989,15 @@ function canvasNormalFromPaint(paintFn, w, h, strength) {
 function roadNormalFor(id) {
   if (!VISUAL.realisticArcade) return null;
   const key = SURFACES[id] ? id : "dirt";
-  const hit = ROAD_NORM.get(key);
+  const tier = VISUAL.tier || 1;
+  const cacheKey = `v3|t${tier}|${key}`;
+  const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
   const w = 128 * texScale;
   const h = 256 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSurface(key, ww, hh, data), w, h);
-  ROAD_NORM.set(key, tex);
+  ROAD_NORM.set(cacheKey, tex);
   return tex;
 }
 
@@ -10531,7 +11008,7 @@ function roadNormalFor(id) {
 function roadTextureFor(id) {
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `t${tier}|${key}`;
+  const cacheKey = `v3|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -10557,6 +11034,119 @@ function roadTextureFor(id) {
 }
 
 /** @type {Map<string, THREE.CanvasTexture>} */
+const SKIRT_TEX = new Map();
+/** @type {Map<string, THREE.CanvasTexture>} */
+const SKIRT_NORM = new Map();
+
+/**
+ * Visual Pass V3 — earth grain for road skirts (shoulder / apron).
+ * @param {string} scenery
+ * @param {number} w
+ * @param {number} h
+ * @param {Uint8ClampedArray} d
+ */
+function paintSkirtGrain(scenery, w, h, d) {
+  const desert = scenery === "desert";
+  const forest = scenery === "forest";
+  const mountain = scenery === "mountain";
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = texHash(x, y, 3);
+      const n2 = texHash(x, y, 11);
+      let r;
+      let g;
+      let b;
+      if (desert) {
+        r = 168 + n * 36;
+        g = 138 + n * 24;
+        b = 88 + n * 16;
+      } else if (forest) {
+        r = 88 + n * 28;
+        g = 92 + n * 22;
+        b = 58 + n * 14;
+      } else if (mountain) {
+        r = 112 + n * 30;
+        g = 104 + n * 24;
+        b = 88 + n * 18;
+      } else {
+        r = 120 + n * 28;
+        g = 118 + n * 22;
+        b = 78 + n * 16;
+      }
+      if (n2 > 0.9) {
+        r += 28;
+        g += 18;
+        b += 10;
+      } else if (n2 < 0.12) {
+        r -= 22;
+        g -= 16;
+        b -= 10;
+      }
+      // Soft cross-grain so the apron is not a flat VC slab.
+      const grain = Math.sin(x * 0.4 + y * 0.15) * 6 + Math.sin(y * 0.55) * 4;
+      putPx(d, w, x, y, r + grain, g + grain * 0.7, b + grain * 0.35);
+    }
+  }
+}
+
+/**
+ * @param {string} scenery
+ * @returns {THREE.CanvasTexture|null}
+ */
+function skirtTextureFor(scenery) {
+  if (!VISUAL.realisticArcade) return null;
+  const kind =
+    scenery === "desert" || scenery === "mountain" || scenery === "lakeside" || scenery === "forest"
+      ? scenery
+      : "forest";
+  const tier = VISUAL.tier || 1;
+  const cacheKey = `skirt|v3|t${tier}|${kind}`;
+  const hit = SKIRT_TEX.get(cacheKey);
+  if (hit) return hit;
+  const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
+  const w = 128 * texScale;
+  const h = 128 * texScale;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  const img = g.createImageData(w, h);
+  paintSkirtGrain(kind, w, h, img.data);
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  tex.userData.shared = true;
+  SKIRT_TEX.set(cacheKey, tex);
+  return tex;
+}
+
+/**
+ * @param {string} scenery
+ * @returns {THREE.CanvasTexture|null}
+ */
+function skirtNormalFor(scenery) {
+  if (!VISUAL.realisticArcade) return null;
+  const kind =
+    scenery === "desert" || scenery === "mountain" || scenery === "lakeside" || scenery === "forest"
+      ? scenery
+      : "forest";
+  const tier = VISUAL.tier || 1;
+  const cacheKey = `skirtN|v3|t${tier}|${kind}`;
+  const hit = SKIRT_NORM.get(cacheKey);
+  if (hit) return hit;
+  const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
+  const w = 128 * texScale;
+  const h = 128 * texScale;
+  const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSkirtGrain(kind, ww, hh, data), w, h);
+  if (!tex) return null;
+  SKIRT_NORM.set(cacheKey, tex);
+  return tex;
+}
+
+/** @type {Map<string, THREE.CanvasTexture>} */
 const ROAD_AO = new Map();
 
 /**
@@ -10568,7 +11158,7 @@ function roadAoFor(id) {
   if (!VISUAL.realisticArcade || (VISUAL.tier || 0) < 3) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 3;
-  const cacheKey = `t${tier}|${key}`;
+  const cacheKey = `v3|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -10611,7 +11201,7 @@ function roadRoughFor(id) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `rough|t${tier}|${key}`;
+  const cacheKey = `rough|v3|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, (VISUAL.textureScale || 1) * 0.5);
@@ -10623,7 +11213,17 @@ function roadRoughFor(id) {
   const g = c.getContext("2d");
   const img = g.createImageData(w, h);
   paintSurface(key, w, h, img.data);
-  const base = key === "tarmac" || key === "cobble" ? 0.22 : key === "gravel" ? 0.7 : 0.82;
+  // Visual Pass V3 — wider specular: tarmac wetter, mud flatter, gravel flecks.
+  const base =
+    key === "tarmac"
+      ? 0.16
+      : key === "cobble"
+        ? 0.28
+        : key === "gravel"
+          ? 0.62
+          : key === "mud"
+            ? 0.88
+            : 0.78;
   for (let i = 0; i < img.data.length; i += 4) {
     const lum = (img.data[i] + img.data[i + 1] + img.data[i + 2]) / (3 * 255);
     // Specular flecks on bright aggregate; darker ruts stay rough.
@@ -10658,11 +11258,11 @@ function landRoughnessMap(scenery, span) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `land-rough|t${tier}|${kind}`;
+  const cacheKey = `land-rough|v4|t${tier}|${kind}`;
   const hit = LAND_ROUGH.get(cacheKey);
   if (hit) {
     const map = hit.clone();
-    const tiles = Math.max(28, span / 8.5);
+    const tiles = landMapTiles(span);
     map.wrapS = THREE.RepeatWrapping;
     map.wrapT = THREE.RepeatWrapping;
     map.repeat.set(tiles, tiles);
@@ -10678,11 +11278,16 @@ function landRoughnessMap(scenery, span) {
   const g = c.getContext("2d");
   const img = g.createImageData(w, h);
   paintLandAlbedo(kind, w, h, img.data);
-  const base = kind === "desert" ? 0.88 : kind === "mountain" ? 0.72 : kind === "lakeside" ? 0.78 : 0.9;
+  const base = kind === "desert" ? 0.86 : kind === "mountain" ? 0.7 : kind === "lakeside" ? 0.76 : 0.88;
   for (let i = 0; i < img.data.length; i += 4) {
     const lum = (img.data[i] + img.data[i + 1] + img.data[i + 2]) / (3 * 255);
-    let r = base + (0.5 - lum) * 0.35;
-    r = Math.max(0.2, Math.min(0.98, r));
+    let r = base + (0.5 - lum) * 0.38;
+    // Visual Pass V4 — darker albedo → wetter (lower roughness); mountain rock flecks harder.
+    if (kind === "lakeside" || kind === "desert") {
+      if (lum < 0.42) r -= 0.12;
+    }
+    if (kind === "mountain" && lum > 0.62) r += 0.1;
+    r = Math.max(0.18, Math.min(0.98, r));
     const v = (r * 255) | 0;
     img.data[i] = v;
     img.data[i + 1] = v;
@@ -10697,7 +11302,7 @@ function landRoughnessMap(scenery, span) {
   tex.userData.shared = true;
   LAND_ROUGH.set(cacheKey, tex);
   const map = tex.clone();
-  const tiles = Math.max(28, span / 8.5);
+  const tiles = landMapTiles(span);
   map.repeat.set(tiles, tiles);
   map.userData.shared = true;
   return map;

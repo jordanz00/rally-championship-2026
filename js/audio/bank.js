@@ -78,28 +78,58 @@ export async function loadSample(ctx, url, loopFade = 0) {
 
 /**
  * Play a one-shot buffer through dest with a short gain envelope.
+ * Optional HP/LP keep impacts punchy without bus shrillness.
  * @param {AudioContext} ctx
  * @param {AudioNode} dest
  * @param {AudioBuffer|null} buf
- * @param {{gain?:number, rate?:number, when?:number, dur?:number}} [opt]
+ * @param {{gain?:number, rate?:number, when?:number, dur?:number, attack?:number, hp?:number, lp?:number, pan?:number}} [opt]
  */
 export function playHit(ctx, dest, buf, opt = {}) {
   if (!buf) return;
   const when = opt.when || ctx.currentTime;
   const rate = opt.rate || 1;
   const peak = opt.gain || 0.4;
-  const dur = opt.dur || buf.duration / rate;
+  const dur = Math.max(0.02, opt.dur || buf.duration / rate);
+  const attack = Math.max(0.0015, opt.attack != null ? opt.attack : 0.008);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = rate;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, when);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), when + 0.012);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), when + attack);
+  // Soft hold then decay — exponential all the way to silence was clicky on short hits.
+  const hold = Math.min(dur * 0.22, 0.045);
+  g.gain.setValueAtTime(Math.max(0.001, peak * 0.92), when + attack + hold);
   g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-  src.connect(g);
+
+  /** @type {AudioNode} */
+  let node = src;
+  if (opt.hp && opt.hp > 20) {
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = opt.hp;
+    hp.Q.value = 0.65;
+    node.connect(hp);
+    node = hp;
+  }
+  if (opt.lp && opt.lp < 18000) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = opt.lp;
+    lp.Q.value = 0.7;
+    node.connect(lp);
+    node = lp;
+  }
+  if (opt.pan != null && ctx.createStereoPanner) {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, opt.pan));
+    node.connect(pan);
+    node = pan;
+  }
+  node.connect(g);
   g.connect(dest);
   src.start(when);
-  src.stop(when + dur + 0.04);
+  src.stop(when + dur + 0.05);
 }
 
 /**

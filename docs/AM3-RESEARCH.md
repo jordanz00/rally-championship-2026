@@ -76,6 +76,9 @@ surface-coloured on sand/gravel/mud (`effects.js`). See §5 notes.
    **Implemented (clone):** `applyGlance` in `js/physics/collide.js` redirects wall
    closing speed along the nose (keep 0.62); only clock `_dnf` ends a run.
    Manual downshift-while-turning drift: `_applyGearDriftKick` + `gearDriftKick` 0.66.
+   **Implemented (clone, Sprint v606):** `ARCADE_ASSIST` dial — progressive tire
+   sweet spot (`tireSlideSoft`), capped yaw assist, countersteer recovery window,
+   landing yaw damp; `?physdebug=1` overlay. Still no drift button.
 
 ## 3. Structure
 

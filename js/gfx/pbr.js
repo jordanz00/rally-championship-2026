@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=183";
+import { VISUAL } from "../config.js?v=201";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -38,15 +38,15 @@ function ue5() {
   return (VISUAL.tier || 0) >= 10 && VISUAL.ue5Look !== false;
 }
 
-/** Per-surface road roughness for realistic arcade PBR. */
+/** Per-surface road roughness for realistic arcade PBR (Visual Pass V3). */
 const ROAD_ROUGH = {
-  tarmac: 0.28,
-  gravel: 0.82,
-  dirt: 0.9,
-  sand: 0.93,
-  mud: 0.95,
-  cobble: 0.62,
-  grass: 0.92,
+  tarmac: 0.24,
+  gravel: 0.76,
+  dirt: 0.86,
+  sand: 0.9,
+  mud: 0.97,
+  cobble: 0.56,
+  grass: 0.9,
 };
 
 /** @type {WeakMap<THREE.Material, THREE.Material>} */
@@ -155,29 +155,33 @@ export function glass(color = 0x1a2832, extra = {}) {
     const mat = new THREE.MeshPhysicalMaterial({
       color,
       transparent: true,
-      opacity: extra.opacity != null ? extra.opacity : 0.38,
-      roughness: 0.06,
+      opacity: extra.opacity != null ? extra.opacity : 0.34,
+      roughness: extra.roughness != null ? extra.roughness : 0.035,
       metalness: 0,
       ior: 1.45,
-      envMapIntensity: 1.05,
+      envMapIntensity: extra.envMapIntensity != null ? extra.envMapIntensity : 1.35,
       depthWrite: false,
-      side: THREE.DoubleSide,
+      // FrontSide only — DoubleSide transparent draws the back face first and
+      // reads as flipped / inside-out panes on the title orbit cam.
+      side: extra.side != null ? extra.side : THREE.FrontSide,
     });
     mat.userData.kind = "glass";
-    mat.userData.lockEnv = true;
+    // Allow title showcase / IBL to boost glass env (was lockEnv:true → dull panes).
+    mat.userData.lockEnv = extra.lockEnv === true;
+    if ("forceSinglePass" in mat) mat.forceSinglePass = true;
     return mat;
   }
   const params = flatParams(extra);
   const mat = new THREE.MeshLambertMaterial({
     color,
     transparent: true,
-    opacity: params.opacity != null ? params.opacity : 0.46,
+    opacity: params.opacity != null ? params.opacity : 0.4,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    side: extra.side != null ? extra.side : THREE.FrontSide,
     ...params,
   });
   mat.userData.kind = "glass";
-  mat.userData.lockEnv = true;
+  mat.userData.lockEnv = extra.lockEnv === true;
   return mat;
 }
 
@@ -417,7 +421,7 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
     map,
     normalMap,
     aoMap: aoMap || null,
-    aoMapIntensity: aoMap ? (tier >= 10 ? 1.05 : 0.85) : 1,
+    aoMapIntensity: aoMap ? (tier >= 10 ? 0.72 : 0.55) : 1,
     roughnessMap: roughnessMap || null,
     normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
@@ -474,22 +478,29 @@ export function worldTerrainMaterial(opts = {}) {
 }
 
 /**
- * Road shoulder / apron ribbon beside the deck.
+ * Road shoulder / apron ribbon beside the deck (Visual Pass V3 — grain map).
+ * @param {THREE.Texture|null} [map]
+ * @param {THREE.Texture|null} [normalMap]
  * @returns {THREE.Material}
  */
-export function worldSkirtMaterial() {
+export function worldSkirtMaterial(map = null, normalMap = null) {
   if (!VISUAL.realisticArcade) {
     return new THREE.MeshLambertMaterial({
+      map: map || null,
       vertexColors: true,
       flatShading: true,
       side: THREE.DoubleSide,
     });
   }
+  const ns = (VISUAL.normalStrength ?? 0.85) * 0.72;
   return new THREE.MeshStandardMaterial({
+    map: map || null,
+    normalMap: normalMap || null,
+    normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
-    roughness: 0.92,
+    roughness: 0.9,
     metalness: 0.01,
-    envMapIntensity: 0.18,
+    envMapIntensity: 0.22,
     flatShading: false,
     side: THREE.DoubleSide,
   });
@@ -713,29 +724,36 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
           if (envMap) m.envMap = envMap;
           if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
             if (isGlass) {
-              if (!m.userData.lockEnv) m.envMapIntensity = glassEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.12, 0.04);
-              m.metalness = Math.min(m.metalness != null ? m.metalness : 0, 0.1);
+              // Always boost glass in the showroom — lockEnv must not leave dull panes.
+              m.envMapIntensity = glassEnv;
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.12, 0.03);
+              m.metalness = Math.min(m.metalness != null ? m.metalness : 0, 0.08);
+              m.side = THREE.FrontSide;
+              m.depthWrite = false;
+              m.transparent = true;
+              m.opacity = Math.min(m.opacity != null ? m.opacity : 0.38, 0.36);
+              m.userData.kind = "glass";
+              m.userData.lockEnv = false;
             } else if (isChrome) {
               if (!m.userData.lockEnv) m.envMapIntensity = chromeEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.06);
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.05);
               m.metalness = Math.max(m.metalness != null ? m.metalness : 0.82, 0.96);
             } else if (isRubber) {
               if (!m.userData.lockEnv) m.envMapIntensity = 0.22;
             } else {
               if (!m.userData.lockEnv) m.envMapIntensity = bodyEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.52, 0.18);
-              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.08, 0.28);
+              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.52, 0.16);
+              m.metalness = Math.max(m.metalness != null ? m.metalness : 0.08, 0.22);
               // Wet showroom lacquer — clearcoat catches sky / rim.
               if (m.isMeshPhysicalMaterial) {
                 m.clearcoat = Math.max(m.clearcoat != null ? m.clearcoat : 0, 1);
                 m.clearcoatRoughness = Math.min(
                   m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.12,
-                  0.06
+                  0.045
                 );
                 m.clearcoatEnvMapIntensity = Math.max(
                   m.clearcoatEnvMapIntensity != null ? m.clearcoatEnvMapIntensity : 1,
-                  1.35
+                  1.55
                 );
               }
             }

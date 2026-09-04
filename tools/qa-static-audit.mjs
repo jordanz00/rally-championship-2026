@@ -197,6 +197,22 @@ function collectImports() {
       if (!spec.startsWith(".") && !spec.startsWith("/")) {
         // bare specifier — no bundler here, so this cannot resolve in a browser
         if (/^https?:/.test(spec)) continue; // handled by the remote-asset check
+        // Phase R: importmap maps "three" → vendor/three.module.js | three.webgpu.js
+        if (spec === "three") {
+          const mapped = path.join(ROOT, "vendor", "three.module.js");
+          const mappedGpu = path.join(ROOT, "vendor", "three.webgpu.js");
+          if (fs.existsSync(mapped) && fs.existsSync(mappedGpu)) {
+            edges.push({
+              importer: file,
+              spec,
+              version: null,
+              resolved: mapped,
+              line: lineAt(src, m.index),
+              importmapped: true,
+            });
+            continue;
+          }
+        }
         edges.push({ importer: file, spec, version: null, resolved: null, line: lineAt(src, m.index) });
         continue;
       }

@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=125";
+import { Vehicle } from "./physics/vehicle.js?v=132";
 import { getSurface } from "./physics/surfaces.js?v=51";
-import { AI, CARS } from "./config.js?v=183";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=149";
+import { AI, CARS } from "./config.js?v=201";
+import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=157";
 
 const G = 9.81;
 
@@ -550,7 +550,19 @@ export class Opponent {
     const d = this.vehicle.drawPose(alpha);
     this.mesh.position.set(d.x, d.y, d.z);
     this.mesh.rotation.set(d.pitch, d.yaw, d.roll, "YXZ");
-    applyWheelPose(this.mesh.userData.wheels || [], d.spin, d.steer, d.roll, d.wheelY);
+    // Same travel cap as the player — pack must look planted, not springy.
+    let wy = d.wheelY;
+    if (wy) {
+      const cap = 0.085;
+      if (!this._wheelYScratch) this._wheelYScratch = [0, 0, 0, 0];
+      const s = this._wheelYScratch;
+      s[0] = Math.max(-cap, Math.min(cap, wy[0]));
+      s[1] = Math.max(-cap, Math.min(cap, wy[1]));
+      s[2] = Math.max(-cap, Math.min(cap, wy[2]));
+      s[3] = Math.max(-cap, Math.min(cap, wy[3]));
+      wy = s;
+    }
+    applyWheelPose(this.mesh.userData.wheels || [], d.spin, d.steer, d.roll, wy);
     const braking = this.vehicle.brake > 0.08 || this.vehicle.handbrake > 0.28;
     if (this.mesh.userData.brakeOn !== braking) {
       this.mesh.userData.brakeOn = braking;
