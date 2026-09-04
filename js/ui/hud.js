@@ -218,6 +218,27 @@ export class Hud {
   }
 
   /**
+   * Brief scale punch on the place ordinal when the pack order changes.
+   * @param {number} place
+   * @param {"gain"|"drop"} kind
+   */
+  punchPlace(place, kind) {
+    if (!this.pos) return;
+    this.pos.dataset.place = place <= 3 ? String(place) : "pack";
+    if (prefersReducedMotion()) return;
+    const cls = kind === "drop" ? "is-drop" : "is-gain";
+    this.pos.classList.remove("is-gain", "is-drop");
+    requestAnimationFrame(() => {
+      if (!this.pos) return;
+      this.pos.classList.add(cls);
+    });
+    if (this._placePunchClear) clearTimeout(this._placePunchClear);
+    this._placePunchClear = setTimeout(() => {
+      if (this.pos) this.pos.classList.remove("is-gain", "is-drop");
+    }, 620);
+  }
+
+  /**
    * Freeze the along-track distance on the pause sheet for bug reports.
    * @param {number} progressM metres along the spline
    * @param {string} [courseId]
@@ -554,6 +575,11 @@ function ordinal(n) {
   if (n === 2) return "2nd";
   if (n === 3) return "3rd";
   return `${n}th`;
+}
+
+/** Exported for race place-gain banners (game.js). */
+export function placeOrdinal(n) {
+  return ordinal(n);
 }
 
 /** Semantic surface token for HUD colour accents. */

@@ -1779,3 +1779,19 @@ export const PACE = {
   speakDelayMs: 28,
   hardSpeakDelayMs: 0,
 };
+
+/**
+ * Pack-battle feedback (no telemetry HUD). Place changes used to tick the
+ * ordinal silently — gains now punch the banner + chirp so overtakes read as
+ * racing moments. Drops only punch the place glyph (no nag banner).
+ */
+export const RACE_FEEDBACK = {
+  /** Ignore grid launch shuffle before this many race seconds. */
+  placeArmSec: 2.4,
+  /** Minimum seconds between place pulses. */
+  placeCooldownSec: 1.05,
+  /** Flash centre banner on gains (e.g. "2ND!"). */
+  flashGains: true,
+  /** Soft chirp under a gain flash. */
+  gainChirp: true,
+};

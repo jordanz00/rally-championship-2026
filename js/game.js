@@ -15,7 +15,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=289";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=30";
 import { Opponent } from "./ai.js?v=144";
-import { RallyAudio } from "./audio/engine.js?v=66";
+import { RallyAudio } from "./audio/engine.js?v=68";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=38";
 import {
@@ -26,7 +26,7 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=36";
+} from "./ui/hud.js?v=37";
 import { wireTechShowcase, fillTechShowcase, focusTechChapter } from "./ui/dev-showcase.js?v=2";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=64";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=47";
@@ -57,7 +57,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=202";
+} from "./config.js?v=203";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";

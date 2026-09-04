@@ -2,7 +2,7 @@
 
 **Purpose:** Compact brain packet for future Cursor sessions. Read this before rediscovering strategy.  
 **Authority:** Code + `docs/QA-REPORT.md` beat stale narrative. Update this file when the current objective closes or a CEO decision lands.  
-**Last updated:** 2026-09-04 · Boot `main.js?v=643`
+**Last updated:** 2026-09-04 · Boot `main.js?v=645`
 
 ---
 
@@ -15,8 +15,9 @@
 - QualityManager / perf tiers · WebGL2 path (WebGPU vendor present, production cutover gated).
 - Automated gates green when last run: `qa-static-audit`, `qa-validate`, many sprint `qa-*` (headed Chrome optional / flaky in Cursor).
 - **Arcade First Boot (SHIP 1, 2026-09-04):** START → championship SELECT CAR → Celica → Desert; garage/GLB/PHYS LAB/FPS/DIST/SURFACE/GRIP/SLIDE behind `?dev=1` / `?debug=1` / `rally-debug=1`.
+- **Pack place punch (2026-09-04):** Overtake gains flash `2ND!` / chirp + ordinal scale punch; drops glyph-only. Config `RACE_FEEDBACK`. No telemetry HUD return.
 
-**Local vs Pages:** Local tree boot ~`?v=643`. Git `origin` last commit noted ~v583 — Pages may lag; hard-refresh local `index.html` pins.
+**Local vs Pages:** Local tree boot ~`?v=645`. Git `origin` last commit may lag; hard-refresh local `index.html` pins.
 
 ---
 
@@ -30,7 +31,7 @@
 | 4 | **Absolute 60 fps claim still soft** | QA-REPORT · software raster / device variance |
 | 5 | **AI surface skill / fair pack** not next until A+B human | Roadmap / CEO defer |
 | 6 | **Desert vertical-slice identity** (SHIP 2) still open | Prior CEO ship order — after Boot |
-| 7 | **Deep race-feedback** (pace readability, slide feel without telemetry HUD) | Pace DOM often `display:none`; audio-first |
+| 7 | **Deep race-feedback remainder** — slide readability still audio/FX-first (pace DOM intentionally hidden) | Place-gain punch shipped; slide badge stays debug-only |
 | 8 | **Stale Sprint 89 Jump-3 PARTIAL in tables** | Doc lie; superseded by later sprints |
 | 9 | **GitHub Pages cache lag** vs local `?v=` | Commit vs working tree |
 | 10 | **PerformanceDirector / density** deferred | Roadmap · PERFORMANCE_RULES |
@@ -43,13 +44,13 @@
 
 CEO drives Phys Lab + Desert bowl: slide → opposite-lock catch → throttle → jump → planted land. Automated QA already PASS; only human feel closes GREEN LIGHT.
 
-*(Arcade First Boot is shipped in tree as of `?v=643`. Do not reopen unless regression.)*
+*(Arcade First Boot + pack place punch shipped. Do not reopen Boot unless regression. Do not retune ARCADE_ASSIST / JUMP dials until A scores.)*
 
 ---
 
 ## Design hypothesis
 
-Arcade rally wins when the first minute feels finished and the car’s catch/land reads as a switch the player caused — not when HUD shows more numbers or when sim accuracy rises. Separate player chrome from dev tools; tune existing assist/land dials before adding systems.
+Arcade rally wins when the first minute feels finished and the car’s catch/land reads as a switch the player caused — not when HUD shows more numbers or when sim accuracy rises. Separate player chrome from dev tools; tune existing assist/land dials before adding systems. Pack battles need a readable overtake moment without bringing back grip telemetry.
 
 ---
 
@@ -62,6 +63,7 @@ Arcade rally wins when the first minute feels finished and the car’s catch/lan
 - Uncontrolled vegetation / particle / density spikes  
 - Sim-first physics that hurts fun  
 - Camera-mass Call #2 until Driver A is scored (paused)  
+- CEO #1 catch/land dials until human SHIP/CUT  
 - PerformanceDirector architecture until A+B authorize plan-only next three  
 
 ---
@@ -78,6 +80,7 @@ Arcade rally wins when the first minute feels finished and the car’s catch/lan
 8. **Fake AAA / invent QA results / weaken validators**.  
 9. **Carry Sprint 89 Jump-3 PARTIAL as live P0** — stale doc.  
 10. **Feature churn (AI depth, V6 signature, PerformanceDirector) before human A+B** — CEO defer.
+11. **Restore on-screen pace notes into the sightline** — audio-first; place punch is the race-feedback path.
 
 ---
 
@@ -97,8 +100,9 @@ Arcade rally wins when the first minute feels finished and the car’s catch/lan
 | CEO #1 dial bake | Machine SHIP candidate; **human SHIP/CUT open** |
 | Camera-mass Call #2 | **Paused** until A scored |
 | Arcade First Boot | **Shipped** `?v=643` |
+| Pack place punch | **Shipped** `?v=645` · `RACE_FEEDBACK` |
 | WebGPU R.2 | **Gated** |
-| Unbounded amazing mandate | **Stopped** → institutional docs |
+| Unbounded amazing mandate | **Stopped** → institutional docs; Level-100 loops may ship non-feel gaps only |
 
 See `docs/AI_DECISION_LOG.md`.
 
@@ -108,7 +112,6 @@ See `docs/AI_DECISION_LOG.md`.
 
 - Headed Chrome/CDP flaky in Cursor agent hosts — do not invent boot-smoke PASS.  
 - `Track.create` intermittent hang — player-facing but Red for architecture.  
-- Large uncommitted working tree beyond Boot — do not mix unrelated diffs into Boot claims.  
 - Cache: always bump `?v=` on touched modules + importers.
 
 ---
@@ -125,4 +128,4 @@ See `docs/AI_DECISION_LOG.md`.
 
 ## Boot pin
 
-`index.html` → `js/main.js?v=643` · `css/game.css?v=40` · `hud.js?v=35` (via `game.js`)
+`index.html` → `js/main.js?v=645` · `css/game.css?v=42` · `hud.js?v=37` (via `game.js`) · `config.js?v=203` · `engine.js?v=68`

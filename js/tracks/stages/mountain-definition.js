@@ -9,7 +9,7 @@
  * Do NOT copy a commercial layout — capture rhythm principles only.
  */
 
-import { COLORS } from "../../config.js?v=201";
+import { COLORS } from "../../config.js?v=203";
 
 /**
  * Showcase Mountain — elevation · cliffs · tunnel · jumps · hairpins · vista.

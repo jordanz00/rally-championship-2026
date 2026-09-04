@@ -1,5 +1,26 @@
 # QA report — quality-control pass
 
+## Pack place punch — overtake feedback (2026-09-04)
+
+**Player moment:** Pass a rival in championship — the ordinal no longer ticks silently; `2ND!` (etc.) flashes, a soft chirp plays, and `#hud-pos` punches. Getting passed only punches the glyph (no nag banner).
+
+**Before:** Pack battles felt flat after Boot hid SLIDE/GRIP telemetry. Also: commit `f0e5283` had already added `game.js` `_pulsePlaceChange` imports for `RACE_FEEDBACK` / `placeOrdinal` without matching module exports — module-load boot break.
+
+**After:**
+- `RACE_FEEDBACK` in `config.js` — `placeArmSec` 2.4 (ignore grid launch shuffle), `placeCooldownSec` 1.05, gain flash + chirp.
+- `game.js` `_pulsePlaceChange` · `hud.punchPlace` + `placeOrdinal` · `audio.placeGain`.
+- CSS `placeGainPunch` / `placeDropPunch` (respects `prefers-reduced-motion`).
+
+**Files:** `js/config.js`, `js/game.js`, `js/ui/hud.js`, `js/audio/engine.js`, `css/game.css`, `index.html`, importers’ `?v=`
+
+**QA:** `qa-static-audit` PASS · `qa-validate` PASS · `qa-sprint33-drift` PASS · Cursor headed Chrome boot-smoke **not asserted** (host SIGABRT)
+
+**Boot:** `main.js?v=645` · `config.js?v=203` · `hud.js?v=37` · `engine.js?v=68` · `game.css?v=42`
+
+**Frozen / not this ship:** Driver gate A human SHIP/CUT, camera-mass Call #2, Desert vertical slice, track.js Red hang, restoring pace/SLIDE HUD.
+
+---
+
 ## SHIP 1 — Arcade First Boot (2026-09-04)
 
 **Player moment:** Title → START → Celica → Desert → 3-2-1-GO without garage/GLB/FPS/dev chrome blocking the first minute.

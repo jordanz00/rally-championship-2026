@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { RGBELoader } from "../vendor/RGBELoader.js";
-import { VISUAL } from "./config.js?v=201";
+import { VISUAL } from "./config.js?v=203";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.

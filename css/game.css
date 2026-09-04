@@ -904,6 +904,43 @@ button.ghost {
   color: #f4f0e0;
 }
 
+#hud-pos.is-gain {
+  animation: placeGainPunch 0.55s ease-out;
+}
+
+#hud-pos.is-drop {
+  animation: placeDropPunch 0.45s ease-out;
+}
+
+@keyframes placeGainPunch {
+  0% {
+    transform: scale(1.42);
+    filter: brightness(1.55);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes placeDropPunch {
+  0% {
+    transform: scale(1.18);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hud-pos.is-gain,
+  #hud-pos.is-drop {
+    animation: none;
+  }
+}
+
 .gear-block span {
   font-size: 36px;
   color: #fff;
