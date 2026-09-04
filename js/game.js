@@ -10,11 +10,11 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=132";
 import { getSurface } from "./physics/surfaces.js?v=51";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=75";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=157";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=158";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=289";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=30";
-import { Opponent } from "./ai.js?v=143";
+import { Opponent } from "./ai.js?v=144";
 import { RallyAudio } from "./audio/engine.js?v=66";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=38";
@@ -25,7 +25,8 @@ import {
   setLoadingProgress,
   waitLoadingBarSettled,
   formatTime,
-} from "./ui/hud.js?v=35";
+  placeOrdinal,
+} from "./ui/hud.js?v=36";
 import { wireTechShowcase, fillTechShowcase, focusTechChapter } from "./ui/dev-showcase.js?v=2";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=64";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=47";
@@ -49,13 +50,14 @@ import {
   CARS,
   HANDLING,
   PACE,
+  RACE_FEEDBACK,
   LIGHTING,
   TUNNEL,
   GFX,
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=201";
+} from "./config.js?v=202";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -2403,6 +2405,8 @@ export class RallyGame {
     this._nextStagePreloadArmed = false;
     this.lap = 1;
     this.paceLine = "";
+    this._lastRacePos = 0;
+    this._placePulseUntil = 0;
     this.codriver.gap = PACE.speakGap || this.codriver.gap;
     this.codriver.reset();
     this.ghostRecorder.start(courseId, this.carId);
@@ -3086,6 +3090,7 @@ export class RallyGame {
     }
 
     const pos = this._racePosition();
+    this._pulsePlaceChange(pos);
     // Calls must land before the corner is committed, so look ahead by TIME,
     // not by a fixed distance. A flat 42 m is only ~1.2 s of warning at speed.
     const look = Math.min(
@@ -3232,6 +3237,40 @@ export class RallyGame {
       if (o.vehicle.progress > this.player.progress) pos++;
     }
     return pos;
+  }
+
+  /**
+   * Pack battles were silent — ordinal ticked with no player moment.
+   * Gains flash + chirp; drops only punch the place glyph (no nag banner).
+   * @param {number} pos
+   */
+  _pulsePlaceChange(pos) {
+    const fb = RACE_FEEDBACK || {};
+    const pack = this.opponents && this.opponents.length > 0;
+    if (!pack || !(pos > 0)) {
+      this._lastRacePos = pos;
+      return;
+    }
+    const arm = fb.placeArmSec != null ? fb.placeArmSec : 2.4;
+    if (this.raceTime < arm) {
+      this._lastRacePos = pos;
+      return;
+    }
+    const prev = this._lastRacePos || pos;
+    if (pos === prev) return;
+    this._lastRacePos = pos;
+    const cool = fb.placeCooldownSec != null ? fb.placeCooldownSec : 1.05;
+    if (this.raceTime < (this._placePulseUntil || 0)) return;
+    this._placePulseUntil = this.raceTime + cool;
+    const gained = pos < prev;
+    if (this.hud && this.hud.punchPlace) this.hud.punchPlace(pos, gained ? "gain" : "drop");
+    if (!gained) return;
+    if (fb.flashGains !== false && this.hud) {
+      this.hud.flashMessage(`${placeOrdinal(pos).toUpperCase()}!`);
+    }
+    if (fb.gainChirp !== false && this.audio && this.audio.placeGain) {
+      this.audio.placeGain(pos);
+    }
   }
 
   _setupGhostPlayback() {
