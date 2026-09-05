@@ -71,10 +71,12 @@ export const GFX = {
   shadowNormalBias: 0.042,
   shadowRadius: 2.4,
   /**
-   * Soft PCF hides a skipped bake. Every third present on the race default;
-   * min tier stretches further / can disable the atlas entirely.
+   * Soft PCF (shadowRadius ≥ 2) hides a skipped bake. Two presents between
+   * atlas updates keeps contact glued without a full 1536² rebuild every
+   * 16 ms — that was a major M1 fill-rate hitch with no readable gain.
+   * Min tier stretches further / can disable the atlas entirely.
    */
-  shadowEvery: 1,
+  shadowEvery: 2,
   reflectEvery: 0,
   cubeSize: 64,
   /**
@@ -136,9 +138,10 @@ export const GFX = {
   lockRaceQuality: true,
   /**
    * Soft present scale floor (QualityManager) when lockRaceQuality blocks tier dumps.
-   * Floor kept high so soft-scale resize does not stutter car shadows mid-corner.
+   * Pinned at 1 — soft-scale changes call setSize/setPixelRatio and hitch the
+   * race harder than they save. Fill-rate relief stays on presentHz lock-30.
    */
-  softScaleMin: 0.88,
+  softScaleMin: 1,
   /** Sprint 39 / 536 — integrated GPU / M-series targets. */
   integratedFloorMs: 17.5,
   integratedEmergencyMs: 20,
@@ -277,9 +280,16 @@ export const STREAM = {
   terrainTileSegsCinema: 28,
   backdropSectors: 16,
   /** Spline chunks kept loaded ahead/behind the car (220 m each). */
-  prefetchChunks: 2,
+  prefetchChunks: 3,
   /** Driving seconds to pre-warm streaming along the racing line. */
-  lookaheadSeconds: 2.5,
+  lookaheadSeconds: 3.5,
+  /**
+   * Metres of racing line forced visible + shader-warmed under the load
+   * overlay so mid-stage slices do not first-compile at race speed.
+   */
+  settleLookaheadMeters: 980,
+  /** Sample step along the line for settle prewarm (metres). */
+  settleLookaheadStep: 48,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
   boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */
@@ -1532,30 +1542,30 @@ export const CAMERA = {
   brakePitchMul: 0.065,
   accelPitchMul: 0.045,
   /** World-up lean from chassis roll — a hint, not a horizon swing. */
-  rollFollow: 0.26,
-  /** How hard chase yaw tracks the car — high = no “camera late” lag. */
-  yawStiffness: 36,
+  rollFollow: 0.14,
+  /** How hard chase yaw tracks the car — medium view overrides softer. */
+  yawStiffness: 22,
   /**
    * Soften chase yaw follow while sliding so the lens does not whip with
    * body attitude into the outside of the turn.
    */
-  yawStiffnessSlide: 16,
+  yawStiffnessSlide: 11,
   /**
    * When sliding, blend chase yaw target toward velocity (travel) vs chassis
    * yaw. Higher = camera stays behind the racing line; car still reads angled.
    */
-  slideYawBlend: 0.62,
+  slideYawBlend: 0.28,
   /**
    * Chase look blends toward velocity in a slide so the road you are sliding
    * toward stays in frame while the car sits at an angle (arcade poster).
    */
-  slideLook: 0.78,
+  slideLook: 0.32,
   /** Metres of camera offset to the outside of a power slide (subtle rear-quarter). */
-  slideCamOut: 0.16,
+  slideCamOut: 0.05,
   /** Extra look-ahead (m) while sliding so the exit stays readable. */
-  slideLookAhead: 4.2,
+  slideLookAhead: 2.4,
   /** Cap on |lateral kick| during a slide (metres). */
-  slideKickMax: 0.045,
+  slideKickMax: 0.018,
   /**
    * Seconds for a C-key pose ease. Short so mode swaps feel instant, not a hang.
    */
@@ -1615,10 +1625,24 @@ export const CAMERA = {
        */
       speedFovScale: 0.08,
       speedLookAheadScale: 0.2,
-      /** Harder XZ follow than global so throttle does not leave the camera trailing. */
-      springPosStiff: 78,
-      springPosStiffY: 28,
-      stiffness: 34,
+      /**
+       * Locked behind the car: no drift orbit, no velocity look swing, no L/R kick.
+       * Springs matched so pos/look do not fight each other.
+       */
+      stableBehind: true,
+      springPosStiff: 56,
+      springPosStiffY: 26,
+      springLookStiff: 54,
+      /** Track chassis yaw firmly — soft yaw lagged and orbited during slides. */
+      yawStiffness: 28,
+      yawStiffnessSlide: 28,
+      slideYawBlend: 0,
+      slideLook: 0,
+      slideCamOut: 0,
+      slideLookAhead: 0,
+      slideKickMax: 0,
+      rollFollow: 0,
+      stiffness: 32,
       near: 0.2,
     },
     {

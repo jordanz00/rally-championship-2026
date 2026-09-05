@@ -1,12 +1,13 @@
 """
-build-crowd-humans.py — realistic low-poly biped spectators for trackside crowds.
+build-crowd-humans.py — somewhat-realistic low-poly biped spectators.
 
 Run:
   /Applications/Blender.app/Contents/MacOS/Blender --background --python tools/build-crowd-humans.py
 
 WHO THIS IS FOR: Desert / Lakeside (and any stage) audience members.
-WHAT IT DOES: replaces Kenney block characters with textured biped humans
-  (~2–3.5k verts), UV-mapped to crowd_atlas.png, feet at origin, ~1.7 m tall.
+WHAT IT DOES: builds textured biped humans with readable anatomy (head, neck,
+  torso, tapered limbs, hair, shoes), UV-mapped to crowd_atlas.png including
+  face panels. Exports crowd-body + crowd-arm-l/r for cheer animation.
 HOW IT CONNECTS: prop-kit loads character-*.glb; CrowdField instances them.
 """
 
@@ -27,12 +28,19 @@ TEX = PROPS / "Textures" / "hd" / "crowd_atlas.png"
 COLORMAP = PROPS / "Textures" / "colormap.png"
 BACKUP = PROPS / "_lowpoly_backup"
 
-# Atlas UV rectangles (u0,v0,u1,v1) in 0–1. v grows upward in Blender/GLTF.
+# Atlas UV rectangles (u0,v0,u1,v1) — v grows upward in Blender/GLTF (image y=0 at bottom).
+# Image layout from gen-crowd-atlas: skin top, shirts, pants, hair/shoes, faces bottom.
 SKIN = [
     (0.00, 0.75, 0.25, 1.00),
     (0.25, 0.75, 0.50, 1.00),
     (0.50, 0.75, 0.75, 1.00),
     (0.75, 0.75, 1.00, 1.00),
+]
+FACE = [
+    (0.00, 0.00, 0.25, 0.125),
+    (0.25, 0.00, 0.50, 0.125),
+    (0.50, 0.00, 0.75, 0.125),
+    (0.75, 0.00, 1.00, 0.125),
 ]
 SHIRT = [
     (0.00, 0.625, 0.25, 0.75),
@@ -84,8 +92,8 @@ def crowd_mat() -> bpy.types.Material:
     bsdf = nodes.new("ShaderNodeBsdfPrincipled")
     tex = nodes.new("ShaderNodeTexImage")
     tex.image = bpy.data.images.load(str(TEX if TEX.is_file() else COLORMAP))
-    tex.interpolation = "Closest"
-    bsdf.inputs["Roughness"].default_value = 0.78
+    tex.interpolation = "Linear"
+    bsdf.inputs["Roughness"].default_value = 0.72
     if "Metallic" in bsdf.inputs:
         bsdf.inputs["Metallic"].default_value = 0.0
     links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
@@ -93,14 +101,18 @@ def crowd_mat() -> bpy.types.Material:
     return mat
 
 
-def set_uv_rect(obj, rect) -> None:
-    """Map every loop UV into atlas rect (simple planar-ish packing)."""
+def shade_smooth(obj) -> None:
+    for p in obj.data.polygons:
+        p.use_smooth = True
+
+
+def set_uv_rect(obj, rect, face_front: bool = False) -> None:
+    """Map loops into an atlas panel. face_front biases +Y toward the face panel center."""
     u0, v0, u1, v1 = rect
     mesh = obj.data
     if not mesh.uv_layers:
         mesh.uv_layers.new(name="UVMap")
     uv_layer = mesh.uv_layers.active.data
-    # Use object-space bounds for stable UV
     coords = [obj.matrix_world @ v.co for v in mesh.vertices]
     xs = [c.x for c in coords]
     ys = [c.y for c in coords]
@@ -115,40 +127,57 @@ def set_uv_rect(obj, rect) -> None:
         for li in poly.loop_indices:
             vi = mesh.loops[li].vertex_index
             co = coords[vi]
-            # Wrap cylindrical-ish: XZ around + Y height
-            u = ((co.x - min_x) / dx * 0.55 + (co.z - min_z) / dz * 0.45)
-            v = (co.y - min_y) / dy
-            uv_layer[li].uv = (u0 + u * (u1 - u0), v0 + v * (v1 - v0))
+            if face_front:
+                # Front hemisphere samples the painted face; sides wrap to skin edge.
+                u = 0.5 + (co.x - (min_x + max_x) * 0.5) / dx * 0.85
+                v = (co.z - min_z) / dz
+                # Push back-of-head UVs toward panel edge (hair/skin overlap OK).
+                if co.y < (min_y + max_y) * 0.45:
+                    u = 0.08 + ((co.x - min_x) / dx) * 0.2
+            else:
+                u = ((co.x - min_x) / dx * 0.55 + (co.y - min_y) / dy * 0.45)
+                v = (co.z - min_z) / dz
+            uv_layer[li].uv = (
+                u0 + 0.06 + max(0.0, min(1.0, u)) * (u1 - u0) * 0.88,
+                v0 + 0.06 + max(0.0, min(1.0, v)) * (v1 - v0) * 0.88,
+            )
 
 
-def shade_smooth(obj) -> None:
-    for p in obj.data.polygons:
-        p.use_smooth = True
-
-
-def add_limb(mat, name, loc, scale, rot=(0, 0, 0), segs=14, rings=10):
+def add_sphere(mat, name, loc, scale, segs=16, rings=10):
     bpy.ops.mesh.primitive_uv_sphere_add(segments=segs, ring_count=rings, radius=1.0, location=loc)
     obj = bpy.context.active_object
     obj.name = name
     obj.scale = scale
-    obj.rotation_euler = rot
-    bpy.ops.object.transform_apply(scale=True, rotation=True)
+    bpy.ops.object.transform_apply(scale=True)
     obj.data.materials.append(mat)
     shade_smooth(obj)
     return obj
 
 
-def add_capsule(mat, name, loc, radius, depth, rot=(0, 0, 0), verts=16):
+def add_cylinder(mat, name, loc, radius, depth, rot=(0, 0, 0), verts=14):
     bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth, location=loc)
     obj = bpy.context.active_object
     obj.name = name
     obj.rotation_euler = rot
     bpy.ops.object.transform_apply(rotation=True)
-    # Caps for softer limb ends
+    # Soften ends toward a capsule silhouette.
     bpy.ops.object.modifier_add(type="BEVEL")
-    obj.modifiers["Bevel"].width = radius * 0.35
+    obj.modifiers["Bevel"].width = min(radius * 0.42, depth * 0.12)
     obj.modifiers["Bevel"].segments = 2
     bpy.ops.object.modifier_apply(modifier="Bevel")
+    obj.data.materials.append(mat)
+    shade_smooth(obj)
+    return obj
+
+
+def add_cone(mat, name, loc, radius1, depth, rot=(0, 0, 0), verts=12):
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=verts, radius1=radius1, radius2=radius1 * 0.55, depth=depth, location=loc
+    )
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.rotation_euler = rot
+    bpy.ops.object.transform_apply(rotation=True)
     obj.data.materials.append(mat)
     shade_smooth(obj)
     return obj
@@ -165,31 +194,6 @@ def join_meshes(objects: list[bpy.types.Object], mat, name: str) -> bpy.types.Ob
     body.data.materials.clear()
     body.data.materials.append(mat)
     return body
-
-
-def subdiv_displace(obj, seed: int, levels: int = 1, strength: float = 0.014) -> None:
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.modifier_add(type="DISPLACE")
-    tex = bpy.data.textures.new(f"CrowdDisp_{seed}_{obj.name}", type="CLOUDS")
-    if hasattr(tex, "noise_scale"):
-        tex.noise_scale = 0.85
-    obj.modifiers["Displace"].texture = tex
-    obj.modifiers["Displace"].strength = strength
-    bpy.ops.object.modifier_apply(modifier="Displace")
-    bpy.ops.object.modifier_add(type="SUBSURF")
-    obj.modifiers["Subdivision"].levels = levels
-    obj.modifiers["Subdivision"].render_levels = levels
-    bpy.ops.object.modifier_apply(modifier="Subdivision")
-    shade_smooth(obj)
-
-
-def set_origin_top(obj) -> None:
-    set_origin_shoulder(obj)
-
-
-def ground_feet_arm(obj) -> None:
-    pass
 
 
 def export_crowd_glb(path: Path, parts: list[bpy.types.Object]) -> None:
@@ -213,8 +217,6 @@ def export_crowd_glb(path: Path, parts: list[bpy.types.Object]) -> None:
 
 def ground_feet(obj) -> None:
     bpy.context.view_layer.objects.active = obj
-    # Move so min Z (Blender Z-up export → Y-up in glTF) — Blender is Z-up.
-    # glTF exporter converts Z-up to Y-up. Keep feet on Z=0 in Blender.
     coords = [obj.matrix_world @ v.co for v in obj.data.vertices]
     min_z = min(c.z for c in coords)
     obj.location.z -= min_z
@@ -241,7 +243,6 @@ def apply_scale(obj, s: float) -> None:
 
 
 def set_origin_shoulder(obj) -> None:
-    """Arm meshes rotate from the shoulder — origin at upper socket."""
     coords = [obj.matrix_world @ v.co for v in obj.data.vertices]
     min_x = min(c.x for c in coords)
     max_x = max(c.x for c in coords)
@@ -251,22 +252,20 @@ def set_origin_shoulder(obj) -> None:
     max_z = max(c.z for c in coords)
     cx = (min_x + max_x) * 0.5
     cy = (min_y + max_y) * 0.5
-    top_z = max_z * 0.9 + min_z * 0.1
+    top_z = max_z * 0.92 + min_z * 0.08
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     bpy.context.scene.cursor.location = (cx, cy, top_z)
     bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
 
-# Age / body profiles — all kinds of humans, not one clone army.
-# height: metres after scale; head_mul / limb scalars reshape silhouette.
 PROFILES = {
-    "adult": {"height": 1.70, "head_mul": 1.0, "leg_mul": 1.0, "shoulder_mul": 1.0, "hip_mul": 1.0},
-    "tall": {"height": 1.82, "head_mul": 0.96, "leg_mul": 1.08, "shoulder_mul": 1.04, "hip_mul": 0.98},
-    "stocky": {"height": 1.66, "head_mul": 1.02, "leg_mul": 0.94, "shoulder_mul": 1.14, "hip_mul": 1.12},
-    "teen": {"height": 1.52, "head_mul": 1.12, "leg_mul": 0.96, "shoulder_mul": 0.9, "hip_mul": 0.92},
-    "elder": {"height": 1.60, "head_mul": 1.04, "leg_mul": 0.92, "shoulder_mul": 0.94, "hip_mul": 1.02},
-    "child": {"height": 1.18, "head_mul": 1.28, "leg_mul": 0.88, "shoulder_mul": 0.78, "hip_mul": 0.88},
+    "adult": {"height": 1.72, "head_mul": 1.0, "leg_mul": 1.0, "shoulder_mul": 1.0, "hip_mul": 1.0},
+    "tall": {"height": 1.84, "head_mul": 0.95, "leg_mul": 1.1, "shoulder_mul": 1.05, "hip_mul": 0.97},
+    "stocky": {"height": 1.66, "head_mul": 1.02, "leg_mul": 0.92, "shoulder_mul": 1.16, "hip_mul": 1.14},
+    "teen": {"height": 1.54, "head_mul": 1.1, "leg_mul": 0.96, "shoulder_mul": 0.88, "hip_mul": 0.9},
+    "elder": {"height": 1.62, "head_mul": 1.04, "leg_mul": 0.9, "shoulder_mul": 0.92, "hip_mul": 1.04},
+    "child": {"height": 1.2, "head_mul": 1.26, "leg_mul": 0.86, "shoulder_mul": 0.76, "hip_mul": 0.86},
 }
 
 
@@ -281,121 +280,237 @@ def make_human(name: str, seed: int, female: bool = False, profile: str = "adult
     pants_i = (seed * 5) % len(PANTS)
     hair_i = (seed * 7) % len(HAIR)
 
-    # Proportions — sex + age profile so galleries read as mixed crowds.
-    shoulder = (0.38 if female else 0.44) * prof["shoulder_mul"]
-    hip = (0.36 if female else 0.34) * prof["hip_mul"]
-    torso_d = 0.52 if female else 0.58
+    # Anatomical proportions (~7.5 heads tall for adult).
+    shoulder = (0.36 if female else 0.42) * prof["shoulder_mul"]
+    hip = (0.34 if female else 0.32) * prof["hip_mul"]
+    torso_d = 0.50 if female else 0.55
     if profile == "child":
-        torso_d *= 0.88
+        torso_d *= 0.86
     elif profile == "elder":
-        torso_d *= 0.94
-    leg_len = (0.78 if female else 0.82) * prof["leg_mul"]
-    arm_len = (0.52 if female else 0.56) * (0.92 if profile == "child" else 1.0)
-    head_r = (0.105 if female else 0.112) * prof["head_mul"]
+        torso_d *= 0.93
+    leg_len = (0.80 if female else 0.84) * prof["leg_mul"]
+    arm_len = (0.54 if female else 0.58) * (0.9 if profile == "child" else 1.0)
+    head_r = (0.098 if female else 0.104) * prof["head_mul"]
+    waist_z = leg_len * 0.82
+    chest_z = waist_z + torso_d * 0.55
+    shoulder_z = waist_z + torso_d * 0.92
 
-    # Legs (standing)
+    tagged = []  # (obj, rect, face_front)
+
+    # --- Legs (tapered: thigh thicker than calf) ---
     for side, sx in (("L", -1), ("R", 1)):
-        thigh = add_capsule(
-            mat, f"LegUpper_{side}", (sx * 0.09, 0, leg_len * 0.55), 0.065 if female else 0.072, leg_len * 0.48, verts=14
-        )
-        set_uv_rect(thigh, PANTS[pants_i])
-        calf = add_capsule(
-            mat, f"LegLower_{side}", (sx * 0.09, 0, leg_len * 0.22), 0.05 if female else 0.055, leg_len * 0.42, verts=14
-        )
-        set_uv_rect(calf, PANTS[pants_i])
-        foot = add_limb(
-            mat, f"Foot_{side}", (sx * 0.09, 0.06, 0.04), (0.07, 0.12, 0.045), segs=10, rings=7
-        )
-        set_uv_rect(foot, SHOES)
-
-    # Pelvis + torso
-    hips = add_limb(mat, "Hips", (0, 0, leg_len * 0.78), (hip, hip * 0.7, 0.12), segs=12, rings=8)
-    set_uv_rect(hips, PANTS[pants_i])
-    torso = add_capsule(mat, "Torso", (0, 0, leg_len * 0.78 + torso_d * 0.55), shoulder * 0.55, torso_d, verts=18)
-    # Widen chest
-    torso.scale = (1.15 if not female else 1.05, 0.72, 1.0)
-    bpy.ops.object.transform_apply(scale=True)
-    set_uv_rect(torso, SHIRT[shirt_i])
-
-    # Shoulders / arms
-    for side, sx in (("L", -1), ("R", 1)):
-        sh = add_limb(
+        thigh = add_cone(
             mat,
-            f"Shoulder_{side}",
-            (sx * shoulder * 0.55, 0, leg_len * 0.78 + torso_d * 0.95),
-            (0.07, 0.07, 0.07),
-            segs=10,
+            f"LegUpper_{side}",
+            (sx * 0.085, 0.01, leg_len * 0.58),
+            0.078 if not female else 0.07,
+            leg_len * 0.46,
+            verts=12,
+        )
+        tagged.append((thigh, PANTS[pants_i], False))
+        calf = add_cone(
+            mat,
+            f"LegLower_{side}",
+            (sx * 0.085, 0.01, leg_len * 0.24),
+            0.055 if not female else 0.05,
+            leg_len * 0.4,
+            verts=12,
+        )
+        tagged.append((calf, PANTS[pants_i], False))
+        # Shoe: elongated along +Y (forward)
+        foot = add_sphere(
+            mat,
+            f"Foot_{side}",
+            (sx * 0.085, 0.07, 0.045),
+            (0.065, 0.125, 0.042),
+            segs=12,
             rings=8,
         )
-        set_uv_rect(sh, SHIRT[shirt_i])
-        upper = add_capsule(
+        tagged.append((foot, SHOES, False))
+
+    # --- Hips + torso + shirt hem ---
+    hips = add_sphere(mat, "Hips", (0, 0.01, waist_z), (hip, hip * 0.62, 0.11), segs=14, rings=10)
+    tagged.append((hips, PANTS[pants_i], False))
+    torso = add_cylinder(mat, "Torso", (0, 0.02, chest_z), shoulder * 0.48, torso_d, verts=16)
+    torso.scale = (1.12 if not female else 1.0, 0.68 if female else 0.74, 1.0)
+    bpy.ops.object.transform_apply(scale=True)
+    tagged.append((torso, SHIRT[shirt_i], False))
+    # Soft belly / chest volume
+    chest = add_sphere(
+        mat,
+        "Chest",
+        (0, 0.04, chest_z + torso_d * 0.08),
+        (shoulder * 0.5, 0.12 if female else 0.14, torso_d * 0.28),
+        segs=12,
+        rings=8,
+    )
+    tagged.append((chest, SHIRT[shirt_i], False))
+    # Shirt hem over pants
+    hem = add_cylinder(
+        mat, "Hem", (0, 0.01, waist_z + 0.04), shoulder * 0.5, 0.08, verts=14
+    )
+    tagged.append((hem, SHIRT[shirt_i], False))
+
+    # --- Arms (separate objects for cheer pivots) ---
+    for side, sx in (("L", -1), ("R", 1)):
+        sh = add_sphere(
+            mat,
+            f"Shoulder_{side}",
+            (sx * shoulder * 0.52, 0.02, shoulder_z),
+            (0.068, 0.068, 0.068),
+            segs=12,
+            rings=8,
+        )
+        tagged.append((sh, SHIRT[shirt_i], False))
+        upper = add_cone(
             mat,
             f"ArmUpper_{side}",
-            (sx * (shoulder * 0.55 + 0.02), 0, leg_len * 0.78 + torso_d * 0.7),
-            0.045,
-            arm_len * 0.48,
-            verts=12,
+            (sx * (shoulder * 0.52 + 0.02), 0.02, shoulder_z - arm_len * 0.22),
+            0.048,
+            arm_len * 0.44,
+            verts=11,
         )
-        set_uv_rect(upper, SHIRT[shirt_i] if rng.random() > 0.35 else SKIN[skin_i])
-        lower = add_capsule(
+        tagged.append((upper, SHIRT[shirt_i] if rng.random() > 0.3 else SKIN[skin_i], False))
+        lower = add_cone(
             mat,
             f"ArmLower_{side}",
-            (sx * (shoulder * 0.55 + 0.02), 0, leg_len * 0.78 + torso_d * 0.7 - arm_len * 0.45),
+            (sx * (shoulder * 0.52 + 0.03), 0.03, shoulder_z - arm_len * 0.58),
             0.038,
-            arm_len * 0.42,
-            verts=12,
+            arm_len * 0.4,
+            verts=11,
         )
-        set_uv_rect(lower, SKIN[skin_i])
-        hand = add_limb(
+        tagged.append((lower, SKIN[skin_i], False))
+        hand = add_sphere(
             mat,
             f"Hand_{side}",
-            (sx * (shoulder * 0.55 + 0.02), 0.02, leg_len * 0.78 + torso_d * 0.7 - arm_len * 0.72),
-            (0.04, 0.055, 0.03),
-            segs=9,
-            rings=6,
+            (sx * (shoulder * 0.52 + 0.03), 0.04, shoulder_z - arm_len * 0.82),
+            (0.038, 0.055, 0.028),
+            segs=10,
+            rings=7,
         )
-        set_uv_rect(hand, SKIN[skin_i])
+        tagged.append((hand, SKIN[skin_i], False))
 
-    # Neck + head
-    neck = add_capsule(
-        mat, "Neck", (0, 0, leg_len * 0.78 + torso_d + 0.06), 0.045, 0.1, verts=12
-    )
-    set_uv_rect(neck, SKIN[skin_i])
-    head = add_limb(
+    # --- Neck + head + face + ears + hair ---
+    neck = add_cylinder(mat, "Neck", (0, 0.02, shoulder_z + 0.07), 0.042, 0.09, verts=12)
+    tagged.append((neck, SKIN[skin_i], False))
+    head_z = shoulder_z + 0.18
+    head = add_sphere(
         mat,
         "Head",
-        (0, 0.02, leg_len * 0.78 + torso_d + 0.18),
-        (head_r, head_r * 1.05, head_r * 1.15),
-        segs=18,
-        rings=12,
+        (0, 0.03, head_z),
+        (head_r * 0.92, head_r * 1.02, head_r * 1.12),
+        segs=20,
+        rings=14,
     )
-    set_uv_rect(head, SKIN[skin_i])
-    hair = add_limb(
+    tagged.append((head, FACE[skin_i], True))
+    # Jaw / chin mass
+    jaw = add_sphere(
         mat,
-        "Hair",
-        (0, -0.01, leg_len * 0.78 + torso_d + 0.26),
-        (head_r * 1.05, head_r * 1.1, head_r * 0.55),
-        segs=14,
-        rings=10,
+        "Jaw",
+        (0, 0.05, head_z - head_r * 0.35),
+        (head_r * 0.7, head_r * 0.55, head_r * 0.45),
+        segs=12,
+        rings=8,
     )
-    set_uv_rect(hair, HAIR[hair_i])
+    tagged.append((jaw, SKIN[skin_i], False))
+    # Nose
+    nose = add_sphere(
+        mat,
+        "Nose",
+        (0, head_r * 0.95, head_z - head_r * 0.05),
+        (0.018, 0.032, 0.022),
+        segs=8,
+        rings=6,
+    )
+    tagged.append((nose, SKIN[skin_i], False))
+    for side, sx in (("L", -1), ("R", 1)):
+        ear = add_sphere(
+            mat,
+            f"Ear_{side}",
+            (sx * head_r * 0.88, 0.0, head_z),
+            (0.022, 0.016, 0.035),
+            segs=8,
+            rings=6,
+        )
+        tagged.append((ear, SKIN[skin_i], False))
+
+    # Hair volume — style varies by seed
+    hair_style = seed % 4
+    if hair_style == 0:
+        # Short crop
+        hair = add_sphere(
+            mat,
+            "Hair",
+            (0, -0.01, head_z + head_r * 0.25),
+            (head_r * 1.02, head_r * 1.05, head_r * 0.55),
+            segs=14,
+            rings=10,
+        )
+    elif hair_style == 1:
+        # Fuller top
+        hair = add_sphere(
+            mat,
+            "Hair",
+            (0, -0.02, head_z + head_r * 0.2),
+            (head_r * 1.08, head_r * 1.12, head_r * 0.7),
+            segs=14,
+            rings=10,
+        )
+    elif hair_style == 2:
+        # Longer back
+        hair = add_sphere(
+            mat,
+            "Hair",
+            (0, -0.06, head_z + head_r * 0.05),
+            (head_r * 1.05, head_r * 1.2, head_r * 0.85),
+            segs=14,
+            rings=10,
+        )
+    else:
+        # Cap / beanie silhouette
+        hair = add_sphere(
+            mat,
+            "Hair",
+            (0, 0.0, head_z + head_r * 0.35),
+            (head_r * 1.05, head_r * 1.05, head_r * 0.45),
+            segs=12,
+            rings=8,
+        )
+    tagged.append((hair, HAIR[hair_i], False))
+
+    for obj, rect, face_front in tagged:
+        set_uv_rect(obj, rect, face_front=face_front)
 
     meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
-    arm_l = [o for o in meshes if o.name.endswith("_L") and ("Arm" in o.name or "Hand" in o.name or "Shoulder" in o.name)]
-    arm_r = [o for o in meshes if o.name.endswith("_R") and ("Arm" in o.name or "Hand" in o.name or "Shoulder" in o.name)]
+    arm_l = [
+        o
+        for o in meshes
+        if o.name.endswith("_L") and ("Arm" in o.name or "Hand" in o.name or "Shoulder" in o.name)
+    ]
+    arm_r = [
+        o
+        for o in meshes
+        if o.name.endswith("_R") and ("Arm" in o.name or "Hand" in o.name or "Shoulder" in o.name)
+    ]
     body_parts = [o for o in meshes if o not in arm_l and o not in arm_r]
 
     body = join_meshes(body_parts, mat, "crowd-body")
     arm_l_obj = join_meshes(arm_l, mat, "crowd-arm-l") if arm_l else None
     arm_r_obj = join_meshes(arm_r, mat, "crowd-arm-r") if arm_r else None
 
-    subdiv_displace(body, seed, levels=1, strength=0.014)
-    if arm_l_obj:
-        subdiv_displace(arm_l_obj, seed + 1, levels=1, strength=0.008)
-    if arm_r_obj:
-        subdiv_displace(arm_r_obj, seed + 2, levels=1, strength=0.008)
+    # Light smooth — avoid melting displace that made prior bipeds look rubbery.
+    for part in (body, arm_l_obj, arm_r_obj):
+        if not part:
+            continue
+        bpy.context.view_layer.objects.active = part
+        part.select_set(True)
+        bpy.ops.object.modifier_add(type="SUBSURF")
+        part.modifiers["Subdivision"].levels = 1
+        part.modifiers["Subdivision"].render_levels = 1
+        bpy.ops.object.modifier_apply(modifier="Subdivision")
+        shade_smooth(part)
 
-    target_h = float(prof["height"]) + rng.uniform(-0.025, 0.025)
+    target_h = float(prof["height"]) + rng.uniform(-0.02, 0.02)
     if female and profile == "adult":
         target_h -= 0.04
     height_s = scale_to_height(body, target_h)
@@ -405,12 +520,6 @@ def make_human(name: str, seed: int, female: bool = False, profile: str = "adult
     if arm_r_obj:
         apply_scale(arm_r_obj, height_s)
         set_origin_shoulder(arm_r_obj)
-
-    remap_joined_uvs(body, skin_i, shirt_i, pants_i, hair_i)
-    if arm_l_obj:
-        remap_joined_uvs(arm_l_obj, skin_i, shirt_i, pants_i, hair_i)
-    if arm_r_obj:
-        remap_joined_uvs(arm_r_obj, skin_i, shirt_i, pants_i, hair_i)
 
     export_parts = [body]
     if arm_l_obj:
@@ -427,50 +536,6 @@ def make_human(name: str, seed: int, female: bool = False, profile: str = "adult
     print(f"  wrote {name}  profile={profile} h≈{target_h:.2f} body={verts} arm_verts={arm_v}", flush=True)
 
 
-def remap_joined_uvs(obj, skin_i, shirt_i, pants_i, hair_i) -> None:
-    mesh = obj.data
-    if not mesh.uv_layers:
-        mesh.uv_layers.new(name="UVMap")
-    uv_layer = mesh.uv_layers.active.data
-    coords = [v.co.copy() for v in mesh.vertices]
-    min_z = min(c.z for c in coords)
-    max_z = max(c.z for c in coords)
-    h = max(1e-6, max_z - min_z)
-    min_x = min(c.x for c in coords)
-    max_x = max(c.x for c in coords)
-    min_y = min(c.y for c in coords)
-    max_y = max(c.y for c in coords)
-    dx = max(1e-6, max_x - min_x)
-    dy = max(1e-6, max_y - min_y)
-
-    for poly in mesh.polygons:
-        # Classify by average height
-        zs = [coords[mesh.loops[li].vertex_index].z for li in poly.loop_indices]
-        z_n = (sum(zs) / len(zs) - min_z) / h
-        if z_n > 0.88:
-            rect = HAIR[hair_i]
-        elif z_n > 0.78:
-            rect = SKIN[skin_i]
-        elif z_n > 0.48:
-            rect = SHIRT[shirt_i]
-        elif z_n > 0.08:
-            rect = PANTS[pants_i]
-        else:
-            rect = SHOES
-        u0, v0, u1, v1 = rect
-        for li in poly.loop_indices:
-            vi = mesh.loops[li].vertex_index
-            co = coords[vi]
-            u = ((co.x - min_x) / dx * 0.5 + (co.y - min_y) / dy * 0.5)
-            v = (co.z - min_z) / h
-            # keep within panel with margin
-            uv_layer[li].uv = (
-                u0 + 0.08 + u * (u1 - u0) * 0.84,
-                v0 + 0.08 + v * (v1 - v0) * 0.84,
-            )
-
-
-# (filename, seed, female, age/body profile)
 CHARACTERS = [
     ("character-male-a.glb", 11, False, "adult"),
     ("character-male-b.glb", 23, False, "tall"),
@@ -494,11 +559,11 @@ def main() -> None:
     BACKUP.mkdir(parents=True, exist_ok=True)
     for name, *_rest in CHARACTERS:
         src = PROPS / name
-        bak = BACKUP / name
+        bak = BACKUP / f"crowd_v1_{name}"
         if src.is_file() and not bak.is_file():
             shutil.copy2(src, bak)
 
-    print("Building diverse crowd bipeds (ages / body types)…", flush=True)
+    print("Building realistic low-poly crowd bipeds…", flush=True)
     for name, seed, female, profile in CHARACTERS:
         make_human(name, seed, female=female, profile=profile)
     print("Crowd humans complete →", PROPS, flush=True)

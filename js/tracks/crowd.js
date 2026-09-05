@@ -1,9 +1,9 @@
 /**
- * Animated trackside crowd — densified biped GLBs with unique cheer motion.
+ * Animated trackside crowd — realistic low-poly biped GLBs with cheer motion.
  *
  * WHO THIS IS FOR: Desert, Lakeside, and sparse Forest gallery sections.
  * WHAT IT DOES: instances the full character-*.glb pack (male/female ×
- *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing atlas;
+ *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing/face atlas;
  *   per-person kind + tint + scale + cheer style/rate; splits authored cheer
  *   arms; body bob, lean, jump-cheer, and knee squash sell a readable human
  *   gallery without a collider army. Track plants start/finish grandstands.
@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts } from "./prop-kit.js?v=31";
+import { propCharacterParts } from "./prop-kit.js?v=33";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -83,9 +83,9 @@ function crowdMaterial() {
   return new THREE.MeshStandardMaterial({
     map: map || null,
     color: 0xffffff,
-    roughness: 0.62,
+    roughness: 0.58,
     metalness: 0.02,
-    envMapIntensity: 0.48,
+    envMapIntensity: 0.55,
     flatShading: false,
     vertexColors: false,
     fog: true,

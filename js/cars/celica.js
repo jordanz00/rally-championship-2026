@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=204";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=35";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=207";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=36";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -1396,7 +1396,7 @@ function plantOnContactPatch(root) {
     minY = has ? box.min.y : 0;
   }
   // Sink past the contact plane so tread meets asphalt/dirt (not a hover gap).
-  const SINK = 0.028;
+  const SINK = 0.04;
   root.position.y -= minY + SINK;
   root.userData.tirePlantSink = SINK;
 }
@@ -2023,6 +2023,10 @@ const ACKERMANN = 0.12;
  * (camber, caster, mesh bind) is unchanged by lock. Body roll is undone
  * about chassis Z so hull lean is not painted onto the rubber.
  *
+ * Chassis roll still lifts the high-side hub in world Y (rotation about the
+ * contact origin). Subtract `x·tan(roll)` from local Y so tread stays on the
+ * deck while the body leans — otherwise drifts read as floating tires.
+ *
  * Front lock uses a small Ackermann split so the inner wheel turns a little
  * more than the outer. Physics steer is not modified.
  *
@@ -2034,15 +2038,21 @@ const ACKERMANN = 0.12;
  */
 export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
+  const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
+  const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
+  const tanRoll = Math.tan(rollClamped);
   for (let i = 0; i < wheels.length; i++) {
     const w = wheels[i];
     if (!w || !w.quaternion) continue;
     const data = w.userData || {};
     if (data.restPosY == null && w.position) data.restPosY = w.position.y;
-    if (wheelY && wheelY[i] != null && data.restPosY != null) {
-      w.position.y = data.restPosY - wheelY[i];
-    } else if (data.restPosY != null) {
-      w.position.y = data.restPosY;
+    if (data.restPosX == null && w.position) data.restPosX = w.position.x;
+    if (data.restPosY != null) {
+      const travel = wheelY && wheelY[i] != null ? wheelY[i] : 0;
+      // Cancel parent-roll world lift so rubber stays on the roadway.
+      const xLat = data.restPosX != null ? data.restPosX : 0;
+      const rollPlant = Math.max(-0.14, Math.min(0.14, tanRoll * xLat));
+      w.position.y = data.restPosY - travel - rollPlant;
     }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;

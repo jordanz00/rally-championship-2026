@@ -1,5 +1,93 @@
 # QA report — quality-control pass
 
+## Hotfix — medium cam stable behind car (2026-09-04)
+
+**Player report:** medium default should stay stable behind the car; no swinging out when drifting; no L/R sway.
+
+**Cause:** slide yaw blend toward velocity, slide look, outside cam offset, lateral kick, and soft yaw stiffness orbited the lens during power slides.
+
+**Shipped:** medium `stableBehind` — zero slide yaw/look/out/kick/roll; firm chassis yaw follow; no lateral shake/kick apply.
+
+**Boot:** `main.js?v=664` · `config.js?v=207` · `game.js?v=664`
+
+---
+## Hotfix — tunnel walls look bad + car clips through (2026-09-04)
+
+**Player report:** tunnel walls look bad; car clips through walls when hitting them inside the tunnel.
+
+**Cause:** (1) thin Z-stretched horseshoe rings with low-res striation read as cardboard seams; (2) wall slabs were sparse/misaligned vs the lining; (3) `bounceOffRoad` allowed ~7 m soft runoff inside tunnels so a missed wall slab let the chassis drive into rock.
+
+**Shipped:** thick bore lining segments + rib bands + higher-res groove map; wall faces densified and aligned to lining inset (0.42 m); firmer wall push + more penetration passes; hard bore lateral clamp (no soft runoff through rock).
+
+**Boot:** `main.js?v=663` · `track.js?v=300` · `collide.js?v=48`
+
+---
+## Hotfix — race hangs / lags on M1 Pro (2026-09-04)
+
+**Player report:** hangs and lags often even on M1 Pro; want stable frame rate without downgrading graphics.
+
+**Cause:** (1) mid-race `Track.create` for next championship stage stole the main thread; (2) stream slices first-compiled at race speed; (3) soft-scale `setSize` mid-corner; (4) shadow atlas forced every present while cars moved; (5) per-frame `Set` / object allocs in stream + mirror + crowd audio.
+
+**Shipped:** block next-stage builds during live race (result/loading own warmup); `prewarmAlongCourse` + settle compile drain under load overlay; countdown skip-frames drain into scratch RT; pin softScaleMin at 1 (no mid-race resize); soft-PCF shadowEvery 2 (same map size); reuse prefetch Set + mirror clear + crowd audio bags; longer stream lookahead.
+
+**Boot:** `main.js?v=662` · `game.js?v=662` · `track.js?v=299` · `config.js?v=206` · `perf-tier.js?v=51`
+
+---
+## Hotfix — blue flash ×3 at stage start (2026-09-04)
+
+**Player report:** beginning each stage flashes blue three times.
+
+**Cause:** 3-2-1 beep hitches skipped presents; stream `renderer.compile` cleared the on-screen framebuffer to sky-blue; `#game-view` CSS was also `#4a7ab8`. Mirror capture left a blue clearColor sticky.
+
+**Shipped:** skip stream compile during countdown/freeze; compile into a 4×4 scratch RT; restore mirror clearColor; dark `#game-view` / `#crt` fallbacks (title keeps blue).
+
+**Boot:** `main.js?v=660` · `css/game.css?v=44` · `track.js?v=298`
+
+---
+## Hotfix — realistic biped audience (2026-09-04)
+
+**Player report:** disliked audience members; want bipedal, somewhat realistic basic humans.
+
+**Cause:** Prior crowd GLBs were capsule/sphere mannequins with flat color swatches and unused face strip — read as abstract dolls.
+
+**Shipped:** regenerated `crowd_atlas.png` (skin gradients, fabric weave, face panels); rebuilt all 12 `character-*.glb` with tapered limbs, head/jaw/nose/ears/hair/shoes + cheer arms; kit asset `?v=18`.
+
+**Boot:** `main.js?v=658` · `prop-kit.js?v=32` · `crowd.js?v=22` · `track.js?v=296`
+
+---
+## Hotfix — medium chase L/R sway (2026-09-04)
+
+**Player report:** default medium camera sways left/right too much; car should stay mostly centered; want smoother motion.
+
+**Cause:** Stiff XZ spring (78) with softer look spring (36) lagged framing; slide yaw/look blend + outside offset + lateral kick whipped the lens off-center.
+
+**Shipped:** medium matched springs (pos 52 / look 48); softer yaw (14); cut slideCamOut / slideLook / slideYawBlend / kick; milder global chase sway dials. Per-view overrides wired in `_chaseCam` / `_feelPad`.
+
+**Boot:** `main.js?v=656` · `config.js?v=205`
+
+---
+## Hotfix — tire contact while drifting (2026-09-04)
+
+**Player report:** player tires floated above the roadway, especially in a drift.
+
+**Cause:** Body roll rotates about the contact origin and lifts the high-side hubs; wheel travel only followed road height, so lean left rubber in the air. Hover cap also allowed ~2 cm of chassis float.
+
+**Shipped:** `applyWheelPose` subtracts `x·tan(roll)` so tread stays on the deck under lean; tire plant sink 4 cm; `TIRE_PLANT` 4.5 cm; `GROUND_HOVER_MAX` 8 mm.
+
+**Boot:** `main.js?v=655` · `celica.js?v=162` · `vehicle.js?v=135`
+
+---
+## Hotfix — shoulder clip while sliding off (2026-09-04)
+
+**Player report:** sliding off the asphalt clipped the car *through* the shoulder mesh.
+
+**Cause:** Prior off-road plant blended asphalt → `_groundHeight` (roadY − biome drop). Visual skirts often stay near the kerb (`edgeY − 0.38` when reach &lt; collider clear), so physics sat under the skirt tris.
+
+**Shipped:** `Track._shoulderPlantHeight` mirrors skirt reach / `skirtDrop` / 0.38 slope; `query` plants on that ramp until past the skirt, then land.
+
+**Boot:** `main.js?v=654` · `track.js?v=294`
+
+---
 ## Hotfix — off-road plant + road shoulders (2026-09-04)
 
 **Player report:** leaving the asphalt left the car floating above a lower verge.

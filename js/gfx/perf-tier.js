@@ -97,7 +97,7 @@ function buildLadder(gfx) {
   const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 1024);
   // `shadowEvery` is the sun atlas re-render interval in presented frames. The
   // shadow pass is a second full geometry pass over the visible world. Soft
-  // PCF hides a skipped bake. Sprint 536: high/medium bake every 3rd present;
+  // PCF hides a skipped bake. High/medium bake every 2nd present (M1 fill-rate);
   // min disables the atlas in game.js when shadow ≤ 512.
   return [
     {
@@ -108,7 +108,7 @@ function buildLadder(gfx) {
       post: "high",
       sky: "high",
       mirrorEvery: 2,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "medium",
@@ -118,7 +118,7 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "medium",
       mirrorEvery: 4,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "low",
