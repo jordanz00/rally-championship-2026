@@ -1,21 +1,22 @@
 /**
- * Animated trackside crowd — realistic low-poly biped GLBs with cheer motion.
+ * Animated trackside crowd — HD human biped GLBs with cheer motion.
  *
  * WHO THIS IS FOR: Desert, Lakeside, and sparse Forest gallery sections.
  * WHAT IT DOES: instances the full character-*.glb pack (male/female ×
  *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing/face atlas;
  *   per-person kind + tint + scale + cheer style/rate; splits authored cheer
- *   arms; body bob, lean, jump-cheer, and knee squash sell a readable human
- *   gallery without a collider army. Track plants start/finish grandstands.
+ *   arms; body bob, lean, jump-cheer, and knee squash sell readable humans
+ *   without a collider army. Track plants start/finish grandstands.
  * HOW IT CONNECTS: Track._addSpectators() / _addGrandstandCrowds() build a
  *   CrowdField; Track.update() and RallyAudio consume crowd points for Doppler.
  *
  * Diversity: all 12 kinds mixed per seat (not clone strips); tint + animStyle.
  * Perf: instanced by chunk|kind, cameraFade, shadows only on near gallery.
+ * Assets: Quaternius Universal Base Characters via tools/build-crowd-from-quaternius.py.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts } from "./prop-kit.js?v=33";
+import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=35";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -155,7 +156,7 @@ export class CrowdField {
       if (p.tint == null) p.tint = CROWD_TINTS[i % CROWD_TINTS.length];
     }
 
-    const bodyMat = crowdMaterial();
+    const atlasMat = crowdMaterial();
 
     /** @type {Map<string, typeof poses>} */
     const byKey = new Map();
@@ -179,6 +180,8 @@ export class CrowdField {
       const parts = propCharacterParts(kind);
       if (!parts || !parts.body) continue;
 
+      // Quaternius / authored skin maps when present; else shared crowd atlas.
+      const bodyMat = propCharacterMaterial(kind) || atlasMat;
       const body = new THREE.InstancedMesh(parts.body, bodyMat, list.length);
       body.castShadow = list.some((p) => !!p.shadow);
       body.receiveShadow = true;

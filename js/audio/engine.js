@@ -36,6 +36,7 @@ const NAV_CLIPS = [
   "jump",
   "long",
   "maybe",
+  "finish",
   "count-3",
   "count-2",
   "count-1",
@@ -52,6 +53,7 @@ const NAV_GRADE = new Set([
   "hairpin-left",
   "hairpin-right",
   "jump",
+  "finish",
 ]);
 
 /**
@@ -390,7 +392,7 @@ export class RallyAudio {
     if (this._navBooted || !this.ctx) return;
     this._navBooted = true;
     for (const key of NAV_CLIPS) {
-      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=5`).then((buf) => {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=6`).then((buf) => {
         this._navClips[key] = buf;
       });
     }
@@ -411,9 +413,10 @@ export class RallyAudio {
 
     /** @type {string[]} */
     const queue = [];
-    if (opts.long && this._navClips.long) queue.push("long");
+    // Finish is a one-shot — never chain long/maybe qualifiers.
+    if (key !== "finish" && opts.long && this._navClips.long) queue.push("long");
     queue.push(key);
-    if (opts.maybe && this._navClips.maybe) queue.push("maybe");
+    if (key !== "finish" && opts.maybe && this._navClips.maybe) queue.push("maybe");
 
     // Grade must be decoded; qualifiers are optional until their buffers land.
     if (!this._navClips[key]) return false;

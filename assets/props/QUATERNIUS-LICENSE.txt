@@ -1,0 +1,6 @@
+Quaternius — Universal Base Characters (Standard)
+CC0 1.0 Universal — https://quaternius.com/license.html
+https://quaternius.itch.io/universal-base-characters
+
+Used for trackside crowd spectators (character-*.glb), converted by
+tools/build-crowd-from-quaternius.py.

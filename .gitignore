@@ -10,3 +10,8 @@ node_modules/
 .env.*
 *.pem
 *.key
+
+# Quaternius Universal Base Characters — source zip/extract (CC0; rebuild via tools/build-crowd-from-quaternius.py)
+assets/props/hd-src/quaternius/*.zip
+assets/props/hd-src/quaternius/extracted/
+assets/props/hd-src/quaternius/.itch_cookies.txt

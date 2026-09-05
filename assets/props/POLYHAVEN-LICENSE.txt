@@ -1,0 +1,10 @@
+Poly Haven assets used in this project are licensed under CC0 1.0 Universal.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+https://polyhaven.com/license
+
+Models (converted to GLB for the game):
+  concrete_road_barrier, concrete_road_barrier_02,
+  modular_chainlink_fence, painted_wooden_bench, wooden_crate_01
+
+Source files retained under assets/props/hd-src/polyhaven/.

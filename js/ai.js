@@ -33,7 +33,9 @@ const G = 9.81;
  * Lateral slots in metres (track +X / right). Tight enough that a slide still
  * lands on asphalt — ±2.8 m plus an apex used to pin rivals on the painted edge.
  */
-const LANES = [-1.15, 0.2, 1.05, -0.55, 0.7, -1.28, 0.95, -0.25, 1.22, -0.88, 0.42, -1.02, 0.82, 0.08];
+const LANES = [
+  -1.4, -1.05, -0.7, -0.35, 0.05, 0.4, 0.75, 1.1, 1.35, -1.2, -0.5, 0.25, 0.95, -0.15,
+];
 /** Chassis-to-edge keep-out (m). Car half-width ~1.0 plus a slide buffer. */
 const LINE_EDGE = 2.2;
 /** Peak apex offset as a fraction of the on-road half-width. */
@@ -298,10 +300,15 @@ export class Opponent {
     // Collision resolver may have tagged a pass lane — hold it briefly.
     if (v._aiPassT > 0) {
       this._passSide = v._aiPassSide || this._passSide || 1;
-      this._avoid = this._passSide * 1.15;
+      this._avoid = this._passSide * 1.45;
       v._aiPassT -= dt;
     }
-    const dodge = clamp(this._avoid * 1.05 + this._passSide * 0.55, -half * 0.48, half * 0.48);
+    const dodgeAuth = traffic.aheadClose ? 1.35 : 1.1;
+    const dodge = clamp(
+      this._avoid * dodgeAuth + this._passSide * 0.7,
+      -half * 0.58,
+      half * 0.58
+    );
     const lat = clamp(lineLat + dodge, -half, half);
     v._aiLat = q.lateral;
 
@@ -484,14 +491,18 @@ export class Opponent {
       const dist = Math.hypot(dx, dz);
       const dProg = (o.progress || 0) - v.progress;
 
-      if (dProg > 0.4 && dProg < 18) {
+      // Rival-vs-rival: look farther and move over early so they never form a
+      // mid-road bounce pile. Player still gets a wider berth.
+      const look = isPlayer ? 18 : 28;
+      if (dProg > 0.35 && dProg < look) {
         const oLat =
           o._aiLat != null
             ? o._aiLat
             : track.query(o.position.x, o.position.z, this._qOther, o.progress).lateral;
-        const sameGroove = Math.abs(oLat - q.lateral) < (isPlayer ? 2.9 : 2.2);
+        const groove = isPlayer ? 2.9 : 3.15;
+        const sameGroove = Math.abs(oLat - q.lateral) < groove;
         if (sameGroove) {
-          const close = 1 - dProg / 18;
+          const close = 1 - dProg / look;
           if (isPlayer) {
             playerBlock = true;
             lift = Math.min(lift, 0.14 + dProg / 22);
@@ -499,23 +510,25 @@ export class Opponent {
             if (dProg < 5.5) brakeFor = Math.max(brakeFor, 0.55);
             avoid += (q.lateral >= oLat ? 1 : -1) * close * 0.7 * respect;
           } else {
-            // Rival ahead in our groove: move over hard, barely lift.
-            aheadClose = aheadClose || dProg < 10;
-            avoid += (q.lateral >= oLat ? 1 : -1) * (0.75 + close * 0.9);
-            lift = Math.min(lift, 0.72 + dProg / 40);
-            if (dProg < 3.2) {
-              brakeFor = Math.max(brakeFor, 0.12 + close * 0.18);
-              maxBrake = Math.max(maxBrake, 0.28);
+            // Rival ahead in our groove: commit to a lane early, barely lift.
+            aheadClose = aheadClose || dProg < 14;
+            const side = q.lateral >= oLat ? 1 : -1;
+            avoid += side * (0.95 + close * 1.25);
+            lift = Math.min(lift, 0.82 + dProg / 50);
+            if (dProg < 4.5) {
+              brakeFor = Math.max(brakeFor, 0.08 + close * 0.12);
+              maxBrake = Math.max(maxBrake, 0.2);
             }
-            minThrottle = Math.min(minThrottle, 0.48);
+            minThrottle = Math.min(minThrottle, 0.52);
           }
-        } else if (!isPlayer && dProg < 8 && dist < 9) {
-          // Nearby rival, different lane — slight ease only.
-          lift = Math.min(lift, 0.88);
+        } else if (!isPlayer && dProg < 12 && dist < 11) {
+          // Nearby rival, different lane — ease and hold spacing.
+          lift = Math.min(lift, 0.92);
+          avoid += (q.lateral >= oLat ? 0.35 : -0.35) * (1 - dProg / 12);
         }
       }
 
-      const near = isPlayer ? 6.8 * respect : 5.4;
+      const near = isPlayer ? 6.8 * respect : 7.2;
       if (dist < near && dist > 0.04) {
         const fx = Math.sin(v.yaw);
         const fz = Math.cos(v.yaw);
@@ -523,26 +536,26 @@ export class Opponent {
         const rz = -Math.sin(v.yaw);
         const along = dx * fx + dz * fz;
         const right = dx * rx + dz * rz;
-        if (along > -1.2 && along < (isPlayer ? 5.8 * respect : 4.2)) {
-          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.95 * respect : 1.15);
-          if (along > 0.2 && dist < (isPlayer ? 4.8 * respect : 3.6)) {
+        if (along > -1.2 && along < (isPlayer ? 5.8 * respect : 5.5)) {
+          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.95 * respect : 1.45);
+          if (along > 0.2 && dist < (isPlayer ? 4.8 * respect : 4.4)) {
             if (isPlayer) {
               playerBlock = true;
               lift = Math.min(lift, 0.18);
               brakeFor = Math.max(brakeFor, 0.34);
             } else {
               aheadClose = true;
-              lift = Math.min(lift, 0.78);
-              brakeFor = Math.max(brakeFor, 0.1);
-              avoid += (right > 0 ? -1 : 1) * 0.55;
-              minThrottle = Math.min(minThrottle, 0.5);
+              lift = Math.min(lift, 0.85);
+              // Prefer move-over over brake — brake caused the bounce pile.
+              avoid += (right > 0 ? -1 : 1) * 0.85;
+              minThrottle = Math.min(minThrottle, 0.55);
             }
           }
         }
       }
     }
 
-    this._avoid += (clamp(avoid, -1.55, 1.55) - this._avoid) * (1 - Math.exp(-7.5 * dt));
+    this._avoid += (clamp(avoid, -1.85, 1.85) - this._avoid) * (1 - Math.exp(-8.5 * dt));
     return { lift, brake: brakeFor, playerBlock, aheadClose, minThrottle, maxBrake };
   }
 

@@ -8,7 +8,7 @@
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 
-import { PACE } from "../config.js?v=208";
+import { PACE } from "../config.js?v=209";
 
 const VOL_NAV_KEY = "rally-vol-navigator";
 
@@ -173,6 +173,16 @@ export class CoDriver {
 
   /** Timeout sting lives on RallyAudio — no spoken "game over". */
   gameOverYeah() {}
+
+  /**
+   * End-of-stage call — "FINISH!" on the navigator bus.
+   * @param {{paceCall?: Function}} [audio]
+   */
+  finishCall(audio) {
+    if (this.volume <= 0.001) return;
+    if (!audio || !audio.paceCall) return;
+    audio.paceCall("finish");
+  }
 
   /**
    * Hard scenery rub — kept as a no-op so the call site stays valid.

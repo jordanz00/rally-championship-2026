@@ -409,23 +409,27 @@ export const LIGHTING = {
     fog: 0xdcc8a0,
     fogNear: 125,
     fogFar: 980,
-    hemiSky: 0xa8c0d0,
-    hemiGround: 0xd4a870,
-    hemi: 0.74,
+    hemiSky: 0xb0cce0,
+    hemiGround: 0xd8b078,
+    hemi: 0.96,
     sun: 0xffecd0,
-    sunKelvin: 5050,
-    sunInt: 3.28,
+    sunKelvin: 5200,
+    sunInt: 3.45,
     sunDir: [0.54, 0.72, 0.36],
-    rimSky: 0xd0c4a8,
-    rimInt: 0.38,
-    fill: 0xc8b090,
-    fillInt: 0.32,
-    ambient: 0xc4b090,
-    ambientInt: 0.14,
-    exposure: 1.12,
-    gradeWarmth: 0.24,
+    rimSky: 0xd8ccb0,
+    rimInt: 0.46,
+    fill: 0xd0bc98,
+    fillInt: 0.48,
+    ambient: 0xd0c0a0,
+    /**
+     * Open-sky bounce must light ridge shadows after the tunnel mouth.
+     * 0.14 left the mud exit nearly black under the portal cliff.
+     */
+    ambientInt: 0.34,
+    exposure: 1.18,
+    gradeWarmth: 0.2,
     skyBack: 0x3a88b8,
-    worldEnv: 1.34,
+    worldEnv: 1.42,
   },
   forest: {
     /**
@@ -684,30 +688,33 @@ export const TITLE_SHOWROOM = {
  * tunnelShade() blends toward 1.
  */
 export const TUNNEL = {
-  /** Ambient floor at full shade (was ~0.08 — pitch black bore). */
-  ambientFloor: 0.82,
-  /** How much outdoor hemi survives at full shade (was 0.15). */
-  hemiRetain: 0.72,
+  /**
+   * Ambient at full shade — must sit near outdoor ambient so exiting a bore
+   * does not dump the player from a bright cave into black ridge shadow.
+   */
+  ambientFloor: 0.48,
+  /** How much outdoor hemi survives at full shade. */
+  hemiRetain: 0.78,
   /** Fill directional remnant at full shade. */
-  fillRetain: 0.48,
+  fillRetain: 0.55,
   /** Overhead spot that follows the car (physical intensity). */
-  caveInt: 48,
+  caveInt: 42,
   caveDistance: 52,
   caveDecay: 1.15,
   /** Fixed wall PointLights (physical intensity). */
-  wallInt: 72,
+  wallInt: 64,
   wallDistance: 68,
   wallDecay: 0.95,
   wallColor: 0xffd9a0,
-  /** Fog inside the bore — warm brown, not black. */
-  fog: 0x5a4030,
-  fogNear: 32,
-  fogFar: 320,
+  /** Fog inside the bore — warm sand haze, not coffee-black. */
+  fog: 0x8a7058,
+  fogNear: 48,
+  fogFar: 420,
   /**
    * Exposure multiplier at full shade. V1 keeps this near 1.0 — tunnel
    * brightness comes from cave/wall lamps + light dimming, not ACES pumping.
    */
-  exposureBoost: 1.04,
+  exposureBoost: 1.02,
   /** Lens emissive when headlights are fully on. */
   headEmissive: 34,
   /**
@@ -1627,10 +1634,12 @@ export const CAMERA = {
       speedLookAheadScale: 0.2,
       /**
        * Rigid chase lock — fixed back/height from start grid, no accel trail,
-       * no L/R orbit. Position snaps to the rear offset every frame.
+       * no L/R orbit, no air/land/shake height bob. Position snaps every frame.
        */
       stableBehind: true,
       lockPos: true,
+      /** Explicit: never raise/lower the locked chase height. */
+      lockHeight: true,
       speedDropMax: 0,
       speedFovScale: 0,
       speedLookAheadScale: 0,

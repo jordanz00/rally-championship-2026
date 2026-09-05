@@ -3,10 +3,11 @@
  *
  * WHO THIS IS FOR: Track scenery that used to be box/cone stand-ins (crowds,
  *   Safari animals, Desert cactus/rocks, Forest trees, Alpine tents/houses).
- * WHAT IT DOES: loads HD Blender nature props + densified biped spectators from
- *   assets/props/ once, merges nature into grounded BufferGeometry, preserves
- *   UVs, paints bark/canopy vertex colours, and exposes textured materials for
- *   InstancedMesh placement. Character GLBs keep authored body + cheer arms.
+ * WHAT IT DOES: loads Poly Haven / densified Kenney trackside props + HD biped
+ *   spectators from assets/props/ once, merges nature into grounded
+ *   BufferGeometry, preserves UVs, paints bark/canopy vertex colours, and
+ *   exposes textured materials for InstancedMesh placement. Character GLBs
+ *   keep authored body + cheer arms.
  * HOW IT CONNECTS: Track calls preparePropKit(scenery) so Desert does not
  *   wait on the forest pack or alpine houses. propGeometry(kind) /
  *   propNatureMaterial(kind) when planting.
@@ -25,7 +26,7 @@ import { VISUAL } from "../config.js?v=208";
  * @type {readonly string[]}
  */
 export const PROP_KINDS = Object.freeze([
-  // Spectators — densified biped pack (adult/tall/teen/elder/stocky/child × sex)
+  // Spectators — HD human biped pack (adult/tall/teen/elder/stocky/child × sex)
   "character-male-a",
   "character-male-b",
   "character-male-c",
@@ -225,7 +226,7 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "18";
+const KIT_ASSET_V = "20";
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([
@@ -357,11 +358,22 @@ export function propGeometry(kind) {
  * Body + cheer arms for a spectator kind. Null when the GLB is missing.
  *
  * @param {string} kind
- * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}}|null}
+ * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}, material?:THREE.Material}|null}
  */
 export function propCharacterParts(kind) {
   if (!Object.prototype.hasOwnProperty.call(CHAR_PARTS, kind)) return null;
   return CHAR_PARTS[kind];
+}
+
+/**
+ * Authored crowd material for a character kind (Quaternius skin maps), or null
+ * to fall back to the shared crowd atlas.
+ * @param {string} kind
+ * @returns {THREE.Material|null}
+ */
+export function propCharacterMaterial(kind) {
+  const parts = propCharacterParts(kind);
+  return parts && parts.material ? parts.material : null;
 }
 
 /**
@@ -517,7 +529,14 @@ function ensureKind(kind) {
       CACHE[kind] = geo;
       if (kind.startsWith("character-")) {
         // Prefer authored body + cheer arms from the densified biped GLB.
-        CHAR_PARTS[kind] = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
+        let parts = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
+        // Quaternius exports a single crowd-body — split arms in-engine for cheer.
+        if (parts && parts.body && !parts.armL && !parts.armR) {
+          const split = splitCrowdCharacter(parts.body);
+          split.material = parts.material;
+          parts = split;
+        }
+        CHAR_PARTS[kind] = parts;
         if (CHAR_PARTS[kind]?.body) CACHE[kind] = CHAR_PARTS[kind].body;
       } else if (TRACKSIDE_KINDS.includes(kind) && !MAT_CACHE[kind]) {
         // Keep Kenney pack colours / maps instead of flat grey fallback.
@@ -1080,7 +1099,7 @@ function extractPropGeometry(root, kind) {
  *
  * @param {THREE.Object3D} root
  * @param {string} kind
- * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}}|null}
+ * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}, material?:THREE.Material}|null}
  */
 function extractCrowdCharacterParts(root, kind) {
   root.updateMatrixWorld(true);
@@ -1090,17 +1109,34 @@ function extractCrowdCharacterParts(root, kind) {
   let armLGeo = null;
   /** @type {THREE.BufferGeometry|null} */
   let armRGeo = null;
+  /** @type {THREE.Material|null} */
+  let packMat = null;
 
   root.traverse((obj) => {
     if ((!obj.isMesh && !obj.isSkinnedMesh) || !obj.geometry) return;
     const n = String(obj.name || "").toLowerCase();
+    if (!packMat && obj.material) {
+      const src = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+      if (src && (src.map || /crowd-body|body|face|skin|superhero/i.test(n + (src.name || "")))) {
+        packMat = adoptPackMaterial(src, kind, { alphaTest: 0 });
+      }
+    }
     const cloned = obj.geometry.clone();
     cloned.applyMatrix4(obj.matrixWorld);
     const part = normalizeForMerge(cloned, "character", kind);
     cloned.dispose();
     if (/arm[-_]?l|armleft|crowd-arm-l/.test(n)) armLGeo = part;
     else if (/arm[-_]?r|armright|crowd-arm-r/.test(n)) armRGeo = part;
-    else if (/body|torso|crowd-body|character/.test(n) || !bodyGeo) bodyGeo = part;
+    else if (/body|torso|crowd-body|character|face|sphere/i.test(n) || !bodyGeo) {
+      // Quaternius exports multiple meshes (Face + body); merge later if needed.
+      if (!bodyGeo) bodyGeo = part;
+      else {
+        const merged = mergeGeometries([bodyGeo, part], false);
+        bodyGeo.dispose();
+        part.dispose();
+        bodyGeo = merged;
+      }
+    }
   });
 
   if (!bodyGeo) {
@@ -1145,6 +1181,7 @@ function extractCrowdCharacterParts(root, kind) {
     armR: armRGeo,
     shoulderL,
     shoulderR,
+    material: packMat || undefined,
   };
 }
 

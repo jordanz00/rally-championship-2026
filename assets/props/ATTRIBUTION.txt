@@ -1,24 +1,24 @@
-Trackside props — Forest HD + crowd bipeds + Kenney gallery packs
+Trackside props — Quaternius humans + Poly Haven + densified Kenney
 ----------------------------------------------------------------
+Crowd spectators: Quaternius Universal Base Characters (CC0) converted to
+character-*.glb by tools/build-crowd-from-quaternius.py — male/female ×
+height/build variants with light/dark skin maps and hairstyles.
+Cheer arms are split at load time in prop-kit. Authored materials preferred
+over the procedural crowd atlas when present.
+Source pack: assets/props/hd-src/quaternius/ (see QUATERNIUS-LICENSE.txt).
+Prior procedural / Kenney crowd backups under assets/props/_lowpoly_backup/.
+
+Trackside HD (Poly Haven CC0 — POLYHAVEN-LICENSE.txt):
+  concrete_road_barrier → barrier_wall.glb
+  concrete_road_barrier_02 → road_side_barrier / barrier_red / barrier_white
+  modular_chainlink_fence → construction_fence / fence_straight
+  painted_wooden_bench → bench.glb
+  wooden_crate_01 → crate.glb
+Source under assets/props/hd-src/polyhaven/.
+
+Remaining gallery / gates (Kenney CC0, densified):
+  Racing / City / Furniture kits — see KENNEY-*-LICENSE.txt.
+  Backups under assets/props/_kenney_backup/.
+
 Forest Stage 2 trees: assets/props/low_poly_forest_tree_pack.glb
-  (Sketchfab "Low Poly Forest Tree Pack" — trunk/canopy pairs + atlas backdrop cards).
-Forest bushes / legacy nature: Blender meshes + leaf/bark albedo.
-
-Crowd spectators: densified biped humans (character-*.glb), rebuilt by
-tools/build-crowd-humans.py — male/female × adult/tall/teen/elder/stocky/child
-with tapered limbs, head/face/hair/shoes, UV-mapped to
-assets/props/Textures/hd/crowd_atlas.png (skin, fabric, face panels).
-Authored body + cheer-arm meshes (crowd-body / crowd-arm-l / crowd-arm-r).
-Atlas via tools/gen-crowd-atlas.py. No primitive cylinder/sphere people on
-the live player path.
-
-Spectators previously used Kenney Mini Characters (CC0) — backups under
-assets/props/_lowpoly_backup/. Kenney license files retained for animals / prior art.
-
-Trackside gallery / gates / barriers (Sep 2026) — Kenney CC0 packs:
-  Racing Kit → barrier_*, fence_*, grandstand*, billboard*, gantry_*,
-    flag_*, pylon, light_post, rail*, banner_tower
-  City Kit (Roads) → construction_*, road_sign_empty, road_side_barrier, sign_highway
-  Furniture Kit → bench, crate
-See KENNEY-RACING-LICENSE.txt, KENNEY-CITY-ROADS-LICENSE.txt,
-KENNEY-FURNITURE-LICENSE.txt (CC0 1.0 — attribution appreciated, not required).
+  (Sketchfab "Low Poly Forest Tree Pack"). Nature rocks/cactus densified.
