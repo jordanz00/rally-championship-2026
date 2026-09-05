@@ -25,8 +25,8 @@ body {
   position: relative;
   width: 100vw;
   height: 100vh;
-    background:
-    radial-gradient(ellipse 80% 70% at 72% 40%, #4a7ab8 0%, #1e3a58 58%, #0c1828 100%);
+  /* Dark fallback — never sky blue. Canvas gaps used to flash #4a7ab8 at 3-2-1. */
+  background: #050705;
 }
 
 #game-view {
@@ -36,7 +36,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #4a7ab8;
+  background: #050705;
   pointer-events: none;
 }
 

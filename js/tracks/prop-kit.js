@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=204";
+import { VISUAL } from "../config.js?v=207";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -225,7 +225,7 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "17";
+const KIT_ASSET_V = "18";
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([

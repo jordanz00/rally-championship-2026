@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=204";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=51";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=47";
-import { JumpModel } from "./jump.js?v=25";
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=5";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=207";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=52";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=48";
+import { JumpModel } from "./jump.js?v=26";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=6";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -85,12 +85,12 @@ const RELAX_LEN = 0.078;
  * Origin is the contact patch after plantOnContactPatch. A few centimetres kills
  * the “floating tires” read without burying the sidewalls.
  */
-const TIRE_PLANT = 0.04;
+const TIRE_PLANT = 0.045;
 /**
  * Grounded contact may chatter a few centimetres but must never hover
  * above the painted deck after a jump (filter lag used to leave a gap).
  */
-const GROUND_HOVER_MAX = 0.022;
+const GROUND_HOVER_MAX = 0.008;
 /**
  * Metres a tire may sit into a solid deck before we lift. Anything more is a
  * clip-through — jump landings used to bury the rear by half a metre.

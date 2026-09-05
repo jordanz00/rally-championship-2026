@@ -34,8 +34,9 @@ const MAX_PUSH = 3;
  */
 const PLAYER_ENV_PUSH = 0.58;
 const AI_ENV_PUSH = 0.85;
-const PLAYER_WALL_PUSH = 0.85;
-const AI_WALL_PUSH = 1.2;
+/** Tunnel / underpass faces need a firmer shove than soft rocks. */
+const PLAYER_WALL_PUSH = 1.2;
+const AI_WALL_PUSH = 1.45;
 /** Extra separation so we do not leave the OBB kissing the solid. */
 const CONTACT_SLOP = 0.02;
 /**
@@ -604,7 +605,7 @@ export function correctEnvPenetration(v, track) {
     v._envDeep = false;
     return;
   }
-  const passes = v.ai ? 1 : 3;
+  const passes = v.ai ? 2 : 5;
   let worst = 0;
   for (let pass = 0; pass < passes; pass++) {
     const fx = Math.sin(v.yaw);
@@ -656,16 +657,54 @@ export function bounceOffRoad(v, q, track = null) {
 
   const isPlayer = !v.ai;
   const tunnel = !!q.tunnel;
-  const shoulder = tunnel ? 0.45 : OFF_SHOULDER;
-  const runoff = tunnel ? 2.2 : OFF_RUNOFF;
-  const recover = tunnel ? 4.5 : OFF_RECOVER;
-  const resetAt = tunnel ? 7 : OFF_RESET;
-
   const inward = lat > 0 ? -1 : 1;
   const nx = q.nx;
   const nz = q.nz;
   const hx = Math.sin(q.heading);
   const hz = Math.cos(q.heading);
+
+  // Inside a bore the lining sits ~0.42 m past paint. Soft 7 m runoff used to
+  // let the chassis drive through rock whenever wall-slab gaps missed a hit.
+  if (tunnel) {
+    const BORE_SLOP = 0.08;
+    if (over > BORE_SLOP) {
+      const embed = over - BORE_SLOP;
+      v.position.x += nx * inward * embed;
+      v.position.z += nz * inward * embed;
+      const vn = v.velocity.x * nx + v.velocity.z * nz;
+      if (vn * Math.sign(lat || 1) > 0) {
+        v.velocity.x -= nx * vn;
+        v.velocity.z -= nz * vn;
+        const keep = Math.abs(vn) * 0.58;
+        v.velocity.x += hx * keep;
+        v.velocity.z += hz * keep;
+      }
+      v.hitWall = Math.max(v.hitWall || 0, embed * 0.9 + Math.abs(vn) * 0.45);
+      v.hitNx = nx * inward;
+      v.hitNz = nz * inward;
+      if (v.yawRate != null) {
+        const past = (nx * inward) * hz - (nz * inward) * hx;
+        v.yawRate += past * 0.02;
+      }
+      return true;
+    }
+    // Kissing the lining — light berm only.
+    const t = over / Math.max(1e-3, BORE_SLOP);
+    const vn = v.velocity.x * nx + v.velocity.z * nz;
+    if (vn * Math.sign(lat || 1) > 0) {
+      const kill = vn * (isPlayer ? 0.28 : 0.4) * t;
+      v.velocity.x -= nx * kill;
+      v.velocity.z -= nz * kill;
+      v.velocity.x += nx * inward * Math.abs(vn) * 0.22 * t;
+      v.velocity.z += nz * inward * Math.abs(vn) * 0.22 * t;
+    }
+    return true;
+  }
+
+  const shoulder = OFF_SHOULDER;
+  const runoff = OFF_RUNOFF;
+  const recover = OFF_RECOVER;
+  const resetAt = OFF_RESET;
 
   // Extreme runoff: haul toward the ribbon. Never snap XZ onto the centre
   // line — that teleported the pack into the tunnel after Desert jump 3.

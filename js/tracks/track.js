@@ -10,8 +10,8 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=204";
-import { roadMicroHeight } from "./road-micro.js?v=5";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=207";
+import { roadMicroHeight } from "./road-micro.js?v=6";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=5";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
@@ -22,7 +22,7 @@ import {
   crownGeometry,
   foliageMaterial,
   treeCardKind,
-} from "./trees.js?v=38";
+} from "./trees.js?v=39";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -33,7 +33,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=35";
+} from "../gfx/pbr.js?v=36";
 
 /** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {
@@ -50,9 +50,9 @@ function terrainTileSegs() {
   return STREAM.terrainTileSegs;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=15";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=31";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=20";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=16";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=33";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=22";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
@@ -207,6 +207,10 @@ export class Track {
     this._chunkCount = 1;
     this._streamFrame = 0;
     this._streamLook = new THREE.Vector3();
+    /** Reused each update() — avoid allocating a Set every present. */
+    this._prefetchSet = new Set();
+    /** Scratch for settle-line prewarm samples. */
+    this._settleSample = {};
     /** Lake meshes for tier-5 UV scroll. */
     this._waterMeshes = [];
     /** @type {import("./crowd.js").CrowdField|null} */
@@ -746,34 +750,55 @@ export class Track {
       );
     }
 
-    let prefetch = null;
     const ahead = STREAM.prefetchChunks | 0;
+    const prefetch = this._prefetchSet;
+    prefetch.clear();
     if (ahead > 0 && opts.progress != null && Number.isFinite(opts.progress)) {
       const pc = this._chunkOfDist(opts.progress);
-      prefetch = new Set();
       for (let c = pc - ahead; c <= pc + ahead; c++) {
         if (c >= 0 && c < this._chunkCount) prefetch.add(c);
       }
     }
+
+    const px = player.x;
+    const py = player.y;
+    const pz = player.z;
+    const hasCam = !!camera;
+    const cx = hasCam ? camera.x : px;
+    const cy = hasCam ? camera.y : py;
+    const cz = hasCam ? camera.z : pz;
+    const hasLook = lookM > 1;
+    const lx = this._streamLook.x;
+    const ly = this._streamLook.y;
+    const lz = this._streamLook.z;
 
     for (let i = 0; i < list.length; i++) {
       const obj = list[i];
       const sphere = obj.userData.bounds;
       if (!sphere) continue;
 
-      const dPlayer = sphere.center.distanceTo(player) - sphere.radius;
-      const dCam = camera ? sphere.center.distanceTo(camera) - sphere.radius : dPlayer;
-      let dNear = dPlayer < dCam ? dPlayer : dCam;
-      if (lookM > 1) {
-        const dLook = sphere.center.distanceTo(this._streamLook) - sphere.radius;
-        if (dLook < dNear) dNear = dLook;
+      const sc = sphere.center;
+      const sr = sphere.radius;
+      // Squared distances first — only one sqrt for the winning anchor.
+      let bestSq =
+        (sc.x - px) * (sc.x - px) + (sc.y - py) * (sc.y - py) + (sc.z - pz) * (sc.z - pz);
+      if (hasCam) {
+        const dCamSq =
+          (sc.x - cx) * (sc.x - cx) + (sc.y - cy) * (sc.y - cy) + (sc.z - cz) * (sc.z - cz);
+        if (dCamSq < bestSq) bestSq = dCamSq;
       }
+      if (hasLook) {
+        const dLookSq =
+          (sc.x - lx) * (sc.x - lx) + (sc.y - ly) * (sc.y - ly) + (sc.z - lz) * (sc.z - lz);
+        if (dLookSq < bestSq) bestSq = dLookSq;
+      }
+      const dNear = Math.sqrt(bestSq) - sr;
 
       let want;
       if (obj.userData.streamVisible === true) want = dNear < unloadR;
       else want = dNear < loadR;
 
-      if (!want && prefetch && obj.userData.chunk >= 0 && prefetch.has(obj.userData.chunk)) {
+      if (!want && prefetch.size && obj.userData.chunk >= 0 && prefetch.has(obj.userData.chunk)) {
         want = dNear < loadR * 1.12;
       }
 
@@ -885,15 +910,32 @@ export class Track {
     if (!q || !q.length || !renderer || !scene || !camera) return;
     const t0 = performance.now();
     let compiled = 0;
-    while (q.length && performance.now() - t0 < budgetMs && compiled < 1) {
-      const obj = q.shift();
-      if (!obj || !obj.visible) continue;
-      try {
-        renderer.compile(obj, camera, scene);
-        compiled += 1;
-      } catch (err) {
-        console.warn("Stream compile failed", err);
+    // Compile into a tiny scratch RT so linking never clears the on-screen
+    // framebuffer (that was the sky-blue flash on hitch frames).
+    const prevRT = renderer.getRenderTarget ? renderer.getRenderTarget() : null;
+    if (!this._compileScratch) {
+      this._compileScratch = new THREE.WebGLRenderTarget(4, 4, {
+        depthBuffer: false,
+        stencilBuffer: false,
+      });
+    }
+    try {
+      if (renderer.setRenderTarget) renderer.setRenderTarget(this._compileScratch);
+      // Cap objects per drain (1–2) so a single link cannot eat an entire
+      // present frame; settle drains repeatedly under the load overlay.
+      const maxObjs = budgetMs >= 20 ? 2 : 1;
+      while (q.length && performance.now() - t0 < budgetMs && compiled < maxObjs) {
+        const obj = q.shift();
+        if (!obj || !obj.visible) continue;
+        try {
+          renderer.compile(obj, camera, scene);
+          compiled += 1;
+        } catch (err) {
+          console.warn("Stream compile failed", err);
+        }
       }
+    } finally {
+      if (renderer.setRenderTarget) renderer.setRenderTarget(prevRT);
     }
   }
 
@@ -932,6 +974,84 @@ export class Track {
         obj.userData.streamVisible = true;
       }
     }
+  }
+
+  /**
+   * Reveal + queue-compile slices along the racing line so the first ~km of
+   * stage does not pay first-shader links mid-corner.
+   * @param {number} progress metres along the spline
+   * @param {number} [lookMeters]
+   * @param {number} [stepMeters]
+   * @returns {number} newly queued compile count
+   */
+  prewarmAlongCourse(progress, lookMeters, stepMeters) {
+    const list = this._streamable;
+    if (!list || !list.length || !this.sample) return 0;
+    const look =
+      lookMeters != null
+        ? lookMeters
+        : STREAM.settleLookaheadMeters != null
+          ? STREAM.settleLookaheadMeters
+          : 980;
+    const step =
+      stepMeters != null
+        ? stepMeters
+        : STREAM.settleLookaheadStep != null
+          ? STREAM.settleLookaheadStep
+          : 48;
+    const start = Math.max(0, progress || 0);
+    const end = Math.min(this.length || start + look, start + look);
+    const loadR = STREAM.countdownLoadRadius != null ? STREAM.countdownLoadRadius : 720;
+    const bag = this._settleSample || (this._settleSample = {});
+    const anchors = [];
+    for (let d = start; d <= end; d += step) {
+      const p = this.sample(d, bag);
+      if (p && Number.isFinite(p.x)) anchors.push(p.x, p.y || 0, p.z);
+    }
+    if (!anchors.length) return 0;
+    let queued = 0;
+    for (let i = 0; i < list.length; i++) {
+      const obj = list[i];
+      const sphere = obj.userData.bounds;
+      if (!sphere) {
+        if (!obj.visible) {
+          obj.visible = true;
+          obj.userData.streamVisible = true;
+          this._compileQueue.push(obj);
+          queued += 1;
+        }
+        continue;
+      }
+      const sc = sphere.center;
+      const thr = loadR + sphere.radius;
+      const thrSq = thr * thr;
+      let hit = false;
+      for (let a = 0; a < anchors.length; a += 3) {
+        const dx = sc.x - anchors[a];
+        const dy = sc.y - anchors[a + 1];
+        const dz = sc.z - anchors[a + 2];
+        if (dx * dx + dy * dy + dz * dz <= thrSq) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) continue;
+      const was = obj.visible;
+      obj.visible = true;
+      obj.userData.streamVisible = true;
+      if (!was) {
+        this._compileQueue.push(obj);
+        queued += 1;
+      }
+    }
+    return queued;
+  }
+
+  /** @returns {number} pending stream shader compiles */
+  compileQueueLength() {
+    return this._compileQueue && this._compileQueue.length
+      ? this._compileQueue.length
+      : 0;
   }
 
   /**
@@ -3457,7 +3577,7 @@ export class Track {
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
       if (c.kind === "wall") {
-        // Tunnel linings sit just outside the paint (over ≈ 0.25). Never drop
+        // Tunnel linings sit just outside the paint (over ≈ 0.42). Never drop
         // them here — ribbon-sample scrub owns mud-apron wall leftovers.
         kept.push(c);
         continue;
@@ -7385,12 +7505,14 @@ export class Track {
     const pts = this.points;
     const boreMap = tunnelBoreStriationMap();
     const rockDark = new THREE.MeshStandardMaterial({
-      color: 0x5a5040,
-      roughness: 0.94,
+      color: 0x4a4236,
+      roughness: 0.96,
       metalness: 0.01,
-      flatShading: true,
+      flatShading: false,
       side: THREE.FrontSide,
       map: boreMap || null,
+      normalMap: boreMap || null,
+      normalScale: boreMap ? new THREE.Vector2(0.55, 0.55) : undefined,
     });
     const rockSun = new THREE.MeshStandardMaterial({
       color: 0xc4ae84,
@@ -7410,94 +7532,149 @@ export class Track {
       normalMap: boreMap || null,
       normalScale: boreMap ? new THREE.Vector2(0.38, 0.38) : undefined,
     });
-    // Slightly warmer lining so the throat reads carved sandstone, not a void box.
+    // Thick carved lining — darker crown, readable grooves, no flat cardboard.
     const rockLining = new THREE.MeshStandardMaterial({
-      color: 0x6e5e48,
-      roughness: 0.92,
-      metalness: 0.02,
+      color: 0x7a6a52,
+      roughness: 0.9,
+      metalness: 0.03,
       flatShading: false,
       side: THREE.FrontSide,
       map: boreMap || null,
       normalMap: boreMap || null,
-      normalScale: boreMap ? new THREE.Vector2(0.5, 0.5) : undefined,
+      normalScale: boreMap ? new THREE.Vector2(0.72, 0.72) : undefined,
+      envMapIntensity: 0.35,
     });
-    // Basic so the bulbs stay lit even when the car is still outside the mouth.
+    const rockRib = new THREE.MeshStandardMaterial({
+      color: 0x5c5040,
+      roughness: 0.88,
+      metalness: 0.04,
+      flatShading: false,
+      side: THREE.FrontSide,
+      map: boreMap || null,
+      normalMap: boreMap || null,
+      normalScale: boreMap ? new THREE.Vector2(0.6, 0.6) : undefined,
+    });
     const lampMat = new THREE.MeshBasicMaterial({
       color: 0xfff0c0,
     });
 
     this._addTunnelPortal(pts[start], -1, rockSun, rockSunDark);
     this._addTunnelPortal(pts[end], 1, rockSun, rockSunDark);
-    // Mouth hillsides are terrain-welded — box embankment at the portal caused floaters.
     this._addTunnelMountain(start, end, rockSun, rockSunDark);
 
     const dummy = new THREE.Object3D();
-    // Arched horseshoe lining — hollow rings along the bore (never solid plugs).
     const mid = Math.floor((start + end) * 0.5);
     const portalSpec = this._tunnelPortalSpec(pts[mid]);
-    // Inner clear sits just outside paint so the car never clips rock.
-    const liningHalf = portalSpec.half + 0.45;
-    const liningH = portalSpec.openH - 0.15;
-    const liningDepth = 4.2;
-    const liningGeo = tunnelPortalArchGeometry(liningHalf, liningH, liningDepth);
-    // Start lining at the mouth posts — any pad left open sky / ridge through rock.
+    /** Metres past paint to the visible / solid inner face. */
+    const LINING_INSET = 0.42;
+    const WALL_THICK = 2.8;
+    const liningHalf = portalSpec.half + LINING_INSET;
+    const liningH = portalSpec.openH - 0.08;
+    const liningDepth = 3.4;
+    const liningGeo = tunnelLiningSegmentGeometry(
+      liningHalf,
+      liningH,
+      liningDepth,
+      WALL_THICK
+    );
+    const ribGeo = tunnelPortalArchGeometry(
+      liningHalf + 0.08,
+      liningH + 0.12,
+      0.55
+    );
+
     const wallStart = start;
     const wallEnd = end;
-    let boreCount = 0;
-    for (let i = wallStart; i <= wallEnd; i += 1) boreCount += 1;
-    const bores = new THREE.InstancedMesh(liningGeo, rockLining, Math.max(1, boreCount));
+    const segCount = Math.max(1, wallEnd - wallStart);
+    const bores = new THREE.InstancedMesh(liningGeo, rockLining, segCount);
     bores.receiveShadow = true;
     bores.castShadow = true;
+    const ribCount = Math.max(1, Math.floor(segCount / 3) + 1);
+    const ribs = new THREE.InstancedMesh(ribGeo, rockRib, ribCount);
+    ribs.receiveShadow = true;
+    ribs.castShadow = true;
     let b = 0;
+    let ribI = 0;
     const lamps = [];
-    for (let i = wallStart; i <= wallEnd; i += 1) {
+
+    for (let i = wallStart; i < wallEnd; i += 1) {
       const p = pts[i];
       const q = pts[Math.min(i + 1, end)];
-      const segLen = Math.max(3.2, Math.hypot(q.x - p.x, q.z - p.z) + 0.4);
-      const half = p.width * 0.5;
-      const fx = Math.sin(p.heading);
-      const fz = Math.cos(p.heading);
-      const inner = half + 0.25;
+      const segLen = Math.max(2.4, Math.hypot(q.x - p.x, q.z - p.z));
+      const half = (p.width + q.width) * 0.25;
+      const clear = half + LINING_INSET;
+      const mx = (p.x + q.x) * 0.5;
+      const my = (p.y + q.y) * 0.5;
+      const mz = (p.z + q.z) * 0.5;
+      const hd = Math.atan2(
+        Math.sin(p.heading) + Math.sin(q.heading),
+        Math.cos(p.heading) + Math.cos(q.heading)
+      );
+      const sx = Math.max(0.92, Math.min(1.12, clear / liningHalf));
 
-      dummy.position.set(p.x, p.y - 0.35, p.z);
-      dummy.rotation.set(0, p.heading, 0);
-      // Heavy Z overlap on curves — horseshoe rings otherwise open to sky.
-      dummy.scale.set(1, 1, Math.max(1.35, (segLen * 1.45) / liningDepth));
+      dummy.position.set(mx, my - 0.22, mz);
+      dummy.rotation.set(0, hd, 0);
+      // Slight Z overlap seals seams on curves — never the old 1.45× stretch.
+      dummy.scale.set(sx, 1, Math.max(1.06, (segLen + 0.65) / liningDepth));
       dummy.updateMatrix();
       bores.setMatrixAt(b, dummy.matrix);
+
+      if (i % 3 === 0 && ribI < ribCount) {
+        dummy.position.set(mx, my - 0.18, mz);
+        dummy.scale.set(sx * 1.02, 1.04, Math.max(0.9, 0.7 / 0.55));
+        dummy.updateMatrix();
+        ribs.setMatrixAt(ribI, dummy.matrix);
+        ribI += 1;
+      }
       b += 1;
 
-      for (const side of [-1, 1]) {
-        this._wallFace(
-          p.x + p.nx * side * inner,
-          p.z + p.nz * side * inner,
-          -p.nx * side,
-          -p.nz * side,
-          fx,
-          fz,
-          segLen * 0.5 + 0.4,
-          2.4
-        );
+      // Dense wall slabs — match the visible lining, overlap neighbours.
+      const wallHalf = segLen * 0.55 + 0.75;
+      for (const t of [0, 0.5]) {
+        const ax = p.x + (q.x - p.x) * t;
+        const az = p.z + (q.z - p.z) * t;
+        const wnx = p.nx + (q.nx - p.nx) * t;
+        const wnz = p.nz + (q.nz - p.nz) * t;
+        const nLen = Math.hypot(wnx, wnz) || 1;
+        const nnx = wnx / nLen;
+        const nnz = wnz / nLen;
+        const th = t < 0.25 ? p.heading : t > 0.75 ? q.heading : hd;
+        const wx = Math.sin(th);
+        const wz = Math.cos(th);
+        for (const side of [-1, 1]) {
+          this._wallFace(
+            ax + nnx * side * clear,
+            az + nnz * side * clear,
+            -nnx * side,
+            -nnz * side,
+            wx,
+            wz,
+            wallHalf,
+            WALL_THICK + 0.35
+          );
+        }
       }
 
       if (i % 2 === 0) {
         const side = Math.floor(i / 2) % 2 === 0 ? 1 : -1;
-        const lx = p.x + p.nx * side * (half - 0.35);
+        const lx = p.x + p.nx * side * (p.width * 0.5 - 0.4);
         const ly = p.y + 3.55;
-        const lz = p.z + p.nz * side * (half - 0.35);
+        const lz = p.z + p.nz * side * (p.width * 0.5 - 0.4);
         lamps.push({ x: lx, y: ly, z: lz, sx: 0.28, sy: 0.62, sz: 0.4, ry: p.heading });
         this._tunnelLamps.push({ x: lx, y: ly, z: lz });
       }
     }
     bores.count = b;
     bores.instanceMatrix.needsUpdate = true;
-    // Never camera-fade the bore — ghosting the lining reads as clipping through rock.
     bores.userData.cameraFade = false;
     bores.userData.tunnelBoreLining = true;
     this.group.add(bores);
+    ribs.count = ribI;
+    ribs.instanceMatrix.needsUpdate = true;
+    ribs.userData.cameraFade = false;
+    ribs.userData.tunnelBoreRib = true;
+    if (ribI > 0) this.group.add(ribs);
 
-    // Sconces stay in the live scene (not streamed) so the bore is already
-    // glowing when you look in from the desert, instead of popping on.
     if (lamps.length) {
       const bulbs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.28, 0.62, 0.4), lampMat, lamps.length);
       bulbs.castShadow = false;
@@ -8755,6 +8932,50 @@ export class Track {
   }
 
   /**
+   * Driveable Y on the visual shoulder strip — mirrors skirt mesh construction
+   * in `_buildMeshes` (reach, skirtDrop outer cap, ~0.38 slope). Used by
+   * `query` so sliding off asphalt plants atop the skirt, not through it.
+   *
+   * @param {number} roadH asphalt deck under the nearest ribbon
+   * @param {number} clearance metres past the painted edge (≥ 0)
+   * @param {number} landH `_groundHeight` at the sample
+   * @param {string} scenery biome id
+   * @returns {number}
+   */
+  _shoulderPlantHeight(roadH, clearance, landH, scenery) {
+    const desert = scenery === "desert";
+    const mountain = scenery === "mountain";
+    const forest = scenery === "forest";
+    const lakeside = scenery === "lakeside";
+    // Same base reach as the skirt builder (`sl`).
+    let reach = desert ? 4.6 : mountain ? 6.2 : forest ? 5.6 : lakeside ? 4.4 : 4.2;
+    const kerbY = roadH - 0.04;
+    const gy = Number.isFinite(landH) ? landH : kerbY - 0.2;
+    const dropAmt = Math.max(0, kerbY - gy);
+    if (dropAmt > 0.35) {
+      reach = Math.min(9.5, Math.max(reach, dropAmt / 0.38));
+    }
+    if (dropAmt > 0.55) {
+      reach = Math.min(9.5, Math.max(reach, 4.2));
+    }
+    // Outer lip — same rules as `skirtDrop` at the skirtReach vertex.
+    let outerY;
+    if (reach < ROAD_COLLIDER_CLEAR + 0.35) {
+      outerY = kerbY - 0.38;
+    } else {
+      const tucked = Math.min(gy, kerbY - 0.1);
+      outerY = Math.max(tucked, kerbY - Math.min(3.8, reach * 0.55));
+    }
+    if (clearance <= 0.02) return roadH;
+    if (clearance >= reach) return gy;
+    const u = clearance / reach;
+    const t = u * u * (3 - 2 * u);
+    const ramp = roadH + (outerY - roadH) * t;
+    // Cap slope so mid-band never digs under the visible quads.
+    return Math.max(ramp, roadH - clearance * 0.38);
+  }
+
+  /**
    * Height, surface, and lateral offset at a world XZ.
    * Height is interpolated along the nearest spline segment so ramps
    * are a slope, not a staircase of sample posts.
@@ -8831,8 +9052,10 @@ export class Track {
     }
     const roadH = y + ROAD_DECK + micro;
     let height = roadH;
-    // Off the painted deck: plant on the shoulder / land bed. Returning ribbon
-    // height here left cars floating above lower verges (player report).
+    // Off the painted deck: plant on the *visual* shoulder skirt, then land.
+    // Blending straight to `_groundHeight` (roadY − biome drop) sank the car
+    // under the skirt tris — especially desert/lakeside and short bend skirts
+    // whose outer lip stays near the kerb (edgeY − 0.38).
     if (!onRoad && !tunnel && jumpKind !== "gap") {
       const clearance = Math.abs(lateral) - half;
       const scenery = this.scenery || (this._def && this._def.scenery) || "forest";
@@ -8847,17 +9070,7 @@ export class Track {
       };
       let landH = this._groundHeight(x, z, scenery, nearHint);
       if (!Number.isFinite(landH)) landH = roadH;
-      // Match visual skirt: ramp from asphalt down to land over a few metres.
-      const shoulderM = scenery === "desert" ? 4.2 : scenery === "mountain" ? 5.6 : scenery === "forest" ? 5.0 : 4.0;
-      if (clearance <= 0.02) {
-        height = roadH;
-      } else if (clearance < shoulderM) {
-        const u = clearance / shoulderM;
-        const t = u * u * (3 - 2 * u);
-        height = roadH + (landH - roadH) * t;
-      } else {
-        height = landH;
-      }
+      height = this._shoulderPlantHeight(roadH, clearance, landH, scenery);
     }
     const r = out || {};
     r.baseHeight = onRoad || tunnel || jumpKind === "gap" ? roadH : height;
@@ -9029,6 +9242,10 @@ export class Track {
     if (!this.group) return;
     this._streamable = [];
     this._compileQueue = [];
+    if (this._compileScratch) {
+      this._compileScratch.dispose();
+      this._compileScratch = null;
+    }
     this.group.traverse((obj) => {
       if (obj.geometry && !obj.geometry.userData.shared) {
         obj.geometry.dispose();
@@ -10358,7 +10575,7 @@ function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
   const key = `archHollow|${clearHalfW.toFixed(2)}|${openH}|${depth.toFixed(2)}`;
   if (TUNNEL_ARCH_GEO.has(key)) return TUNNEL_ARCH_GEO.get(key);
 
-  const thick = 1.35;
+  const thick = 2.15;
   const outerW = clearHalfW + thick;
   const spring = openH * 0.62;
 
@@ -10382,12 +10599,35 @@ function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
     depth,
     // Bevel on holed shapes warps/fills the aperture — keep sharp.
     bevelEnabled: false,
-    curveSegments: 16,
+    curveSegments: 20,
   });
   geo.translate(0, 0, -depth * 0.5);
   geo.computeVertexNormals();
   geo.userData.shared = true;
   TUNNEL_ARCH_GEO.set(key, geo);
+  return geo;
+}
+
+/** Cached thick lining segments (centered extrusion). */
+const TUNNEL_LINING_SEG_GEO = new Map();
+
+/**
+ * Thick horseshoe lining ring — solid rock walls, not a thin picture-frame.
+ * Centered on Z so instance scale along the bore stays even.
+ * @param {number} clearHalfW
+ * @param {number} openH
+ * @param {number} depth
+ * @param {number} wallThick
+ * @returns {THREE.BufferGeometry}
+ */
+function tunnelLiningSegmentGeometry(clearHalfW, openH, depth, wallThick) {
+  const key = `liningSeg|${clearHalfW.toFixed(2)}|${openH.toFixed(2)}|${depth.toFixed(2)}|${wallThick.toFixed(2)}`;
+  if (TUNNEL_LINING_SEG_GEO.has(key)) return TUNNEL_LINING_SEG_GEO.get(key);
+  const geo = tunnelThickBoreTubeGeometry(clearHalfW, openH, depth, wallThick).clone();
+  geo.translate(0, 0, -depth * 0.5);
+  geo.computeVertexNormals();
+  geo.userData.shared = true;
+  TUNNEL_LINING_SEG_GEO.set(key, geo);
   return geo;
 }
 
@@ -10400,7 +10640,7 @@ function tunnelPortalArchGeometry(clearHalfW, openH, depth) {
 function tunnelBoreStriationMap() {
   const tier = VISUAL.tier || 1;
   return paintedTexture(
-    `tunnel-bore-striation-t${tier}`,
+    `tunnel-bore-striation-t${tier}-v2`,
     (g, w, h) => {
       const img = g.createImageData(w, h);
       const d = img.data;
@@ -10429,19 +10669,27 @@ function tunnelBoreStriationMap() {
           const scarCol = texHash((x / 9) | 0, 0, 79);
           if (scarCol > 0.955 && gx < pitch * 0.45) groove *= 0.72;
 
+          // Crown darkening toward top of atlas (Y) — bore ceiling reads deeper.
+          const crown = 0.82 + 0.18 * (y / Math.max(1, h - 1));
+
           let lum =
-            (118 + blotch * 36 + grain * 22) * groove * fine * bed * (0.94 + chip * 0.1);
-          lum = clamp(lum, 48, 212);
+            (118 + blotch * 36 + grain * 22) *
+            groove *
+            fine *
+            bed *
+            crown *
+            (0.94 + chip * 0.1);
+          lum = clamp(lum, 42, 220);
           const i = (y * w + x) * 4;
           d[i] = lum;
-          d[i + 1] = lum * 0.97;
-          d[i + 2] = lum * 0.88;
+          d[i + 1] = lum * 0.96;
+          d[i + 2] = lum * 0.86;
           d[i + 3] = 255;
         }
       }
       g.putImageData(img, 0, 0);
     },
-    { w: 64, h: 128, repeat: [2, 1], aniso: 1 }
+    { w: 128, h: 256, repeat: [2.4, 1.15], aniso: 2 }
   );
 }
 
