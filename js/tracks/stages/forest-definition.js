@@ -8,7 +8,7 @@
  * Geometry fidelity: piece lengths/radii/angles match pre-migration COURSES.forest.
  */
 
-import { COLORS } from "../../config.js?v=207";
+import { COLORS } from "../../config.js?v=208";
 
 export const FOREST_DEFINITION = {
   id: "forest",

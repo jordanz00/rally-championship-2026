@@ -1626,23 +1626,29 @@ export const CAMERA = {
       speedFovScale: 0.08,
       speedLookAheadScale: 0.2,
       /**
-       * Locked behind the car: no drift orbit, no velocity look swing, no L/R kick.
-       * Springs matched so pos/look do not fight each other.
+       * Rigid chase lock — fixed back/height from start grid, no accel trail,
+       * no L/R orbit. Position snaps to the rear offset every frame.
        */
       stableBehind: true,
-      springPosStiff: 56,
-      springPosStiffY: 26,
-      springLookStiff: 54,
-      /** Track chassis yaw firmly — soft yaw lagged and orbited during slides. */
-      yawStiffness: 28,
-      yawStiffnessSlide: 28,
+      lockPos: true,
+      speedDropMax: 0,
+      speedFovScale: 0,
+      speedLookAheadScale: 0,
+      springPosStiff: 220,
+      springPosStiffY: 120,
+      springLookStiff: 200,
+      /** Instant chassis yaw — lag was the orbit during steer/slide. */
+      yawStiffness: 200,
+      yawStiffnessSlide: 200,
       slideYawBlend: 0,
       slideLook: 0,
       slideCamOut: 0,
       slideLookAhead: 0,
       slideKickMax: 0,
       rollFollow: 0,
-      stiffness: 32,
+      /** No road-look pull (that swung aim L/R on bends). */
+      roadLookBlend: 0,
+      stiffness: 80,
       near: 0.2,
     },
     {

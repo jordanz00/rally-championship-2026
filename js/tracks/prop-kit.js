@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=207";
+import { VISUAL } from "../config.js?v=208";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time

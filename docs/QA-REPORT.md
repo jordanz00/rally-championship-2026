@@ -1,5 +1,16 @@
 # QA report — quality-control pass
 
+## Hotfix — medium cam locks behind car (2026-09-05)
+
+**Player report:** medium still falls farther behind on accel; want start-grid distance locked behind the rear, no L/R sway — real racing locked chase.
+
+**Cause:** spring chase lagged on throttle (felt like growing `back`); yaw lag + road-look blend still orbit/swing.
+
+**Shipped:** medium `lockPos` hard-snaps to fixed rear offset; chassis yaw instant; zero speed drop/look stretch/road blend/pitch bias/air-back.
+
+**Boot:** `main.js?v=665` · `config.js?v=208` · `game.js?v=665`
+
+---
 ## Hotfix — medium cam stable behind car (2026-09-04)
 
 **Player report:** medium default should stay stable behind the car; no swinging out when drifting; no L/R sway.

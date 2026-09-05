@@ -56,7 +56,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=207";
+} from "./config.js?v=208";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -3759,6 +3759,7 @@ export class RallyGame {
 
     const driftEarly = Math.abs(p.driftAngle || 0);
     const stableBehind = !!(mode.stableBehind);
+    const lockPos = !!(mode.lockPos || mode.stableBehind);
     const slidingEarly =
       !wantPov && !stableBehind && driftEarly > 0.08 && p.speed > 6;
     /** Chase yaw tracks travel more than chassis when sliding — keeps the road ahead. */
@@ -3783,24 +3784,28 @@ export class RallyGame {
     let dy = yawTarget - this._camYaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
-    const yawStiffBase =
-      mode.yawStiffness != null
-        ? mode.yawStiffness
-        : CAMERA.yawStiffness != null
-          ? CAMERA.yawStiffness
-          : 22;
-    const yawStiffSlide =
-      mode.yawStiffnessSlide != null
-        ? mode.yawStiffnessSlide
-        : CAMERA.yawStiffnessSlide != null
-          ? CAMERA.yawStiffnessSlide
-          : 11;
-    const yawStiff = slidingEarly
-      ? yawStiffBase + (yawStiffSlide - yawStiffBase) * Math.min(1, driftEarly * 1.8)
-      : yawStiffBase;
-    const yawFollow = 1 - Math.exp(-yawStiff * dt);
-    if (this._camSnap) this._camYaw = yawTarget;
-    else this._camYaw += dy * yawFollow;
+    // Rigid medium lock: cam yaw = chassis yaw every frame (no orbit lag).
+    if (stableBehind || this._camSnap) {
+      this._camYaw = yawTarget;
+    } else {
+      const yawStiffBase =
+        mode.yawStiffness != null
+          ? mode.yawStiffness
+          : CAMERA.yawStiffness != null
+            ? CAMERA.yawStiffness
+            : 22;
+      const yawStiffSlide =
+        mode.yawStiffnessSlide != null
+          ? mode.yawStiffnessSlide
+          : CAMERA.yawStiffnessSlide != null
+            ? CAMERA.yawStiffnessSlide
+            : 11;
+      const yawStiff = slidingEarly
+        ? yawStiffBase + (yawStiffSlide - yawStiffBase) * Math.min(1, driftEarly * 1.8)
+        : yawStiffBase;
+      const yawFollow = 1 - Math.exp(-yawStiff * dt);
+      this._camYaw += dy * yawFollow;
+    }
     const sinY = Math.sin(this._camYaw);
     const cosY = Math.cos(this._camYaw);
     const rollFollow =
@@ -3842,7 +3847,11 @@ export class RallyGame {
     } else {
       this._camUp.set(sinY * lean, 1, cosY * lean).normalize();
       /** Squats a touch more at speed so the road fills the lens (arcade, mild). */
-      const dropCap = mode.speedDropMax != null ? mode.speedDropMax : 0.48;
+      const dropCap = stableBehind
+        ? 0
+        : mode.speedDropMax != null
+          ? mode.speedDropMax
+          : 0.48;
       const heightDrop = Math.min(dropCap, p.speed * 0.015);
       const drift = Math.abs(p.driftAngle || 0);
       const sliding = !stableBehind && drift > 0.08 && p.speed > 6;
@@ -3860,17 +3869,28 @@ export class RallyGame {
           ? Math.sign(p.driftAngle) * Math.min(0.12, drift * 0.28) * slideOut
           : 0;
       // Airborne: pull back and up so the throw reads; look toward the pad.
+      // Locked medium: keep start-grid back distance — never trail farther.
       const air = !p.onGround;
       const airT = air ? Math.min(1.25, Math.max(0, p._airTime || 0)) : 0;
-      const airLift = air ? Math.min(1.55, 0.42 + airT * 0.85) : 0;
-      const airBack = air ? Math.min(2.1, 0.55 + airT * 1.15) : 0;
-      const airLookDown = air ? Math.min(0.85, 0.22 + airT * 0.45) : 0;
+      const airLift = stableBehind
+        ? air
+          ? Math.min(0.55, 0.2 + airT * 0.35)
+          : 0
+        : air
+          ? Math.min(1.55, 0.42 + airT * 0.85)
+          : 0;
+      const airBack = stableBehind ? 0 : air ? Math.min(2.1, 0.55 + airT * 1.15) : 0;
+      const airLookDown = stableBehind
+        ? 0
+        : air
+          ? Math.min(0.85, 0.22 + airT * 0.45)
+          : 0;
       this._camTarget.set(
         px - sinY * (mode.back + airBack) + rx * out,
         py + mode.height - heightDrop + airLift,
         pz - cosY * (mode.back + airBack) + rz * out
       );
-      const geo = this._geoFramingBias();
+      const geo = stableBehind ? { lookY: 0, lookAhead: 0 } : this._geoFramingBias();
       let lookSin = sinY;
       let lookCos = cosY;
       if (sliding && p.velocity) {
@@ -3889,7 +3909,11 @@ export class RallyGame {
         lookSin = Math.sin(lookYaw);
         lookCos = Math.cos(lookYaw);
       }
-      const speedLookScale = mode.speedLookAheadScale != null ? mode.speedLookAheadScale : 1;
+      const speedLookScale = stableBehind
+        ? 0
+        : mode.speedLookAheadScale != null
+          ? mode.speedLookAheadScale
+          : 1;
       const speedPush =
         p.speed * (CAMERA.speedLookAhead != null ? CAMERA.speedLookAhead : 0.14) * speedLookScale;
       const slideLookAhead =
@@ -3904,28 +3928,43 @@ export class RallyGame {
       let lookX = px + lookSin * aheadM;
       let lookY = py + mode.lookY + geo.lookY - airLookDown;
       let lookZ = pz + lookCos * aheadM;
-      if (this.track && typeof this.track.sample === "function" && Number.isFinite(p.progress)) {
+      const roadBlendCap =
+        mode.roadLookBlend != null
+          ? mode.roadLookBlend
+          : stableBehind
+            ? 0
+            : Math.min(0.72, 0.28 + p.speed * 0.004);
+      if (
+        roadBlendCap > 0.001 &&
+        this.track &&
+        typeof this.track.sample === "function" &&
+        Number.isFinite(p.progress)
+      ) {
         const road = this.track.sample(p.progress + aheadM * 0.92, this._camRoadSample);
         if (road && Number.isFinite(road.x) && Number.isFinite(road.z)) {
-          const roadBlend = Math.min(0.72, 0.28 + p.speed * 0.004);
-          lookX += (road.x - lookX) * roadBlend;
-          lookZ += (road.z - lookZ) * roadBlend;
-          if (Number.isFinite(road.y)) lookY += (road.y + mode.lookY - lookY) * (roadBlend * 0.55);
+          lookX += (road.x - lookX) * roadBlendCap;
+          lookZ += (road.z - lookZ) * roadBlendCap;
+          if (Number.isFinite(road.y)) lookY += (road.y + mode.lookY - lookY) * (roadBlendCap * 0.55);
         }
       }
       // Accel/brake pitch bias on the look target (communicates mass).
-      const ax = p._ax || 0;
-      const brakeMul = CAMERA.brakePitchMul != null ? CAMERA.brakePitchMul : 0.08;
-      const accelMul = CAMERA.accelPitchMul != null ? CAMERA.accelPitchMul : 0.055;
-      const pitchT =
-        ax < -1
-          ? Math.min(0.55, -ax * (CAMERA.brakeCamPitch != null ? CAMERA.brakeCamPitch : 0.22) * brakeMul)
-          : ax > 1.2
-            ? Math.max(-0.35, -ax * (CAMERA.accelCamPitch != null ? CAMERA.accelCamPitch : 0.14) * accelMul)
-            : 0;
-      const pitchStiff = 40;
-      this._camPitchBias.step(pitchT, dt, pitchStiff, criticalDamp(pitchStiff));
-      lookY += this._camPitchBias.x;
+      // Locked medium: skip — pitch bias made accel feel like the lens pulled away.
+      if (!stableBehind) {
+        const ax = p._ax || 0;
+        const brakeMul = CAMERA.brakePitchMul != null ? CAMERA.brakePitchMul : 0.08;
+        const accelMul = CAMERA.accelPitchMul != null ? CAMERA.accelPitchMul : 0.055;
+        const pitchT =
+          ax < -1
+            ? Math.min(0.55, -ax * (CAMERA.brakeCamPitch != null ? CAMERA.brakeCamPitch : 0.22) * brakeMul)
+            : ax > 1.2
+              ? Math.max(-0.35, -ax * (CAMERA.accelCamPitch != null ? CAMERA.accelCamPitch : 0.14) * accelMul)
+              : 0;
+        const pitchStiff = 40;
+        this._camPitchBias.step(pitchT, dt, pitchStiff, criticalDamp(pitchStiff));
+        lookY += this._camPitchBias.x;
+      } else {
+        this._camPitchBias.snap(0);
+      }
       this._camLook.set(lookX, lookY, lookZ);
     }
 
@@ -3952,7 +3991,8 @@ export class RallyGame {
       this._camPosSpring.snap(this._camPos);
       this._camLookSpring.snap(this._camLookSmooth);
       this.camera.up.copy(this._camFromUp).lerp(this._camUp, Math.min(1, ease + 0.2)).normalize();
-    } else if (wantPov) {
+    } else if (wantPov || lockPos) {
+      // POV + locked medium: rigid offset — spring lag was the "falls behind on accel" bug.
       this._camSnap = false;
       this._camPos.copy(this._camTarget);
       this._camLookSmooth.copy(this._camLook);
