@@ -76,6 +76,15 @@ check("AI chassis per rival", /rivalChassisForIndex/.test(ai), "ai import");
 check("rival mesh chassis", /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId\)/.test(ai), "mesh");
 check("subtle car bump", /hitCar > 0\.2/.test(game), "lower bump threshold");
 check("carBump subtle", /gain: 0\.07 \+ amt \* 0\.16/.test(audio), "quieter bump sfx");
+// ES modules treat ?v= as part of the URL — mismatched celica versions create
+// two garage singletons. LOD warm fills one; createRivalCar reads the empty other.
+const gameCelicaV = (game.match(/celica\.js\?v=(\d+)/) || [])[1] || "";
+const aiCelicaV = (ai.match(/celica\.js\?v=(\d+)/) || [])[1] || "";
+check(
+  "garage singleton (game↔ai celica ?v=)",
+  !!(gameCelicaV && aiCelicaV && gameCelicaV === aiCelicaV),
+  `game=${gameCelicaV || "missing"} ai=${aiCelicaV || "missing"}`
+);
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache bust chain", cacheOk, `v=${gameV}`);
 
