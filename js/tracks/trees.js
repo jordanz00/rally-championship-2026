@@ -17,7 +17,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=207";
+import { VISUAL } from "../config.js?v=208";
 
 /** @type {THREE.BufferGeometry|null} */
 let CROWN_GEO = null;
