@@ -47,13 +47,24 @@ const CONTACT_SLOP = 0.02;
 const WALL_BACK = 2;
 const SEPARATE = 0.72;
 const YAW_NUDGE = 0.01;
-/** AI-AI: soft separate — hard restitution + high friction was welding the pack. */
-const AI_RESTITUTION = 0.02;
-const AI_SEPARATE = 0.55;
+/**
+ * AI-AI: soft scrape, almost no bounce. Restitution + hard separate made the
+ * pack pinball when several rivals shared a groove.
+ */
+const AI_RESTITUTION = 0;
+/** Fraction of closing speed absorbed (not bounced) on AI-AI contact. */
+const AI_CLOSE_DAMP = 0.62;
+const AI_SEPARATE = 0.28;
+/** Cap one-frame depenetration so overlaps do not teleport the pack. */
+const AI_PUSH_CAP = 0.14;
 /** Extra sideways shove (m) so the trailing rival slides past instead of stacking. */
-const AI_PASS_LATERAL = 0.55;
+const AI_PASS_LATERAL = 0.28;
+/** Mild lateral velocity (m/s) on the pass step — 1.8 used to sling them into the next car. */
+const AI_PASS_SIDE_VEL = 0.85;
 /** Minimum along-track speed (m/s) restored on the trailing AI after a rub. */
-const AI_PASS_MIN_SPD = 9;
+const AI_PASS_MIN_SPD = 10;
+/** Cooldown before another pass impulse (s). */
+const AI_PASS_HOLD = 1.15;
 /**
  * Player-vs-rival: the player keeps the line. Inverse-mass share used to be
  * 0.42, which still handed ~30% of every shove (and FRICTION*4 dragged you
@@ -132,7 +143,9 @@ function resolvePair(a, b) {
   const tot = invA + invB;
   const nx = hit.nx;
   const nz = hit.nz;
-  const push = hit.overlap * (aiPack ? AI_SEPARATE : SEPARATE);
+  const push = aiPack
+    ? Math.min(hit.overlap * AI_SEPARATE, AI_PUSH_CAP)
+    : hit.overlap * SEPARATE;
 
   a.position.x -= nx * push * (invA / tot);
   a.position.z -= nz * push * (invA / tot);
@@ -143,8 +156,10 @@ function resolvePair(a, b) {
   const rvz = b.velocity.z - a.velocity.z;
   const relN = rvx * nx + rvz * nz;
   if (relN < 0) {
+    // AI pack: damp closing speed only — restitution bounce made them pinball.
     const bounce = aiPack ? AI_RESTITUTION : RESTITUTION;
-    const jn = (-(1 + bounce) * relN) / tot;
+    const damp = aiPack ? AI_CLOSE_DAMP : 1 + bounce;
+    const jn = (-damp * relN) / tot;
     a.velocity.x -= jn * nx * invA;
     a.velocity.z -= jn * nz * invA;
     b.velocity.x += jn * nx * invB;
@@ -166,7 +181,7 @@ function resolvePair(a, b) {
   const tz = nx;
   const relT = rvx * tx + rvz * tz;
   // AI pack: light tangent scrub so they glance past; heavy friction glued them.
-  const grip = aiPack ? FRICTION * 1.6 : FRICTION * 4;
+  const grip = aiPack ? FRICTION * 0.5 : FRICTION * 4;
   const jt = clamp(-relT / tot, -grip, grip);
   a.velocity.x -= jt * tx * invA;
   a.velocity.z -= jt * tz * invA;
@@ -191,18 +206,18 @@ function resolvePair(a, b) {
     if ((rear._aiPassT || 0) <= 0.04) {
       rear.position.x += frx * side * AI_PASS_LATERAL;
       rear.position.z += frz * side * AI_PASS_LATERAL;
-      const keep = Math.max(
+      const along = Math.max(
         AI_PASS_MIN_SPD,
-        Math.hypot(rear.velocity.x, rear.velocity.z) * 0.92,
-        Math.hypot(front.velocity.x, front.velocity.z) * 0.88
+        rear.velocity.x * ffx + rear.velocity.z * ffz,
+        (front.velocity.x * ffx + front.velocity.z * ffz) * 0.92
       );
-      rear.velocity.x = ffx * keep + frx * side * 1.8;
-      rear.velocity.z = ffz * keep + frz * side * 1.8;
+      rear.velocity.x = ffx * along + frx * side * AI_PASS_SIDE_VEL;
+      rear.velocity.z = ffz * along + frz * side * AI_PASS_SIDE_VEL;
       rear._aiPassSide = side;
-      rear._aiPassT = 0.85;
+      rear._aiPassT = AI_PASS_HOLD;
     }
-    a.yawRate = (a.yawRate || 0) * 0.85;
-    b.yawRate = (b.yawRate || 0) * 0.85;
+    a.yawRate = (a.yawRate || 0) * 0.9;
+    b.yawRate = (b.yawRate || 0) * 0.9;
     return;
   }
 
@@ -499,8 +514,11 @@ function wallHitAt(c, px, pz, fx, fz, rx, rz) {
   const dist = dx * nx + dz * nz;
   const overlap = ext - dist;
   if (overlap <= 0) return null;
-  if (dist < -((c.depth || WALL_BACK) + ext)) return null;
-  return { overlap, nx, nz };
+  // Deep behind a thick lining still counts — ignoring it let cars tunnel
+  // through rock once they passed the modelled slab depth.
+  const back = Math.max(c.depth || WALL_BACK, 2.4) + ext + 4;
+  if (dist < -back) return null;
+  return { overlap: Math.min(overlap, ext + (c.depth || WALL_BACK)), nx, nz };
 }
 
 /**
@@ -653,8 +671,6 @@ export function bounceOffRoad(v, q, track = null) {
   const half = q.width * 0.5;
   const lat = q.lateral;
   const over = Math.abs(lat) - half;
-  if (over <= 0) return false;
-
   const isPlayer = !v.ai;
   const tunnel = !!q.tunnel;
   const inward = lat > 0 ? -1 : 1;
@@ -663,43 +679,51 @@ export function bounceOffRoad(v, q, track = null) {
   const hx = Math.sin(q.heading);
   const hz = Math.cos(q.heading);
 
-  // Inside a bore the lining sits ~0.42 m past paint. Soft 7 m runoff used to
-  // let the chassis drive through rock whenever wall-slab gaps missed a hit.
+  // Tunnel first — must run while the centre is still on paint. The lining sits
+  // ~0.42 m past the ribbon; car OBB (~HALF_WIDTH) hits rock before `over > 0`.
+  // The old early `over <= 0` return let chassis punch through the walls.
   if (tunnel) {
-    const BORE_SLOP = 0.08;
-    if (over > BORE_SLOP) {
-      const embed = over - BORE_SLOP;
+    const LINING_INSET = 0.42;
+    const maxLat = half + LINING_INSET - HALF_WIDTH;
+    const absLat = Math.abs(lat);
+    if (absLat > maxLat) {
+      const embed = absLat - maxLat;
       v.position.x += nx * inward * embed;
       v.position.z += nz * inward * embed;
       const vn = v.velocity.x * nx + v.velocity.z * nz;
       if (vn * Math.sign(lat || 1) > 0) {
         v.velocity.x -= nx * vn;
         v.velocity.z -= nz * vn;
-        const keep = Math.abs(vn) * 0.58;
+        const keep = Math.abs(vn) * 0.62;
         v.velocity.x += hx * keep;
         v.velocity.z += hz * keep;
       }
-      v.hitWall = Math.max(v.hitWall || 0, embed * 0.9 + Math.abs(vn) * 0.45);
+      v.hitWall = Math.max(v.hitWall || 0, embed * 1.05 + Math.abs(vn) * 0.5);
       v.hitNx = nx * inward;
       v.hitNz = nz * inward;
       if (v.yawRate != null) {
-        const past = (nx * inward) * hz - (nz * inward) * hx;
-        v.yawRate += past * 0.02;
+        const past = nx * inward * hz - nz * inward * hx;
+        v.yawRate += past * 0.022;
       }
       return true;
     }
-    // Kissing the lining — light berm only.
-    const t = over / Math.max(1e-3, BORE_SLOP);
-    const vn = v.velocity.x * nx + v.velocity.z * nz;
-    if (vn * Math.sign(lat || 1) > 0) {
-      const kill = vn * (isPlayer ? 0.28 : 0.4) * t;
-      v.velocity.x -= nx * kill;
-      v.velocity.z -= nz * kill;
-      v.velocity.x += nx * inward * Math.abs(vn) * 0.22 * t;
-      v.velocity.z += nz * inward * Math.abs(vn) * 0.22 * t;
+    // Near paint edge inside the bore — light berm, no soft 7 m runoff.
+    const edge = Math.max(0, absLat - (half - 0.35));
+    if (edge > 0) {
+      const t = Math.min(1, edge / 0.35);
+      const vn = v.velocity.x * nx + v.velocity.z * nz;
+      if (vn * Math.sign(lat || 1) > 0) {
+        const kill = vn * (isPlayer ? 0.3 : 0.42) * t;
+        v.velocity.x -= nx * kill;
+        v.velocity.z -= nz * kill;
+        v.velocity.x += nx * inward * Math.abs(vn) * 0.24 * t;
+        v.velocity.z += nz * inward * Math.abs(vn) * 0.24 * t;
+      }
     }
-    return true;
+    return over > 0;
   }
+
+  if (over <= 0) return false;
 
   const shoulder = OFF_SHOULDER;
   const runoff = OFF_RUNOFF;

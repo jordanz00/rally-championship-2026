@@ -1,5 +1,51 @@
 # QA report — quality-control pass
 
+## Hotfix — broken shoulder holes (2026-09-05)
+
+**Player report:** side shoulders are broken geometry with visible holes; colours/textures must match the stage.
+
+**Cause:** per-segment skirt reach jumped between samples so adjacent quads did not share an outer edge; outer Y could float above land (`max(tucked, edge−cap)`), leaving sky gaps.
+
+**Shipped:** per-point smoothed reach L/R; shared endpoint verts; long skirts use two rings; outer lip seats into land; apron hues match land floor hexes.
+
+**Boot:** `main.js?v=670` · `track.js?v=304`
+
+---
+## Hotfix — Stage 1 dark after tunnel (2026-09-05)
+
+**Player report:** lighting gets really dark after the Desert tunnel; want realistic consistent sun/light.
+
+**Cause:** outdoor ambient was 0.14 while tunnel ambient floor was 0.82 — exit dumped into ridge shadow with almost no sky bounce; linear exit shade + slow blend left a half-dim hang; tunnel fog was coffee-black.
+
+**Shipped:** desert open-sky ambient/hemi/fill/exposure; tunnel ambient nearer outdoor; warmer bore fog; ease-out exit shade + faster exit blend; soft sun floor / snap outdoor blend.
+
+**Boot:** `main.js?v=668` · `config.js?v=209` · `lighting-rig.js?v=13` · `track.js?v=303`
+
+---
+## Hotfix — orange desert shoulders (2026-09-05)
+
+**Player report:** shoulder side areas are a strange orange; should match sand / sand textures.
+
+**Cause:** skirt vertex tint blended 68% toward dirt shoulder hex `0x8a5630`; desert skirt grain map was warm clay (168/138/88) vs land sand floor `0xc4a878`.
+
+**Shipped:** desert shoulders use land sand hues; light edge blend only; skirt grain v4 matches land albedo beige.
+
+**Boot:** `main.js?v=667` · `game.js?v=667` · `track.js?v=302`
+
+---
+## Hotfix — Desert tunnel mouth blocked + wall clip (2026-09-05)
+
+**Player report:** ~1298 m Stage 1 entrance blocked; car clips through tunnel walls at mouth and inside.
+
+**Cause:** (1) thick bore tube / mountain hole had a near-deck floor sill across the horseshoe; (2) `bounceOffRoad` returned early when centre was still on paint, so OBB could punch into lining before wall slabs fired; (3) wall `wallHitAt` ignored deep-behind-slab poses once past modelled depth.
+
+**Shipped:** open-bottom portal arch lining (`wallStart = start + 2`); thick tube + mountain hole floors well below deck; tunnel OBB clamp runs before the on-paint early-out; denser throat/wall slabs; deeper wall back-plane; `clearHalfW: half + ROAD_COLLIDER_CLEAR`.
+
+**Proof:** `node tools/qa-desert-tunnel-mouth.mjs`
+
+**Boot:** `main.js?v=666` · `game.js?v=666` · `track.js?v=301` · `collide.js?v=49` · `vehicle.js?v=137`
+
+---
 ## Hotfix — medium cam locks behind car (2026-09-05)
 
 **Player report:** medium still falls farther behind on accel; want start-grid distance locked behind the rear, no L/R sway — real racing locked chase.
@@ -26,7 +72,7 @@
 
 **Player report:** tunnel walls look bad; car clips through walls when hitting them inside the tunnel.
 
-**Cause:** (1) thin Z-stretched horseshoe rings with low-res striation read as cardboard seams; (2) wall slabs were sparse/misaligned vs the lining; (3) `bounceOffRoad` allowed ~7 m soft runoff inside tunnels so a missed wall slab let the chassis drive into rock.
+**Cause:** (1) thin Z-stretched horseshoe rings with low-res striation map; (2) wall slabs were sparse/misaligned vs the lining; (3) `bounceOffRoad` allowed ~7 m soft runoff inside tunnels so a missed wall slab let the chassis drive into rock.
 
 **Shipped:** thick bore lining segments + rib bands + higher-res groove map; wall faces densified and aligned to lining inset (0.42 m); firmer wall push + more penetration passes; hard bore lateral clamp (no soft runoff through rock).
 

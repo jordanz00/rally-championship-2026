@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=208";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=209";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -90,7 +90,8 @@ export function applyStageLights(lights, L) {
 export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
   const p = anchor;
   const d = sunDir;
-  const t = tunnelBlend;
+  // Snap near-outdoor blends so exit never hangs in a half-dim state.
+  const t = tunnelBlend < 0.04 ? 0 : tunnelBlend > 0.98 ? 1 : tunnelBlend;
 
   lights.sun.position.set(p.x + d.x * 42, p.y + d.y * 42, p.z + d.z * 42);
   lights.sun.target.position.set(p.x, p.y, p.z);
@@ -104,7 +105,10 @@ export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
   const baseHemi = L.hemi != null ? L.hemi : 0.78;
   const baseAmb = L.ambientInt != null ? L.ambientInt : 0.28;
 
-  lights.sun.intensity = baseSun * (1 - t);
+  // Soft sun kill — keep a whisper of key in deep shade so ACES does not crush
+  // the bore to ink; outdoor (t=0) is always full authored intensity.
+  const sunFloor = 0.06;
+  lights.sun.intensity = baseSun * (1 - t * (1 - sunFloor));
   lights.fill.intensity = baseFill * (1 - t * fillKill);
   lights.hemi.intensity = baseHemi * (1 - t * hemiKill);
   lights.ambient.intensity = baseAmb * (1 - t) + t * ambFloor;
@@ -113,7 +117,7 @@ export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
 
   if (lights.skyRim) {
     const rimBase = L.rimInt != null ? L.rimInt : 0.24;
-    lights.skyRim.intensity = rimBase * (1 - t * 0.88);
+    lights.skyRim.intensity = rimBase * (1 - t * 0.72);
     lights.skyRim.position.set(p.x - d.x * 36, p.y + 30, p.z - d.z * 36);
     lights.skyRim.target.position.set(p.x, p.y + 0.45, p.z);
     lights.skyRim.target.updateMatrixWorld();

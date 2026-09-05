@@ -21,7 +21,7 @@ import { compileTrackDefinition } from "./track-definition.js?v=2";
 import { validateCourseData } from "./stage-data-validate.js?v=1";
 import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=2";
 import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=2";
-import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=2";
+import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=3";
 import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=2";
 
 /**

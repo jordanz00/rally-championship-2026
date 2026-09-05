@@ -7,17 +7,17 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=136";
+import { Vehicle } from "./physics/vehicle.js?v=138";
 import { getSurface } from "./physics/surfaces.js?v=52";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=76";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=163";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=77";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=164";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=300";
-import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=33";
-import { Opponent } from "./ai.js?v=145";
-import { RallyAudio } from "./audio/engine.js?v=68";
+import { Track } from "./tracks/track.js?v=306";
+import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=35";
+import { Opponent } from "./ai.js?v=146";
+import { RallyAudio } from "./audio/engine.js?v=69";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
-import { CoDriver } from "./audio/codriver.js?v=39";
+import { CoDriver } from "./audio/codriver.js?v=40";
 import {
   Hud,
   showScreen,
@@ -28,7 +28,7 @@ import {
   placeOrdinal,
 } from "./ui/hud.js?v=37";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=66";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=48";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=50";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=41";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=36";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=16";
@@ -56,7 +56,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=208";
+} from "./config.js?v=210";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=1";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -68,7 +68,7 @@ import {
   skyPmremCapture,
   updateRaceLightFollow,
   updateShadowFrustum,
-} from "./gfx/lighting-rig.js?v=12";
+} from "./gfx/lighting-rig.js?v=13";
 import { shadowGeometry, carShadowMaterial } from "./tracks/trees.js?v=39";
 
 /** Consecutive failing frames before we stop logging and show the error. */
@@ -3351,7 +3351,10 @@ export class RallyGame {
       document.getElementById("result-next").hidden = true;
     }
     if (pos <= 3 && this.audio.ready) this.audio.countGo();
-    if (this.audio.ready) this.audio.fadeOutRaceLoops(1.4);
+    if (this.audio.ready) {
+      this.codriver.finishCall(this.audio);
+      this.audio.fadeOutRaceLoops(1.4);
+    }
     showScreen("screen-result", { outMs: 280, inMs: 420 });
   }
 
@@ -3608,7 +3611,13 @@ export class RallyGame {
     if (landed) {
       const impact = Math.max(Math.abs(p.velY || 0), p.lastImpact || 0);
       const landScale = CAMERA.landKickScale != null ? CAMERA.landKickScale : 1.35;
-      this._camKickY = Math.min(0.42, (0.08 + impact * 0.036) * landScale);
+      const mode0 = CAMERA.views[this.camMode] || CAMERA.views[1];
+      // Locked medium: no landing height kick — kept the lens bobbing up.
+      if (!(mode0 && (mode0.lockPos || mode0.stableBehind))) {
+        this._camKickY = Math.min(0.42, (0.08 + impact * 0.036) * landScale);
+      } else {
+        this._camKickY = 0;
+      }
       this._camFovKick = Math.min(5.8, (1.2 + impact * 0.24) * Math.min(1.25, landScale));
       this._shake = Math.min(0.22, 0.08 + impact * 0.018);
     }
@@ -3630,9 +3639,14 @@ export class RallyGame {
       // Medium (stableBehind): kill residual kick immediately — no L/R sway.
       this._camKickLat = stableBehind ? 0 : this._camKickLat * Math.exp(-5 * dt);
     }
-    this._camKickY *= Math.exp(-7.5 * dt);
+    if (stableBehind) {
+      this._camKickY = 0;
+      this._shake = 0;
+    } else {
+      this._camKickY *= Math.exp(-7.5 * dt);
+      if (this._camKickY < 0.002) this._camKickY = 0;
+    }
     this._camFovKick *= Math.exp(-6.2 * dt);
-    if (this._camKickY < 0.002) this._camKickY = 0;
     if (this._camFovKick < 0.04) this._camFovKick = 0;
   }
 
@@ -3869,18 +3883,16 @@ export class RallyGame {
           ? Math.sign(p.driftAngle) * Math.min(0.12, drift * 0.28) * slideOut
           : 0;
       // Airborne: pull back and up so the throw reads; look toward the pad.
-      // Locked medium: keep start-grid back distance — never trail farther.
+      // Locked medium: fixed start-grid height — no air lift / trail.
       const air = !p.onGround;
       const airT = air ? Math.min(1.25, Math.max(0, p._airTime || 0)) : 0;
-      const airLift = stableBehind
-        ? air
-          ? Math.min(0.55, 0.2 + airT * 0.35)
-          : 0
+      const airLift = lockPos
+        ? 0
         : air
           ? Math.min(1.55, 0.42 + airT * 0.85)
           : 0;
-      const airBack = stableBehind ? 0 : air ? Math.min(2.1, 0.55 + airT * 1.15) : 0;
-      const airLookDown = stableBehind
+      const airBack = lockPos ? 0 : air ? Math.min(2.1, 0.55 + airT * 1.15) : 0;
+      const airLookDown = lockPos
         ? 0
         : air
           ? Math.min(0.85, 0.22 + airT * 0.45)
@@ -4042,20 +4054,16 @@ export class RallyGame {
 
     this.camera.position.copy(this._camPos);
     // Shake only while the chase is settled — mid-transition shake reads as hitch.
-    if (!wantPov && !blending && this._shake > 0 && dist < 2.5) {
+    // Locked medium: no shake at all (Y chatter read as the lens floating up).
+    if (!wantPov && !lockPos && !blending && this._shake > 0 && dist < 2.5) {
       const t = performance.now() * 0.053;
-      // Medium stableBehind: vertical chatter only — X shake reads as L/R sway.
-      if (!stableBehind) {
-        this.camera.position.x += Math.sin(t) * this._shake * 0.22;
-      }
+      this.camera.position.x += Math.sin(t) * this._shake * 0.22;
       this.camera.position.y += Math.sin(t * 1.7) * this._shake * 0.38;
     }
-    if (!wantPov && !blending) {
+    if (!wantPov && !blending && !lockPos) {
       this.camera.position.y += this._camKickY;
-      if (!stableBehind) {
-        this.camera.position.x += cosY * this._camKickLat;
-        this.camera.position.z += -sinY * this._camKickLat;
-      }
+      this.camera.position.x += cosY * this._camKickLat;
+      this.camera.position.z += -sinY * this._camKickLat;
     }
     // Never follow the car under the stage — that is the gray void shot.
     if (!wantPov && this.track && typeof this.track.sample === "function" && Number.isFinite(p.progress)) {
@@ -4211,10 +4219,10 @@ export class RallyGame {
 
   /**
    * One directional sun as the key. Hemisphere/ambient are fill only.
-   * Tunnel shade is a look-ahead along the racing line (dim 18 m before
-   * the entrance, restore sun over the last 48 m) then dt-smoothed so a
-   * hitch never pops the light list. Wall sconces stay on for the whole
-   * bore — they are not a pool that follows the car.
+   * Tunnel shade is a look-ahead along the racing line (dim before
+   * the entrance, restore sun with an ease-out near the exit) then
+   * dt-smoothed — exit recovers faster than enter so Stage 1 mud is not left dark.
+   * Wall sconces stay on for the whole bore — they are not a pool that follows the car.
    */
   _updateLights(dt) {
     if (this.state === "title" || this.state === "menu") {
@@ -4255,7 +4263,9 @@ export class RallyGame {
     const target =
       this.track && this.track.tunnelShade ? this.track.tunnelShade(dist) : 0;
     const blendDt = dt > 0 ? dt : FIXED_DT;
-    this._tunnelBlend += (target - this._tunnelBlend) * (1 - Math.exp(-10.4 * blendDt));
+    // Exit faster than enter — lingering tunnel blend left Stage 1 mud dark.
+    const rate = target < this._tunnelBlend ? 16.5 : 9.2;
+    this._tunnelBlend += (target - this._tunnelBlend) * (1 - Math.exp(-rate * blendDt));
     if (this._tunnelBlend < 0.004) this._tunnelBlend = 0;
     if (this._tunnelBlend > 0.996) this._tunnelBlend = 1;
 
