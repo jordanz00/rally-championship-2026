@@ -4263,8 +4263,7 @@ function cabinLandmarks(root) {
     const locMinZ = Math.min(min.z, max.z);
     const locMaxZ = Math.max(min.z, max.z);
     const locMaxY = Math.max(min.y, max.y);
-    // Visual LHD: seated lookAt(+Z) maps world +X to screen left. Prefer the
-    // right-hand cabin seat so wheel / gauges read on the LEFT of the lens.
+    // Seated lookAt(+Z) maps car +X to screen-left. Prefer that seat for LHD.
     if (/seat|chair|bucket/.test(n) && !/rear|back.?seat/.test(n) && c.x > -0.05) {
       const score =
         (/driver|lhd|left/.test(n) ? -1.5 : 0) + Math.abs(c.x - 0.36) + Math.abs(c.y - 0.5);
@@ -4459,9 +4458,8 @@ function bindGlbSteeringWheel(root) {
   root.add(node);
   const local = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(world);
   local.decompose(node.position, node.quaternion, node.scale);
-  // Visual LHD: the seated camera looks +Z, so world +X is screen-left.
-  // Rally GLBs are often authored RHD (or already flipped to −X) — park
-  // the modeled rim on +X with the driver instead of drawing a second torus.
+  // Seated lookAt(+Z) maps car +X to screen-left. Park the modeled rim on +X
+  // with the LHD eye instead of drawing a second torus.
   if (node.position.x < -0.08) {
     node.position.x = -node.position.x;
   }
@@ -4553,8 +4551,7 @@ function buildPovHideCache(root) {
 
 /**
  * Per-car driver eye + look targets from the fitted hull (+Z forward).
- * Visual LHD: lookAt(+Z) maps world +X to screen left, so the driver sits
- * on +X (wheel / gauges left in the lens). Cached on the mesh.
+ * Visual LHD: seated lookAt(+Z) maps car +X to screen-left (headed). Cached.
  * @param {THREE.Object3D} root
  */
 function buildPovRig(root) {
@@ -4567,7 +4564,7 @@ function buildPovRig(root) {
   const axles = axleSpan(root);
   const marks = cabinLandmarks(root);
 
-  // Visual LHD (screen-left): positive X. Prefer the modeled wheel, then seat.
+  // Visual LHD (screen-left): positive X after lookAt(+Z). Prefer wheel, then seat.
   let eyeX;
   if (marks.wheel && marks.wheel.x > -0.08) {
     eyeX = marks.wheel.x;
@@ -4656,7 +4653,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 6;
+  const POV_RIG_VER = 8;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);

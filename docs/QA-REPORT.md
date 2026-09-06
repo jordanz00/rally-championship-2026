@@ -1,5 +1,60 @@
 # QA report — quality-control pass
 
+## POV LHD + smaller rearview (2026-09-06)
+
+**Player moment:** C into the seat. Wheel and gauges sit on the **left**. The interior rearview sits on the **opposite** side of the windshield from the old RHD layout, and is **25% smaller** — still readable. Medium/chase unchanged.
+
+**Cause:** The shared cockpit rig still treated JDM RHD as the seated layout. `lookAt(+Z)` maps car **+X** to screen-left, so a negative-X “LHD” clamp actually sat the player on the visual right. The rearview used `eyeX * 0.12` (same side of center as the driver) at the old 0.32 × 0.082 glass.
+
+**Shipped (shared POV rig — Celica / Delta / Stratos; no `vehicle.js`, no physics, no chase cam):**
+- Driver eye / GLB rim / gauges clamped to car **+X** (`0.22…0.5`) so the seated lens reads LHD
+- Interior mirror at **`-eyeX * 0.12`** (opposite side of center — the swap)
+- Rearview glass **0.75×** (`0.24 × 0.0615`); exterior body not flipped
+- `POV_RIG_VER = 8`
+
+**Headed (Celica, camera seated, camDist 0):** wheel camera-local X **−0.014** (left of lens), cluster **−0.044**, mirror **+0.342** (right of lens). Glass 0.24 × 0.0615.
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-garage-cars.mjs` PASS
+
+**Boot:** `main.js?v=730` · `game.js?v=730` · `celica.js?v=179` · `ai.js?v=165`
+
+**Human gate:** C on all three garage cars — wheel/gauges left, mirror right and smaller, driving still readable.
+
+---
+## Forest tunnel P0 — clean tube + rock-face mouths (2026-09-06)
+
+**Player moment:** Stage 2 Forest. Entrance and exit read as a rock face the road bores through. Inside: one clear tube, no land/rocks in the cabin, dim lamps, headlights on.
+
+### Plan
+
+**What clipped:** stacked straight horseshoe lining rings (Z-scaled + midpoint extras) on the 46 m curve; 7 m straight mountain-mass + hillside shells + throat tube occupying the cabin; 12 m land cells interpolating a 16 m ridge that started ~15 m off-line.
+
+**Delete (Forest visual only):** instanced lining rings, ribs, angular portal mountain / hillside / scree / throat. Desert `_addTunnelPortal` kept.
+
+**Keep:** `Track.query()`, tunnel volumes, mouth prisms / `_tunnelMouthFloorY`, `_wallFace` colliders, wall lamps, ridge trees outside the tube, forest-pbr / flags / grandstands.
+
+**Tube:** one swept horseshoe BufferGeometry along densified spline frames (inner + outer + end rims). Open floor. Inward inner normals. Unique 2 m UVs (Poly Haven boulder_01 1k).
+
+**Mouths:** PBR rock collar (hole = tube + 0.22 m, thickness outward, displaced outer silhouette) + `forest_hero_boulder_a/b` flanks outside the drive floor. No stacked boxes.
+
+**Land:** Forest volume floor widened by ~0.85 land cell; ridge `peakAt` 16 → 28 m.
+
+**Lights:** existing `tunnelShade` → `_tunnelBlend`. Headlights: blend **or** `query().tunnel`. No second light system.
+
+### Shipped
+
+- `js/tracks/forest-tunnel.js`
+- Forest `_addForestTunnelRun` / `_addForestTunnelMouth`
+- `game.js` headlight OR on `query().tunnel`
+- `assets/env/forest/tunnel_rock_*_1k.jpg` (CC0)
+
+**Honest:** clean PBR tube + rock-face collar/flanks. **Not AAA sculpted geology.** Trees still FAIL the asset gate.
+
+**Proof:** `qa-static-audit` PASS · `qa-validate` PASS · `qa-world-geometry` PASS · `qa-env-clip` PASS · `qa-desert-tunnel-mouth` PASS. Headed Forest interior: Chrome harness unavailable in this pass (SKIP).
+
+**Boot:** `main.js?v=728` · `game.js?v=728` · `track.js?v=332` · `forest-tunnel.js?v=1` · `celica.js?v=177` (shared with `ai.js`) · `vehicle.js?v=147` (shared)
+
+---
 ## Organic roads + Mountain rain / POV wipers (2026-09-06)
 
 **Player moment:** Desert asphalt should look dry and dull, not wet chrome. Forest dirt/gravel should stay Poly Haven photos but stop reading as a 2 m wallpaper stamp. Mountain (third cup stage) should rain in showers, with intermittent wipers that clear POV droplets.
