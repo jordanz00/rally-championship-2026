@@ -1,5 +1,25 @@
 # QA report — quality-control pass
 
+## Organic roads + Mountain rain / POV wipers (2026-09-06)
+
+**Player moment:** Desert asphalt should look dry and dull, not wet chrome. Forest dirt/gravel should stay Poly Haven photos but stop reading as a 2 m wallpaper stamp. Mountain (third cup stage) should rain in showers, with intermittent wipers that clear POV droplets.
+
+**Cause:** `ROAD_ROUGH.tarmac` was 0.24 and the roughness map base was 0.16 (effective chrome). Canvas dirt/mud/gravel used one `texHash` grain plus regular ruts. Forest 1k tiles repeated without world-space breakup.
+
+**Shipped (physics / Track.query / tunnels untouched):**
+- Dry tarmac roughness **0.24 → 0.84** scalar; roughness-map base **0.16 → 0.82**. Metalness ~0.035. Env uses stored `dryEnv` (~0.14–0.20 × WORLD_ENV), not the old 0.48–0.78 × WORLD_ENV road boost.
+- Wet look **only** via `setWorldRoadWetness` when Mountain rain (or `?rain=1`) is active — tarmac roughness down ~44%, slight darken, modest env lift. Other stages stay dry.
+- Variation: world-XZ vertex blotches (`organicRoadTint`); GLSL dual-scale UV + cheap XZ noise in `worldRoadMaterial` (Forest photos kept); canvas `paintOrganicBreakup` (fbm blotches, wandering ruts, soil pockets) for Desert/Mountain/Lakeside. Cache keys `v5` / `rough|v4`.
+- `js/weather/rain.js` — 360 line streaks around the lens, intermittent showers (~26 s cycle), no extra fog soup. SFX rain bed on the existing mixer (`setRain`), not a new music system.
+- POV: cockpit glass plane + two blades (not tagged `windshield`, LHD eye/wheel unchanged). Intermittent wipe (2.7 s rest / 0.55 s out / dwell / return). Droplets cleared in the swept arc.
+
+**Honest:** tiling is **reduced, not eliminated**. Dual-scale + vertex noise break the stamp; a still frame can still show a faint repeat. Rain is arcade streaks, not 50k GPU particles.
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-garage-cars.mjs` PASS
+
+**Boot:** `main.js?v=727` · `game.js?v=727` · `track.js?v=332` · `pbr.js?v=40` · `celica.js?v=177` · `ai.js?v=163` · `engine.js?v=71` · `rain.js?v=1` · `forest-pbr.js?v=1`
+
+---
 ## Ship v727 → GitHub Pages (2026-09-06)
 
 **Player moment:** hard-refresh the public build and get the last 48h of local work — Forest PBR ground, hero rocks/logs, cloth flags, Mountain rain/wipers, countdown VO hold, camera/lighting/particles, and race polish — not the stale v676 Pages tree.
