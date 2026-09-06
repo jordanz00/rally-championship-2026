@@ -18,9 +18,10 @@ const game = fs.readFileSync(path.join(ROOT, "js/game.js"), "utf8");
 const config = fs.readFileSync(path.join(ROOT, "js/config.js"), "utf8");
 
 console.log("SPRINT 40 WRC + GHOSTS + TELEMETRY\n");
-check("Act 8 desert extension", /Act 8.*Sprint 40/.test(courses));
-check("Act 8 mountain extension", /mountain:[\s\S]*Act 8 \(Sprint 40\)/.test(courses));
+check("desert TrackDefinition course", /desert:\s*DESERT_COURSE/.test(courses));
+check("mountain TrackDefinition course", /mountain:\s*MOUNTAIN_COURSE/.test(courses));
 check("ghost recorder", /GhostRecorder/.test(ghost) && /saveBest/.test(ghost));
+check("ghost layout revision", /GHOST_LAYOUT_REV/.test(ghost) && /rally-ghost-v2/.test(ghost));
 check("live telemetry", /LiveTelemetry/.test(tel) && /exportJSON/.test(tel));
 check("game ghost record", /ghostRecorder/.test(game) && /GhostPlayer/.test(game));
 check("stage time bumped", /desert: 108/.test(config));

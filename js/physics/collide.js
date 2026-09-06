@@ -99,15 +99,61 @@ const OFF_RESET = 24;
 /** Player shoulder: soft berm — bleed outward speed, do not kill forward momentum. */
 const PLAYER_SHOULDER_OUT = 0.14;
 const PLAYER_SHOULDER_BOUNCE = 0.2;
-/** Player runoff: light pace cost only (was up to 28%/frame — felt like a wall). */
-const PLAYER_SCRUB_MIN = 0.012;
-const PLAYER_SCRUB_MAX = 0.048;
-const PLAYER_OUT_KILL_MAX = 0.22;
-/** Keep rolling through runoff when the player is still on throttle. */
-const PLAYER_RUNOFF_FLOOR = 5.5;
+/**
+ * Player runoff along-track drag, per 60 Hz step.
+ * 1.2–4.8%/frame was ~50–95% speed loss per second and parked the car.
+ * These stay a readable verge cost (~8–22%/s) without a near-stop.
+ */
+const PLAYER_SCRUB_MIN = 0.0014;
+const PLAYER_SCRUB_MAX = 0.0042;
+const PLAYER_OUT_KILL_MAX = 0.12;
+/** Keep rally pace on throttle in the verge (~65 km/h). 5.5 m/s felt like a stop. */
+const PLAYER_RUNOFF_FLOOR = 18;
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
+}
+
+/**
+ * Short props (cones, tape) do not block a car whose undercarriage is already
+ * above them. Tunnel walls always reach.
+ * @param {{kind?:string, top?:number}} c
+ * @param {{position?:{y?:number}}} v
+ */
+function colliderHitsCarY(c, v) {
+  if (!c || c.kind === "wall") return true;
+  const y = v && v.position && Number.isFinite(v.position.y) ? v.position.y : 0;
+  const top = Number.isFinite(c.top) ? c.top : 3.1;
+  return y < top + 0.45;
+}
+
+/**
+ * Lateral of every OBB corner on the road sample (centre + 4 corners).
+ * A yawed nose can hit lining while the origin is still on paint.
+ * @returns {{maxAbs:number, worstLat:number}}
+ */
+function chassisLatExtents(v, q) {
+  const fx = Math.sin(v.yaw);
+  const fz = Math.cos(v.yaw);
+  const rx = fz;
+  const rz = -fx;
+  const nx = q.nx;
+  const nz = q.nz;
+  let maxAbs = Math.abs(q.lateral);
+  let worstLat = q.lateral;
+  for (const sl of [-1, 1]) {
+    for (const sw of [-1, 1]) {
+      const dLat =
+        (fx * sl * HALF_LENGTH + rx * sw * HALF_WIDTH) * nx +
+        (fz * sl * HALF_LENGTH + rz * sw * HALF_WIDTH) * nz;
+      const lat = q.lateral + dLat;
+      if (Math.abs(lat) > maxAbs) {
+        maxAbs = Math.abs(lat);
+        worstLat = lat;
+      }
+    }
+  }
+  return { maxAbs, worstLat };
 }
 
 /**
@@ -546,8 +592,8 @@ export function glanceObstacles(v, track) {
   const x1 = v.position.x;
   const z1 = v.position.z;
   const move = Math.hypot(x1 - x0, z1 - z0);
-  // Finer samples when the step is long — tunneling is a large-Δt / large-Δx bug.
-  const sweepSteps = Math.min(14, Math.max(1, Math.ceil(move / 0.4)));
+  // Sub-metre samples — at 40 m/s a 1/60 step is ~0.67 m; 0.4 left a gap.
+  const sweepSteps = Math.min(18, Math.max(1, Math.ceil(move / 0.28)));
   v._envIntersect = false;
   v._envDeep = false;
 
@@ -555,6 +601,7 @@ export function glanceObstacles(v, track) {
   let toi = null;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
+    if (!colliderHitsCarY(c, v)) continue;
     for (let s = 0; s <= sweepSteps; s++) {
       const t = s / sweepSteps;
       const px = x0 + (x1 - x0) * t;
@@ -585,6 +632,7 @@ export function glanceObstacles(v, track) {
   // --- Pass B: residual contacts at the resolved pose (walls + nearby rocks).
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
+    if (!colliderHitsCarY(c, v)) continue;
     if (c.kind === "wall") {
       const hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
       if (hit) applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: true });
@@ -623,7 +671,7 @@ export function correctEnvPenetration(v, track) {
     v._envDeep = false;
     return;
   }
-  const passes = v.ai ? 2 : 5;
+  const passes = v.ai ? 3 : 6;
   let worst = 0;
   for (let pass = 0; pass < passes; pass++) {
     const fx = Math.sin(v.yaw);
@@ -634,6 +682,7 @@ export function correctEnvPenetration(v, track) {
     worst = 0;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
+      if (!colliderHitsCarY(c, v)) continue;
       let hit = null;
       let wall = false;
       if (c.kind === "wall") {
@@ -684,14 +733,16 @@ export function bounceOffRoad(v, q, track = null) {
   // The old early `over <= 0` return let chassis punch through the walls.
   if (tunnel) {
     const LINING_INSET = 0.42;
+    const extents = chassisLatExtents(v, q);
     const maxLat = half + LINING_INSET - HALF_WIDTH;
-    const absLat = Math.abs(lat);
+    const absLat = extents.maxAbs;
+    const inwardObb = extents.worstLat > 0 ? -1 : 1;
     if (absLat > maxLat) {
       const embed = absLat - maxLat;
-      v.position.x += nx * inward * embed;
-      v.position.z += nz * inward * embed;
+      v.position.x += nx * inwardObb * embed;
+      v.position.z += nz * inwardObb * embed;
       const vn = v.velocity.x * nx + v.velocity.z * nz;
-      if (vn * Math.sign(lat || 1) > 0) {
+      if (vn * Math.sign(extents.worstLat || 1) > 0) {
         v.velocity.x -= nx * vn;
         v.velocity.z -= nz * vn;
         const keep = Math.abs(vn) * 0.62;
@@ -699,10 +750,10 @@ export function bounceOffRoad(v, q, track = null) {
         v.velocity.z += hz * keep;
       }
       v.hitWall = Math.max(v.hitWall || 0, embed * 1.05 + Math.abs(vn) * 0.5);
-      v.hitNx = nx * inward;
-      v.hitNz = nz * inward;
+      v.hitNx = nx * inwardObb;
+      v.hitNz = nz * inwardObb;
       if (v.yawRate != null) {
-        const past = nx * inward * hz - nz * inward * hx;
+        const past = nx * inwardObb * hz - nz * inwardObb * hx;
         v.yawRate += past * 0.022;
       }
       return true;
@@ -784,22 +835,22 @@ export function bounceOffRoad(v, q, track = null) {
     v.velocity.z -= nz * vn * killFrac;
   }
 
-  // Off-road pace cost for the player — slight scrub deep in runoff only.
+  // Off-road pace cost for the player — light extra drag, never a parking brake.
   if (isPlayer && over > shoulder) {
     const alongSpd = v.velocity.x * hx + v.velocity.z * hz;
     if (alongSpd > 3) {
       const scrub = clamp(
-        PLAYER_SCRUB_MIN + (over - shoulder) * 0.004,
+        PLAYER_SCRUB_MIN + (over - shoulder) * 0.00028,
         PLAYER_SCRUB_MIN,
         PLAYER_SCRUB_MAX
       );
       v.velocity.x -= hx * alongSpd * scrub;
       v.velocity.z -= hz * alongSpd * scrub;
     }
-    // Still on throttle: do not bleed to a dead stop in the runoff.
+    // Still on throttle: hold a usable rally pace through the verge.
     const th = typeof v.throttle === "number" ? v.throttle : 0;
     if (th > 0.08 && alongSpd > 0 && alongSpd < PLAYER_RUNOFF_FLOOR) {
-      const lift = (PLAYER_RUNOFF_FLOOR - alongSpd) * (0.25 + th * 0.35);
+      const lift = (PLAYER_RUNOFF_FLOOR - alongSpd) * (0.05 + th * 0.08);
       v.velocity.x += hx * lift;
       v.velocity.z += hz * lift;
     }

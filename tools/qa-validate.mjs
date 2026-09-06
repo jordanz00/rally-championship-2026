@@ -88,6 +88,7 @@ const required = [
   "docs/AGENT_ARCHITECTURE.md",
   "docs/ART_DIRECTION.md",
   "docs/CURSOR_SHOWCASE.md",
+  "docs/STABILIZATION-BRIEF.md",
 ];
 console.log("SHARED SYSTEMS");
 for (const rel of required) {

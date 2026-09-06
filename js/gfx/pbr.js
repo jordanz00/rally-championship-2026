@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=208";
+import { VISUAL } from "../config.js?v=218";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -38,16 +38,19 @@ function ue5() {
   return (VISUAL.tier || 0) >= 10 && VISUAL.ue5Look !== false;
 }
 
-/** Per-surface road roughness for realistic arcade PBR (Visual Pass V3). */
+/** Per-surface road roughness. Dry tarmac is matte — wet look is a runtime flag. */
 const ROAD_ROUGH = {
-  tarmac: 0.24,
+  tarmac: 0.84,
   gravel: 0.76,
   dirt: 0.86,
   sand: 0.9,
   mud: 0.97,
-  cobble: 0.56,
+  cobble: 0.62,
   grass: 0.9,
 };
+
+/** 0..1 Mountain rain wetness applied to live road materials. */
+let WORLD_ROAD_WET = 0;
 
 /** @type {WeakMap<THREE.Material, THREE.Material>} */
 const WORLD_MAT_CACHE = new WeakMap();
@@ -417,6 +420,18 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
   }
   const ns = VISUAL.normalStrength ?? 0.85;
   const tier = VISUAL.tier || 1;
+  const dryTarmac = id === "tarmac";
+  const rough = ROAD_ROUGH[id] ?? 0.88;
+  const metal = dryTarmac
+    ? 0.035
+    : id === "cobble"
+      ? tier >= 10
+        ? 0.08
+        : 0.05
+      : 0.02;
+  const env = dryTarmac
+    ? (tier >= 10 ? 0.2 : 0.14) * WORLD_ENV
+    : (tier >= 10 ? 0.42 : tier >= 9 ? 0.34 : 0.28) * WORLD_ENV;
   const mat = new THREE.MeshStandardMaterial({
     map,
     normalMap,
@@ -426,16 +441,120 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
     normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
     side: THREE.FrontSide,
-    roughness: ROAD_ROUGH[id] ?? 0.88,
-    metalness: id === "tarmac" || id === "cobble" ? (tier >= 10 ? 0.14 : tier >= 9 ? 0.1 : 0.06) : 0.02,
-    envMapIntensity: (tier >= 10 ? 0.78 : tier >= 9 ? 0.62 : 0.48) * WORLD_ENV,
+    roughness: rough,
+    metalness: metal,
+    envMapIntensity: env,
     flatShading: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -2,
   });
   mat.userData.kind = "road";
+  mat.userData.surfaceId = id;
+  mat.userData.dryRough = rough;
+  mat.userData.dryEnv = env;
+  mat.userData.dryMetal = metal;
+  armRoadOrganic(mat, id);
+  applyRoadWetToMat(mat);
   return mat;
+}
+
+/**
+ * Break wallpaper tiling: dual-scale albedo + cheap world-XZ blotches.
+ * Same hue family — just less stamped. GLSL only (WebGPU skips onBeforeCompile).
+ * @param {THREE.Material} mat
+ * @param {string} id
+ */
+function armRoadOrganic(mat, id) {
+  if (!mat || mat.userData.organicArmed) return;
+  mat.userData.organicArmed = true;
+  const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
+  const amount = dirty ? 1 : id === "tarmac" ? 0.32 : 0.22;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uRoadVar = { value: amount };
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vRoadWorld;"
+      )
+      .replace(
+        "#include <project_vertex>",
+        "#include <project_vertex>\nvRoadWorld = (modelMatrix * vec4( transformed, 1.0 )).xyz;"
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+uniform float uRoadVar;
+varying vec3 vRoadWorld;
+float roadHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float roadNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = roadHash(i);
+  float b = roadHash(i + vec2(1.0, 0.0));
+  float c = roadHash(i + vec2(0.0, 1.0));
+  float d = roadHash(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}`
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#ifdef USE_MAP
+	vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+	vec4 sampledRoadB = texture2D( map, vMapUv * 0.37 + vec2( 0.17, 0.09 ) );
+	sampledDiffuseColor.rgb = mix( sampledDiffuseColor.rgb, sampledRoadB.rgb, 0.28 * uRoadVar );
+	float n1 = roadNoise( vRoadWorld.xz * 0.11 );
+	float n2 = roadNoise( vRoadWorld.xz * 0.37 + 17.0 );
+	float n3 = roadNoise( vRoadWorld.xz * 0.019 );
+	float blotch = n1 * 0.55 + n2 * 0.28 + n3 * 0.17;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.76 + blotch * 0.42 ), uRoadVar );
+	diffuseColor *= sampledDiffuseColor;
+#endif`
+      );
+  };
+  mat.customProgramCacheKey = () => `road-organic-${id}`;
+}
+
+/**
+ * Wet asphalt only when Mountain rain (or an explicit wet amount) is active.
+ * @param {THREE.Object3D|null} root
+ * @param {number} wet 0..1
+ */
+export function setWorldRoadWetness(root, wet) {
+  WORLD_ROAD_WET = Math.max(0, Math.min(1, wet || 0));
+  if (!root) return;
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const list = [].concat(obj.material || []);
+    for (let i = 0; i < list.length; i++) applyRoadWetToMat(list[i]);
+  });
+}
+
+/**
+ * @param {THREE.Material|null} m
+ */
+function applyRoadWetToMat(m) {
+  if (!m || m.userData.kind !== "road") return;
+  const k = WORLD_ROAD_WET;
+  const id = m.userData.surfaceId;
+  const dryR = m.userData.dryRough != null ? m.userData.dryRough : m.roughness;
+  const dryE = m.userData.dryEnv != null ? m.userData.dryEnv : m.envMapIntensity;
+  if (id === "tarmac" || id === "cobble") {
+    m.roughness = dryR * (1 - k * 0.44);
+    if (m.envMapIntensity != null) m.envMapIntensity = dryE * (1 + k * 1.05);
+  } else {
+    m.roughness = dryR;
+    if (m.envMapIntensity != null) m.envMapIntensity = dryE;
+  }
+  if (m.color) {
+    if (!m.userData.dryColor) m.userData.dryColor = m.color.clone();
+    const dark = id === "tarmac" || id === "cobble" ? 0.14 : 0.07;
+    m.color.copy(m.userData.dryColor).multiplyScalar(1 - k * dark);
+  }
 }
 
 /**
@@ -647,12 +766,15 @@ export function applyEnvMap(root, envMap, intensity) {
           if (intensity != null && !m.userData.lockEnv) {
             const kind = m.userData.kind;
             let tint = intensity;
-            if (kind === "road") tint *= cinema ? 1.12 : 1.06;
-            else if (kind === "chrome") tint *= cinema ? 1.38 : 1.22;
+            if (kind === "road") {
+              if (m.userData.dryEnv != null) tint = m.userData.dryEnv;
+              else tint *= m.userData.surfaceId === "tarmac" ? 0.28 : 0.78;
+            } else if (kind === "chrome") tint *= cinema ? 1.38 : 1.22;
             else if (kind === "glass") tint *= cinema ? 1.08 : 0.95;
             else if (kind === "prop") tint *= cinema ? 0.92 : 0.88;
             else if (kind === "terrain") tint *= cinema ? 1.05 : 0.98;
             m.envMapIntensity = tint;
+            if (kind === "road") applyRoadWetToMat(m);
           }
           if (m.isMeshPhysicalMaterial && m.clearcoat > 0) {
             m.clearcoatMap = m.clearcoatMap || null;

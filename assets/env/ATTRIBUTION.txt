@@ -1,0 +1,17 @@
+Forest stage PBR textures — Poly Haven CC0 1.0
+----------------------------------------------
+Downloaded at 1k JPG (Diffuse, nor_gl, Rough, AO) by
+tools/fetch-forest-pbr-textures.py.
+
+  dirt_floor     → Forest packed-dirt ribbon
+  gravel_road    → Forest gravel stretches + shoulder grain
+  forest_floor   → Forest land / skirt plane
+  tunnel_rock    → Forest tunnel tube / mouth collar
+                   (Poly Haven boulder_01 1k: diff + nor_gl + arm)
+
+License: assets/props/POLYHAVEN-LICENSE.txt
+https://polyhaven.com/license
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Do not substitute 8k maps at runtime. Hero-zone quality here is photographic
+tiling at ~2 m, not canvas grain and not stretched 15 m repeats.

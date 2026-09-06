@@ -10,7 +10,7 @@
  * Lightweight read-only: ?physdebug=1 / ?debug=1 (no dials)
  */
 
-import { ARCADE_ASSIST, HANDLING } from "../config.js?v=208";
+import { ARCADE_ASSIST, HANDLING } from "../config.js?v=218";
 
 /** @typedef {{ key: string, label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void }} LabDial */
 
@@ -235,11 +235,33 @@ export class PhysicsDebug {
         key: "tireSlideSoft",
         label: "Grip Soft",
         min: 1,
-        max: 3.5,
+        max: 4.5,
         step: 0.05,
         get: () => ARCADE_ASSIST.tireSlideSoft,
         set: (v) => {
           ARCADE_ASSIST.tireSlideSoft = v;
+        },
+      },
+      {
+        key: "tirePeakHold",
+        label: "Peak Hold",
+        min: 0.9,
+        max: 1.3,
+        step: 0.01,
+        get: () => ARCADE_ASSIST.tirePeakHold,
+        set: (v) => {
+          ARCADE_ASSIST.tirePeakHold = v;
+        },
+      },
+      {
+        key: "pedalLoadBlend",
+        label: "Pedal Load",
+        min: 0,
+        max: 0.7,
+        step: 0.01,
+        get: () => HANDLING.pedalLoadBlend,
+        set: (v) => {
+          HANDLING.pedalLoadBlend = v;
         },
       },
       {

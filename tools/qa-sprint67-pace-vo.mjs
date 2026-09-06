@@ -71,7 +71,7 @@ check("clipKey does not rewrite hairpin to hard", !/startsWith\("hairpin-"\)/.te
 check("long/maybe flags on turn notes", /LONG_ARC_M/.test(call) && /maybe:/.test(call) && /long:/.test(call));
 check("paceCall accepts long/maybe opts", /paceCall\(key, opts/.test(engine) && /_navQueue/.test(engine));
 check("codriver passes long/maybe phrase", /paceCall\(key, phrase\)/.test(driver) || /paceCall\(key, \{\s*long/.test(driver));
-check("nav clips cache-busted", /nav\/\$\{key\}\.mp3\?v=5/.test(engine));
+check("nav clips cache-busted", Number((engine.match(/nav\/\$\{key\}\.mp3\?v=(\d+)/) || [])[1]) >= 6);
 check("nav bus bypasses SFX compressor", /_navGain/.test(engine) && /NAV_GAIN/.test(engine));
 check("playClip does not dump the line", /export function playClip/.test(bank) && /paceCall/.test(engine));
 check("Daniel unified nav voice attribution", /Daniel/.test(attr) && /build-nav-grade-vo/.test(attr));
@@ -210,6 +210,19 @@ check(
 check("game imports track.js?v=196+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 196);
 check("game imports engine.js?v=56+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 56);
 check("game imports codriver.js?v=35+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 35);
+check(
+  "countdown VO must end before pace notes",
+  /armCountVo/.test(engine) &&
+    /PACE_AFTER_COUNT_MS = 2000/.test(engine) &&
+    /paceNotesAllowed/.test(engine) &&
+    /_markCountVoEnded/.test(engine)
+);
+check("game arms the pace gate at countdown start", /armCountVo\(\)/.test(game));
+check(
+  "codriver holds the first call until the gate opens",
+  /paceNotesAllowed/.test(driver) && /_heldNote/.test(driver) && /fromHold/.test(driver)
+);
+check("finish countGo does not re-arm the start-grid gate", /if \(!armed\) return/.test(engine));
 check("engine imports soundtrack.js?v=135+", Number((engine.match(/soundtrack\.js\?v=(\d+)/) || [])[1]) >= 135);
 check("engine still wires SkidVoice", /SkidVoice/.test(engine) && /this\.skid\.setState/.test(engine));
 check("skid gravel pan from driftAngle", /StereoPanner|createStereoPanner/.test(read("js/audio/skid.js")) && /signedYaw|driftAngle/.test(read("js/audio/skid.js")));

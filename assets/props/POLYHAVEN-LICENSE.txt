@@ -5,6 +5,12 @@ https://polyhaven.com/license
 
 Models (converted to GLB for the game):
   concrete_road_barrier, concrete_road_barrier_02,
-  modular_chainlink_fence, painted_wooden_bench, wooden_crate_01
+  modular_chainlink_fence, painted_wooden_bench, wooden_crate_01,
+  boulder_01, rock_07, rock_moss_set_01, rock_moss_set_02,
+  dead_tree_trunk, fern_02
+
+Textures (1k JPG, Forest stage only — assets/env/forest/):
+  dirt_floor, gravel_road, forest_floor
 
 Source files retained under assets/props/hd-src/polyhaven/.
+Texture files under assets/env/forest/.

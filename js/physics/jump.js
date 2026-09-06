@@ -1,21 +1,22 @@
 /**
- * Jump technique — Fujimoto setup + RAGE-style rigid-body air.
+ * Jump technique — Fujimoto setup + ballistic leave.
  *
  * WHO THIS IS FOR: anyone tuning how crests reward or punish the player.
- * WHAT IT DOES: lift-and-brake sets the leave. In the air the chassis is a
- *   rigid body with inertia (pitch + roll), aero from angle of attack, and a
- *   Deterministic lip grain so the same jump is never a canned hop. Landing
- *   grades tail-first bounce vs a nose plant. Speed × lip grade owns the throw.
+ * WHAT IT DOES: leave vy is the ramp-follow vector (speed × sin(lip)).
+ *   Technique unloads the spring and drops the nose. In the air the chassis
+ *   is a rigid body (pitch + roll), aero from angle of attack, and a
+ *   deterministic lip grain so the same line repeats and a different line
+ *   does not. Landing grades tail-first bounce vs a nose plant.
  * HOW IT CONNECTS: Vehicle calls ground / launch / air / land / settle.
  *
  * SIGN CONVENTION: +noseUp is aero nose-up. The renderer uses Three.js Rx
  * (nose down), so Vehicle negates noseUp for display.
  *
  * Determinism: two identical lips fly identical. Different speed, line, or
- * pedal at the lip fly different — GTA IV/V vehicle air.
+ * pedal at the lip fly different — never RNG.
  */
 
-import { JUMP } from "../config.js?v=208";
+import { JUMP } from "../config.js?v=218";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -94,8 +95,9 @@ export class JumpModel {
   /**
    * Leave the ground. Returns vertical velocity (m/s).
    *
-   * Throw comes from speed × lip grade. Technique, compress, and line grain
-   * change that throw — they do not replace it with a canned hop.
+   * PRIMARY: `rawVelY` must already be `v_forward * sin(θ)` from the lip.
+   * SECONDARY: spring is a bounded fraction of that ballistic — never a
+   * second jump generator. jumpThrow / lip grade / grain do not multiply energy.
    *
    * @param {number} rawVelY
    * @param {number} grade
@@ -110,22 +112,19 @@ export class JumpModel {
       lipGrain(body.dist, body.lateral, body.speed) *
       (JUMP.lipGrain != null ? JUMP.lipGrain : 0.07);
     const spd = Math.max(0, Number(body.speed) || 0);
-    const jumpScale = clamp(Number(body.jumpThrow) || 1, 0.45, 2.4);
     const jumpLip = clamp(Number(body.jumpLip) || 1, 0.4, 2.6);
-    const scaleIn = JUMP.jumpScaleInfluence != null ? JUMP.jumpScaleInfluence : 0.48;
-    const lipIn = JUMP.lipGradeInfluence != null ? JUMP.lipGradeInfluence : 0.42;
     const surfMod = surfaceSpringMod(body.surfaceBump);
-    const flatBoost = JUMP.flatOutLaunchBoost != null ? JUMP.flatOutLaunchBoost : 1.14;
-    let vy = Math.max(0, rawVelY) + Math.max(0, springBoost) * surfMod;
-    vy *= lerp(flatBoost, JUMP.liftLaunchCut, credit);
-    vy *= 1 + grain * jumpLip;
-    vy *= lerp(1, jumpScale, scaleIn);
-    vy *= 1 + Math.max(0, lipGrade - grade) * lipIn * jumpLip;
+    const ballistic = Math.max(0, rawVelY);
+    const frac = JUMP.springFraction != null ? JUMP.springFraction : 0.18;
+    const springRaw = Math.max(0, springBoost) * surfMod * lerp(1, 0.28, credit);
+    const spring = Math.min(springRaw, ballistic * frac);
+    let vy = ballistic + spring;
+    // Pack-only apex cut. Player launchHeightScale is 1.
     const heightScale =
       Math.max(0.05, JUMP.launchHeightScale ?? 1) *
       Math.max(0.05, this.aiHeightScale ?? 1);
     vy *= Math.sqrt(heightScale);
-    const maxVy = (JUMP.maxLaunchVy || 10.8) * Math.sqrt(Math.max(0.05, this.aiHeightScale ?? 1));
+    const maxVy = (JUMP.maxLaunchVy || 12) * Math.sqrt(Math.max(0.05, this.aiHeightScale ?? 1));
     vy = clamp(Math.max(0, vy), JUMP.minLaunchVy || 0, maxVy);
 
     // Leave following the ramp the tires just left — not a canned hop pose.
@@ -171,17 +170,18 @@ export class JumpModel {
    * @param {number} dt
    * @param {number} throttle
    * @param {number} brake
-   * @param {{yawRate?:number, speed?:number, vLat?:number}} [extra]
+   * @param {{yawRate?:number, speed?:number, vLat?:number, steer?:number}} [extra]
    */
   air(dt, throttle, brake, extra = {}) {
     // Gentle trim — Sega Rally / Dirt: attitude coasts; pedals nudge, not flip.
+    const spd = Math.max(0, Number(extra.speed) || 0);
+    const fast = clamp(spd / 32, 0, 1);
     const cmd =
       clamp(throttle, 0, 1) * JUMP.airPitchUp - clamp(brake, 0, 1) * JUMP.airPitchDown;
     const torque = cmd * JUMP.airPitchRate;
-    const I = Math.max(0.6, JUMP.airPitchInertia || 2.0);
+    const I = Math.max(0.6, JUMP.airPitchInertia || 2.0) * (0.82 + fast * 0.38);
     const damp = Math.max(0.35, JUMP.airPitchDamp || 1.05);
     const aoa = this.noseUp;
-    const spd = Math.max(0, Number(extra.speed) || 0);
     const aero = -aoa * (0.85 + spd * 0.008);
     this.noseUpRate += ((torque + aero) / I) * dt;
     this.noseUpRate *= Math.exp(-damp * dt);
@@ -195,8 +195,9 @@ export class JumpModel {
     const rollDamp = JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.35;
     const yaw = Number(extra.yawRate) || 0;
     const vLat = Number(extra.vLat) || 0;
+    const steer = Number(extra.steer) || 0;
     const cross = JUMP.airCrossCouple != null ? JUMP.airCrossCouple : 0.12;
-    this.rollRate += (yaw * 0.14 + vLat * cross * 0.03) * dt;
+    this.rollRate += (yaw * 0.14 + vLat * cross * 0.03 + steer * spd * 0.007) * dt;
     this.rollRate *= Math.exp(-rollDamp * dt);
     this.roll += this.rollRate * dt;
     this.roll = clamp(this.roll, -rollMax, rollMax);
@@ -249,13 +250,19 @@ export class JumpModel {
     this.lastLanding = bad;
     const landMod = surfaceLandMod(ctx.surfaceBump);
     const dropMod = clamp((Number(ctx.jumpDrop) || 2.6) / 2.6, 0.65, 1.55);
-    const upset = (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) * landMod;
+    const energy = clamp((impact * impact) / 0.72, 0, 1.65);
+    const fast = clamp(speed / 34, 0, 1);
+    const upset =
+      (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) *
+      landMod *
+      (0.72 + energy * 0.38) *
+      (0.78 + fast * 0.28);
     this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
     const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod;
     const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
     const bounce =
       Math.max(0, -fallSpeed) > need
-        ? Math.max(0, -fallSpeed) * bounceAmp * (0.04 + tailFirst * 0.96)
+        ? Math.max(0, -fallSpeed) * bounceAmp * (0.04 + tailFirst * 0.96) * (0.7 + energy * 0.45)
         : 0;
     // Keep some tumble rate into the vehicle settle spring — hard rate kills
     // made every land look like an upright keyframe the frame after contact.

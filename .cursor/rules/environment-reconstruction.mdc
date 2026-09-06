@@ -1,0 +1,26 @@
+---
+description: Environment reconstruction quality bar — forbids primitive/low-poly hero assets and requires the asset quality gate.
+alwaysApply: true
+---
+
+# Environment reconstruction
+
+The environment is a **content** problem. Target: **UE5-inspired photorealism at the gameplay camera**, in Three.js r160 WebGL — not Nanite, not “better arcade scenery.”
+
+Read [`docs/ENVIRONMENT-AUDIT.md`](docs/ENVIRONMENT-AUDIT.md) **before modifying generators**. If HIGH PRIORITY assets are MISSING, stop and update the gap report. Do not manufacture low-poly substitutes.
+
+Binding docs: [`docs/ASSET-QUALITY-GATE.md`](docs/ASSET-QUALITY-GATE.md) · [`docs/ASSET-ACQUISITION-MANIFEST.md`](docs/ASSET-ACQUISITION-MANIFEST.md) · [`docs/env-asset-registry.json`](docs/env-asset-registry.json)
+
+Run `node tools/qa-asset-quality.mjs` before claiming any environment pass. **Exit 1 means Forest trees are still REJECT — that is not “improved.”**
+
+## Forbidden as close/medium hero visuals
+
+Cylinder/cone trees, sphere foliage, capsule bushes, cube/icosphere rocks, primitive cliffs, hero-zone billboards, Kenney densify without normal maps as geology, marking `low_poly_forest_tree_pack.glb` as PASS.
+
+If a replacement is visibly cheap at 5–30 m from the medium camera, **REJECT**. Leave the existing asset rather than shipping a worse one.
+
+Do not close a missing tree with generated low-poly geometry. Update the acquisition manifest instead.
+
+Forest is the reference stage. Do not skim Desert/Mountain/Lakeside until Forest hero trees pass the gate.
+
+Do not rewrite `track.js` or `vehicle.js`. Do not invent a second `Track.query()`. Fog/bloom/exposure/more copies of a REJECT mesh are not an overhaul.

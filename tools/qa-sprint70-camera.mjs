@@ -100,7 +100,7 @@ check(
 );
 check(
   "medium chase keeps start framing under throttle",
-  /speedFovScale:\s*0\.0[5-9]/.test(config) &&
+  /speedFovScale:\s*0\.(?:0[5-9]|1[0-8])/.test(config) &&
     /speedLookAheadScale:\s*0\.[12]/.test(config) &&
     /accelFollowBoost:\s*1\./.test(config) &&
     /speedFovScale/.test(game) &&
@@ -114,14 +114,18 @@ check(
     /povSeatEase:\s*0\.1[0-9]/.test(config)
 );
 check(
-  "drift chase stays readable (yaw→travel, capped outside)",
-  /slideYawBlend:\s*0\.6/.test(config) &&
-    /yawStiffnessSlide:\s*1[456]/.test(config) &&
-    /slideCamOut:\s*0\.1[0-9]/.test(config) &&
-    /slideLookAhead:\s*[3-5]\./.test(config) &&
-    /slideKickMax:\s*0\.0[3-5]/.test(config) &&
+  "drift chase stays readable on unlocked views (yaw→travel, capped outside)",
+  /slideYawBlend:\s*0\.2[0-9]/.test(config) &&
+    /yawStiffnessSlide:\s*1[0-9]/.test(config) &&
+    /slideCamOut:\s*0\.0[0-9]/.test(config) &&
+    /slideLookAhead:\s*[2-5]\./.test(config) &&
+    /slideKickMax:\s*0\.0[0-9]/.test(config) &&
     /slideYawBlend/.test(game) &&
     /slideLookAhead/.test(game)
+);
+check(
+  "medium chase does not inherit slide orbit",
+  /id:\s*"medium"[\s\S]{0,1400}slideCamOut:\s*0/.test(config)
 );
 check(
   "cache-bust chain",

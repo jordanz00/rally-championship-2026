@@ -14,6 +14,13 @@ Trackside HD (Poly Haven CC0 — POLYHAVEN-LICENSE.txt):
   modular_chainlink_fence → construction_fence / fence_straight
   painted_wooden_bench → bench.glb
   wooden_crate_01 → crate.glb
+  Forest close-range (Forest stage only):
+    boulder_01 → forest_hero_boulder_a.glb
+    rock_07 → forest_hero_boulder_b.glb
+    rock_moss_set_01 → forest_hero_moss_set_a.glb
+    rock_moss_set_02 → forest_hero_moss_set_b.glb
+    dead_tree_trunk → forest_hero_log.glb
+    fern_02 → forest_hero_fern.glb
 Source under assets/props/hd-src/polyhaven/.
 
 Remaining gallery / gates (Kenney CC0, densified):

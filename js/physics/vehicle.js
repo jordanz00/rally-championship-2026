@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=208";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=52";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=50";
-import { JumpModel } from "./jump.js?v=26";
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=6";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=218";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=55";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=52";
+import { JumpModel } from "./jump.js?v=32";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=9";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -264,6 +264,21 @@ function pacejka(slip, B, C, D, E) {
 }
 
 /**
+ * How far past peak the tire has gone (0 = still at peak, 1 = fully sliding).
+ * Smoothstep so the player feels approach → breakaway → catch, not a cliff.
+ *
+ * @param {number} over slip / peak-slip ratio
+ * @param {number} peakHold hold peak until this over (typically > 1)
+ * @param {number} soft width of the fall from peak into slide
+ * @returns {number} 0..1 blend toward sliding friction
+ */
+function tireEnvelopeFalloff(over, peakHold, soft) {
+  if (over <= peakHold) return 0;
+  const t = clamp((over - peakHold) / Math.max(1.15, soft), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/**
  * Combined longitudinal + lateral tire force with mild load sensitivity
  * and road-camber thrust.
  *
@@ -271,9 +286,9 @@ function pacejka(slip, B, C, D, E) {
  * onto a friction ellipse. Peak µ softens as Fz rises above FZ0 (real tires
  * are not linear in load). Camber from road roll adds a small lateral bias.
  *
- * Past the breakaway point the force falls to the surface's SLIDING friction.
- * Floor at 50% of peak so tarmac is not ice. Arcade lateral floor on the
- * ellipse keeps WOT turn-in alive (AM3 power-slide tool).
+ * Envelope: bite → peak plateau → progressive breakaway → recoverable slide.
+ * Sliding force never drops below tireRecoverFloor, so opposite-lock still
+ * has something to catch. Arcade, not Pacejka-as-sim.
  *
  * @returns {{fx:number, fy:number}}
  */
@@ -308,14 +323,13 @@ function combinedTire(alpha, kappa, Fz, muPeak, muSlide, slipPeak, surface, camb
     fy = Math.sign(fy) * fyKeep;
     fx = clamp(fx, -fxMax, fxMax);
   }
-  // Progressive breakaway — wide sweet spot (grip → slide → recover), not a cliff.
-  const soft = ARCADE_ASSIST.tireSlideSoft != null ? ARCADE_ASSIST.tireSlideSoft : 2.15;
+  const peakHold = ARCADE_ASSIST.tirePeakHold != null ? ARCADE_ASSIST.tirePeakHold : 1.08;
+  const soft = ARCADE_ASSIST.tireSlideSoft != null ? ARCADE_ASSIST.tireSlideSoft : 3.15;
+  const recoverFloor = ARCADE_ASSIST.tireRecoverFloor != null ? ARCADE_ASSIST.tireRecoverFloor : 0.42;
   const over = Math.max(Math.abs(alpha) / aPeak, Math.abs(kappa) / (kPeak * 1.45));
-  if (over > 1.0) {
-    const t = clamp((over - 1.0) / Math.max(1.1, soft), 0, 1);
-    // Smoothstep so mid-slide still has usable force for countersteer.
-    const u = t * t * (3 - 2 * t);
-    const slide = Ds / Math.max(D, 1);
+  const u = tireEnvelopeFalloff(over, peakHold, soft);
+  if (u > 0) {
+    const slide = Math.max(Ds / Math.max(D, 1), recoverFloor);
     fx = lerp(fx, fx * slide, u);
     fy = lerp(fy, fy * slide, u);
   }
@@ -798,6 +812,17 @@ export class Vehicle {
     const rearProbe = road.rear;
     const splitAxle = frontProbe.surface !== rearProbe.surface;
     const surface = this._feelSurface(frontProbe, rearProbe, dt, splitAxle);
+    // Player verge: keep a usable top speed. Grass/sand tables were a second
+    // parking brake on top of runoff drag — a cut should cost pace, not stop you.
+    if (!this.ai && this._q) {
+      const extra = Math.abs(this._q.lateral || 0) - (this._q.width || 10) * 0.5;
+      if (extra > 0.25) {
+        const t = clamp((extra - 0.25) / 5, 0, 1);
+        surface.speedScale = Math.max(surface.speedScale, lerp(0.96, 0.9, t));
+        surface.roll = Math.min(surface.roll, lerp(0.02, 0.032, t));
+        surface.sink = Math.min(surface.sink || 0, lerp(0.018, 0.036, t));
+      }
+    }
     this.surfaceId = surface.id;
 
     const cached = this._q;
@@ -866,16 +891,18 @@ export class Vehicle {
         yawRate: this.yawRate,
         speed: Math.abs(vx),
         vLat: vy,
+        steer: this.steer,
       });
-      // Momentum coast in the air — attitude trims slightly; do not stall the
-      // throw. Lateral/yaw bleed used to be ~2/s and killed hang speed.
+      // Coast the hang. Throttle/brake pitch the chassis; they do not add XZ
+      // speed. Steer trims yaw through leftover angular momentum.
       const keep = this.jump.airLongDrag(dt);
       vx *= keep;
       const latBleed = JUMP.airLatBleed != null ? JUMP.airLatBleed : 0.28;
       const yawBleed = JUMP.airYawBleed != null ? JUMP.airYawBleed : 0.35;
       vy *= 1 - latBleed * dt;
       r *= 1 - yawBleed * dt;
-      r += this.steer * 0.35 * dt;
+      const airSteer = JUMP.airSteerYaw != null ? JUMP.airSteerYaw : 0.4;
+      r += this.steer * airSteer * clamp(Math.abs(vx) / 36, 0.22, 1) * dt;
       this.omegaF *= 1 - 0.12 * dt;
       this.omegaR *= 1 - 0.12 * dt;
     }
@@ -976,36 +1003,38 @@ export class Vehicle {
     // the centre-line ribbon made HUD / dust / tire beds lag or lie at every
     // surface change — the opposite of "audible + visual signature per surface".
 
+    // Walls / rocks / tunnel lining must resolve in the air too. Skipping
+    // glance while airborne let hops punch the chassis through rock.
+    bounceOffRoad(this, q2, track);
+    glanceObstacles(this, track);
+    if (this._envDeep && this._hasGoodPose) {
+      // Impossible state: still deep in a solid after TOI + correction.
+      // Restore last validated XZ — never a hard-coded map coordinate.
+      this._noteGlitch("env-embed", {
+        x: this.position.x,
+        z: this.position.z,
+        speed: this.speed,
+        goodProgress: this._goodProgress,
+      });
+      const spd = Math.hypot(this.velocity.x, this.velocity.z);
+      this.position.x = this._goodX;
+      this.position.z = this._goodZ;
+      this.yaw = this._goodYaw;
+      const fx = Math.sin(this.yaw);
+      const fz = Math.cos(this.yaw);
+      this.velocity.x = fx * spd * 0.88;
+      this.velocity.z = fz * spd * 0.88;
+      this._envDeep = false;
+      this._envIntersect = false;
+    } else if (this._envIntersect) {
+      this._noteGlitch("env-intersect", {
+        x: this.position.x,
+        z: this.position.z,
+        yaw: this.yaw,
+        speed: this.speed,
+      });
+    }
     if (this.onGround) {
-      bounceOffRoad(this, q2, track);
-      glanceObstacles(this, track);
-      if (this._envDeep && this._hasGoodPose) {
-        // Impossible state: still deep in a solid after TOI + correction.
-        // Restore last validated XZ — never a hard-coded map coordinate.
-        this._noteGlitch("env-embed", {
-          x: this.position.x,
-          z: this.position.z,
-          speed: this.speed,
-          goodProgress: this._goodProgress,
-        });
-        const spd = Math.hypot(this.velocity.x, this.velocity.z);
-        this.position.x = this._goodX;
-        this.position.z = this._goodZ;
-        this.yaw = this._goodYaw;
-        const fx = Math.sin(this.yaw);
-        const fz = Math.cos(this.yaw);
-        this.velocity.x = fx * spd * 0.88;
-        this.velocity.z = fz * spd * 0.88;
-        this._envDeep = false;
-        this._envIntersect = false;
-      } else if (this._envIntersect) {
-        this._noteGlitch("env-intersect", {
-          x: this.position.x,
-          z: this.position.z,
-          yaw: this.yaw,
-          speed: this.speed,
-        });
-      }
       this._unstick(dt, track, q2);
     }
 
@@ -1159,21 +1188,20 @@ export class Vehicle {
 
     const vx = this.speed;
     const roadPitch = clamp(axles.pitch, -0.04, 0.55);
-    const roadVy = vx * Math.sin(roadPitch) * (JUMP.rampVyScale || 1);
 
     if (this.onGround && kind === "ramp") {
       const baseGrade = clamp(Math.max(this._slope, roadPitch), 0, 0.62);
       const lipGrade = this._lipGradeFromTrack(track, q2.dist, baseGrade);
       const rampGrade = Math.max(baseGrade, lipGrade);
-      const throwY = Math.max(0, vx * Math.tan(rampGrade));
-      this._rampThrow = Math.max(this._rampThrow * 0.88, throwY, roadVy * 1.15);
+      // Grade memory only — not a second vertical-energy accumulator.
       this._rampGrade = Math.max(this._rampGrade * 0.9, rampGrade);
+      this._rampThrow = 0;
     } else if (this.onGround && kind === "crest") {
       const lipGrade = this._lipGradeFromTrack(track, q2.dist, roadPitch);
-      this._rampThrow = Math.max(this._rampThrow * 0.97, roadVy * 1.1);
       this._rampGrade = Math.max(this._rampGrade * 0.95, roadPitch, lipGrade);
+      this._rampThrow = 0;
     } else if (this.onGround && kind !== "gap" && kind !== "land") {
-      this._rampThrow *= Math.exp(-4.5 * dt);
+      this._rampThrow = 0;
       this._rampGrade *= Math.exp(-4.5 * dt);
     }
 
@@ -1221,15 +1249,20 @@ export class Vehicle {
         this.onGround = false;
         this._airTime = 0;
         const lipGrade = this._lipGradeFromTrack(track, q2.dist, this._rampGrade);
-        const launchGrade = Math.max(this._rampGrade, roadPitch, this._slope, lipGrade, 0.02);
-        const springBoost =
-          this._suspCompress * (JUMP.springBurst || 2.7) * clamp(vx / 24, 0.12, 1.35);
-        const climbBoost = (this._rampClimb || 0) * (JUMP.climbThrowGain || 0.58);
-        const ballistic = vx * Math.sin(launchGrade) * (JUMP.rampVyScale || 0.8);
-        const throwBlend = Math.max(0, this._rampThrow) * (JUMP.throwBlend != null ? JUMP.throwBlend : 0.3);
-        const raw = Math.max(0, ballistic + throwBlend + climbBoost);
+        // Departure angle from axle/spline geometry. Pit samples are flat, so
+        // `_rampGrade` is the lip we just climbed — not extra energy.
+        const launchGrade = clamp(
+          Math.max(this._rampGrade, roadPitch, this._slope, lipGrade),
+          0,
+          0.62
+        );
+        const ballistic = Math.max(0, vx * Math.sin(launchGrade) * (JUMP.rampVyScale || 1));
+        const springRaw =
+          this._suspCompress * (JUMP.springBurst || 0.55) * clamp(vx / 28, 0, 1);
+        const springCap = ballistic * (JUMP.springFraction != null ? JUMP.springFraction : 0.18);
+        const springBoost = Math.min(springRaw, springCap);
         const surf = SURFACES[q2.surface] || SURFACES.dirt;
-        this.velY = this.jump.launch(raw, launchGrade, springBoost, {
+        this.velY = this.jump.launch(ballistic, launchGrade, springBoost, {
           pitchRate: -(this.pitchRate || 0),
           // Live mesh nose (aero + = up). Carry this so leave matches the ramp.
           meshNose: -(this.pitch || 0),
@@ -2911,13 +2944,14 @@ export class Vehicle {
     const f = track.sample(df, this._sFront);
     const r = track.sample(dr, this._sRear);
     if (!this._cheapFilt) this._cheapFilt = { f: f.y, r: r.y };
-    // Soft follow — 0.32 tracked ribbon noise and bobbed the pack mesh.
-    const k = 0.14;
+    // Follow the line tightly — lag used to leave the pack sitting above a drop.
+    const k = 0.55;
     this._cheapFilt.f += (f.y - this._cheapFilt.f) * k;
     this._cheapFilt.r += (r.y - this._cheapFilt.r) * k;
     const fy = this._cheapFilt.f;
     const ry = this._cheapFilt.r;
     const sampleMid = 0.5 * (fy + ry) + ROAD_DECK;
+    // Centre query is the visual deck under THIS car (lane / crown / micro).
     const target = groundY != null && Number.isFinite(groundY) ? groundY : sampleMid;
     const lift = target - sampleMid;
     copyProbe(this._axFront, fy + ROAD_DECK + lift, f.surface, f.surface, f.surface, 0, f.jumpKind);
@@ -3001,16 +3035,10 @@ export class Vehicle {
       return travel;
     }
     if (this.lowDetail) {
-      const fh = this._axFront.height;
-      const rh = this._axRear.height;
-      const pitchT = clamp((fh - rh) * 0.22, -0.04, 0.04);
-      const targets = [pitchT, pitchT, -pitchT, -pitchT];
-      const k = 1 - Math.exp(-28 * step);
-      for (let i = 0; i < 4; i++) {
-        const prev = travel[i];
-        travel[i] += (targets[i] - travel[i]) * k;
-        wVel[i] = (travel[i] - prev) / step;
-      }
+      // Mesh pitch already follows the axle plane. Fake pitch travel lifted the
+      // downhill wheels off the ribbon so the pack read as floating.
+      travel[0] = travel[1] = travel[2] = travel[3] = 0;
+      wVel[0] = wVel[1] = wVel[2] = wVel[3] = 0;
       this._roadRoll *= 0.88;
       return travel;
     }
@@ -3367,7 +3395,14 @@ export class Vehicle {
     const staticF = m * G * (lr / L) * down;
     const staticR = m * G * (lf / L) * down;
     const wtMul = HANDLING.weightTransferMul != null ? HANDLING.weightTransferMul : 2.28;
-    const dLong = ((m * this._ax * s.cgHeight) / L) * wtMul;
+    // Pedal intent loads the axle before tire force has fully built `_ax`.
+    // Brake → front bite / light rear. Throttle → rear squat / light nose.
+    // Coast (pedals off) keeps the existing `_ax` authority — not a second sim.
+    const pedalBlend = HANDLING.pedalLoadBlend != null ? HANDLING.pedalLoadBlend : 0.34;
+    const pedal = clamp(this.throttle + this.brake + hb * 0.6, 0, 1);
+    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - hb * 0.4) * G;
+    const axLoad = this._ax + (axIntent - this._ax) * pedalBlend * pedal;
+    const dLong = ((m * axLoad * s.cgHeight) / L) * wtMul;
     // Suspension compression feeds axle load (travel − = hub into arch).
     const wt = this._wheelTravel;
     const suspGain = HANDLING.suspLoadGain != null ? HANDLING.suspLoadGain : 9200;
@@ -3453,7 +3488,8 @@ export class Vehicle {
     } else muR /= Math.max(0.94, Math.min(1.12, s.driftMul || 1));
     if (slideIntent) {
       // Power oversteer: throttle dumps rear grip so the tail walks out.
-      muR *= lerp(1, 0.28, clamp(Math.abs(st) * this.throttle * 2.05, 0, 1));
+      // Floor stays catchable — the player caused the slide, they can save it.
+      muR *= lerp(1, 0.42, clamp(Math.abs(st) * this.throttle * 1.65, 0, 1));
     }
     if (this._shiftKick > 0.08) muR *= lerp(1, 0.5, Math.min(1, this._shiftKick));
     if (shock > 0.05) {
@@ -3644,16 +3680,18 @@ export class Vehicle {
     // driftEase near 1.0 = planted; >1 softens mud for easier power slides.
     latG /= Math.max(0.92, Math.min(1.28, ease));
     if (slideIntent) {
-      latG *= lerp(1, 0.4, clamp(Math.abs(st) * 2.8, 0, 1) * this.throttle);
+      latG *= lerp(1, 0.52, clamp(Math.abs(st) * 2.8, 0, 1) * this.throttle);
     }
-    const rearSliding = Math.abs(this._alphaR) > peakA * 1.0;
-    const frontSliding = Math.abs(this._alphaF) > peakA * 1.05;
-    if (rearSliding || frontSliding || slideIntent) {
-      latG *= 0.78;
-    }
+    // Progressive yaw-grip falloff — same envelope as the tire, not a binary clip.
+    const peakHoldA = ARCADE_ASSIST.tirePeakHold != null ? ARCADE_ASSIST.tirePeakHold : 1.08;
+    const overA = Math.max(
+      Math.abs(this._alphaR) / Math.max(0.04, peakA),
+      Math.abs(this._alphaF) / Math.max(0.04, peakA * 1.05)
+    );
+    latG *= lerp(1, 0.86, tireEnvelopeFalloff(overA, peakHoldA, 0.75));
     const slideAmt = clamp(Math.abs(vy) / 7.5, 0, 1);
     if (slideAmt > 0.08) {
-      const gripMul = HANDLING.slideGripMul != null ? HANDLING.slideGripMul : 0.26;
+      const gripMul = HANDLING.slideGripMul != null ? HANDLING.slideGripMul : 0.4;
       latG *= lerp(1, gripMul, slideAmt * slideAmt);
     }
     latG *= lerp(1, 0.78, rearLight);

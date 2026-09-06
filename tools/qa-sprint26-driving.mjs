@@ -44,6 +44,11 @@ check(
   "light runoff scrub, not a wall"
 );
 check(
+  "player off-road scrub is not a brake",
+  /PLAYER_SCRUB_MAX\s*=\s*0\.00[1-9]/.test(collide) && /PLAYER_RUNOFF_FLOOR\s*=\s*(1[2-9]|[2-9]\d)/.test(collide),
+  "PLAYER_SCRUB_MAX under 1%/frame and RUNOFF_FLOOR >= 12 m/s"
+);
+check(
   "player yaw guide suppressed",
   /never stage autopilot/.test(collide),
   "no free heading follow for player"

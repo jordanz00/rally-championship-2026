@@ -38,7 +38,7 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 check("leave carries live mesh nose", /meshNose/.test(jump) && /leaveCarry/.test(config) && /meshNose: -\(this\.pitch/.test(vehicle));
 check("takeoff locks mesh to leave attitude", /this\._visPitch = -this\.jump\.noseUp/.test(vehicle));
 check("air pitch is soft trim (not RC flip)", /airPitchRate:\s*3\.2/.test(config) && /airPitchInertia:\s*2\.05/.test(config));
-check("spring burst below old trampoline", /springBurst:\s*1\.85/.test(config) && /throwBlend:\s*0\.45/.test(config));
+check("leave is ballistic v·sinθ, spring capped", /springFraction:\s*0\.18/.test(config) && /throwBlend:\s*0,/.test(config) && /jumpScaleInfluence:\s*0/.test(config) && /lipGradeInfluence:\s*0/.test(config));
 check("aero float reduced", /aeroFloat:\s*0\.12/.test(config));
 check(
   "landing settle is snappy with bounce spring",
@@ -69,7 +69,7 @@ try {
   a.reset();
   a.technique = 0.9;
   const tech = a.launch(6, 0.12, 0.4, { speed: 28, dist: 200, lateral: 0, meshNose: 0.12, jumpLip: 1 });
-  check("technique cuts launch vs flat-out", tech < flat * 0.92, `flat=${flat.toFixed(2)} tech=${tech.toFixed(2)}`);
+  check("technique unloads spring, not the ballistic", tech < flat && tech >= 6 * 0.98, `flat=${flat.toFixed(2)} tech=${tech.toFixed(2)}`);
   const b = new JumpModel();
   b.noseUp = 0.2;
   for (let i = 0; i < 45; i++) b.air(1 / 60, 0, 1, { speed: 30 });
