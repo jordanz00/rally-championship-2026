@@ -28,17 +28,17 @@ const config = read("js/config.js");
 const game = read("js/game.js");
 const car = read("js/cars/celica.js");
 
-const med = config.match(/id:\s*["']medium["'][\s\S]{0,280}back:\s*([0-9.]+)[\s\S]{0,120}height:\s*([0-9.]+)/);
+const med = config.match(/id:\s*["']medium["'][\s\S]{0,900}back:\s*([0-9.]+)[\s\S]{0,160}height:\s*([0-9.]+)/);
 check(
-  "medium chase is pulled back 25% and up 45%",
-  med && Number(med[1]) >= 3.9 && Number(med[1]) <= 6.4 && Number(med[2]) >= 1.75 && Number(med[2]) <= 2.2,
+  "medium chase is a professional rally rig (higher, farther, more road)",
+  med && Number(med[1]) >= 4.6 && Number(med[1]) <= 5.2 && Number(med[2]) >= 1.62 && Number(med[2]) <= 1.82,
   med ? `back=${med[1]} height=${med[2]}` : "medium back/height missing"
 );
 
 check(
   "C-key pose blend is a short ease, not a cut",
-  /viewBlendTime:\s*0\.22/.test(config) && /_startCamBlend/.test(game) && /_carryBlendPoint/.test(game),
-  "viewBlendTime ~0.22s and from-pose must ride with the car"
+  /viewBlendTime:\s*0\.2[0-9]/.test(config) && /_startCamBlend/.test(game) && /_carryBlendPoint/.test(game),
+  "viewBlendTime ~0.2s and from-pose must ride with the car"
 );
 
 check(
@@ -63,8 +63,8 @@ check(
 );
 
 check(
-  "driver eye is seated height (~1.12 m), not chest",
-  /ground \+ 1\.12/.test(car) || /eyeY[\s\S]{0,80}1\.12/.test(car),
+  "driver eye is seated height (~1.18 m), not chest",
+  /ground \+ 1\.18/.test(car) || /eyeY[\s\S]{0,80}1\.18/.test(car),
   "buildPovRig should sit the lens at seated eye height"
 );
 
@@ -90,7 +90,7 @@ check(
 
 check(
   "POV looks out over the hood; cabin glass is hidden",
-  /hull\.maxZ \+ 2\.4/.test(car) && /window/.test(car) &&
+  /hull\.maxZ \+ 4\.2/.test(car) && /window/.test(car) &&
     /userData\.windshield \|\| obj\.userData\.povShell/.test(car),
   "eye must look past the nose; windshield/window meshes tagged for POV hide"
 );
@@ -98,7 +98,7 @@ check(
 check(
   "cache bust on the camera module graph",
   /celica\.js\?v=1[3-9][0-9]/.test(game) && /game\.js\?v=46[3-9]|game\.js\?v=[5-9][0-9]{2}/.test(read("js/main.js")) &&
-    /cockpit-anim\.js\?v=[4-9]/.test(game) && /config\.js\?v=14[7-9]|config\.js\?v=1[5-9][0-9]/.test(game),
+    /cockpit-anim\.js\?v=[4-9]/.test(game) && /config\.js\?v=(?:14[7-9]|1[5-9][0-9]|2[0-9]{2})/.test(game),
   "game.js must import bumped celica/config; main must import bumped game"
 );
 

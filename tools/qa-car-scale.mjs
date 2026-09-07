@@ -32,6 +32,12 @@ check(
 check("scale inner GLB not wrapper", /inner\.scale\.multiplyScalar\(targetLen \/ len\)/.test(celica));
 check("wrapper stays identity scale", /root\.scale\.set\(1, 1, 1\)/.test(celica));
 check(
+  "tire plant shifts visual children, not root.position",
+  /kids\[i\]\.position\.y \+= delta/.test(celica) &&
+    /root\.position\.set\(0, 0, 0\)/.test(celica) &&
+    !/root\.position\.y -= minY/.test(celica)
+);
+check(
   "hero plants after merge",
   /mergeBodyPanels\(root, \{ protectPov: true \}\)[\s\S]*plantOnContactPatch\(root\)/.test(celica)
 );

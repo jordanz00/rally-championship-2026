@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=136";
-import { getSurface } from "./physics/surfaces.js?v=52";
-import { AI, CARS } from "./config.js?v=208";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=165";
+import { Vehicle } from "./physics/vehicle.js?v=147";
+import { getSurface } from "./physics/surfaces.js?v=55";
+import { AI, CARS } from "./config.js?v=218";
+import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=179";
 
 const G = 9.81;
 
@@ -211,6 +211,15 @@ export class Opponent {
     this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId);
     this.mesh.scale.setScalar(1);
     this._steer = 0;
+    /** Persistent Vehicle.step payload — mutated each tick, never allocated. */
+    this._input = {
+      steer: 0,
+      throttle: 0,
+      brake: 0,
+      handbrake: 0,
+      shiftUp: false,
+      shiftDown: false,
+    };
     this._avoid = 0;
     this._driftSeen = 0;
     this._jamT = 0;
@@ -446,18 +455,14 @@ export class Opponent {
       hb = 0;
     }
 
-    v.step(
-      dt,
-      {
-        steer: this._steer,
-        throttle: clamp(throttle, 0, 1),
-        brake: clamp(brake, 0, 1),
-        handbrake: hb,
-        shiftUp: false,
-        shiftDown: false,
-      },
-      track
-    );
+    const input = this._input;
+    input.steer = this._steer;
+    input.throttle = clamp(throttle, 0, 1);
+    input.brake = clamp(brake, 0, 1);
+    input.handbrake = hb;
+    input.shiftUp = false;
+    input.shiftDown = false;
+    v.step(dt, input, track);
   }
 
   /**

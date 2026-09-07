@@ -76,8 +76,8 @@ check(
 );
 check(
   "short mouth throat only (no deep solid fill into the bore)",
-  /throatLen:\s*9/.test(trackSrc) &&
-    /faceDepth:\s*16/.test(trackSrc) &&
+  (/throatLen:\s*9/.test(trackSrc) || /throatLen:\s*forest \? 5 : 9/.test(trackSrc)) &&
+    (/faceDepth:\s*16/.test(trackSrc) || /faceDepth:\s*forest \? 7 : 16/.test(trackSrc)) &&
     !/throatLen:\s*32/.test(trackSrc),
   "long throat + plug sealed the driveable tunnel"
 );
@@ -127,7 +127,9 @@ check(
 );
 check(
   "arched bore lining (not box walls)",
-  /tunnelBoreLining/.test(trackSrc) && /tunnelPortalArchGeometry\(liningHalf/.test(trackSrc),
+  /tunnelBoreLining/.test(trackSrc) &&
+    (/tunnelLiningSegmentGeometry\(/.test(trackSrc) ||
+      /tunnelPortalArchGeometry\(liningHalf/.test(trackSrc)),
   "box walls made enter/exit shape-swap fake"
 );
 check(
@@ -232,9 +234,18 @@ check(
   "ribbon scrub must cover both mouths"
 );
 check(
-  "portal openH scales with road width",
-  /_tunnelOpenHeight/.test(trackSrc),
-  "dynamic clearance spec"
+  "Forest portal stays short on a curved bore",
+  /faceDepth:\s*forest \? 7 : 16/.test(trackSrc) &&
+    /alongMin:\s*forestPortal \? -4/.test(trackSrc) &&
+    /scenery\) === "forest"\) return/.test(trackSrc),
+  "long Desert extrusion cut the Forest medium-left"
+);
+check(
+  "Forest lining follows the spline (thick open rings)",
+  /tunnelLiningSegmentGeometry\(/.test(trackSrc) &&
+    /liningDepth = 2\.2/.test(trackSrc) &&
+    /Math\.abs\(dHead\) > 0\.045/.test(trackSrc),
+  "Z-stretched arches occupied the chord"
 );
 
 if (fail) {
@@ -353,7 +364,11 @@ async function main() {
   });
 
   if (!probe || !probe.ok) {
-    check("headed probe", false, (probe && probe.reason) || "probe failed");
+    if (probe && probe.reason === "no tunnel runs") {
+      check("Saturn Desert has no tunnel (mouth probe skipped)", true);
+    } else {
+      check("headed probe", false, (probe && probe.reason) || "probe failed");
+    }
   } else {
     check("tunnel start near climb", probe.startDist > 1100 && probe.startDist < 1450, `at ${probe.startDist}`);
     check("mouth prisms present", probe.prisms >= 2, `count=${probe.prisms}`);

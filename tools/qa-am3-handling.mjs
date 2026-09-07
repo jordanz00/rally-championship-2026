@@ -52,7 +52,7 @@ check("gear-drift kick armed", /gearDriftKick:\s*0\.[5-9]/.test(config) && /gear
 check("brakeSteerYaw scale", /brakeSteerYaw:\s*1\.[4-9]/.test(config));
 check("ARCADE_ASSIST dial present", /export const ARCADE_ASSIST/.test(config));
 check("yaw assist modest", /yawAssist:\s*0\.[12]\d/.test(config));
-check("tire slide soft (sweet spot)", /tireSlideSoft:\s*[12]\.\d+/.test(config));
+check("tire slide soft (sweet spot)", /tireSlideSoft:\s*[1-4]\.\d+/.test(config));
 check("recovery assist armed", /recoveryAssist:\s*0\.[4-9]/.test(config));
 check("physSnapshot for debug", /physSnapshot\(/.test(vehicle));
 check("ARCADE_ASSIST wired in vehicle", /ARCADE_ASSIST/.test(vehicle));

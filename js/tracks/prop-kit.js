@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=208";
+import { VISUAL } from "../config.js?v=218";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -93,6 +93,12 @@ export const PROP_KINDS = Object.freeze([
   "sign_highway",
   "bench",
   "crate",
+  "forest_hero_boulder_a",
+  "forest_hero_boulder_b",
+  "forest_hero_moss_set_a",
+  "forest_hero_moss_set_b",
+  "forest_hero_log",
+  "forest_hero_fern",
 ]);
 
 /** Authored trackside / gallery / gate props (Kenney CC0 packs). */
@@ -202,6 +208,26 @@ export const FOREST_ROCK_KINDS = Object.freeze([
   "forest_rock_d",
 ]);
 
+/**
+ * Forest close-range hero props — Poly Haven CC0 photogrammetry, 1k PBR.
+ * Procedural placement only. Not used on Desert / Mountain / Lakeside.
+ */
+export const FOREST_HERO_KINDS = Object.freeze([
+  "forest_hero_boulder_a",
+  "forest_hero_boulder_b",
+  "forest_hero_moss_set_a",
+  "forest_hero_moss_set_b",
+  "forest_hero_log",
+  "forest_hero_fern",
+]);
+
+export const FOREST_HERO_ROCK_KINDS = Object.freeze([
+  "forest_hero_boulder_a",
+  "forest_hero_boulder_b",
+  "forest_hero_moss_set_a",
+  "forest_hero_moss_set_b",
+]);
+
 /** @type {Record<string, THREE.Material>} */
 const MAT_CACHE = Object.create(null);
 
@@ -226,7 +252,7 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "20";
+const KIT_ASSET_V = "22";
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([
@@ -446,7 +472,15 @@ export function propNatureMaterial(kind) {
     map: map || null,
     color: map ? 0xffffff : tintHex(kind),
     vertexColors: !kind.startsWith("forest_"),
-    roughness: kind.startsWith("rock_") || kind.startsWith("forest_rock") ? 0.94 : 0.88,
+    roughness: kind.startsWith("forest_rock")
+      ? 0.88
+      : kind === "rock_smallA"
+        ? 0.9
+        : kind === "rock_largeB"
+          ? 0.91
+          : kind.startsWith("rock_")
+            ? 0.94
+            : 0.88,
     metalness: 0.02,
     envMapIntensity: (VISUAL.tier || 0) >= 3 ? 0.22 : 0.14,
     flatShading: false,
@@ -468,7 +502,8 @@ export function kindsForScenery(scenery) {
   const s = scenery || "desert";
   // Mountain never plants spectators — skip the 12 character GLBs.
   if (s === "mountain") return MOUNTAIN_NATURE.concat(TRACKSIDE_KINDS);
-  if (s === "forest" || s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE, TRACKSIDE_KINDS);
+  if (s === "forest") return CROWD_ALL.concat(FOREST_NATURE, FOREST_HERO_KINDS, TRACKSIDE_KINDS);
+  if (s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE, TRACKSIDE_KINDS);
   return CROWD_ALL.concat(DESERT_NATURE, TRACKSIDE_KINDS);
 }
 
@@ -529,23 +564,33 @@ function ensureKind(kind) {
       CACHE[kind] = geo;
       if (kind.startsWith("character-")) {
         // Prefer authored body + cheer arms from the densified biped GLB.
-        let parts = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
-        // Quaternius exports a single crowd-body — split arms in-engine for cheer.
-        if (parts && parts.body && !parts.armL && !parts.armR) {
-          const split = splitCrowdCharacter(parts.body);
-          split.material = parts.material;
-          parts = split;
+        let parts = null;
+        try {
+          parts = extractCrowdCharacterParts(root, kind) || (geo ? splitCrowdCharacter(geo) : null);
+          // Quaternius exports a single crowd-body — split arms in-engine for cheer.
+          if (parts && parts.body && !parts.armL && !parts.armR) {
+            const split = splitCrowdCharacter(parts.body);
+            split.material = parts.material;
+            parts = split;
+          }
+        } catch (charErr) {
+          console.warn(`[prop-kit] character parse failed: ${kind}`, charErr);
+          parts = geo ? splitCrowdCharacter(geo) : null;
         }
         CHAR_PARTS[kind] = parts;
         if (CHAR_PARTS[kind]?.body) CACHE[kind] = CHAR_PARTS[kind].body;
-      } else if (TRACKSIDE_KINDS.includes(kind) && !MAT_CACHE[kind]) {
-        // Keep Kenney pack colours / maps instead of flat grey fallback.
+      } else if ((TRACKSIDE_KINDS.includes(kind) || kind.startsWith("forest_hero_")) && !MAT_CACHE[kind]) {
         let srcMat = null;
         root.traverse((obj) => {
           if (srcMat || (!obj.isMesh && !obj.isSkinnedMesh)) return;
           srcMat = obj.material;
         });
-        if (srcMat) MAT_CACHE[kind] = adoptPackMaterial(srcMat, kind, { alphaTest: 0 });
+        if (srcMat) {
+          MAT_CACHE[kind] = adoptPackMaterial(srcMat, kind, {
+            alphaTest: kind.includes("fern") ? 0.38 : 0,
+            doubleSide: kind.includes("fern"),
+          });
+        }
       }
     } catch (err) {
       console.warn(`[prop-kit] missing or failed: ${url}`, err);
@@ -868,7 +913,7 @@ async function loadForestTreePack(loader, assetV) {
     }
 
     console.info(
-      `[prop-kit] forest pack ready — trees ${FOREST_TREE_KINDS.filter((k) => FOREST_PARTS[k]).length}/${FOREST_TREE_KINDS.length}, cards ${FOREST_CARD_KINDS.filter((k) => CACHE[k]).length}`
+      `[prop-kit] forest pack ready — trees ${FOREST_TREE_KINDS.filter((k) => FOREST_PARTS[k]).length}/${FOREST_TREE_KINDS.length}, cards ${FOREST_CARD_KINDS.filter((k) => CACHE[k]).length}, rocks ${FOREST_ROCK_KINDS.filter((k) => CACHE[k]).length}`
     );
   } catch (err) {
     console.warn(`[prop-kit] forest pack failed: ${url}`, err);
@@ -1010,6 +1055,12 @@ function adoptPackMaterial(src, kind, opts) {
   mat.fog = true;
   mat.flatShading = false;
   mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.28 : 0.16;
+  if (kind.startsWith("forest_rock")) {
+    const idx = (kind.charCodeAt(kind.length - 1) || 97) - 97;
+    mat.roughness = 0.86 + (idx % 4) * 0.028;
+    mat.metalness = 0.03;
+    mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.34 : 0.2;
+  }
   mat.alphaTest = opts.alphaTest != null ? opts.alphaTest : 0;
   mat.transparent = false;
   mat.depthWrite = true;
@@ -1128,13 +1179,23 @@ function extractCrowdCharacterParts(root, kind) {
     if (/arm[-_]?l|armleft|crowd-arm-l/.test(n)) armLGeo = part;
     else if (/arm[-_]?r|armright|crowd-arm-r/.test(n)) armRGeo = part;
     else if (/body|torso|crowd-body|character|face|sphere/i.test(n) || !bodyGeo) {
-      // Quaternius exports multiple meshes (Face + body); merge later if needed.
+      // Quaternius multi-prim (Face/eyes/hair/body): keep the largest part so
+      // mergeGeometries nulls never wipe bodyGeo mid-traverse (Desert crash).
       if (!bodyGeo) bodyGeo = part;
       else {
+        const a = bodyGeo.getAttribute("position")?.count || 0;
+        const b = part.getAttribute("position")?.count || 0;
         const merged = mergeGeometries([bodyGeo, part], false);
-        bodyGeo.dispose();
-        part.dispose();
-        bodyGeo = merged;
+        if (merged) {
+          bodyGeo.dispose();
+          part.dispose();
+          bodyGeo = merged;
+        } else if (b > a) {
+          bodyGeo.dispose();
+          bodyGeo = part;
+        } else {
+          part.dispose();
+        }
       }
     }
   });
@@ -1325,7 +1386,9 @@ function meshRole(name, kind) {
   const n = String(name || "");
   if (kind.startsWith("character-")) return "character";
   if (kind.startsWith("forest_tree") || kind.startsWith("forest_card")) return "canopy";
-  if (kind.startsWith("forest_rock")) return "rock";
+  if (kind.startsWith("forest_hero_log")) return "bark";
+  if (kind.startsWith("forest_hero_fern")) return "canopy";
+  if (kind.startsWith("forest_hero_")) return "rock";
   if (/trunk|bark|stem|log|wood/i.test(n)) return "bark";
   if (/canopy|leaf|foliage|frond|bush|needle|branch/i.test(n)) return "canopy";
   if (kind.startsWith("rock_")) return "rock";
@@ -1501,6 +1564,12 @@ function targetHeightForKind(kind, currentHeight) {
   if (kind === "animal-gazelle") return SCALE.gazelle;
   if (kind === "cactus_tall") return SCALE.cactusTall;
   if (kind === "cactus_short") return SCALE.cactusShort;
+  if (kind === "forest_hero_boulder_b") return 0.85;
+  if (kind === "forest_hero_fern") {
+    if (currentHeight < 0.7) return 0.95;
+    return null;
+  }
+  if (kind.startsWith("forest_hero_")) return null;
   if (kind.startsWith("rock_")) return SCALE.rock;
   if (kind.startsWith("plant_bush")) return SCALE.bush;
   if (kind === "log_large") return SCALE.log;

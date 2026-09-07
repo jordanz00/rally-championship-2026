@@ -358,6 +358,160 @@ function checkVersionConsistency(htmlRefs) {
   if (!stale) pass("versions", "no module looks newer than the file that versions it");
 }
 
+/**
+ * game.js and ai.js must share Vehicle + celica module instances. Dual ?v=
+ * already FAILs in checkVersionConsistency; this names the hot-path contract
+ * so a missing import cannot silently fork the garage or the physics class.
+ */
+function checkHotPathSingletons() {
+  const game = read(path.join(ROOT, "js/game.js"));
+  const ai = read(path.join(ROOT, "js/ai.js"));
+  const vehicle = read(path.join(ROOT, "js/physics/vehicle.js"));
+  const ver = (src, name) => (src.match(new RegExp(`${name}\\.js\\?v=(\\d+)`)) || [])[1] || "";
+  const pairs = [
+    ["vehicle", ver(game, "vehicle"), ver(ai, "vehicle")],
+    ["celica", ver(game, "celica"), ver(ai, "celica")],
+    ["collide", ver(game, "collide"), ver(vehicle, "collide")],
+  ];
+  let bad = 0;
+  for (const [name, a, b] of pairs) {
+    if (a && b && a === b) {
+      pass("singletons", `${name}.js?v=${a} is one instance on the hot path`);
+    } else {
+      bad++;
+      fail(
+        "singletons",
+        `${name}.js version mismatch — ${a || "missing"} vs ${b || "missing"}`,
+        name === "collide" ? "js/physics/vehicle.js" : "js/ai.js"
+      );
+    }
+  }
+  if (!bad) pass("singletons", "game ↔ ai ↔ collide share one Vehicle / celica / collide instance");
+}
+
+/**
+ * Stream shader compile must not run on countdown / present-freeze frames.
+ * Overlay drain owns the start-grid queue; leftover race streaming may compile
+ * only after GO warms, into the scratch RT.
+ */
+function checkCountdownCompileGate() {
+  const game = read(path.join(ROOT, "js/game.js"));
+  const fn = game.match(/_compileStreamSlices\s*\([^)]*\)\s*\{[\s\S]*?\n  \}/);
+  if (!fn) {
+    fail("compile-gate", "_compileStreamSlices is missing", "js/game.js");
+    return;
+  }
+  const body = fn[0];
+  const needs = [
+    ["countdown", /state\s*===\s*["']countdown["']/],
+    ["presentFrozen", /_presentFrozen/],
+    ["raceWarmFrames", /_raceWarmFrames/],
+  ];
+  let bad = 0;
+  for (const [name, re] of needs) {
+    if (re.test(body)) {
+      pass("compile-gate", `_compileStreamSlices refuses ${name}`);
+    } else {
+      bad++;
+      fail("compile-gate", `_compileStreamSlices must refuse ${name}`, "js/game.js");
+    }
+  }
+  if (!/_drainStreamCompileUnderOverlay/.test(game)) {
+    fail("compile-gate", "loading overlay must drain stream compile before HUD 3", "js/game.js");
+  } else if (!bad) {
+    pass("compile-gate", "stream compile drains under the load overlay before 3-2-1");
+  }
+}
+
+/**
+ * Pack control objects used to be allocated inside Opponent._drive every 60 Hz
+ * step (14 rivals × 60 ≈ 840 objects/s). Vehicle.step only reads fields
+ * synchronously, so each rival keeps one mutated payload.
+ */
+function checkAiInputReuse() {
+  const ai = read(path.join(ROOT, "js/ai.js"));
+  if (/v\.step\(\s*dt,\s*\{/.test(ai)) {
+    fail(
+      "ai-gc",
+      "Opponent._drive allocates a new Vehicle.step payload every physics tick",
+      "js/ai.js"
+    );
+    return;
+  }
+  if (/this\._input/.test(ai) && /v\.step\(\s*dt,\s*(?:input|this\._input)/.test(ai)) {
+    pass("ai-gc", "each rival reuses a persistent Vehicle.step input object");
+    return;
+  }
+  fail("ai-gc", "could not confirm persistent AI input reuse", "js/ai.js");
+}
+
+/**
+ * Pack presentation cost is near/mid/far on the Opponent, never Vehicle.
+ * Far still uses STREAM.rivalShadowFar; dust/marks must not emit for the far band.
+ */
+function checkRivalFxBands() {
+  const game = read(path.join(ROOT, "js/game.js"));
+  const ai = read(path.join(ROOT, "js/ai.js"));
+  if (!/rivalShadowFar/.test(game)) {
+    fail("rival-fx", "far rival shadows must still key off rivalShadowFar", "js/game.js");
+    return;
+  }
+  if (!/fxBand === 2/.test(game) || !/fxBand !== 0/.test(game)) {
+    fail("rival-fx", "dust/tire emit must skip far (and tire marks skip mid)", "js/game.js");
+    return;
+  }
+  if (/vehicle\.fxBand/.test(game) || /\.fxBand/.test(ai)) {
+    fail("rival-fx", "fxBand must stay on Opponent presentation, not Vehicle / ai.js", "js/game.js");
+    return;
+  }
+  pass("rival-fx", "near/mid/far rival FX is presentation-only; Vehicle unchanged");
+}
+
+/**
+ * Tunnel lighting must follow Track.tunnelShade continuously. A 0.04/0.98 snap
+ * plus a 16.5 exit rate dumped Desert mud to near-black on mouth exit.
+ * Countdown compile stays gated separately.
+ */
+function checkLightingContinuity() {
+  const rig = read(path.join(ROOT, "js/gfx/lighting-rig.js"));
+  const game = read(path.join(ROOT, "js/game.js"));
+  if (/tunnelBlend\s*<\s*0\.04/.test(rig) || /tunnelBlend\s*>\s*0\.98/.test(rig)) {
+    fail(
+      "lighting",
+      "updateRaceLightFollow must not snap tunnelBlend at 0.04 / 0.98",
+      "js/gfx/lighting-rig.js"
+    );
+    return;
+  }
+  if (/16\.5\s*:\s*9\.2/.test(game)) {
+    fail("lighting", "tunnel exit must not use the old 16.5/9.2 snap rates", "js/game.js");
+    return;
+  }
+  if (!/tunnelShade/.test(game) || !/_presentFrozen/.test(game)) {
+    fail("lighting", "race lights must follow tunnelShade and present-freeze", "js/game.js");
+    return;
+  }
+  const config = read(path.join(ROOT, "js/config.js"));
+  const cave = /caveInt:\s*([0-9.]+)/.exec(config);
+  if (!cave) {
+    fail("lighting", "TUNNEL.caveInt missing — cave fill must stay one existing knob", "js/config.js");
+    return;
+  }
+  if (Number(cave[1]) >= 42) {
+    fail(
+      "lighting",
+      "TUNNEL.caveInt 42+ fills the Forest deep bore (ACES scene wash, not exposure)",
+      "js/config.js"
+    );
+    return;
+  }
+  if (/deepBoreInt/.test(config) || /deepBoreIntensity/.test(game)) {
+    fail("lighting", "do not add a second deep-bore intensity — tune TUNNEL.caveInt", "js/config.js");
+    return;
+  }
+  pass("lighting", "tunnel blend is continuous; caveInt is the single in-bore fill knob");
+}
+
 /* ------------------------------------------------------------------ */
 /* 4. No remote / CDN assets                                           */
 /* ------------------------------------------------------------------ */
@@ -590,6 +744,11 @@ collectImports();
 checkImportsResolve();
 const htmlRefs = checkHtmlAssets();
 checkVersionConsistency(htmlRefs);
+checkHotPathSingletons();
+checkCountdownCompileGate();
+checkAiInputReuse();
+checkRivalFxBands();
+checkLightingContinuity();
 checkNoRemoteAssets();
 checkUnsafeDom();
 checkSecrets();

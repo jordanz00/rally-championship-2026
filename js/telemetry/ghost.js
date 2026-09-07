@@ -7,8 +7,14 @@
  * HOW IT CONNECTS: game.js race loop; time attack loads best on grid.
  */
 
-const GHOST_KEY = "rally-ghost-v1";
+/** Storage bucket. Bump the key when the sample schema changes. */
+const GHOST_KEY = "rally-ghost-v2";
 const SAMPLE_HZ = 10;
+/**
+ * Reject ghosts recorded on a different ribbon / physics revision.
+ * Saturn 2026-09 layouts made v1 Desert/Forest/Mountain samples nonsense.
+ */
+export const GHOST_LAYOUT_REV = "saturn-2026-09";
 
 /**
  * @typedef {{t:number,x:number,y:number,z:number,yaw:number,speed:number,gear?:number}} GhostSample
@@ -71,6 +77,7 @@ export class GhostRecorder {
     return {
       courseId: this.courseId,
       carId: this.carId,
+      layoutRev: GHOST_LAYOUT_REV,
       lapTime: this.t,
       samples: this.samples,
     };
@@ -81,6 +88,7 @@ export class GhostRecorder {
    */
   static saveBest(data) {
     if (!data || !data.samples?.length) return false;
+    if (data.layoutRev !== GHOST_LAYOUT_REV) return false;
     try {
       const all = GhostRecorder.loadAll();
       const key = `${data.courseId}:${data.carId}`;
@@ -112,7 +120,9 @@ export class GhostRecorder {
    */
   static loadBest(courseId, carId) {
     const all = GhostRecorder.loadAll();
-    return all[`${courseId}:${carId}`] || null;
+    const rec = all[`${courseId}:${carId}`];
+    if (!rec || rec.layoutRev !== GHOST_LAYOUT_REV) return null;
+    return rec;
   }
 }
 

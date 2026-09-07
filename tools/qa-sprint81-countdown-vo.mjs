@@ -41,6 +41,10 @@ check("countGo plays count-go", /_playCountVo\("count-go"\)/.test(engine));
 check("HUD 3 fires with countBeep(3) when the screen is up", /flashMessage\("3"\)/.test(game) && /countBeep\(3\)/.test(game));
 check("HUD 2/1 cross the remaining-time ticks", /flashMessage\("2"\)/.test(game) && /flashMessage\("1"\)/.test(game));
 check("GO! and countGo on the same tick", /flashMessage\("GO!"\)/.test(game) && /countGo\(\)/.test(game));
+check(
+  "pace notes wait until GO VO ends plus 2000 ms",
+  /armCountVo/.test(engine) && /PACE_AFTER_COUNT_MS = 2000/.test(engine) && /armCountVo\(\)/.test(game)
+);
 check("countdown holds under the load fade", /_countHold/.test(game));
 check("Daniel unified nav voice attribution", /Daniel/.test(navAttr) && /countdown|start-grid|three/i.test(navAttr));
 check("nav ATTRIBUTION names countdown slices", /5-4-3-2-1-GO/.test(navAttr) || /start-grid/.test(navAttr) || /Countdown:/.test(navAttr));

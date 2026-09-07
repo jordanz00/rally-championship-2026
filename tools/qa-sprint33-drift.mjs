@@ -49,7 +49,7 @@ check("hb yaw kick strong", /handbrakeYawKick:\s*[3-9]\.\d+/.test(config), "init
 check("hb power mul strong", /handbrakePowerMul:\s*[2-9]\.\d+/.test(config), "power oversteer");
 check("hb bleed low", /handbrakeBleedMul:\s*0\.0[0-3]\d/.test(config), "long e-brake carry");
 check("driftBleedMul low", /driftBleedMul:\s*0\.0[0-4]\d/.test(config), "throttle carry");
-check("slideGripMul slippery", /slideGripMul:\s*0\.[12]\d/.test(config), "angle grip");
+check("slideGripMul recoverable", /slideGripMul:\s*0\.[3-4]\d*/.test(config), "catchable angle grip");
 check("sand loose", /driftEase:\s*1\.[4-9]\d/.test(config), "sand pitch-in");
 check("gravel brakeYaw", /brakeYaw:\s*0\.[6-9]\d/.test(config), "gravel brake-to-slide");
 check("tc dumps in drift", /tcMul = slideIntent \|\| hb > hbEnter \? 0\.12/.test(vehicle), "wheelspin hold");

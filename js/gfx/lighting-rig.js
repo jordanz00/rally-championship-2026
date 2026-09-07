@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=209";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=218";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -90,8 +90,7 @@ export function applyStageLights(lights, L) {
 export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
   const p = anchor;
   const d = sunDir;
-  // Snap near-outdoor blends so exit never hangs in a half-dim state.
-  const t = tunnelBlend < 0.04 ? 0 : tunnelBlend > 0.98 ? 1 : tunnelBlend;
+  const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
 
   lights.sun.position.set(p.x + d.x * 42, p.y + d.y * 42, p.z + d.z * 42);
   lights.sun.target.position.set(p.x, p.y, p.z);

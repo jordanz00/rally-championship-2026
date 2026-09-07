@@ -214,9 +214,9 @@ export const VISUAL = {
   envAtmosphere: true,
   /** Procedural anamorphic lens flare + ghosts when the sun is in frame. */
   lensFlare: true,
-  /** Tier 13 IBL — world and car read sunlit materials. */
-  worldEnvIntensity: 1.08,
-  carEnvIntensity: 1.36,
+  /** Stage IBL fallback — LIGHTING[stage].worldEnv wins at PMREM bake. */
+  worldEnvIntensity: 0.82,
+  carEnvIntensity: 0.98,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
@@ -348,10 +348,10 @@ export const COLORS = {
   dirt: 0x7b5e42,
   cobble: 0x8a8378,
   grass: 0x4d7b42,
-  sand: 0xa89068,
+  sand: 0xc4a878,
   mud: 0x5a4a38,
   /** Packed driving ribbon — stronger mid-tones so surface type reads at speed (V3). */
-  ribbonSand: 0xb08a52,
+  ribbonSand: 0xc8a868,
   ribbonGravel: 0x92785c,
   ribbonDirt: 0x825838,
   ribbonTarmac: 0x52565e,
@@ -362,9 +362,9 @@ export const COLORS = {
   kerbRed: 0xd4121a,
   dunePale: 0xd8c090,
   // Must match LIGHTING.*.fog — aerial land tint and scene fog share one haze.
-  fogDesert: 0xdcc8a0,
-  fogForest: 0xa0b8cc,
-  fogMountain: 0x98b4d0,
+  fogDesert: 0xe2c890,
+  fogForest: 0x88a890,
+  fogMountain: 0x9aacbc,
   fogLakeside: 0x90b4c4,
 };
 
@@ -372,6 +372,10 @@ export const COLORS = {
  * Per-stage outdoor rig: physically based sky (Rayleigh/Mie), key sun, sky fill.
  * Sky colors stay atmospheric blue — they do not copy sand/grass/rock.
  * sunDir is a unit-ish vector (x, y, z) toward the light.
+ *
+ * Daylight contract (ACES + physical lights): the key sculpts; hemi/fill/IBL
+ * do not lift midtones to white. Forest stays overcast-capable; Desert is
+ * harsh but not blown. Do not recover brightness with fog, bloom, or sat.
  */
 export const LIGHTING = {
   desert: {
@@ -393,9 +397,9 @@ export const LIGHTING = {
     skyRayleigh: 1.28,
     skyMie: 0.0054,
     skyMieG: 0.84,
-    skyExposure: 1.14,
+    skyExposure: 1.02,
     skyAtmoBlend: 0.92,
-    sunSkyBoost: 1.14,
+    sunSkyBoost: 1.04,
     sunBloom: 1.22,
     lensFlare: 1.06,
     zenithBoost: 0.46,
@@ -406,30 +410,30 @@ export const LIGHTING = {
     horizonStrength: 0.4,
     dustStrength: 0.34,
     wind: [1.85, 0, 0.65],
-    fog: 0xdcc8a0,
-    fogNear: 125,
-    fogFar: 980,
+    fog: 0xe8d090,
+    fogNear: 48,
+    fogFar: 360,
     hemiSky: 0xb0cce0,
     hemiGround: 0xd8b078,
-    hemi: 0.96,
+    hemi: 0.58,
     sun: 0xffecd0,
     sunKelvin: 5200,
-    sunInt: 3.45,
+    sunInt: 2.45,
     sunDir: [0.54, 0.72, 0.36],
     rimSky: 0xd8ccb0,
-    rimInt: 0.46,
+    rimInt: 0.32,
     fill: 0xd0bc98,
-    fillInt: 0.48,
+    fillInt: 0.28,
     ambient: 0xd0c0a0,
     /**
      * Open-sky bounce must light ridge shadows after the tunnel mouth.
-     * 0.14 left the mud exit nearly black under the portal cliff.
+     * 0.14 left the mud exit nearly black — keep a floor, not a wash.
      */
-    ambientInt: 0.34,
-    exposure: 1.18,
+    ambientInt: 0.24,
+    exposure: 0.98,
     gradeWarmth: 0.2,
     skyBack: 0x3a88b8,
-    worldEnv: 1.42,
+    worldEnv: 0.92,
   },
   forest: {
     /**
@@ -449,9 +453,9 @@ export const LIGHTING = {
     skyRayleigh: 1.36,
     skyMie: 0.0032,
     skyMieG: 0.78,
-    skyExposure: 1.12,
+    skyExposure: 0.98,
     skyAtmoBlend: 0.92,
-    sunSkyBoost: 1.1,
+    sunSkyBoost: 1.0,
     sunBloom: 1.14,
     lensFlare: 1.0,
     zenithBoost: 0.46,
@@ -462,26 +466,26 @@ export const LIGHTING = {
     horizonStrength: 0.24,
     dustStrength: 0.06,
     wind: [0.35, 0, -0.85],
-    fog: 0xa0b8cc,
-    fogNear: 82,
-    fogFar: 880,
+    fog: 0x7a9878,
+    fogNear: 32,
+    fogFar: 240,
     skyBack: 0x2274c0,
     hemiSky: 0x8ec4e8,
     hemiGround: 0x4a7840,
-    hemi: 0.64,
+    hemi: 0.48,
     sun: 0xfff8e8,
     sunKelvin: 5550,
-    sunInt: 2.9,
+    sunInt: 2.05,
     sunDir: [0.5, 0.72, 0.38],
     rimSky: 0xb0d4f0,
-    rimInt: 0.36,
+    rimInt: 0.26,
     fill: 0x88b0c8,
-    fillInt: 0.24,
+    fillInt: 0.18,
     ambient: 0x88a090,
-    ambientInt: 0.14,
-    exposure: 1.12,
+    ambientInt: 0.12,
+    exposure: 0.92,
     gradeWarmth: 0.05,
-    worldEnv: 1.28,
+    worldEnv: 0.82,
   },
   mountain: {
     /**
@@ -501,9 +505,9 @@ export const LIGHTING = {
     skyRayleigh: 1.28,
     skyMie: 0.0026,
     skyMieG: 0.74,
-    skyExposure: 1.12,
+    skyExposure: 1.0,
     skyAtmoBlend: 0.9,
-    sunSkyBoost: 1.12,
+    sunSkyBoost: 1.02,
     sunBloom: 1.16,
     lensFlare: 1.05,
     zenithBoost: 0.48,
@@ -514,26 +518,26 @@ export const LIGHTING = {
     horizonStrength: 0.22,
     dustStrength: 0.045,
     wind: [2.4, 0, 1.1],
-    fog: 0x98b4d0,
-    fogNear: 118,
-    fogFar: 1040,
+    fog: 0xa8b8c4,
+    fogNear: 55,
+    fogFar: 380,
     skyBack: 0x2070c8,
     hemiSky: 0x90c4f0,
     hemiGround: 0x6a6454,
-    hemi: 0.6,
+    hemi: 0.44,
     sun: 0xfffaf5,
     sunKelvin: 6300,
-    sunInt: 3.1,
+    sunInt: 2.25,
     sunDir: [0.62, 0.62, 0.34],
     rimSky: 0xa8d0f8,
-    rimInt: 0.36,
+    rimInt: 0.26,
     fill: 0x88a8c8,
-    fillInt: 0.2,
+    fillInt: 0.16,
     ambient: 0x8098a8,
-    ambientInt: 0.12,
-    exposure: 1.12,
+    ambientInt: 0.1,
+    exposure: 0.96,
     gradeWarmth: 0.03,
-    worldEnv: 1.14,
+    worldEnv: 0.78,
   },
   lakeside: {
     /**
@@ -553,9 +557,9 @@ export const LIGHTING = {
     skyRayleigh: 1.26,
     skyMie: 0.004,
     skyMieG: 0.76,
-    skyExposure: 1.1,
+    skyExposure: 0.98,
     skyAtmoBlend: 0.9,
-    sunSkyBoost: 1.08,
+    sunSkyBoost: 1.0,
     sunBloom: 1.1,
     lensFlare: 0.98,
     zenithBoost: 0.4,
@@ -572,20 +576,20 @@ export const LIGHTING = {
     skyBack: 0x2278b8,
     hemiSky: 0x88c4e0,
     hemiGround: 0x3e6c4c,
-    hemi: 0.66,
+    hemi: 0.5,
     sun: 0xfff0e0,
     sunKelvin: 5800,
-    sunInt: 2.7,
+    sunInt: 1.95,
     sunDir: [0.56, 0.68, 0.28],
     rimSky: 0x98d0ec,
-    rimInt: 0.34,
+    rimInt: 0.24,
     fill: 0x78b0c8,
-    fillInt: 0.24,
+    fillInt: 0.18,
     ambient: 0x78a0b0,
-    ambientInt: 0.14,
-    exposure: 1.12,
+    ambientInt: 0.12,
+    exposure: 0.94,
     gradeWarmth: 0.05,
-    worldEnv: 1.16,
+    worldEnv: 0.8,
   },
   /**
    * Title attract / SELECT MODE — cinema showroom. Sculpted key + cool rim,
@@ -596,7 +600,7 @@ export const LIGHTING = {
     skyRayleigh: 1.2,
     skyMie: 0.0028,
     skyMieG: 0.86,
-    skyExposure: 1.2,
+    skyExposure: 1.05,
     skyAtmoBlend: 0.9,
     // Broken cumulus with depth — expensive sky behind the hero car.
     cloudCover: 0.5,
@@ -615,27 +619,27 @@ export const LIGHTING = {
     zenithBoost: 0.44,
     sun: 0xfff1d6,
     // Lower sun = longer contact shadow + chrome catch-lights.
-    sunInt: 3.4,
+    sunInt: 2.4,
     sunDir: [0.64, 0.56, 0.34],
     fill: 0xa0c0f0,
-    fillInt: 0.2,
+    fillInt: 0.16,
     ambient: 0xffe2c4,
-    ambientInt: 0.055,
+    ambientInt: 0.045,
     hemiSky: 0xc4dcff,
     hemiGround: 0xc49858,
-    hemi: 0.4,
-    exposure: 1.2,
+    hemi: 0.32,
+    exposure: 1.02,
     gradeWarmth: 0.12,
     rim: 0xc0e0ff,
-    rimInt: 2.15,
+    rimInt: 1.45,
     kick: 0xffc878,
-    kickInt: 1.12,
-    envIntensity: 2.25,
-    bodyEnv: 2.15,
-    chromeEnv: 2.9,
-    glassEnv: 2.05,
-    /** Pad / apron pick up sky IBL so asphalt reads wet. */
-    worldEnv: 1.42,
+    kickInt: 0.82,
+    envIntensity: 1.55,
+    bodyEnv: 1.45,
+    chromeEnv: 2.05,
+    glassEnv: 1.45,
+    /** Pad / apron pick up sky IBL so asphalt reads wet, not white. */
+    worldEnv: 0.95,
   },
 };
 
@@ -697,8 +701,16 @@ export const TUNNEL = {
   hemiRetain: 0.78,
   /** Fill directional remnant at full shade. */
   fillRetain: 0.55,
-  /** Overhead spot that follows the car (physical intensity). */
-  caveInt: 42,
+  /**
+   * Overhead follow-spot (physical candela). game.js parents this to the car
+   * at y+5.8 with a ~76° cone — it is not a tunnel-volume fixture.
+   * 42 at t=1 filled the Forest bore into an ACES orange wash (sceneRT is
+   * 8-bit, so bloom at threshold 0.74 cannot be the primary soup). Mouth was
+   * readable at ~19 (t≈0.43 × 42). 20 keeps that contribution at full shade
+   * so headlights/sconces stay the local sources. Single knob — no deep-bore
+   * multiplier.
+   */
+  caveInt: 20,
   caveDistance: 52,
   caveDecay: 1.15,
   /** Fixed wall PointLights (physical intensity). */
@@ -781,9 +793,9 @@ export const SURFACES = {
     dust: 0,
     speedScale: 1.0,
     driftEase: 0.82,
-    pacejkaB: 3.85,
-    pacejkaC: 1.28,
-    pacejkaE: 0.12,
+    pacejkaB: 3.7,
+    pacejkaC: 1.26,
+    pacejkaE: 0.14,
     color: COLORS.asphalt,
     ribbon: COLORS.ribbonTarmac,
   },
@@ -791,7 +803,7 @@ export const SURFACES = {
     id: "gravel",
     label: "GRAVEL",
     muPeak: 1.1,
-    muSlide: 0.6,
+    muSlide: 0.64,
     slipPeak: 0.152,
     /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
     brakeHold: 0.3,
@@ -861,13 +873,13 @@ export const SURFACES = {
   grass: {
     id: "grass",
     label: "GRASS",
-    muPeak: 0.92,
-    muSlide: 0.68,
-    slipPeak: 0.12,
-    brakeHold: 0.42,
-    brakeYaw: 0.4,
-    slideHold: 0.98,
-    gripSnap: 1.1,
+    muPeak: 0.76,
+    muSlide: 0.58,
+    slipPeak: 0.13,
+    brakeHold: 0.38,
+    brakeYaw: 0.48,
+    slideHold: 0.92,
+    gripSnap: 1.28,
     bumpSteer: 1.1,
     roll: 0.048,
     sink: 0.038,
@@ -881,13 +893,13 @@ export const SURFACES = {
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.88,
-    muSlide: 0.52,
-    slipPeak: 0.158,
+    muPeak: 0.84,
+    muSlide: 0.56,
+    slipPeak: 0.162,
     brakeHold: 0.22,
     brakeYaw: 0.98,
     slideHold: 2.05,
-    gripSnap: 1.08,
+    gripSnap: 1.24,
     bumpSteer: 0.8,
     roll: 0.048,
     sink: 0.055,
@@ -906,9 +918,9 @@ export const SURFACES = {
   mud: {
     id: "mud",
     label: "MUD",
-    muPeak: 0.7,
-    muSlide: 0.4,
-    slipPeak: 0.178,
+    muPeak: 0.66,
+    muSlide: 0.38,
+    slipPeak: 0.185,
     /** AM3 headline: brake on mud and you begin a power slide — not a stop. */
     brakeHold: 0.03,
     brakeYaw: 1.28,
@@ -1003,8 +1015,8 @@ export const HANDLING = {
   handbrakePowerMul: 2.35,
   /** Power-slide sustain without e-brake (throttle + steer sideways). */
   driftBleedMul: 0.022,
-  /** Lateral grip scale at full slide angle (lower = slipperier / bigger attitude). */
-  slideGripMul: 0.15,
+  /** Lateral grip scale at full slide angle. High enough that a catch still exists. */
+  slideGripMul: 0.4,
   /**
    * Extra rear µ dump while e-brake is held (0 = none, 1 = almost no rear grip).
    * This is the mechanical "lock the rears" feel of a rally handbrake turn.
@@ -1031,6 +1043,11 @@ export const HANDLING = {
    * are not "drunk car" heavy.
    */
   weightTransferMul: 2.28,
+  /**
+   * How much brake/throttle load the tires before `_ax` from tire force catches
+   * up. 0 = only measured accel. ~0.34 = the player caused the weight shift.
+   */
+  pedalLoadBlend: 0.34,
   /** Bicycle understeer gradient — mild push at speed, still AM3-easy. */
   speedUndersteer: 0.00185,
   /** Lift-off oversteer mid-corner — close throttle, the tail comes. */
@@ -1191,7 +1208,14 @@ export const ARCADE_ASSIST = {
    * Tire sweet-spot width. Higher = longer progressive fall from peak grip
    * into slide (grip→slide→recover), not cliff→spin.
    */
-  tireSlideSoft: 2.4,
+  tireSlideSoft: 3.15,
+  /**
+   * Hold peak force until slip/peak exceeds this (1 = fall immediately at peak).
+   * >1 gives a readable "you're at the limit" plateau before breakaway.
+   */
+  tirePeakHold: 1.08,
+  /** Floor on sliding force as a fraction of peak — opposite-lock still works. */
+  tireRecoverFloor: 0.42,
   /** Mild peak boost near slipPeak (arcade "tires work hardest at ~5–10°"). */
   tirePeakBoost: 1.08,
 };
@@ -1201,50 +1225,55 @@ export const ARCADE_ASSIST = {
  * Saturn team: lift off just before the crest, brake so the nose drops, land
  * flat. Flat-out jumping is dangerous.
  *
- * The causal chain we implement: lifting unloads the launch (less vertical
- * throw), braking spins the wheels down and the reaction torque drops the
- * nose, and a chassis whose pitch matches the descent path lands on all four
- * wheels with almost no scrub. Nose-high arrivals land tail-first, scrub, and
- * leave the car unsettled for the next crest.
+ * Leave velocity is the ramp-follow vector (speed × sin(lip)). Extra stacked
+ * "launch" (tan(grade) + climb + 1.2× boost + jumpThrow rockets) is what made
+ * every crest feel like a trampoline. Technique unloads the spring and drops
+ * the nose — it does not replace momentum with a canned hop.
  */
 export const JUMP = {
   /** Seconds of lift + brake before the lip that count as full technique. */
   techniqueWindow: 0.3,
   /**
-   * Fraction of launch velocity kept by a perfectly executed lift.
-   * Good technique lands flatter/lower; flat-out throws higher and arrives wrong.
+   * Fraction of leave velocity kept by a perfectly executed lift.
+   * Unloads spring only — ballistic `v sin θ` is not a technique multiplier.
    */
-  liftLaunchCut: 0.56,
-  /** Flat-out launch bonus (multiplies raw before technique cut). */
-  flatOutLaunchBoost: 1.2,
+  liftLaunchCut: 0.88,
+  /** No extra flat-out rocket. Speed × lip already owns the throw. */
+  flatOutLaunchBoost: 1.0,
   /** Nose-down attitude (rad) a full lift-and-brake buys you at the lip. */
   liftNoseDrop: 0.26,
   /**
-   * Apex height multiplier (h ∝ vy²). High enough that a Safari lip hangs
-   * like a real throw — not a stubby hop, not a floaty hang.
+   * Apex height multiplier (h ∝ vy²). Player = 1 (physical). AI pack uses
+   * aiLaunchHeightScale so rivals do not loft like the hero.
    */
-  launchHeightScale: 0.52,
+  launchHeightScale: 1,
   /**
-   * Extra apex cut for AI / lowDetail pack only (h ∝ vy²). 0.2 = one-fifth of
-   * the shared launchHeightScale flight — rivals were still lofting like rockets.
+   * Extra apex cut for AI / lowDetail pack only (h ∝ vy²).
    */
   aiLaunchHeightScale: 0.2,
-  /** Ballistic launch ceiling (m/s) after launchHeightScale. */
-  maxLaunchVy: 9.6,
+  /** Ballistic ceiling (m/s). Safety for wild geometry, not a boost. */
+  maxLaunchVy: 12,
   /**
    * Floor only for real lips — was 1.8 and forced a hop on every crest.
    * Tiny transitions can leave with near-zero vertical and still glide.
    */
   minLaunchVy: 0.04,
   /** Road-following vertical gain on ramps — speed × sin(pitch) × this. */
-  rampVyScale: 0.95,
-  /** How much stored ramp climb energy joins the ballistic leave (0–1). */
-  throwBlend: 0.45,
+  rampVyScale: 1,
   /**
-   * Suspension stores energy on the ramp; the lip releases it into launch speed.
-   * Keep below ballistic so leaves read as throws, not trampoline hops.
+   * Unused as energy. Leave vy is `v sin θ` from the live lip, not a stored
+   * throw accumulator. Kept so old docs/QA strings still name the knob.
    */
-  springBurst: 1.85,
+  throwBlend: 0,
+  /**
+   * Suspension rebound at the lip, as a fraction of ballistic `v sin θ`.
+   * Hard compression can reach this; it cannot exceed it.
+   */
+  springFraction: 0.18,
+  /**
+   * Raw compress → m/s before the ballistic cap. Modest — the ramp set vy.
+   */
+  springBurst: 0.55,
   springCompressRate: 3.8,
   springReleaseRate: 10,
   /** Throttle/brake weight transfer into compress while climbing a lip. */
@@ -1323,16 +1352,22 @@ export const JUMP = {
    */
   lipGrain: 0.1,
   inheritPitch: 0.55,
-  /** How much authored jumpThrow (rise×gap) scales leave velocity. */
-  jumpScaleInfluence: 0.42,
-  /** Extra throw from sampled lip grade vs axle pitch alone. */
-  lipGradeInfluence: 0.35,
+  /** Authored jumpThrow must not multiply leave energy. Attitude may still read lip. */
+  jumpScaleInfluence: 0,
+  /** Lip grade is the departure angle θ — do not multiply energy a second time. */
+  lipGradeInfluence: 0,
   /** Surface bump → spring pop (sand/mud compress more than gravel). */
   surfaceSpringGain: 3.4,
   /** Surface bump → landing bounce / unsettle. */
   surfaceLandGain: 3.2,
-  /** Climb rate stored on the ramp converted to leave energy. */
-  climbThrowGain: 0.72,
+  /** Climb-rate throw is retired. Grade memory is `_rampGrade`, not extra vy. */
+  climbThrowGain: 0,
+  /** In-air throttle must not accelerate XZ. Pitch lives in JumpModel.air. */
+  airThrottleAccel: 0,
+  /** In-air brake XZ bleed (1/s). 0 = wheels/pitch only. */
+  airBrakeDrag: 0,
+  /** In-air steer → yaw. Modest — angular momentum, not a plane. */
+  airSteerYaw: 0.4,
   /** Lateral speed couples into air roll (off-line takeoffs). */
   airCrossCouple: 0.12,
   airRollMax: 0.28,
@@ -1448,7 +1483,7 @@ export const CARS = {
     id: "celica",
     name: "CELICA GT-FOUR",
     short: "CELICA",
-    blurb: "4WD  ·  planted power-slide — learn the stage like AM3 Desert",
+    blurb: "",
     /** Phase 1 identity: less rear rotation, traction-biased 4WD. */
     driftMul: 0.96,
     yawGain: 1.16,
@@ -1463,7 +1498,7 @@ export const CARS = {
     id: "delta",
     name: "DELTA HF",
     short: "DELTA",
-    blurb: "4WD  ·  snappy Integrale — rotate and go",
+    blurb: "",
     lengthM: 3.85,
     yawInertia: 1680,
     maxSteer: 0.52,
@@ -1482,7 +1517,7 @@ export const CARS = {
     id: "stratos",
     name: "STRATOS HF",
     short: "STRATOS",
-    blurb: "RWD  ·  fastest, loosest — hold it with throttle",
+    blurb: "",
     mass: 980,
     yawInertia: 1320,
     lengthM: 3.71,
@@ -1618,45 +1653,48 @@ export const CAMERA = {
     {
       id: "medium",
       label: "MEDIUM",
-      /** Default chase — closer / lower so the car fills the frame without bumper crop. */
-      back: 4.55,
-      height: 1.42,
-      lookAhead: 7.4,
-      lookY: 0.42,
+      /**
+       * Professional rally chase: more road ahead, car locked in the lower-middle.
+       * XZ stays glued behind the chassis (no spring trail, no L/R orbit).
+       * Height / look Y get a high-frequency damper only — not SmoothDamp lag.
+       */
+      back: 4.85,
+      height: 1.7,
+      lookAhead: 10.4,
+      lookY: 0.36,
       fov: 64,
-      /** Mild speed squat — keeps pavement in frame without burying the roof. */
-      speedDropMax: 0.14,
-      /**
-       * Kill speed FOV / look stretch — accel used to make the lens feel yards farther
-       * than the start-grid framing even though `back` was fixed.
-       */
-      speedFovScale: 0.08,
-      speedLookAheadScale: 0.2,
-      /**
-       * Rigid chase lock — fixed back/height from start grid, no accel trail,
-       * no L/R orbit, no air/land/shake height bob. Position snaps every frame.
-       */
+      /** No speed squat — that buried the roof. Road opens via look-ahead + FOV. */
+      speedDropMax: 0,
+      /** ~2° at rally speed — readable extra pavement, not an arcade zoom. */
+      speedFovScale: 0.14,
+      speedLookAheadScale: 0.24,
       stableBehind: true,
       lockPos: true,
-      /** Explicit: never raise/lower the locked chase height. */
-      lockHeight: true,
-      speedDropMax: 0,
-      speedFovScale: 0,
-      speedLookAheadScale: 0,
-      springPosStiff: 220,
-      springPosStiffY: 120,
-      springLookStiff: 200,
-      /** Instant chassis yaw — lag was the orbit during steer/slide. */
-      yawStiffness: 200,
-      yawStiffnessSlide: 200,
+      lockHeight: false,
+      /** Jump hang must not crane the lens up; landing kick is separate. */
+      lockAir: true,
+      heightFollow: 38,
+      lookFollow: 32,
+      /** Tight yaw follow: kill 1-frame steer snap without trailing the hairpin. */
+      yawStiffness: 68,
+      yawStiffnessSlide: 68,
       slideYawBlend: 0,
       slideLook: 0,
       slideCamOut: 0,
       slideLookAhead: 0,
       slideKickMax: 0,
-      rollFollow: 0,
-      /** No road-look pull (that swung aim L/R on bends). */
-      roadLookBlend: 0,
+      rollFollow: 0.05,
+      /** Aim along the ribbon, not a side orbit. */
+      roadLookBlend: 0.2,
+      brakePitchMul: 0.034,
+      accelPitchMul: 0.01,
+      landKickMul: 0.22,
+      landFovMul: 0.5,
+      shakeMul: 0.28,
+      shakeAmp: 0.1,
+      springPosStiff: 220,
+      springPosStiffY: 120,
+      springLookStiff: 200,
       stiffness: 80,
       near: 0.2,
     },

@@ -1,8 +1,12 @@
 # GPT Optimization Brief — Rally Championship 2026 (Sprints 1–40)
 
-**Purpose:** Hand this document to ChatGPT (or any LLM) to understand what was built, how it works, what is real vs scaffold, and where to push next for AAA browser rally.
+> **SUPERSEDED — DO NOT USE AS CURRENT ENGINE STATE**  
+> Snapshot of Sprints 35–40 (`?v=320`, six cars, Act 8 extensions). Product is now three Group A cars, Saturn-inspired layouts, and a later boot chain.  
+> See [`docs/STABILIZATION-BRIEF.md`](STABILIZATION-BRIEF.md), [`docs/QA-REPORT.md`](QA-REPORT.md), and [`CURSOR_GAME_DIRECTIVE.md`](../CURSOR_GAME_DIRECTIVE.md).
 
-**Play build:** `http://127.0.0.1:8765/index.html?v=320`  
+**Purpose (historical):** Hand this document to ChatGPT to understand what was built through Sprint 40.
+
+**Play build (stale):** `http://127.0.0.1:8765/index.html?v=320`  
 **Proof command:** `node tools/qa-sprint35-40-matrix.mjs`
 
 ---
@@ -210,7 +214,7 @@ JSON.parse(window.__rallyTelemetry.exportJSON())
 ```
 You are optimizing Rally Championship 2026 (browser WebGL rally game).
 
-Read docs/GPT-OPTIMIZATION-BRIEF.md and inspect:
+Read docs/STABILIZATION-BRIEF.md (current) then this file only as Sprint 40 history. Inspect:
 - js/game.js (race loop)
 - js/physics/vehicle.js (tires)
 - js/tracks/pace-notes.js (co-driver)

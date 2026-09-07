@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=209";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=36";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=218";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=40";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -501,18 +501,19 @@ function upgradeRacePaint(src, obj) {
     isCadBody || /paint|lacquer|car_body|body_paint|carbody|shiny_painted/.test(n);
   const isInterior =
     /cabin|leather|cloth|suede|stitch|dial|carpet|seat|dash|interior|cockpit/.test(n);
+  const isRubber = src.userData.kind === "rubber" || isTireRubberName(n, obj);
   const isChrome =
     !isPaintName &&
+    !isRubber &&
     (src.userData.kind === "chrome" ||
       (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55) ||
       (!isInterior && (src.metalness || 0) > 0.72 && !/plastic|carbon|matte|matt|rubber|tyre|tire/.test(n)));
-  const isRubber = src.userData.kind === "rubber" || (/tire|tyre|rubber/.test(n) && !/rim/.test(n));
   if (isChrome) {
     src.userData.kind = "chrome";
     return src;
   }
   if (isRubber) {
-    src.userData.kind = "rubber";
+    hardenTireRubber(src);
     return src;
   }
   const wantClearcoat =
@@ -574,18 +575,66 @@ function upgradeRacePaint(src, obj) {
 }
 
 /**
+ * Rival LOD merge bakes Sketchfab cabin/seat materials into unnamed meshes on
+ * the rival root. Object-name hides never see them, so door cards fill the
+ * side-window holes as dark triangles on the title pad.
+ * @param {THREE.Object3D} obj
+ */
+function isShowroomCabinMaterial(obj) {
+  const n = matName(obj).toLowerCase();
+  return (
+    /^(cabin|cloth|suede|leather|stitching)(\.|$)/.test(n) ||
+    /^dials_/.test(n) ||
+    n === "carbon_fibre"
+  );
+}
+
+/**
+ * @param {THREE.Object3D} root
+ */
+function hideShowroomCabinMeshes(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh || !isShowroomCabinMaterial(obj)) return;
+    obj.visible = false;
+    obj.userData.interior = true;
+    obj.userData.interiorKeepHidden = true;
+  });
+}
+
+/**
  * Title-only dress: FrontSide reflective glass, clearcoat lacquer, hide cabin
  * clutter that reads as flipped polygons through the windows. Materials are
  * already cloned for this instance — safe to mutate.
  * @param {THREE.Object3D} root
  */
 function dressTitleCarShowroom(root) {
+  hideShowroomCabinMeshes(root);
   root.traverse((obj) => {
-    if (!obj.isMesh) return;
     const name = `${obj.name || ""} ${obj.parent && obj.parent.name ? obj.parent.name : ""}`.toLowerCase();
+    // Celica GLB inner panes (`int_window_fl/fr`) sit on the same aperture as
+    // `x0_window_*`. FrontSide glass then z-fights and reads as broken triangles
+    // in the side windows. Interior door cards do the same through the glass.
+    // Keep the rollcage — that belongs in a rally cabin.
+    if (
+      /\bint_window/.test(name) ||
+      /\bint_door/.test(name) ||
+      /int_accelerator|int_brake|int_clutch|int_dials|int_gearstick|int_handbrake/.test(name)
+    ) {
+      obj.visible = false;
+      obj.userData.interior = true;
+      obj.userData.interiorKeepHidden = true;
+      return;
+    }
+    if (!obj.isMesh) return;
+    if (isShowroomCabinMaterial(obj)) {
+      obj.visible = false;
+      obj.userData.interior = true;
+      obj.userData.interiorKeepHidden = true;
+      return;
+    }
     // Cabin clutter through translucent glass = "flipped polygon" read.
     if (
-      /cage|roll.?cage|roll.?bar|harness|seatbelt|seat.?belt|carpet|pedal|floorpan|cabin.?floor|interior.?trim|dashboard|dash.?board|instrument|gauge|needle|steering.?wheel|steerwheel|cabin|cockpit.?mesh|seat(?!belt)/.test(
+      /harness|seatbelt|seat.?belt|carpet|pedal|floorpan|cabin.?floor|interior.?trim|dashboard|dash.?board|instrument|gauge|needle|steering.?wheel|steerwheel|cabin|cockpit.?mesh|seat(?!belt)/.test(
         name
       )
     ) {
@@ -621,7 +670,7 @@ function dressTitleCarShowroom(root) {
       const isChrome =
         src.userData.kind === "chrome" ||
         (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55);
-      const isRubber = src.userData.kind === "rubber" || (/tire|tyre|rubber/.test(n) && !/rim/.test(n));
+      const isRubber = src.userData.kind === "rubber" || isTireRubberName(n, obj);
       // Upgrade Standard body paint → Physical clearcoat for wet showroom lacquer.
       if (
         !isChrome &&
@@ -1167,6 +1216,7 @@ async function loadRivalGltf(id, url) {
   sanitizeGltfWheels(root);
   isolateWheelHubMaterials(root);
   mergeBodyPanels(root);
+  hideShowroomCabinMeshes(root);
   root.userData.wheels = findWheels(root);
   root.userData.carId = spec.id;
   // Re-plant after merge: helpers / baked panels can shift the bbox.
@@ -1350,9 +1400,14 @@ function enableCarShadows(root) {
  * WHY tire meshes only: hub groups still include rims/brakes/axle scrap that
  * can sit below the tread — planting on those leaves the rubber floating.
  *
+ * WHY children, not root.position.y: `_syncPlayerMesh` / `Opponent.syncMesh`
+ * overwrite the wrapper pose from drawPose every frame. A sink on the root
+ * was discarded, so rival LOD tires hovered above the deck.
+ *
  * @param {THREE.Object3D} root
  */
 function plantOnContactPatch(root) {
+  root.position.set(0, 0, 0);
   root.updateMatrixWorld(true);
   let minY = Infinity;
   const wheels = root.userData && root.userData.wheels;
@@ -1371,8 +1426,12 @@ function plantOnContactPatch(root) {
       if (tmp.min.y < tireMin) tireMin = tmp.min.y;
     });
     if (!Number.isFinite(tireMin)) {
-      tmp.setFromObject(hub);
-      tireMin = tmp.min.y;
+      hub.traverse((obj) => {
+        if (!obj.isMesh || !obj.visible || !obj.geometry) return;
+        if (obj.userData && obj.userData.axleScrap) return;
+        tmp.setFromObject(obj);
+        if (tmp.min.y < tireMin) tireMin = tmp.min.y;
+      });
     }
     if (tireMin < minY) minY = tireMin;
   };
@@ -1395,9 +1454,13 @@ function plantOnContactPatch(root) {
     });
     minY = has ? box.min.y : 0;
   }
-  // Sink past the contact plane so tread meets asphalt/dirt (not a hover gap).
-  const SINK = 0.04;
-  root.position.y -= minY + SINK;
+  // Visual rubber on the contact plane. Chassis Y already embeds TIRE_PLANT.
+  const SINK = 0.01;
+  const delta = -(minY + SINK);
+  if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
+    const kids = root.children;
+    for (let i = 0; i < kids.length; i++) kids[i].position.y += delta;
+  }
   root.userData.tirePlantSink = SINK;
 }
 
@@ -1414,6 +1477,40 @@ function gameShade(root) {
 }
 
 /**
+ * True when this mesh/material is tire rubber, including parent `x0_tyre_*`
+ * groups whose leaf meshes are named Object_N.
+ * @param {string} nameBlob
+ * @param {THREE.Object3D} [obj]
+ */
+function isTireRubberName(nameBlob, obj) {
+  let n = nameBlob || "";
+  for (let p = obj; p; p = p.parent) n += ` ${p.name || ""}`;
+  n = n.toLowerCase();
+  if (/rim|disc|caliper|brake|hub.?cap/.test(n) && !/tyre|tire/.test(n)) return false;
+  return /tire|tyre|rubber/.test(n) || (/\bwheel\b/.test(n) && !/rim/.test(n) && /tarmac_tyre|x0_tyre/.test(n));
+}
+
+/**
+ * Opaque rally rubber — keeps authored tread/wall maps, kills alpha/chrome.
+ * @param {THREE.Material} src
+ */
+function hardenTireRubber(src) {
+  src.transparent = false;
+  src.opacity = 1;
+  src.alphaTest = 0;
+  src.depthWrite = true;
+  src.visible = true;
+  src.side = THREE.DoubleSide;
+  if ("alphaMap" in src) src.alphaMap = null;
+  if (src.metalness != null) src.metalness = 0.04;
+  if (src.roughness != null) src.roughness = Math.max(src.roughness, 0.78);
+  if (src.envMapIntensity != null) src.envMapIntensity = 0.15;
+  src.userData.kind = "rubber";
+  src.userData.lockEnv = true;
+  src.needsUpdate = true;
+}
+
+/**
  * Preserve GLTF PBR maps. Lambert/Phong fallbacks become clearcoat paint.
  * @param {THREE.Material|null} src
  * @param {THREE.Mesh} obj
@@ -1422,10 +1519,14 @@ function shadeCarMaterial(src, obj) {
   if (!src) return paint(0xcccccc);
   const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
   const transparent = !!(src.transparent || (src.opacity != null && src.opacity < 0.9));
+  // Tire names win over omitted glTF metallicFactor=1, which otherwise
+  // classifies Tarmac_Tyre_* as chrome and leaves the open tread slit looking
+  // like empty / see-through polygons under IBL.
+  const isRubber = isTireRubberName(n, obj);
   const isChrome =
-    /chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) ||
-    (src.metalness != null && src.metalness > 0.62);
-  const isRubber = /tire|tyre|rubber|wheel/.test(n) && !/rim/.test(n);
+    !isRubber &&
+    (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) ||
+      (src.metalness != null && src.metalness > 0.62));
   const isGlass =
     !(src.userData && src.userData.cadOpaque) &&
     !isChrome &&
@@ -1434,7 +1535,9 @@ function shadeCarMaterial(src, obj) {
 
   if (src.isMeshPhysicalMaterial || src.isMeshStandardMaterial) {
     if (src.map) src.map.colorSpace = THREE.SRGBColorSpace;
-    if (isChrome) {
+    if (isRubber) {
+      hardenTireRubber(src);
+    } else if (isChrome) {
       src.transparent = false;
       src.opacity = 1;
       src.depthWrite = true;
@@ -1442,14 +1545,6 @@ function shadeCarMaterial(src, obj) {
       src.metalness = Math.max(src.metalness != null ? src.metalness : 0, 0.88);
       src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.28);
       src.envMapIntensity = 0.7;
-    } else if (isRubber) {
-      src.transparent = false;
-      src.opacity = 1;
-      src.depthWrite = true;
-      src.visible = true;
-      src.metalness = 0.04;
-      src.roughness = Math.max(src.roughness != null ? src.roughness : 0.7, 0.74);
-      src.envMapIntensity = 0.15;
     } else if (isGlass) {
       src.transparent = true;
       src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.36);
@@ -1709,6 +1804,7 @@ function isolateWheelHubMaterials(root) {
       c.transparent = false;
       c.opacity = 1;
       c.depthWrite = true;
+      if (isTireRubberName(`${c.name || ""} ${obj.name || ""}`, obj)) hardenTireRubber(c);
       c.needsUpdate = true;
       return c;
     });
@@ -4112,6 +4208,8 @@ const GAUGE_SWEEP = Math.PI * 1.5;
 /** In-car analog dials (~110 mm) so the needles read at seated FOV. */
 const POV_GAUGE_R = 0.055;
 const POV_SPEED_MAX_MPH = 140;
+/** Rearview overlay — 25% smaller than the original 0.32 × 0.082 glass. */
+const POV_MIRROR_SCALE = 0.75;
 const KMH_TO_MPH = 0.621371;
 /** Three.js layer for camera-locked POV HUD (rendered after post, ungraded). */
 export const POV_HUD_LAYER = 1;
@@ -4165,9 +4263,10 @@ function cabinLandmarks(root) {
     const locMinZ = Math.min(min.z, max.z);
     const locMaxZ = Math.max(min.z, max.z);
     const locMaxY = Math.max(min.y, max.y);
-    if (/seat|chair|bucket/.test(n) && !/rear|back.?seat/.test(n) && c.x < 0.05) {
+    // Seated lookAt(+Z) maps car +X to screen-left. Prefer that seat for LHD.
+    if (/seat|chair|bucket/.test(n) && !/rear|back.?seat/.test(n) && c.x > -0.05) {
       const score =
-        (/driver|lhd|left/.test(n) ? -1.5 : 0) + Math.abs(c.x + 0.36) + Math.abs(c.y - 0.5);
+        (/driver|lhd|left/.test(n) ? -1.5 : 0) + Math.abs(c.x - 0.36) + Math.abs(c.y - 0.5);
       if (score < seatScore) {
         seatScore = score;
         seat = { x: c.x, y: c.y, z: c.z, maxZ: locMaxZ, minZ: locMinZ, maxY: locMaxY };
@@ -4219,7 +4318,7 @@ function findGlbSteerNode(root) {
     if (c.y < 0.28 || c.y > 1.55) return;
     const score =
       Math.abs(c.x) * 0.35 +
-      (c.x > 0 ? 0.2 : 0) +
+      (c.x < 0 ? 0.2 : 0) +
       Math.abs(c.y - 0.72) +
       (/_hr\b|steer_hr|steering.?wheel/.test(n) ? -0.4 : 0);
     if (score < bestScore) {
@@ -4359,9 +4458,9 @@ function bindGlbSteeringWheel(root) {
   root.add(node);
   const local = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(world);
   local.decompose(node.position, node.quaternion, node.scale);
-  // POV is LHD (negative X). Rally GLBs are often RHD — move the modeled
-  // rim across rather than drawing a second torus.
-  if (node.position.x > 0.08) {
+  // Seated lookAt(+Z) maps car +X to screen-left. Park the modeled rim on +X
+  // with the LHD eye instead of drawing a second torus.
+  if (node.position.x < -0.08) {
     node.position.x = -node.position.x;
   }
   node.visible = false;
@@ -4451,8 +4550,8 @@ function buildPovHideCache(root) {
 }
 
 /**
- * Per-car driver eye + look targets from the fitted hull (+Z forward, LHD left).
- * Cached on the mesh so every GLB gets a seat that actually sits in the cabin.
+ * Per-car driver eye + look targets from the fitted hull (+Z forward).
+ * Visual LHD: seated lookAt(+Z) maps car +X to screen-left (headed). Cached.
  * @param {THREE.Object3D} root
  */
 function buildPovRig(root) {
@@ -4465,16 +4564,16 @@ function buildPovRig(root) {
   const axles = axleSpan(root);
   const marks = cabinLandmarks(root);
 
-  // Always LHD: negative X. Prefer the modeled wheel, then the left seat.
+  // Visual LHD (screen-left): positive X after lookAt(+Z). Prefer wheel, then seat.
   let eyeX;
-  if (marks.wheel && marks.wheel.x < 0.08) {
+  if (marks.wheel && marks.wheel.x > -0.08) {
     eyeX = marks.wheel.x;
-  } else if (marks.seat && marks.seat.x < 0) {
+  } else if (marks.seat && marks.seat.x > 0) {
     eyeX = marks.seat.x;
   } else {
-    eyeX = hull.minX + spanX * 0.22;
+    eyeX = hull.maxX - spanX * 0.22;
   }
-  eyeX = THREE.MathUtils.clamp(eyeX, -0.5, -0.22);
+  eyeX = THREE.MathUtils.clamp(eyeX, 0.22, 0.5);
 
   // In front of the seat back, behind the dash — looking out over the hood.
   let eyeZ = axles ? axles.rearZ + axles.wb * 0.5 : hull.minZ + spanZ * 0.52;
@@ -4510,7 +4609,9 @@ function buildPovRig(root) {
   // Aim at the road ahead — keep look below the eye so the roof stays out of frame.
   const lookY = THREE.MathUtils.clamp(hoodY + 0.12, ground + 0.8, eyeY - 0.12);
   const lookZ = hull.maxZ + 4.2;
-  const mirrorEyeX = eyeX * 0.12;
+  // Swap: interior glass sits on the opposite side of center from the driver
+  // so the rearview reads on the right of an LHD lens (was left in RHD).
+  const mirrorEyeX = -eyeX * 0.12;
   const mirrorEyeY = THREE.MathUtils.clamp(eyeY + 0.11, eyeY + 0.08, roof - 0.1);
   const mirrorEyeZ = eyeZ + 0.34;
   // Capture from just behind the bumper looking aft — not from the interior
@@ -4552,7 +4653,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 5;
+  const POV_RIG_VER = 8;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -4957,8 +5058,8 @@ function makeDial(kind, maxVal, redFrom) {
 }
 
 /**
- * In-car cabin parented to the chassis (+Z forward, LHD). Gauges, wheel, seats,
- * and a live rearview sit in the driver seat — no A-pillar bars in the lens.
+ * In-car cabin parented to the chassis (+Z forward, visual LHD). Gauges, wheel,
+ * seats, and a live rearview sit in the driver seat — no A-pillar bars.
  * @param {THREE.Object3D} root
  */
 function attachCockpit(root) {
@@ -5091,6 +5192,7 @@ function attachCockpit(root) {
   mirror.position.set(rig.mirrorEyeX, rig.mirrorEyeY, rig.mirrorEyeZ);
   mirror.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cab.add(mirror);
+  attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW);
 
   root.add(cab);
   root.userData.cockpit = cab;
@@ -5104,6 +5206,76 @@ function attachCockpit(root) {
   root.userData._rpmGauge = { x: -GAUGE_START, v: 0 };
   root.userData.mirror = mirror;
   root.userData.mirrorGlass = mirror.userData.glass;
+}
+
+/**
+ * Cockpit-space glass + intermittent wiper arms. Not tagged `windshield`
+ * (POV hides those). LHD eye / wheel stay where attachCockpit put them.
+ * @param {THREE.Group} cab
+ * @param {THREE.Object3D} root
+ * @param {{eyeX:number,eyeY:number,eyeZ:number}} rig
+ * @param {number} dashZ
+ * @param {number} dashY
+ * @param {number} cabinW
+ */
+function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
+  const glassZ = Math.max(dashZ + 0.16, rig.eyeZ + 0.58);
+  const glassY = (rig.eyeY + dashY) * 0.5 + 0.1;
+  const gw = Math.min(1.26, cabinW * 0.9);
+  const gh = 0.56;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 256, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false,
+    toneMapped: false,
+  });
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), mat);
+  pane.name = "pov-rain-glass";
+  pane.position.set(rig.eyeX * 0.1, glassY, glassZ);
+  pane.rotation.x = -0.08;
+  pane.userData.povHud = true;
+  pane.userData.povRainGlass = true;
+  markPovHudMesh(pane, 6, { depthTest: true });
+  cab.add(pane);
+
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1c22,
+    roughness: 0.74,
+    metalness: 0.16,
+  });
+  const makeArm = (side) => {
+    const pivot = new THREE.Group();
+    pivot.name = side < 0 ? "wiper-L" : "wiper-R";
+    pivot.position.set(rig.eyeX * 0.1 + side * gw * 0.24, glassY - gh * 0.42, glassZ + 0.012);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.011, 0.01), bladeMat);
+    blade.position.set(0.19, 0, 0);
+    blade.userData.povHud = true;
+    markPovHudMesh(blade, 7, { depthTest: true });
+    pivot.add(blade);
+    pivot.rotation.z = side < 0 ? 0.12 : -0.12;
+    pivot.userData.parkZ = pivot.rotation.z;
+    pivot.userData.povHud = true;
+    cab.add(pivot);
+    return pivot;
+  };
+  root.userData.povRainGlass = pane;
+  root.userData.povRainCanvas = canvas;
+  root.userData.povRainCtx = ctx;
+  root.userData.povRainTex = tex;
+  root.userData.wiperL = makeArm(-1);
+  root.userData.wiperR = makeArm(1);
 }
 
 function ensurePovHead(root, rig) {
@@ -5166,8 +5338,8 @@ function makeRearviewMirror() {
   const g = new THREE.Group();
   g.name = "rearview";
   const plastic = cabinMat(0x1a1a20, 0.55, 0.2);
-  const gw = 0.32;
-  const gh = 0.082;
+  const gw = 0.32 * POV_MIRROR_SCALE;
+  const gh = 0.082 * POV_MIRROR_SCALE;
   const rim = 0.01;
   const depth = 0.012;
   const top = new THREE.Mesh(new THREE.BoxGeometry(gw + rim * 2, rim, depth), plastic);

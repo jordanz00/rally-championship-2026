@@ -8,7 +8,7 @@
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 
-import { PACE } from "../config.js?v=209";
+import { PACE } from "../config.js?v=218";
 
 const VOL_NAV_KEY = "rally-vol-navigator";
 
@@ -67,6 +67,8 @@ export class CoDriver {
     this._lastClipUntil = -1e9;
     this._retryKey = "";
     this._retryCool = 0;
+    /** First turn/jump seen while the start-grid pace gate is closed. */
+    this._heldNote = null;
   }
 
   /**
@@ -88,6 +90,21 @@ export class CoDriver {
   update(note, dt, audio, progress = 0, speed = 0) {
     this.cool -= dt;
     this._retryCool -= dt;
+
+    // Start-grid gate: countdown VO must finish, then 2 s of silence.
+    // Hold only the first call — do not mark notes said or dump a backlog.
+    if (audio && typeof audio.paceNotesAllowed === "function" && !audio.paceNotesAllowed()) {
+      if (note && clipKey(note) && !this._heldNote) this._heldNote = note;
+      return { display: note && note.text ? note.text : "", spoken: false };
+    }
+
+    let fromHold = false;
+    if (this._heldNote) {
+      note = this._heldNote;
+      this._heldNote = null;
+      fromHold = true;
+    }
+
     if (!note) return { display: "", spoken: false };
     const display = note.text || "";
     const key = clipKey(note);
@@ -99,7 +116,7 @@ export class CoDriver {
     }
 
     const lead = (note.at || 0) - progress;
-    if (lead < -14) {
+    if (!fromHold && lead < -14) {
       this._markSaid(note, sig);
       return { display, spoken: false };
     }
@@ -222,6 +239,7 @@ export class CoDriver {
     this._lastClipUntil = -1e9;
     this._retryKey = "";
     this._retryCool = 0;
+    this._heldNote = null;
   }
 
   /**

@@ -27,6 +27,9 @@ import {
 
 const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
 const collideSrc = fs.readFileSync(path.join(ROOT, "js/physics/collide.js"), "utf8");
+const vehicleSrc = fs.readFileSync(path.join(ROOT, "js/physics/vehicle.js"), "utf8");
+const gameSrc = fs.readFileSync(path.join(ROOT, "js/game.js"), "utf8");
+const aiSrc = fs.readFileSync(path.join(ROOT, "js/ai.js"), "utf8");
 
 let fail = 0;
 function check(label, ok, detail) {
@@ -96,6 +99,46 @@ check(
   "glanceObstacles — path collision, not endpoint-only"
 );
 check(
+  "tunnel clamp uses chassis OBB corners, not centre only",
+  /function chassisLatExtents/.test(collideSrc) && /extents\.maxAbs/.test(collideSrc),
+  "yawed nose must hit lining before origin leaves paint"
+);
+check(
+  "Forest land floors the tunnel volume (no tris through the bore)",
+  /else if \(scenery === "forest"\) \{[\s\S]{0,700}tunnelExclusionHalf\(vol\)/.test(trackSrc) &&
+    /tunEnv > 0\.08/.test(trackSrc) &&
+    /_tunnelCutHeight\(along/.test(trackSrc),
+  "Stage 2 heightmap must carve a ridge and keep the drive cone a floor"
+);
+check(
+  "env collision runs while airborne",
+  /bounceOffRoad\(this, q2, track\);[\s\S]{0,80}glanceObstacles\(this, track\);/.test(vehicleSrc) &&
+    !/if \(this\.onGround\) \{\s*bounceOffRoad/.test(vehicleSrc),
+  "hops must not skip walls / rocks"
+);
+check(
+  "short props skip when the car is already above them",
+  /function colliderHitsCarY/.test(collideSrc),
+  "airborne over a cone is not a wall hit"
+);
+check(
+  "game and AI share one Vehicle module version",
+  ((gameSrc.match(/vehicle\.js\?v=(\d+)/) || [])[1] || "") ===
+    ((aiSrc.match(/vehicle\.js\?v=(\d+)/) || [])[1] || "") &&
+    /vehicle\.js\?v=/.test(gameSrc),
+  "split ?v= loads two Vehicle classes"
+);
+check(
+  "desert gallery posts get near-road colliders",
+  /_addDesertRoadsideGallery[\s\S]*?_bumpNearRoad\(bx, bz, pylonGeo/.test(trackSrc),
+  "spectator tape / pylons were visual-only"
+);
+check(
+  "lakeside barrier instances get colliders",
+  /_addInstances\(wallGeo, wallMat, posts[\s\S]{0,80}_bumpPoses\(posts/.test(trackSrc),
+  "verge barriers must stop the car"
+);
+check(
   "mountain trench chase flattened to 48 m",
   /chaseFlat = roadW \* 0\.5 \+ 48/.test(trackSrc) && /lateral: 46/.test(trackSrc),
   "land tris must stay a floor through Stage 3 hairpins"
@@ -112,8 +155,11 @@ check(
 );
 check(
   "every biome skirt is a short tuck",
-  /scenery === "mountain" \? 5\.4/.test(trackSrc) && /scenery === "lakeside" \? 3\.4/.test(trackSrc),
-  "11–12 m skirts folded onto hairpins; mountain 5.4 closes bed canyon"
+  /desert \? 4\.6/.test(trackSrc) &&
+    /scenery === "mountain" \? 6\.2/.test(trackSrc) &&
+    /scenery === "lakeside" \? 4\.4/.test(trackSrc) &&
+    /Smooth reach so neighbouring posts agree/.test(trackSrc),
+  "per-point reach + smooth; 11–12 m slabs folded onto hairpins"
 );
 check(
   "land verts that can own a triangle over asphalt stay a floor",
@@ -151,8 +197,9 @@ check(
 );
 check(
   "underpass floor wins before overlapBed flatten",
-  /_underpassFloorY\(x, z\);[\s\S]*?if \(near\.overlapBed != null\)/.test(trackSrc) &&
-    /_underpassFloorY\(x, z\);[\s\S]*?if \(overlapBed != null\)/.test(trackSrc),
+  /if \(desert && this\._inUnderpassCorridor\(x, z\)\) \{[\s\S]*?_underpassFloorY\(x, z\)/.test(
+    trackSrc
+  ) && /const underFloor = this\._underpassFloorY\(x, z\);/.test(trackSrc),
   "bridge hole must not refill from a nearby hairpin arm"
 );
 check(

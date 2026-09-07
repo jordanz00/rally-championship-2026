@@ -12,7 +12,7 @@ This repository is a browser rally racing game. For this repo, treat the AI as a
 - This rule governs work inside this repository.
 - This rule supersedes inherited workspace instructions when they refer to unrelated domains such as dashboards, advocacy copy, Power BI, healthcare, or print-report workflows.
 - Keep following general safety, security, and non-destructive editing rules, but use this file as the project-specific authority for product direction and execution.
-- **Visual / rendering constitution:** [`CURSOR_GAME_DIRECTIVE.md`](CURSOR_GAME_DIRECTIVE.md) + [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) + [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) + [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) + [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md). Do not interpret vague “make it realistic” as a rewrite or unbounded poly/texture spend. Prefer hero-zone quality, LOD/instancing/streaming, screen-space importance, and measured tiers. Engineering priority: gameplay feel → visual quality → performance → maintainability → sim complexity. Never degrade fun for sim accuracy. WebGPU preferred + WebGL2 fallback; prefer TSL for *new* shaders. Full WebGPU cutover only with explicit **Phase R.2 / Stage 2** approval. Do not create a parallel `src/**/*.ts` tree without user approval — evolve `js/`.
+- **Visual / rendering constitution:** [`CURSOR_GAME_DIRECTIVE.md`](CURSOR_GAME_DIRECTIVE.md) + [`docs/STABILIZATION-BRIEF.md`](docs/STABILIZATION-BRIEF.md) + [`docs/ASSET-QUALITY-GATE.md`](docs/ASSET-QUALITY-GATE.md) + [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) + [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) + [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) + [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md). `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` are **SUPERSEDED** (do not treat six cars or `?v=320` / `v=652` as current). Do not interpret vague “make it realistic” as a rewrite or unbounded poly/texture spend. Prefer hero-zone quality, LOD/instancing/streaming, screen-space importance, and measured tiers. Engineering priority: gameplay feel → visual quality → performance → maintainability → sim complexity. Never degrade fun for sim accuracy. WebGPU preferred + WebGL2 fallback; prefer TSL for *new* shaders. Full WebGPU cutover only with explicit **Phase R.2 / Stage 2** approval. Do not create a parallel `src/**/*.ts` tree without user approval — evolve `js/`.
 
 ## Executive Chain
 
@@ -115,6 +115,8 @@ Use the real project files before making architectural claims:
 - `js/cars/celica.js` — car meshes, wheel pose, lighting hooks, GLB loading
 - `js/ui/hud.js` — HUD readability and driving information
 - `js/audio/engine.js` and `js/audio/codriver.js` — sound response and co-driver presentation
+- `docs/STABILIZATION-BRIEF.md` — current engine state, remaining P0/P1 order, what is already shipped
+- `docs/QA-REPORT.md` — newest hotfix log (read from the top)
 - `docs/AM3-RESEARCH.md` — project source-of-truth for inspiration and handling intent
 - `docs/SEGA_RALLY_DRIVING_MODEL.md` — binding Sega Rally–inspired driving model (arcade, not sim); Physics Lab contract
 - Physics Lab: `?physlab=1` / F8 · torture track `COURSES.physlab` · do not tune by code alone

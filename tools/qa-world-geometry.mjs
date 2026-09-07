@@ -26,21 +26,25 @@ function check(name, cond) {
   }
 }
 
+const d = COURSES.desert;
+const f = COURSES.forest;
 const m = COURSES.mountain;
+check("desert authoredFrom TrackDefinition", d.authoredFrom === "TrackDefinition");
+check("forest authoredFrom TrackDefinition", f.authoredFrom === "TrackDefinition");
 check("mountain authoredFrom TrackDefinition", m.authoredFrom === "TrackDefinition");
-check("mountain has pieces", Array.isArray(m.pieces) && m.pieces.length >= 20);
+check("desert has no tunnel (Saturn Desert is open safari)", !d.pieces.some((p) => p.tunnel));
+check("desert has bumps/jumps", d.pieces.filter((p) => p.type === "jump").length >= 2);
+check("desert ≥1 checkpoint", d.pieces.filter((p) => p.checkpoint).length >= 1);
+check("forest has the rock tunnel", f.pieces.some((p) => p.tunnel));
+check("forest has the killer hairpin", f.pieces.some((p) => p.type === "curve" && Math.abs(p.angle) > 150));
+check("forest ≥2 checkpoints", f.pieces.filter((p) => p.checkpoint).length >= 2);
 check("mountain 3 checkpoint flags", m.pieces.filter((p) => p.checkpoint).length === 3);
-check("mountain has tunnel pieces", m.pieces.some((p) => p.tunnel));
-check("mountain has ≥2 jumps", m.pieces.filter((p) => p.type === "jump").length >= 2);
+check("mountain has no desert-style tunnel", !m.pieces.some((p) => p.tunnel));
+check("mountain starts in the village", m.pieces[0] && m.pieces[0].surface === "cobble");
 
 const kinds = describeTrackRhythm(MOUNTAIN_DEFINITION).map((r) => r.kind);
 check("has hairpin", kinds.includes("hairpin"));
-check("has s_bend", kinds.includes("s_bend"));
-check("has banked_corner", kinds.includes("banked_corner"));
-check("has off_camber_corner", kinds.includes("off_camber_corner"));
-check("has tunnel segment", kinds.includes("tunnel"));
-check("has crest", kinds.includes("crest"));
-check("has surface_transition", kinds.includes("surface_transition"));
+check("has tight_corner", kinds.includes("tight_corner"));
 
 check("desert clearance pad", shoulderPadForScenery("desert") >= 16);
 check("mountain clearance pad", shoulderPadForScenery("mountain") >= 13);

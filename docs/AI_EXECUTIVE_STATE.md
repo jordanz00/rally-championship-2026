@@ -1,7 +1,11 @@
 # AI Executive State — Rally Championship 2026
 
-**Purpose:** Compact brain packet. Read before rediscovering strategy.  
-**Authority:** Code + `docs/QA-REPORT.md` beat stale narrative.  
+> **SUPERSEDED — DO NOT USE AS CURRENT ENGINE STATE**  
+> Snapshot at `main.js?v=652` (2026-09-04). Boot, stages, and open defects have moved.  
+> See [`docs/STABILIZATION-BRIEF.md`](STABILIZATION-BRIEF.md), [`docs/QA-REPORT.md`](QA-REPORT.md), and [`CURSOR_GAME_DIRECTIVE.md`](../CURSOR_GAME_DIRECTIVE.md).
+
+**Purpose (historical):** Compact brain packet.  
+**Authority:** Code + `docs/QA-REPORT.md` beat this file.  
 **Last updated:** 2026-09-04 · Boot `main.js?v=652` · Gate A **SHIP** · Pages ship package
 
 ---

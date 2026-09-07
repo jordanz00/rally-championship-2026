@@ -21,6 +21,10 @@ import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
 const SFX_GAIN = 0.64;
 /** Navigator VO sits off the SFX compressor so calls stay intelligible. */
 const NAV_GAIN = 0.82;
+/** Silence after the last countdown VO (GO) before pace notes may speak. */
+const PACE_AFTER_COUNT_MS = 2000;
+/** Beep-only GO fallback when count-go has not decoded yet. */
+const COUNT_GO_BEEP_MS = 280;
 const VOL_MUSIC_KEY = "rally-vol-music";
 const VOL_SFX_KEY = "rally-vol-sfx";
 const VOL_NAV_KEY = "rally-vol-navigator";
@@ -133,6 +137,11 @@ export class RallyAudio {
     this._navQueue = [];
     /** Start-grid 3-2-1-GO — separate so a late pace decode cannot cut GO. */
     this._countSrc = null;
+    /** True from armCountVo() until the GO clip/beep actually ends. */
+    this._countPending = false;
+    /** performance.now() when GO finished; 0 = never armed (physlab / no VO). */
+    this._countEndedAt = 0;
+    this._countVoTimer = 0;
     /** @type {CrowdVoice|null} */
     this.crowd = null;
     this._sfxReady = false;
@@ -251,6 +260,7 @@ export class RallyAudio {
     this.crowd.boot();
     this._ensureNavBus();
     this._initWind();
+    this._initRain();
     this._bootHits();
     this._hits.noise = makeNoiseBuffer(ctx, 0.18);
     this._hits.thump = makeNoiseBuffer(ctx, 0.28, 0.55);
@@ -356,6 +366,53 @@ export class RallyAudio {
     src.start();
     this._windFilt = bp;
     this._windGain = g;
+  }
+
+  /**
+   * Soft rain bed on the SFX bus — not a music track.
+   */
+  _initRain() {
+    const ctx = this.ctx;
+    if (!ctx || !this._sfxIn) return;
+    const len = Math.floor(ctx.sampleRate * 1.4);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let acc = 0;
+    for (let i = 0; i < len; i++) {
+      const n = Math.random() * 2 - 1;
+      acc = acc * 0.72 + n * 0.28;
+      data[i] = acc;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 420;
+    hp.Q.value = 0.55;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2600;
+    lp.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    src.connect(hp);
+    hp.connect(lp);
+    lp.connect(g);
+    g.connect(this._sfxIn);
+    src.start();
+    this._rainGain = g;
+    this._rainWant = 0;
+  }
+
+  /**
+   * @param {number} intensity 0..1 shower amount
+   */
+  setRain(intensity) {
+    const amt = Math.max(0, Math.min(1, intensity || 0));
+    this._rainWant = amt;
+    if (!this.ready || this._workMute || !this.ctx || !this._rainGain) return;
+    this._rainGain.gain.setTargetAtTime(amt * 0.052 * this.sfxVol, this.ctx.currentTime, 0.4);
   }
 
   _bootHits() {
@@ -634,6 +691,44 @@ export class RallyAudio {
     this._raceLoopsMuted = false;
   }
 
+  /**
+   * Arm the start-grid pace gate. Call when countdown begins so 3-2-1-GO
+   * cannot overlap the first navigator turn. Finish-line countGo() must
+   * not call this — podium GO is not a stage-start gate.
+   */
+  armCountVo() {
+    if (this._countVoTimer) {
+      clearTimeout(this._countVoTimer);
+      this._countVoTimer = 0;
+    }
+    this._countPending = true;
+    this._countEndedAt = 0;
+  }
+
+  /**
+   * True once countdown VO has finished and 2000 ms of silence have elapsed.
+   * Unarmed (no countdown) stays open so F8 / physlab is unaffected.
+   * @returns {boolean}
+   */
+  paceNotesAllowed() {
+    if (this._countPending) return false;
+    if (!this._countEndedAt) return true;
+    return performance.now() >= this._countEndedAt + PACE_AFTER_COUNT_MS;
+  }
+
+  /**
+   * @param {number} [delayMs] extra ms before the 2 s silence starts (beep-only)
+   */
+  _markCountVoEnded(delayMs = 0) {
+    if (this._countVoTimer) {
+      clearTimeout(this._countVoTimer);
+      this._countVoTimer = 0;
+    }
+    if (!this._countPending && this._countEndedAt) return;
+    this._countPending = false;
+    this._countEndedAt = performance.now() + Math.max(0, delayMs);
+  }
+
   beep() {
     if (!this.ready) return;
     playHit(this.ctx, this._sfxIn, this._hits.checkpoint, {
@@ -678,13 +773,31 @@ export class RallyAudio {
 
   /** Recorded "GO" on the same tick the HUD flips to GO! */
   countGo() {
-    if (!this.ready) return;
+    const armed = this._countPending;
+    if (!this.ready) {
+      if (armed) this._markCountVoEnded(0);
+      return;
+    }
     this._playCountVo("count-go");
     playHit(this.ctx, this._sfxIn, this._hits.checkpoint, {
       gain: 0.22,
       rate: 1.42,
       dur: 0.28,
     });
+    if (!armed) return;
+    const src = this._countSrc;
+    const buf = this._navClips["count-go"];
+    if (src) {
+      src.onended = () => {
+        if (this._countSrc !== src) return;
+        this._countSrc = null;
+        this._markCountVoEnded(0);
+      };
+      const durMs = buf && buf.duration > 0 ? buf.duration * 1000 + 40 : COUNT_GO_BEEP_MS;
+      this._countVoTimer = setTimeout(() => this._markCountVoEnded(0), durMs);
+    } else {
+      this._markCountVoEnded(COUNT_GO_BEEP_MS);
+    }
   }
 
   /**

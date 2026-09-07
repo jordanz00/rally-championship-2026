@@ -10,7 +10,7 @@ Run (after downloading the Standard pack into hd-src/quaternius):
 WHO THIS IS FOR: trackside audience that must read as real humans.
 WHAT IT DOES: imports Superhero Male/Female glTF, swaps light/dark albedos,
   attaches hairstyles, applies height/build scales, splits L/R arms for cheer,
-  downsamples textures to 1k, exports character-*.glb with embedded materials.
+  downsamples textures to 512 (after hair attach), exports character-*.glb with embedded materials.
 HOW IT CONNECTS: prop-kit + CrowdField load character-*.glb; prefer pack mats.
 """
 
@@ -451,16 +451,13 @@ def build_one(name: str, female: bool, height: float, xz_mul: float, dark: bool,
         print(f"  FAIL no mesh for {name}", flush=True)
         return
 
-    downsample_images(512)
-    strip_heavy_maps()
-    purge_unused_images()
     ground_and_scale(body, height, xz_mul)
     # Export a single authored human mesh. Cheer arms are split in prop-kit
     # (splitCrowdCharacter) so we keep Quaternius topology/UVs intact.
-    arm_l = arm_r = None
     body.name = "crowd-body"
 
-    # Hair after body is grounded.
+    # Hair BEFORE texture strip — otherwise 2k hair normals sneak into the GLB
+    # and Desert prop-kit decode OOMs ("Course failed to build").
     attach_hair(hair, female)
     delete_armatures()
     hair_meshes = [
@@ -477,6 +474,14 @@ def build_one(name: str, female: bool, height: float, xz_mul: float, dark: bool,
         bpy.ops.object.join()
         body = bpy.context.active_object
         body.name = "crowd-body"
+
+    # Strip/downsample after hair join so every packed image is mid-distance size.
+    strip_heavy_maps()
+    downsample_images(512)
+    purge_unused_images()
+    # Second pass — purge can leave orphans; kill any remaining 1k+ maps.
+    downsample_images(512)
+    purge_unused_images()
 
     for p in body.data.polygons:
         p.use_smooth = True

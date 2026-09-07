@@ -2,20 +2,21 @@
  * Wheel dirt spray — particles kicked from the contact patch.
  *
  * WHO THIS IS FOR: the race loop.
- * WHAT IT DOES (Sprint 27): a layered rear wake — fine hanging dust + heavier
- *   grit — thrown from the rear tires so the chase camera reads a real plume
- *   behind the car. Rate, size, hang, and colour follow speed, slip, surface,
- *   and stage wind. Tarmac / cobble stay clean.
- * HOW IT CONNECTS: game.js emit()s every vehicle after physics, then step(dt);
- *   setAtmosphere() syncs fog + wind from LIGHTING.
+ * WHAT IT DOES (Sprint 27): almost all spray from the rear tires. Fine hanging
+ *   dust + heavier grit leave the left/right contact patches independently,
+ *   inherit chassis + tire-tangential velocity, fall with gravity, and die on
+ *   Track.query height. Rate follows speed, throttle, slip, and spin. Tarmac /
+ *   cobble stay clean.
+ * HOW IT CONNECTS: game.js emit()s the player (and at most two near rivals)
+ *   after physics, then step(dt, track); setAtmosphere() syncs fog + wind.
  *
- * FRAME BUDGET: dust is the only large transparent surface in the frame.
- *   Point size is clamped; the pool is shared by the pack; sprites fog out.
+ * FRAME BUDGET: one pooled Points system. Point size is clamped; AI is a
+ *   whisper. Sprites fog out. No per-particle alloc on the hot path.
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=52";
-import { VISUAL } from "./config.js?v=208";
+import { getSurface } from "./physics/surfaces.js?v=55";
+import { VISUAL } from "./config.js?v=218";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 
 /**
@@ -36,17 +37,17 @@ function particleMaterial(spec) {
 }
 
 /**
- * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h.
- * `chunks` = heavy grit; `plume` = fine hanging dust in the slipstream.
+ * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h
+ * with moderate throttle. `chunks` = heavy grit; `plume` = fine hanging dust.
  * Lift stays low — rally spray kicks backward and sideways, not skyward.
+ * Sand = more / lighter / wider; dirt in between; mud = fewer heavier clumps.
  */
 const PROFILE = {
-  // Sand = long warm hanging plume; gravel = sharp grit spray; mud = heavy dark clods.
-  sand: { rate: 188, size: [0.16, 0.68], life: [0.42, 1.12], gravity: 4.9, drag: 0.82, spread: 2.95, lift: 0.88, kick: 13.8, chunks: 0.18, plume: 0.52 },
-  dirt: { rate: 112, size: [0.12, 0.5], life: [0.28, 0.8], gravity: 8.2, drag: 0.86, spread: 2.1, lift: 0.58, kick: 10.8, chunks: 0.36, plume: 0.32 },
-  gravel: { rate: 96, size: [0.09, 0.38], life: [0.2, 0.62], gravity: 15.5, drag: 0.9, spread: 1.85, lift: 0.32, kick: 11.2, chunks: 0.72, plume: 0.1 },
-  mud: { rate: 78, size: [0.12, 0.44], life: [0.28, 0.72], gravity: 16.5, drag: 0.94, spread: 1.35, lift: 0.24, kick: 9.0, chunks: 0.82, plume: 0.06 },
-  grass: { rate: 36, size: [0.1, 0.34], life: [0.2, 0.55], gravity: 9.5, drag: 0.89, spread: 1.4, lift: 0.32, kick: 7.5, chunks: 0.24, plume: 0.16 },
+  sand: { rate: 205, size: [0.13, 0.56], life: [0.36, 1.02], gravity: 5.6, drag: 0.8, spread: 3.2, lift: 0.7, kick: 12.2, chunks: 0.14, plume: 0.5 },
+  dirt: { rate: 124, size: [0.11, 0.46], life: [0.26, 0.76], gravity: 9.4, drag: 0.86, spread: 2.12, lift: 0.46, kick: 10.2, chunks: 0.38, plume: 0.28 },
+  gravel: { rate: 104, size: [0.08, 0.34], life: [0.18, 0.54], gravity: 16.4, drag: 0.9, spread: 1.92, lift: 0.26, kick: 11.4, chunks: 0.74, plume: 0.08 },
+  mud: { rate: 58, size: [0.15, 0.54], life: [0.22, 0.58], gravity: 20.2, drag: 0.955, spread: 1.08, lift: 0.16, kick: 7.8, chunks: 0.9, plume: 0.04 },
+  grass: { rate: 30, size: [0.09, 0.28], life: [0.16, 0.46], gravity: 11.0, drag: 0.89, spread: 1.2, lift: 0.24, kick: 6.4, chunks: 0.22, plume: 0.12 },
 };
 
 const VERT = /* glsl */ `
@@ -127,8 +128,8 @@ export class Dust {
     this.mat = particleMaterial({
       uniforms: {
         uMap: { value: makeDustSprite() },
-        uScale: { value: 195 },
-        uMaxPx: { value: 46 },
+        uScale: { value: 168 },
+        uMaxPx: { value: 34 },
         uFogColor: { value: new THREE.Color(0xc9b48a) },
         uFogNear: { value: 100 },
         uFogFar: { value: 480 },
@@ -150,13 +151,25 @@ export class Dust {
     this._color = new THREE.Color();
     this._wind = new THREE.Vector3(0, 0, 0);
     this._dustStrength = 0.2;
-    /** @type {WeakMap<object, number>} */
+    /** @type {WeakMap<object, number[]>} per-rear-wheel fractional emit carry */
     this._carry = new WeakMap();
     /** Live particle count — skip GPU uploads when the wake is empty. */
     this.alive = 0;
     this._emitDirty = false;
     this._hadLive = false;
-    for (let i = 0; i < this.count; i++) this.pos[i * 3 + 1] = -40;
+    /** Last known ground height per particle (Track.query at spawn / descent). */
+    this.gnd = new Float32Array(this.count);
+    /** Reused Track.query bag — never allocate per particle. */
+    this._query = {};
+    this._qPhase = 0;
+    /** @type {{query?: Function}|null} */
+    this._track = null;
+    /** POV seat — keep roost off the windshield. */
+    this.cockpit = false;
+    for (let i = 0; i < this.count; i++) {
+      this.pos[i * 3 + 1] = -40;
+      this.gnd[i] = -20;
+    }
   }
 
   /**
@@ -177,144 +190,137 @@ export class Dust {
   }
 
   /**
-   * Kick dirt from the REAR wheels (fronts only when the car is sliding hard).
-   * @param {{position:{x:number,y:number,z:number}, yaw:number, speed:number, surfaceId:string, slip?:number, drifting?:boolean, driftAngle?:number, onGround?:boolean, ai?:boolean, velocity?:{x:number,z:number}, spec?:{wheelbase?:number, trackRear?:number, trackFront?:number}}} vehicle
+   * Kick dirt from the REAR contact patches (left + right independently).
+   * Almost all spray from the rear — no front-axle fountain.
+   *
+   * @param {{position:{x:number,y:number,z:number}, yaw:number, speed:number, surfaceId:string, slip?:number, drifting?:boolean, driftAngle?:number, onGround?:boolean, ai?:boolean, throttle?:number, omegaR?:number, _kappaR?:number, velocity?:{x:number,z:number}, spec?:{wheelbase?:number, trackRear?:number, wheelRadius?:number}, wheels?:object[], progress?:number, _axRear?:{surface?:string}}} vehicle
    * @param {number} dt
+   * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object}|null} [track]
    */
-  emit(vehicle, dt) {
+  emit(vehicle, dt, track) {
     if (vehicle.onGround === false) return;
-    const id = vehicle.surfaceId;
-    const profile = PROFILE[id];
-    if (!profile) return;
-    const surf = getSurface(id);
+    if (track && typeof track.query === "function") this._track = track;
+
     const speed = vehicle.speed || 0;
-    const slip = Math.min(1.4, vehicle.slip || 0);
+    const throttle = vehicle.throttle || 0;
+    const slip = Math.min(1.6, Math.abs(vehicle.slip || 0));
     const drift = Math.abs(vehicle.driftAngle || 0);
-    if (speed < 1.8 && slip < 0.14) return;
+    const kappa = Math.abs(vehicle._kappaR || 0);
+    const omega = Math.abs(vehicle.omegaR || 0);
+    const radius = (vehicle.spec && vehicle.spec.wheelRadius) || 0.325;
+    const spinExcess = Math.max(0, omega * radius - speed);
+    // Parked and not spinning — almost none.
+    if (speed < 1.35 && throttle < 0.1 && kappa < 0.07 && slip < 0.1 && spinExcess < 1.2) return;
 
-    const speedK = clamp01((speed - 2.0) / 32);
-    const slipK = clamp01(slip * 0.95 + (vehicle.drifting ? 0.55 : 0) + drift * 1.05);
-    const focus = vehicle.ai ? 0.78 : 2.15;
-    const envBoost = 0.85 + this._dustStrength * 0.9;
-    const perSec =
-      profile.rate * (0.22 + speedK * 0.9 + slipK * 2.35) * (surf.dust || 1) * focus * envBoost;
-
-    const budget = (this._carry.get(vehicle) || 0) + perSec * dt;
-    // AI pack shares the pool — half the spawn cadence, same player wake fidelity.
-    const cap = vehicle.ai ? 12 : 48;
-    let n = Math.min(cap, budget | 0);
-    this._carry.set(vehicle, budget - n);
-    if (n < 1) return;
-    this._emitDirty = true;
-
-    this._color.setHex(surf.dustColor != null ? surf.dustColor : surf.color);
-    const br = this._color.r;
-    const bg = this._color.g;
-    const bb = this._color.b;
-
-    const fx = Math.sin(vehicle.yaw);
-    const fz = Math.cos(vehicle.yaw);
-    const rx = Math.cos(vehicle.yaw);
-    const rz = -Math.sin(vehicle.yaw);
-    const wb = (vehicle.spec && vehicle.spec.wheelbase) || 2.5;
-    const trackR = ((vehicle.spec && vehicle.spec.trackRear) || 1.5) * 0.5;
+    const yaw = vehicle.yaw || 0;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
     const vx = vehicle.velocity ? vehicle.velocity.x : fx * speed;
     const vz = vehicle.velocity ? vehicle.velocity.z : fz * speed;
-    const slideOut = Math.sign(vehicle.driftAngle || 0) * Math.min(1.1, drift * 1.8);
+    const travel = Math.hypot(vx, vz);
+    const oppX = travel > 0.15 ? -vx / travel : -fx;
+    const oppZ = travel > 0.15 ? -vz / travel : -fz;
+
+    const speedK = clamp01((speed - 1.5) / 30);
+    const slipK = clamp01(slip * 0.95 + (vehicle.drifting ? 0.45 : 0) + drift * 0.9);
+    const spinK = clamp01(kappa * 1.4 + spinExcess / 16);
+    const throtK = clamp01(throttle);
+    const work = speedK * 0.4 + throtK * 0.88 + slipK * 1.5 + spinK * 1.4;
+    if (work < 0.06) return;
+
+    const focus = vehicle.ai ? 0.3 : this.cockpit ? 1.05 : 1.72;
+    const envBoost = 0.82 + this._dustStrength * 0.7;
     const wakeOn = VISUAL.rearDirtWake !== false;
 
-    while (n-- > 0) {
-      const roll = Math.random();
-      const grit = roll < profile.chunks;
-      const plume = !grit && wakeOn && roll < profile.chunks + (profile.plume || 0.2);
-      const speck = !grit && !plume && roll > 0.72;
-      // Almost all spray from the rear contact patch — dirt exits the back of the car.
-      const front = slipK > 0.78 && Math.random() < 0.08;
-      const sideSign = Math.random() < 0.5 ? -1 : 1;
-      const along = front ? wb * 0.32 : -wb * (0.58 + Math.random() * 0.26);
-      const lat =
-        (front ? trackR * 0.88 : trackR) * sideSign +
-        (Math.random() - 0.5) * 0.22 +
-        slideOut * 0.14;
+    let bag = this._carry.get(vehicle);
+    if (!bag || bag.length !== 2) {
+      bag = [0, 0];
+      this._carry.set(vehicle, bag);
+    }
 
+    const spec = vehicle.spec || {};
+    const wb = spec.wheelbase || 2.5;
+    const tr = (spec.trackRear || 1.5) * 0.5;
+    const wheels = vehicle.wheels;
+    const hint = vehicle.progress || 0;
+    const slideSign = Math.sign(vehicle.driftAngle || 0);
+    const tread = omega * radius;
+    const liftCap = this.cockpit ? 0.38 : 1.05;
+    let spawned = false;
+
+    for (let side = 0; side < 2; side++) {
+      const w = wheels && wheels[side + 2];
+      const along = w ? w.z : -wb * 0.5;
+      const lat = w ? w.x : side === 0 ? tr : -tr;
+      const sideSign = w && w.side != null ? w.side : side === 0 ? 1 : -1;
       const px = vehicle.position.x + fx * along + rx * lat;
       const pz = vehicle.position.z + fz * along + rz * lat;
-      const py = vehicle.position.y - 0.02 + Math.random() * 0.04;
 
-      const kick = profile.kick * (0.42 + speedK * 0.48 + slipK * 0.95) * (plume ? 0.88 : 1);
-      const spread = profile.spread * (0.65 + Math.random() * 0.55);
-      const liftBase = profile.lift * (0.12 + Math.random() * 0.38);
-      const lift = grit ? liftBase * 0.35 : plume ? liftBase * 0.55 : liftBase * 0.65;
+      let sid = vehicle.surfaceId;
+      let groundY = vehicle.position.y;
+      const qTrack = this._track;
+      if (qTrack && typeof qTrack.query === "function") {
+        const q = qTrack.query(px, pz, this._query, hint);
+        if (q) {
+          if (q.surface) sid = q.surface;
+          if (Number.isFinite(q.height)) groundY = q.height;
+        }
+      } else if (vehicle._axRear && vehicle._axRear.surface) {
+        sid = vehicle._axRear.surface;
+      }
 
-      const i = this.i % this.count;
-      this.i += 1;
-      const back = 0.35 + Math.random() * (plume ? 0.75 : 0.45);
-      this.pos[i * 3] = px - fx * back;
-      this.pos[i * 3 + 1] = py;
-      this.pos[i * 3 + 2] = pz - fz * back;
+      const profile = PROFILE[sid];
+      if (!profile) continue;
+      const surf = getSurface(sid);
+      const outside = slideSign !== 0 && sideSign === slideSign ? 1.22 : 0.88;
+      const perSec =
+        profile.rate * work * (surf.dust || 1) * focus * envBoost * outside * (this.cockpit ? 0.52 : 1);
+      bag[side] += perSec * dt;
+      const cap = vehicle.ai ? 3 : this.cockpit ? 16 : 20;
+      let n = Math.min(cap, bag[side] | 0);
+      bag[side] -= n;
+      if (n < 1) continue;
+      spawned = true;
 
-      // Slipstream: inherit car velocity, then blast rearward in a low fan — not vertical.
-      const inherit = plume ? 0.62 : grit ? 0.34 : 0.48;
-      const rearX = -fx;
-      const rearZ = -fz;
-      const fanLat = (Math.random() - 0.5) * spread * 2.2;
-      const fanRear = kick * (0.55 + Math.random() * 0.45);
-      const wakeJitter = (Math.random() - 0.5) * spread * 0.85;
+      this._color.setHex(surf.dustColor != null ? surf.dustColor : surf.color);
+      const br = this._color.r;
+      const bg = this._color.g;
+      const bb = this._color.b;
 
-      this.vel[i * 3] =
-        vx * inherit +
-        rearX * fanRear +
-        rx * fanLat +
-        rx * sideSign * slipK * 1.6 +
-        rx * wakeJitter +
-        this._wind.x * (0.28 + Math.random() * 0.32);
-      this.vel[i * 3 + 1] = lift + (Math.random() - 0.5) * 0.18;
-      this.vel[i * 3 + 2] =
-        vz * inherit +
-        rearZ * fanRear +
-        rz * fanLat +
-        rz * sideSign * slipK * 1.6 +
-        rz * wakeJitter +
-        this._wind.z * (0.28 + Math.random() * 0.32);
-
-      const life =
-        lerp(profile.life[0], profile.life[1], Math.random()) *
-        (grit ? 0.48 : plume ? 1.15 : speck ? 0.72 : 0.92);
-      this.life[i] = life;
-      this.maxLife[i] = life;
-      this.fade[i] = 1;
-
-      let sz = lerp(profile.size[0], profile.size[1], Math.random());
-      if (grit) sz *= 0.55 + Math.random() * 0.35;
-      else if (plume) sz *= 0.75 + Math.random() * 0.35 + slipK * 0.12;
-      else if (speck) sz *= 0.35 + Math.random() * 0.25;
-      else sz *= 0.65 + Math.random() * 0.4 + slipK * 0.08;
-      sz *= 0.82 + speedK * 0.28;
-      this.size[i] = sz;
-
-      this.angle[i] = Math.random() * 6.283;
-      this.spin[i] = (Math.random() - 0.5) * (grit ? 14 : plume ? 3 : 8);
-      this.seed[i] = Math.random() * 6.283;
-      this.grav[i] = grit
-        ? profile.gravity * (1.05 + Math.random() * 0.45)
-        : profile.gravity * (plume ? 0.72 : 0.95) * (0.75 + Math.random() * 0.35);
-      this.drag[i] = grit ? 0.965 : plume ? profile.drag * 0.94 : profile.drag * 0.98;
-
-      let shade;
-      if (grit) shade = 0.32 + Math.random() * 0.26;
-      else if (speck) shade = 0.55 + Math.random() * 0.2;
-      else if (plume) shade = 0.62 + Math.random() * 0.22;
-      else shade = 0.48 + Math.random() * 0.3;
-      // Earth wake — muted browns/greys, no banana-yellow sand boost.
-      const warm =
-        id === "sand" ? 0.98 + Math.random() * 0.06 : id === "dirt" ? 1.02 + Math.random() * 0.05 : 1;
-      const cool =
-        id === "mud" ? 0.82 + Math.random() * 0.08 : id === "gravel" ? 0.94 + Math.random() * 0.05 : 1;
-      const gritGrey = id === "gravel" && grit ? 0.9 + Math.random() * 0.08 : 1;
-      this.col[i * 3] = br * shade * warm * gritGrey;
-      this.col[i * 3 + 1] = bg * shade * warm * cool * gritGrey;
-      this.col[i * 3 + 2] = bb * shade * cool * (id === "sand" ? 0.96 : gritGrey);
+      while (n-- > 0) {
+        this._spawnRoost(
+          profile,
+          sid,
+          px,
+          groundY,
+          pz,
+          vx,
+          vz,
+          fx,
+          fz,
+          rx,
+          rz,
+          sideSign,
+          slipK,
+          speedK,
+          throtK,
+          spinK,
+          oppX,
+          oppZ,
+          tread,
+          wakeOn,
+          br,
+          bg,
+          bb,
+          liftCap
+        );
+      }
     }
+
+    if (!spawned) return;
+    this._emitDirty = true;
     this.alive = Math.max(this.alive, 1);
     this.geo.attributes.aColor.needsUpdate = true;
     this.geo.attributes.aSize.needsUpdate = true;
@@ -322,33 +328,174 @@ export class Dust {
   }
 
   /**
-   * @param {number} dt
+   * Write one pooled particle at a rear contact. No heap alloc.
    */
-  step(dt) {
+  _spawnRoost(
+    profile,
+    sid,
+    px,
+    groundY,
+    pz,
+    vx,
+    vz,
+    fx,
+    fz,
+    rx,
+    rz,
+    sideSign,
+    slipK,
+    speedK,
+    throtK,
+    spinK,
+    oppX,
+    oppZ,
+    tread,
+    wakeOn,
+    br,
+    bg,
+    bb,
+    liftCap
+  ) {
+    const roll = Math.random();
+    const grit = roll < profile.chunks;
+    const plume = !grit && wakeOn && roll < profile.chunks + (profile.plume || 0.2);
+    const speck = !grit && !plume && roll > 0.72;
+    const i = this.i % this.count;
+    this.i += 1;
+
+    // Contact patch — tiny rearward jitter, not a fountain spawned behind the car.
+    const jitter = (Math.random() - 0.5) * 0.1;
+    this.pos[i * 3] = px + rx * jitter - fx * (0.04 + Math.random() * 0.08);
+    this.pos[i * 3 + 1] = groundY + 0.02 + Math.random() * 0.03;
+    this.pos[i * 3 + 2] = pz + rz * jitter - fz * (0.04 + Math.random() * 0.08);
+    this.gnd[i] = groundY;
+
+    const kick =
+      profile.kick *
+      (0.22 + speedK * 0.28 + throtK * 0.42 + slipK * 0.55 + spinK * 0.5) *
+      (plume ? 0.82 : 1);
+    const spread = profile.spread * (0.55 + Math.random() * 0.5);
+    const liftBase = profile.lift * (0.1 + Math.random() * 0.32);
+    let lift = grit ? liftBase * 0.28 : plume ? liftBase * 0.48 : liftBase * 0.55;
+    if (lift > liftCap) lift = liftCap;
+
+    const inherit = plume ? 0.34 : grit ? 0.18 : 0.26;
+    const fanLat = (Math.random() - 0.5) * spread * 1.7;
+    const fanRear = kick * (0.55 + Math.random() * 0.4);
+    const tangent = tread * (0.18 + throtK * 0.16 + spinK * 0.22);
+    this.vel[i * 3] =
+      vx * inherit +
+      oppX * fanRear +
+      -fx * tangent +
+      rx * fanLat +
+      rx * sideSign * (0.55 + slipK * 1.35) +
+      this._wind.x * (0.22 + Math.random() * 0.28);
+    this.vel[i * 3 + 1] = lift + (Math.random() - 0.5) * 0.12;
+    this.vel[i * 3 + 2] =
+      vz * inherit +
+      oppZ * fanRear +
+      -fz * tangent +
+      rz * fanLat +
+      rz * sideSign * (0.55 + slipK * 1.35) +
+      this._wind.z * (0.22 + Math.random() * 0.28);
+
+    const life =
+      lerp(profile.life[0], profile.life[1], Math.random()) *
+      (grit ? 0.5 : plume ? 1.08 : speck ? 0.7 : 0.88);
+    this.life[i] = life;
+    this.maxLife[i] = life;
+    this.fade[i] = 1;
+
+    let sz = lerp(profile.size[0], profile.size[1], Math.random());
+    if (grit) sz *= 0.58 + Math.random() * 0.38;
+    else if (plume) sz *= 0.68 + Math.random() * 0.28 + slipK * 0.08;
+    else if (speck) sz *= 0.32 + Math.random() * 0.22;
+    else sz *= 0.58 + Math.random() * 0.32 + slipK * 0.06;
+    sz *= 0.78 + speedK * 0.22;
+    if (this.cockpit) sz *= 0.72;
+    this.size[i] = sz;
+
+    this.angle[i] = Math.random() * 6.283;
+    this.spin[i] = (Math.random() - 0.5) * (grit ? 14 : plume ? 2.6 : 7);
+    this.seed[i] = Math.random() * 6.283;
+    this.grav[i] = grit
+      ? profile.gravity * (1.08 + Math.random() * 0.4)
+      : profile.gravity * (plume ? 0.74 : 0.96) * (0.78 + Math.random() * 0.3);
+    this.drag[i] = grit ? 0.968 : plume ? profile.drag * 0.94 : profile.drag * 0.98;
+
+    let shade;
+    if (grit) shade = 0.28 + Math.random() * 0.24;
+    else if (speck) shade = 0.52 + Math.random() * 0.2;
+    else if (plume) shade = 0.58 + Math.random() * 0.2;
+    else shade = 0.44 + Math.random() * 0.28;
+    const warm = sid === "sand" ? 0.98 + Math.random() * 0.05 : sid === "dirt" ? 1.02 + Math.random() * 0.04 : 1;
+    const cool = sid === "mud" ? 0.78 + Math.random() * 0.08 : sid === "gravel" ? 0.93 + Math.random() * 0.05 : 1;
+    const gritGrey = sid === "gravel" && grit ? 0.9 + Math.random() * 0.08 : 1;
+    this.col[i * 3] = br * shade * warm * gritGrey;
+    this.col[i * 3 + 1] = bg * shade * warm * cool * gritGrey;
+    this.col[i * 3 + 2] = bb * shade * cool * (sid === "sand" ? 0.96 : gritGrey);
+  }
+
+  /**
+   * Integrate pooled particles. Die on Track.query height — no superball bounce.
+   * @param {number} dt
+   * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object}|null} [track]
+   */
+  step(dt, track) {
+    if (track && typeof track.query === "function") this._track = track;
     this._syncFog();
     if (!this.alive && !this._emitDirty) return;
     this._emitDirty = false;
+    const qTrack = this._track;
     const wx = this._wind.x;
     const wz = this._wind.z;
+    this._qPhase = (this._qPhase + 1) & 3;
     let live = 0;
+    let queries = 0;
+    const QCAP = 72;
     for (let i = 0; i < this.count; i++) {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;
       const t = this.life[i];
       const dragK = 1 - this.drag[i];
-      const swirl = Math.sin(this.seed[i] + t * 9) * dragK * 6;
-      const cross = Math.cos(this.seed[i] * 1.9 + t * 7) * dragK * 6;
-      this.vel[i * 3] += (swirl + wx * 0.42) * dt;
-      this.vel[i * 3 + 2] += (cross + wz * 0.42) * dt;
+      const swirl = Math.sin(this.seed[i] + t * 9) * dragK * 4.2;
+      const cross = Math.cos(this.seed[i] * 1.9 + t * 7) * dragK * 4.2;
+      this.vel[i * 3] += (swirl + wx * 0.38) * dt;
+      this.vel[i * 3 + 2] += (cross + wz * 0.38) * dt;
       this.vel[i * 3 + 1] -= this.grav[i] * dt;
       this.vel[i * 3] *= this.drag[i];
       this.vel[i * 3 + 2] *= this.drag[i];
-      this.vel[i * 3 + 1] *= 0.91;
+      this.vel[i * 3 + 1] *= 0.905;
       this.pos[i * 3] += this.vel[i * 3] * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
       this.angle[i] += this.spin[i] * dt;
-      if (this.pos[i * 3 + 1] < -0.25 || t <= 0) {
+
+      let floor = this.gnd[i];
+      const py = this.pos[i * 3 + 1];
+      if (
+        qTrack &&
+        typeof qTrack.query === "function" &&
+        this.vel[i * 3 + 1] < 0 &&
+        py < floor + 1.05 &&
+        queries < QCAP &&
+        (i & 3) === this._qPhase
+      ) {
+        const q = qTrack.query(this.pos[i * 3], this.pos[i * 3 + 2], this._query);
+        queries += 1;
+        if (q && Number.isFinite(q.height)) {
+          floor = q.height;
+          this.gnd[i] = floor;
+        }
+      }
+
+      if (py <= floor + 0.016 || t <= 0 || py < -8) {
+        this.life[i] = 0;
+        this.fade[i] = 0;
+        this.pos[i * 3 + 1] = -40;
+        continue;
+      }
+      if (this.cockpit && py > floor + 0.7) {
         this.life[i] = 0;
         this.fade[i] = 0;
         this.pos[i * 3 + 1] = -40;
