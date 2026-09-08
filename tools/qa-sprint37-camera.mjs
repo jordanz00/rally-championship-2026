@@ -30,8 +30,8 @@ const car = read("js/cars/celica.js");
 
 const med = config.match(/id:\s*["']medium["'][\s\S]{0,900}back:\s*([0-9.]+)[\s\S]{0,160}height:\s*([0-9.]+)/);
 check(
-  "medium chase is a professional rally rig (higher, farther, more road)",
-  med && Number(med[1]) >= 4.6 && Number(med[1]) <= 5.2 && Number(med[2]) >= 1.62 && Number(med[2]) <= 1.82,
+  "medium chase is a Saturn-style rig (car in frame, not bumper-lock)",
+  med && Number(med[1]) >= 5.3 && Number(med[1]) <= 5.9 && Number(med[2]) >= 1.78 && Number(med[2]) <= 1.95,
   med ? `back=${med[1]} height=${med[2]}` : "medium back/height missing"
 );
 
@@ -104,8 +104,8 @@ check(
 
 check(
   "POV is left-hand drive",
-  /Always LHD/.test(car) && /clamp\(eyeX,\s*-0\.5,\s*-0\.22\)/.test(car),
-  "driver eye must sit on negative X"
+  /Visual LHD/.test(car) && /clamp\(eyeX,\s*0\.22,\s*0\.5\)/.test(car),
+  "driver eye must sit on positive X (screen-left after lookAt +Z)"
 );
 
 check(

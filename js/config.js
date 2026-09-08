@@ -637,7 +637,7 @@ export const LIGHTING = {
     envIntensity: 1.55,
     bodyEnv: 1.45,
     chromeEnv: 2.05,
-    glassEnv: 1.45,
+    glassEnv: 2.05,
     /** Pad / apron pick up sky IBL so asphalt reads wet, not white. */
     worldEnv: 0.95,
   },
@@ -1593,6 +1593,12 @@ export const CAMERA = {
    */
   yawStiffnessSlide: 11,
   /**
+   * Hard cap on chase yaw rate (rad/s). 0 = uncapped. Per-view can tighten
+   * this on slides so a powerslide rotates the car in frame, not the world.
+   */
+  yawRateCap: 0,
+  yawRateCapSlide: 0,
+  /**
    * When sliding, blend chase yaw target toward velocity (travel) vs chassis
    * yaw. Higher = camera stays behind the racing line; car still reads angled.
    */
@@ -1654,48 +1660,51 @@ export const CAMERA = {
       id: "medium",
       label: "MEDIUM",
       /**
-       * Professional rally chase: more road ahead, car locked in the lower-middle.
-       * XZ stays glued behind the chassis (no spring trail, no L/R orbit).
-       * Height / look Y get a high-frequency damper only — not SmoothDamp lag.
+       * Sega Rally '95 Saturn chase: follow travel, not the rear bumper.
+       * Grip stays snappy; a powerslide lets the car rotate in frame while the
+       * lens stays on the racing line (far-cam freedom, tighter springs).
        */
-      back: 4.85,
-      height: 1.7,
-      lookAhead: 10.4,
-      lookY: 0.36,
-      fov: 64,
+      back: 5.55,
+      height: 1.86,
+      lookAhead: 11.2,
+      lookY: 0.4,
+      fov: 62,
       /** No speed squat — that buried the roof. Road opens via look-ahead + FOV. */
       speedDropMax: 0,
       /** ~2° at rally speed — readable extra pavement, not an arcade zoom. */
-      speedFovScale: 0.14,
-      speedLookAheadScale: 0.24,
-      stableBehind: true,
-      lockPos: true,
+      speedFovScale: 0.16,
+      speedLookAheadScale: 0.22,
+      stableBehind: false,
+      lockPos: false,
       lockHeight: false,
       /** Jump hang must not crane the lens up; landing kick is separate. */
       lockAir: true,
       heightFollow: 38,
       lookFollow: 32,
-      /** Tight yaw follow: kill 1-frame steer snap without trailing the hairpin. */
-      yawStiffness: 68,
-      yawStiffnessSlide: 68,
-      slideYawBlend: 0,
-      slideLook: 0,
-      slideCamOut: 0,
-      slideLookAhead: 0,
-      slideKickMax: 0,
-      rollFollow: 0.05,
+      /** Grip: keep the hairpin. Slide: lag chassis yaw so the car can angle. */
+      yawStiffness: 18,
+      yawStiffnessSlide: 5.5,
+      yawRateCap: 0,
+      yawRateCapSlide: 1.08,
+      slideYawBlend: 0.78,
+      slideLook: 0.52,
+      slideCamOut: 0.035,
+      slideLookAhead: 1.8,
+      slideKickMax: 0.01,
+      rollFollow: 0.08,
       /** Aim along the ribbon, not a side orbit. */
-      roadLookBlend: 0.2,
+      roadLookBlend: 0.18,
       brakePitchMul: 0.034,
-      accelPitchMul: 0.01,
+      accelPitchMul: 0.012,
       landKickMul: 0.22,
       landFovMul: 0.5,
-      shakeMul: 0.28,
+      shakeMul: 0.22,
       shakeAmp: 0.1,
-      springPosStiff: 220,
-      springPosStiffY: 120,
-      springLookStiff: 200,
-      stiffness: 80,
+      /** Tighter than far (far uses ~0.55× global) — smooth, not floaty. */
+      springPosStiff: 82,
+      springPosStiffY: 48,
+      springLookStiff: 58,
+      stiffness: 26,
       near: 0.2,
     },
     {

@@ -8,7 +8,7 @@
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=218";
+import { COLORS } from "../../config.js?v=220";
 
 export const FOREST_DEFINITION = {
   id: "forest",

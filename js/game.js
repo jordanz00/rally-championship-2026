@@ -10,7 +10,7 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=147";
 import { getSurface } from "./physics/surfaces.js?v=55";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=81";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=179";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=185";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
 import { Track } from "./tracks/track.js?v=332";
 import { preparePropKit, prefetchPropKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=41";
@@ -30,7 +30,7 @@ import {
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=70";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=52";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=45";
-import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=40";
+import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=45";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=1";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=19";
 import { PhotoRealPost } from "./gfx/postfx.js?v=28";
@@ -57,7 +57,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=218";
+} from "./config.js?v=220";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -1756,13 +1756,13 @@ export class RallyGame {
     if (!this.playerMesh) return;
     const L = LIGHTING.title;
     const env = this.scene.environment || this._skyEnv;
+    if (on && env) applyEnvMap(this.playerMesh, env, L.envIntensity);
+    else if (!on && env) applyEnvMap(this.playerMesh, env, VISUAL.carEnvIntensity ?? 0.52);
     setShowcaseReflectivity(this.playerMesh, on, env, {
       bodyEnv: L.bodyEnv,
       chromeEnv: L.chromeEnv,
       glassEnv: L.glassEnv,
     });
-    if (on && env) applyEnvMap(this.playerMesh, env, L.envIntensity);
-    else if (!on && env) applyEnvMap(this.playerMesh, env, VISUAL.carEnvIntensity ?? 0.52);
     this.playerMesh.traverse((o) => {
       if (!o.isMesh) return;
       if (on) {
@@ -3940,7 +3940,24 @@ export class RallyGame {
         ? yawStiffBase + (yawStiffSlide - yawStiffBase) * Math.min(1, driftEarly * 1.8)
         : yawStiffBase;
       const yawFollow = 1 - Math.exp(-yawStiff * dt);
-      this._camYaw += dy * yawFollow;
+      let yawStep = dy * yawFollow;
+      const rateCap = slidingEarly
+        ? mode.yawRateCapSlide != null
+          ? mode.yawRateCapSlide
+          : CAMERA.yawRateCapSlide != null
+            ? CAMERA.yawRateCapSlide
+            : 0
+        : mode.yawRateCap != null
+          ? mode.yawRateCap
+          : CAMERA.yawRateCap != null
+            ? CAMERA.yawRateCap
+            : 0;
+      if (rateCap > 0) {
+        const maxStep = rateCap * dt;
+        if (yawStep > maxStep) yawStep = maxStep;
+        else if (yawStep < -maxStep) yawStep = -maxStep;
+      }
+      this._camYaw += yawStep;
     }
     const sinY = Math.sin(this._camYaw);
     const cosY = Math.cos(this._camYaw);

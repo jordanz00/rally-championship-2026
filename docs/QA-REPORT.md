@@ -1,5 +1,54 @@
 # QA report — quality-control pass
 
+## Ship v737 → GitHub Pages (2026-09-08)
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/ · hard refresh `?v=737`
+
+Title splash glass is opaque mirrored clearcoat. Default medium chase follows travel/slide instead of locking to the tail.
+
+---
+## Title car — opaque mirrored windows + flipped faces (2026-09-07)
+
+**Player moment:** Splash / SELECT MODE. Cabin glass is dark and reflective — you do not see seats, cage triangles, or inside-out panes. Bumper / A-pillar shells that were winding-flipped after the rival LOD merge draw as solid outside faces.
+
+**Cause:** Title glass was FrontSide at ~0.34 opacity (`dressTitleCarShowroom` + `setShowcaseReflectivity`), so the cabin read through. Mirrored body parts baked with a negative-determinant matrix reversed triangle winding; FrontSide then showed the interior.
+
+**Shipped (title showroom only — race/POV glass still transmissive):**
+- Cabin `x0_window_*` / `Window_Glass` upgraded to **Physical clearcoat** mirrors: opaque (`transmission` 0, `depthWrite`), dark tint, sky on the coat — not see-through Standard glass
+- Inner `int_window_*` / cabin cards stay hidden
+- Title clone owns geometry and reverses inward triangles after the rival LOD merge
+- `mergeBodyPanels` reverses winding when `det < 0`
+- Body paint stays **DoubleSide** — FrontSide on the merged shell punched holes in bumper intakes
+- Showcase restore snapshots opacity / side / color so PRESS START cannot leak pad glass into the race car
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=737` · `game.js?v=737` · `celica.js?v=185` · `pbr.js?v=45` · `config.js?v=220`
+
+**Human gate:** hard-refresh the title — windshield and all four side/rear panes are mirrors; no broken triangles in the apertures; C-key POV glass on a stage still see-through.
+
+---
+## Medium camera — Saturn travel-follow chase (2026-09-07)
+
+**Player moment:** Default (medium) chase. Powerslide / drift: the car rotates in frame and the road ahead stays put. The lens is no longer locked to the rear bumper, and it does not whip around with chassis yaw the way the old medium lock did. Far stays the wide pack cam; C-key POV is unchanged.
+
+**Cause:** Medium used `stableBehind` + `lockPos` + `yawStiffness`/`yawStiffnessSlide` 68 with `slideYawBlend: 0`. Every degree of slide yaw orbited the camera around the tail. Far already followed travel with springs; medium overrode that off.
+
+**Shipped (camera only — no `vehicle.js` / `track.js` / physics):**
+- Medium yaw target blends toward **velocity** while sliding (`slideYawBlend` 0.78)
+- Slide yaw is lazy (`yawStiffnessSlide` 5.5) and rate-capped (`yawRateCapSlide` 1.05 rad/s)
+- XZ uses tighter-than-far springs (`lockPos` false, `springPosStiff` 82) so follow is smooth, not floaty
+- Framing pulled back/up slightly (`back` 5.55, `height` 1.86) so the car reads as a sliding object
+- Tiny rear-quarter hint (`slideCamOut` 0.035), not an orbit
+- Jumps still `lockAir`; POV and far untouched
+
+**Proof:** `node tools/qa-medium-camera.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=731` · `game.js?v=731` · `config.js?v=219`
+
+**Human gate:** Desert / Forest hairpin + gravel slide on default camera — car should angle in frame; C-key far/POV must still be the old cameras.
+
+---
 ## POV LHD + smaller rearview (2026-09-06)
 
 **Player moment:** C into the seat. Wheel and gauges sit on the **left**. The interior rearview sits on the **opposite** side of the windshield from the old RHD layout, and is **25% smaller** — still readable. Medium/chase unchanged.

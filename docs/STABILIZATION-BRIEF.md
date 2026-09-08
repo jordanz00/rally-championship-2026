@@ -58,7 +58,7 @@ index.html
 - `FIXED_DT = 1/60`. Meshes follow `drawPose()`. Never write `Vehicle.position` from the mesh.
 - `Track.query(x,z)` is the shared height/surface authority (`splineY + ROAD_DECK + micro`).
 - Visual plant lives on **child** meshes, not `root.position.y` (sync overwrites the wrapper).
-- Default camera is medium: locked behind the car, `height: 1.562`, `lockPos` / `lockHeight`.
+- Default camera is medium Saturn chase: travel-follow yaw (`slideYawBlend`, yaw rate cap), spring XZ (not `lockPos`), `height: 1.86`. POV and far unchanged.
 - Cache-bust: every first-party import is `file.js?v=N`. **One file → one version in the whole graph.** `game.js` and `ai.js` must share `vehicle.js` and `celica.js` versions or ES modules create two singletons.
 
 ---

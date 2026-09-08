@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=218";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=40";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=220";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=45";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -602,22 +602,238 @@ function hideShowroomCabinMeshes(root) {
 }
 
 /**
- * Title-only dress: FrontSide reflective glass, clearcoat lacquer, hide cabin
- * clutter that reads as flipped polygons through the windows. Materials are
- * already cloned for this instance — safe to mutate.
+ * Dark mirrored cabin glass for the title pad — opaque, env-reflective.
+ * Race/POV glass stays transmissive; this is showroom-only.
+ * Clearcoat carries the sky reflection so a dark tint does not crush IBL.
+ * @param {THREE.Material} src
+ * @returns {THREE.Material}
+ */
+function applyShowroomWindowMaterial(src) {
+  const phys = src.isMeshPhysicalMaterial ? src : new THREE.MeshPhysicalMaterial();
+  if (phys !== src) {
+    phys.name = src.name || "Window_Glass";
+    if (src.color) phys.color.copy(src.color);
+    if (src.map) phys.map = src.map;
+    if (src.envMap) phys.envMap = src.envMap;
+    if (src.normalMap) phys.normalMap = src.normalMap;
+  }
+  phys.transparent = false;
+  phys.opacity = 1;
+  phys.alphaTest = 0;
+  if ("alphaMap" in phys) phys.alphaMap = null;
+  phys.depthWrite = true;
+  phys.depthTest = true;
+  phys.side = THREE.FrontSide;
+  phys.color.setHex(0x0c1218);
+  phys.roughness = 0.06;
+  phys.metalness = 0.14;
+  phys.transmission = 0;
+  phys.thickness = 0;
+  phys.clearcoat = 1;
+  phys.clearcoatRoughness = 0.025;
+  phys.clearcoatEnvMapIntensity = 3.2;
+  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 1.85);
+  phys.userData.kind = "glass";
+  phys.userData.lockEnv = true;
+  phys.userData.showroomOpaqueGlass = true;
+  if ("forceSinglePass" in phys) phys.forceSinglePass = true;
+  phys.needsUpdate = true;
+  return phys;
+}
+
+/**
+ * True when this mesh is cabin glazing (not a headlamp lens).
+ * @param {string} n
+ * @param {boolean} lamp
+ * @param {THREE.Material} src
+ */
+function isCabinWindowMaterial(n, lamp, src) {
+  if (lamp) return false;
+  if (src.userData && src.userData.showroomOpaqueGlass) return true;
+  if (src.userData && src.userData.kind === "glass") return true;
+  if (/x0_window_|window_glass|windshield|windscreen|glazing|interior_glass_windows/.test(n)) return true;
+  if (/glass|window/.test(n) && !/light|lamp|lens|pod|combi|rev_/.test(n)) return true;
+  return !!(src.transparent && (src.opacity == null || src.opacity < 0.9));
+}
+
+const _inwardCenter = new THREE.Vector3();
+const _inwardPos = new THREE.Vector3();
+const _inwardNor = new THREE.Vector3();
+const _inwardOut = new THREE.Vector3();
+const _triA = new THREE.Vector3();
+const _triB = new THREE.Vector3();
+const _triC = new THREE.Vector3();
+const _triN = new THREE.Vector3();
+const _triMid = new THREE.Vector3();
+
+/**
+ * Fraction of sampled vertices whose normals point toward `center`.
+ * @param {THREE.Mesh} obj
+ * @param {THREE.Vector3} center
+ * @returns {number|null}
+ */
+function meshInwardFraction(obj, center) {
+  const geo = obj.geometry;
+  if (!geo || !geo.attributes || !geo.attributes.position) return null;
+  const pos = geo.attributes.position;
+  const nor = geo.attributes.normal;
+  if (!nor || pos.count < 3) return null;
+  obj.updateWorldMatrix(true, false);
+  const step = Math.max(1, (pos.count / 32) | 0);
+  let votes = 0;
+  let inward = 0;
+  for (let i = 0; i < pos.count; i += step) {
+    _inwardPos.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
+    _inwardNor.fromBufferAttribute(nor, i).transformDirection(obj.matrixWorld).normalize();
+    _inwardOut.copy(_inwardPos).sub(center);
+    if (_inwardOut.lengthSq() < 1e-8) continue;
+    _inwardOut.normalize();
+    votes += 1;
+    if (_inwardNor.dot(_inwardOut) < 0) inward += 1;
+  }
+  if (votes < 3) return null;
+  return inward / votes;
+}
+
+/**
+ * Swap two vertices' attributes (non-indexed triangle flip).
+ * @param {THREE.BufferAttribute} [attr]
+ * @param {number} i1
+ * @param {number} i2
+ */
+function swapAttrVertices(attr, i1, i2) {
+  if (!attr) return;
+  const item = attr.itemSize;
+  const arr = attr.array;
+  for (let k = 0; k < item; k++) {
+    const a = i1 * item + k;
+    const b = i2 * item + k;
+    const t = arr[a];
+    arr[a] = arr[b];
+    arr[b] = t;
+  }
+  attr.needsUpdate = true;
+}
+
+/**
+ * Rival LOD merge bakes mixed winding into one buffer. Reverse any triangle
+ * that faces the car center so FrontSide draws a closed outer shell; inner
+ * cavity faces then sit behind the skin in depth.
+ * @param {THREE.Mesh} obj
+ * @param {THREE.Vector3} center
+ * @returns {number}
+ */
+function reverseInwardOuterTriangles(obj, center) {
+  const srcGeo = obj.geometry;
+  if (!srcGeo || !srcGeo.attributes || !srcGeo.attributes.position) return 0;
+  ownTitleGeometry(obj);
+  const geo = obj.geometry;
+  const pos = geo.attributes.position;
+  obj.updateWorldMatrix(true, false);
+  const mw = obj.matrixWorld;
+
+  const worldPos = (idx, target) => {
+    target.fromBufferAttribute(pos, idx).applyMatrix4(mw);
+  };
+
+  const faceInward = (ia, ib, ic) => {
+    worldPos(ia, _triA);
+    worldPos(ib, _triB);
+    worldPos(ic, _triC);
+    _triN.subVectors(_triB, _triA);
+    _inwardOut.subVectors(_triC, _triA);
+    _triN.cross(_inwardOut);
+    _triMid.copy(_triA).add(_triB).add(_triC).multiplyScalar(1 / 3);
+    _inwardOut.copy(_triMid).sub(center);
+    if (_inwardOut.lengthSq() < 1e-10) return false;
+    return _triN.dot(_inwardOut) < 0;
+  };
+
+  let flipped = 0;
+  if (geo.index) {
+    const idx = geo.index.array;
+    for (let i = 0; i + 2 < idx.length; i += 3) {
+      if (!faceInward(idx[i], idx[i + 1], idx[i + 2])) continue;
+      const tmp = idx[i + 1];
+      idx[i + 1] = idx[i + 2];
+      idx[i + 2] = tmp;
+      flipped += 1;
+    }
+    geo.index.needsUpdate = true;
+  } else {
+    for (let i = 0; i + 2 < pos.count; i += 3) {
+      if (!faceInward(i, i + 1, i + 2)) continue;
+      swapAttrVertices(pos, i + 1, i + 2);
+      swapAttrVertices(geo.attributes.normal, i + 1, i + 2);
+      swapAttrVertices(geo.attributes.uv, i + 1, i + 2);
+      swapAttrVertices(geo.attributes.uv2, i + 1, i + 2);
+      flipped += 1;
+    }
+  }
+  if (flipped) geo.computeVertexNormals();
+  return flipped;
+}
+
+/**
+ * Title clone: un-flip outer shells without punching FrontSide holes.
+ * @param {THREE.Mesh} obj
+ * @param {THREE.Vector3} center
+ */
+function fixTitleShowroomWinding(obj, center) {
+  const frac = meshInwardFraction(obj, center);
+  if (frac == null) return;
+  if (frac >= 0.82) {
+    flipInwardMesh(obj);
+    return;
+  }
+  if (frac >= 0.22) reverseInwardOuterTriangles(obj, center);
+}
+
+/**
+ * Title clone shares template buffers — own the geo before reversing winding.
+ * @param {THREE.Mesh} obj
+ */
+function ownTitleGeometry(obj) {
+  if (!obj.geometry || obj.geometry.userData._titleOwned) return;
+  obj.geometry = obj.geometry.clone();
+  obj.geometry.userData._titleOwned = true;
+}
+
+/**
+ * Flip authored-inward shells so FrontSide draws the outside.
+ * @param {THREE.Mesh} obj
+ */
+function flipInwardMesh(obj) {
+  ownTitleGeometry(obj);
+  reverseTriangleWinding(obj.geometry);
+  const nor = obj.geometry.attributes.normal;
+  if (nor) {
+    const a = nor.array;
+    for (let i = 0; i < a.length; i++) a[i] = -a[i];
+    nor.needsUpdate = true;
+  } else {
+    obj.geometry.computeVertexNormals();
+  }
+}
+
+/**
+ * Title-only dress: opaque mirrored cabin glass, FrontSide shells, hide cabin
+ * clutter that used to read as flipped polygons through the windows.
  * @param {THREE.Object3D} root
  */
 function dressTitleCarShowroom(root) {
   hideShowroomCabinMeshes(root);
+  root.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(root);
+  bounds.getCenter(_inwardCenter);
   root.traverse((obj) => {
     const name = `${obj.name || ""} ${obj.parent && obj.parent.name ? obj.parent.name : ""}`.toLowerCase();
     // Celica GLB inner panes (`int_window_fl/fr`) sit on the same aperture as
-    // `x0_window_*`. FrontSide glass then z-fights and reads as broken triangles
-    // in the side windows. Interior door cards do the same through the glass.
-    // Keep the rollcage — that belongs in a rally cabin.
+    // `x0_window_*`. Interior door cards poke through as broken triangles.
     if (
       /\bint_window/.test(name) ||
       /\bint_door/.test(name) ||
+      /interior_glass_windows/.test(name) ||
       /int_accelerator|int_brake|int_clutch|int_dials|int_gearstick|int_handbrake/.test(name)
     ) {
       obj.visible = false;
@@ -632,7 +848,6 @@ function dressTitleCarShowroom(root) {
       obj.userData.interiorKeepHidden = true;
       return;
     }
-    // Cabin clutter through translucent glass = "flipped polygon" read.
     if (
       /harness|seatbelt|seat.?belt|carpet|pedal|floorpan|cabin.?floor|interior.?trim|dashboard|dash.?board|instrument|gauge|needle|steering.?wheel|steerwheel|cabin|cockpit.?mesh|seat(?!belt)/.test(
         name
@@ -644,28 +859,18 @@ function dressTitleCarShowroom(root) {
       return;
     }
     const list = [].concat(obj.material || []);
+    const nAll = `${name} ${list.map((m) => (m && m.name) || "").join(" ")}`.toLowerCase();
+    const lamp = /light|lamp|lens|head|tail|brake|signal/.test(nAll);
+    const wheel = /wheel|tyre|tire|rim|hub/.test(nAll);
+    if (!wheel && !lamp && obj.geometry) {
+      fixTitleShowroomWinding(obj, _inwardCenter);
+    }
     const next = list.map((src) => {
       if (!src) return src;
       const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
-      const lamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
-      const isGlass =
-        !lamp &&
-        (src.userData.kind === "glass" ||
-          !!(src.transparent && (src.opacity == null || src.opacity < 0.9)) ||
-          /glass|window|windshield|windscreen|glazing/.test(n));
-      if (isGlass) {
-        src.transparent = true;
-        src.opacity = Math.min(src.opacity != null ? src.opacity : 0.38, 0.34);
-        if (src.roughness != null) src.roughness = Math.min(src.roughness, 0.03);
-        if (src.metalness != null) src.metalness = Math.min(src.metalness, 0.06);
-        src.depthWrite = false;
-        src.side = THREE.FrontSide;
-        src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.4);
-        src.userData.kind = "glass";
-        src.userData.lockEnv = false;
-        if ("forceSinglePass" in src) src.forceSinglePass = true;
-        src.needsUpdate = true;
-        return src;
+      const isLamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
+      if (isCabinWindowMaterial(n, isLamp, src)) {
+        return applyShowroomWindowMaterial(src);
       }
       const isChrome =
         src.userData.kind === "chrome" ||
@@ -696,6 +901,7 @@ function dressTitleCarShowroom(root) {
         phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.5, 1.55);
         phys.userData.kind = "paint";
         phys.userData.lockEnv = false;
+        phys.side = src.side != null ? src.side : THREE.DoubleSide;
         phys.needsUpdate = true;
         return phys;
       }
@@ -1288,12 +1494,62 @@ function isUnmergeable(obj, root, protectPov) {
 }
 
 /**
+ * Swap triangle winding. Used after a negative-determinant bake: applyMatrix4
+ * already rebuilds normals, but FrontSide still culls the now-reversed faces
+ * (inside-out bumper / A-pillar on the title pad).
+ * @param {THREE.BufferGeometry} geo
+ */
+function reverseTriangleWinding(geo) {
+  if (!geo) return;
+  const idx = geo.index;
+  if (idx) {
+    const a = idx.array;
+    for (let i = 0; i + 2 < a.length; i += 3) {
+      const t = a[i + 1];
+      a[i + 1] = a[i + 2];
+      a[i + 2] = t;
+    }
+    idx.needsUpdate = true;
+    return;
+  }
+  const pos = geo.attributes.position;
+  if (!pos) return;
+  const arr = pos.array;
+  const item = pos.itemSize || 3;
+  for (let i = 0; i + 2 < pos.count; i += 3) {
+    const a = (i + 1) * item;
+    const b = (i + 2) * item;
+    for (let k = 0; k < item; k++) {
+      const t = arr[a + k];
+      arr[a + k] = arr[b + k];
+      arr[b + k] = t;
+    }
+  }
+  pos.needsUpdate = true;
+  const uv = geo.attributes.uv;
+  if (uv && uv.itemSize) {
+    const u = uv.array;
+    const us = uv.itemSize;
+    for (let i = 0; i + 2 < uv.count; i += 3) {
+      const a = (i + 1) * us;
+      const b = (i + 2) * us;
+      for (let k = 0; k < us; k++) {
+        const t = u[a + k];
+        u[a + k] = u[b + k];
+        u[b + k] = t;
+      }
+    }
+    uv.needsUpdate = true;
+  }
+}
+
+/**
  * Collapse the static bodyshell into one mesh per material, in place.
  *
  * Geometry is baked into root-local space first, so the merged meshes can hang
  * straight off the root while wheels keep their own transforms. Attributes are
  * normalised to position/normal/uv because mergeGeometries refuses lists whose
- * attribute sets differ, which a Sketchfab export always has.
+ * attribute sets differ, which a Sketchfab export already has.
  *
  * @param {THREE.Group} root
  * @param {{protectPov?: boolean}} [opts] set protectPov for the player's car
@@ -1316,7 +1572,9 @@ function mergeBodyPanels(root, opts = {}) {
         bucket = { geo: [], mesh: [] };
         groups.set(obj.material, bucket);
       }
-      const geo = obj.geometry.clone().applyMatrix4(scratch.copy(inverse).multiply(obj.matrixWorld));
+      const world = scratch.copy(inverse).multiply(obj.matrixWorld);
+      const geo = obj.geometry.clone().applyMatrix4(world);
+      if (world.determinant() < 0) reverseTriangleWinding(geo);
       bucket.geo.push(normalizeForMerge(geo));
       bucket.mesh.push(obj);
     });

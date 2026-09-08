@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { setWorldRoadWetness } from "../gfx/pbr.js?v=40";
+import { setWorldRoadWetness } from "../gfx/pbr.js?v=45";
 
 const STREAK_COUNT = 360;
 const DROP_MAX = 88;

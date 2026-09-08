@@ -9,7 +9,7 @@
  * Championship ~1:08 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=218";
+import { COLORS } from "../../config.js?v=220";
 
 export const MOUNTAIN_DEFINITION = {
   id: "mountain",

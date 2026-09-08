@@ -79,8 +79,8 @@ check(
 );
 check(
   "POV cabin is seated LHD with a wider in-car FOV",
-  /Always LHD/.test(car) &&
-    /clamp\(eyeX,\s*-0\.5,\s*-0\.22\)/.test(car) &&
+  /Visual LHD/.test(car) &&
+    /clamp\(eyeX,\s*0\.22,\s*0\.5\)/.test(car) &&
     /fov:\s*80/.test(car) &&
     /binnacleHood/.test(car)
 );
@@ -124,8 +124,8 @@ check(
     /slideLookAhead/.test(game)
 );
 check(
-  "medium chase does not inherit slide orbit",
-  /id:\s*"medium"[\s\S]{0,1400}slideCamOut:\s*0/.test(config)
+  "medium slide offset is a hint, not an orbit",
+  /id:\s*"medium"[\s\S]{0,1600}slideCamOut:\s*0\.0[2-4]/.test(config)
 );
 check(
   "cache-bust chain",

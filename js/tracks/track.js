@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=218";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=220";
 import { roadMicroHeight } from "./road-micro.js?v=9";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=5";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
@@ -33,7 +33,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=40";
+} from "../gfx/pbr.js?v=45";
 
 /** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {

@@ -57,9 +57,11 @@ check(
   /rivalTemplates\[chassis\]/.test(celica) &&
     /export function createTitleCar/.test(celica)
 );
-check("title car hides the cockpit", /hideHeavyInterior\(clone\)/.test(celica) && /setCockpitView\(clone, false\)/.test(celica));
+check("title windows are opaque mirrored glass", /applyShowroomWindowMaterial/.test(celica) && /showroomOpaqueGlass/.test(celica));
+check("title merge reverses inverted winding", /reverseTriangleWinding/.test(celica) && /determinant\(\) < 0/.test(celica));
+check("title showroom flips outer inward triangles", /reverseInwardOuterTriangles/.test(celica) && /fixTitleShowroomWinding/.test(celica));
 check("hero Celica is HTML-preloaded", /assets\/celica\/gt4\.glb/.test(index) && /rel="preload"/.test(index));
-check("WebGL boots on the next frames, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
+check("WebGL boots on the next frames, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) =>/.test(game) && /bootGfx\(\)/.test(game) && !/, 1600\)/.test(game));
 check("title fetch starts in the constructor", /this\._titleCarWarm = prepareTitleCar/.test(game));
 check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWorld/.test(game) && /makeTitleAsphaltMaps/.test(game) && !/CircleGeometry\(52, 24\)/.test(game));
 check("title pad is wet asphalt with roughness map", /Mesh(?:Physical|Standard)Material/.test(game) && /roughnessMap:\s*asphaltMaps\.roughness/.test(game));

@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=218";
+import { VISUAL } from "../config.js?v=220";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -763,7 +763,7 @@ export function applyEnvMap(root, envMap, intensity) {
         if (m.userData.hud || m.userData.povHud) continue;
         if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
           m.envMap = envMap;
-          if (intensity != null && !m.userData.lockEnv) {
+          if (intensity != null && !m.userData.lockEnv && !m.userData.showroomOpaqueGlass) {
             const kind = m.userData.kind;
             let tint = intensity;
             if (kind === "road") {
@@ -836,26 +836,43 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
               clearcoat: m.clearcoat,
               clearcoatRoughness: m.clearcoatRoughness,
               clearcoatEnvMapIntensity: m.clearcoatEnvMapIntensity,
+              transparent: m.transparent,
+              opacity: m.opacity,
+              depthWrite: m.depthWrite,
+              side: m.side,
+              color: m.color ? m.color.getHex() : null,
+              transmission: m.transmission,
             };
           }
           const kind = m.userData.kind;
-          const isGlass = kind === "glass" || !!(m.transparent && (m.opacity == null || m.opacity < 0.92));
+          const isGlass =
+            kind === "glass" ||
+            !!(m.userData.showroomOpaqueGlass) ||
+            !!(m.transparent && (m.opacity == null || m.opacity < 0.92) && /window|glass|glazing|windshield/.test(`${m.name || ""} ${obj.name || ""}`.toLowerCase()));
           const isChrome =
             kind === "chrome" || (m.metalness != null && m.metalness > 0.58 && !isGlass);
           const isRubber = kind === "rubber";
           if (envMap) m.envMap = envMap;
           if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
             if (isGlass) {
-              // Always boost glass in the showroom — lockEnv must not leave dull panes.
-              m.envMapIntensity = glassEnv;
-              m.roughness = Math.min(m.roughness != null ? m.roughness : 0.12, 0.03);
-              m.metalness = Math.min(m.metalness != null ? m.metalness : 0, 0.08);
+              // Showroom panes are mirrored glass, not see-through cabin holes.
+              m.envMapIntensity = Math.max(glassEnv, 1.85);
+              m.roughness = 0.06;
+              m.metalness = 0.14;
               m.side = THREE.FrontSide;
-              m.depthWrite = false;
-              m.transparent = true;
-              m.opacity = Math.min(m.opacity != null ? m.opacity : 0.38, 0.36);
+              m.depthWrite = true;
+              m.transparent = false;
+              m.opacity = 1;
+              if (m.color) m.color.setHex(0x0c1218);
+              if (m.isMeshPhysicalMaterial) {
+                m.transmission = 0;
+                m.clearcoat = 1;
+                m.clearcoatRoughness = 0.025;
+                m.clearcoatEnvMapIntensity = 3.2;
+              }
               m.userData.kind = "glass";
-              m.userData.lockEnv = false;
+              m.userData.lockEnv = true;
+              m.userData.showroomOpaqueGlass = true;
             } else if (isChrome) {
               if (!m.userData.lockEnv) m.envMapIntensity = chromeEnv;
               m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.05);
@@ -903,6 +920,12 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
           if (s.clearcoatEnvMapIntensity != null) {
             m.clearcoatEnvMapIntensity = s.clearcoatEnvMapIntensity;
           }
+          if (s.transparent != null) m.transparent = s.transparent;
+          if (s.opacity != null) m.opacity = s.opacity;
+          if (s.depthWrite != null) m.depthWrite = s.depthWrite;
+          if (s.side != null) m.side = s.side;
+          if (s.color != null && m.color) m.color.setHex(s.color);
+          if (s.transmission != null && m.transmission != null) m.transmission = s.transmission;
           delete m.userData._showcaseSnap;
           m.needsUpdate = true;
         }
