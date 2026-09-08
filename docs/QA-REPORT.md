@@ -1,5 +1,106 @@
 # QA report — quality-control pass
 
+## Consolidation sprint — scrape, hero trees, boot (2026-09-08)
+
+**Player moment:** Hard-refresh `main.js?v=771`. Drift along a road edge and scrape instead of pinball. Forest close trees are Poly Haven PBR (bark vs leaves split). Title still has painted nose + reflective side glass. Championship Desert boot does not pull Forest hero GLBs until Forest is queued.
+
+**Closed this sprint (gaps on current boot — not a chaos re-run):**
+- **Road-edge pinball** — `collide.js?v=54`: glance kills a share of closing speed and feeds along-nose; correction passes 1–5 are position-only; shoulder dumps outward speed into along-track (`PLAYER_SHOULDER_SCRAPE`), not 0.2 inward bounce; env push 0.58 → 0.24 m. No `vehicle.js` rewrite.
+- **Hero tree materials** — island trees are one mesh + 3 materials; `splitHeroTreeMesh` slices groups so leaves keep foliage PBR. Kenney `tree_*` no longer parse on Forest/Mountain kit. HTTP-prefetch 8 hero GLBs when Forest/Mountain is queued.
+- **Asset gate** — `FOREST_TREE_LARGE` / `FOREST_TREE_MEDIUM` HAVE + PASS (`qa-asset-quality` exit 0). Far LOD still Sketchfab cards.
+- **In-flight merge:** title nose/glass (`celica.js?v=196`), lock-30 light layers, GO-lock (`vehicle.js?v=153` import only), SSGI/gpu-lod, Desert 1k maps — left in tree, not re-implemented.
+
+**48h already shipped (verified, not re-done):** tire grit, Forest tunnel length, Desert Safari spacing, Mountain reverse-at-GO, world-XZ PBR, lock-30 (do not restore 16 outdoor point lights).
+
+**Two-week PARTIALs closed or cut:**
+- Title black nose / broken side windows — **closed** (v=765–766 dress path).
+- Forest trees REJECT — **closed** (hero GLBs + gate PASS). Do not fake; files have normals + ~31k tris.
+- Jump-3 teleport PARTIAL (Sprint 89) — **cut as stale**; superseded by Sprints 90–98 / road-lock.
+- Terrain through road — **already shipped** (`_addLandTile` trench); not revived.
+
+**Still open:**
+- `forest_hero_fern` 4-plane billboard (REJECT) — no Kenney substitute.
+- Forest tunnel portal geology (maps on tube, not sculpted rock).
+- Kenney bushes as Forest hero.
+- Absolute 60 fps claim — lock-30 is the floor; headed Windows 5 fps not re-measured here.
+- Stage-build wedge (result/loading pump) — not this sprint.
+- Headed Chrome probes SKIP in this Cursor host.
+
+**Refused to re-run:** six-car `?v=320` / SUPERSEDED GPT briefs; `track.js`/`vehicle.js` wholesale rewrite; second `Track.query()`; Forest cone trees; restoring 16 outdoor point lights; default WebGPU cutover; Nanite/Lumen as Unreal; commit/push.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-asset-quality.mjs`
+
+**Boot:** `main.js?v=771` · `game.js?v=771` · `collide.js?v=54` · `vehicle.js?v=153` · `ai.js?v=179` (shared vehicle) · `prop-kit.js?v=43` · `track.js?v=344` · `celica.js?v=196`
+
+**Human gate:** Desert drift onto the verge — scrape along, do not bounce back onto tarmac. Forest 12 m — bark and leaves are different materials. Title orbit — painted nose, smooth side glass.
+
+---
+
+## Tight boot path — no unused title downloads (2026-09-08)
+
+**Player moment:** First paint / PRESS START. The attract pad comes up without competing for ~17 MB of files the showroom never uses. SELECT CAR stays clickable; championship still warms Desert only.
+
+**Cause:** HTML preloaded the 7.0 MB Celica hero (`gt4.glb`) while the pad uses the 3.0 MB rival LOD. It also prefetched Forest + Mountain HDRs (~9.6 MB) that title never samples. `watchForCelicaFile` ran on splash and immediately `tryLocalGltf`'d all three heroes. After PRESS START, `prepareRivalLods` ran twice and `prefetchPropKit` `arrayBuffer()`'d the whole Desert kit on top of `preparePropKit` already parsing it. Track cache kept all four stages.
+
+**Shipped (boot/load only — no `track.js` / `vehicle.js` rewrite, lock-30 layers / tire plant / organic roads untouched):**
+- Title preload is `rival.glb`; only kloofendal HDR (title + Desert) is HTML-prefetched
+- Garage watcher starts after PRESS START (or skip-title); paused again if you return to attract
+- Duplicate rival-LOD parse and prop-kit `arrayBuffer` prefetch removed from idle warm
+- Track RAM budget is current + next championship stage (`_preloadMax = 2`)
+- STREAM spline prefetch capped at 2 chunks (440 m); fog still hides the rest; skip-present compile warms the next slice
+
+**Not shipped:** Three.js minify, deleting QA `tools/`, dropping DPR, restoring 16 outdoor point lights, Kenney trees as PASS, rewriting physics.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=771` · `game.js?v=771` · `vehicle.js?v=153` · `celica.js?v=196` · `ai.js?v=179` (shared vehicle/celica)
+
+**Human gate:** hard-refresh title. Network: no `gt4.glb` / `sunflowers` / `kloppenheim` until a race that needs them. Pad still shows the Celica. PRESS START → car buttons unlock from rival LODs without a 7 MB hitch.
+
+---
+
+## Photoreal Forest heroes + Desert PBR maps (2026-09-08)
+
+**Player moment:** Medium chase at 5–30 m. Forest verge trees are Poly Haven photoreal GLBs (bark + foliage PBR, ~31k tris), not the Sketchfab 3.7k-tri pack. Desert ribbon and sand land use photographic 1k albedo/normal/rough/AO, world-XZ projected. Lighting is Kelvin sun + IBL + ACES — not bloom, not 16 outdoor point lights.
+
+**Shipped:**
+- Eight CC0 hero trees packed to `assets/props/forest_hero_tree_a…h.glb` (island_tree_01/02/03, fir_sapling_medium, tree_small_02, fir_sapling, pine_sapling_small, searsia_lucida). Far LOD still pack atlas cards.
+- Desert maps: aerial_sand, brown_mud_dry, aerial_rocks_02, asphalt_track. Surgical bind in `track.js` (no `Track.query` rewrite).
+- Forest fog/IBL retuned to match HDR (less green wash, `worldEnv` 1.0). Desert IBL 1.05. Lock-30 light-layer isolation unchanged.
+
+**Not shipped:** Nanite/Lumen. pine_tree_01 / fir_tree_01 as published (~487–958 MB). Volumetric ferns, tunnel portal meshes, extra boulders. Mountain/Lakeside photo sets.
+
+**Proof:** `node tools/qa-asset-quality.mjs` PASS · `node tools/qa-static-audit.mjs` PASS
+
+**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
+
+**Human gate:** Forest stop-and-look at 5/10/20/30 m — two trees must not read as faceted pack trunks. Desert start — sand/dirt/tarmac photographic, not canvas grain.
+
+---
+
+## Tight boot path — no unused title downloads (2026-09-08)
+
+**Player moment:** First paint / PRESS START. The attract pad comes up without competing for ~17 MB of files the showroom never uses. SELECT CAR stays clickable; championship still warms Desert only.
+
+**Cause:** HTML preloaded the 7.0 MB Celica hero (`gt4.glb`) while the pad uses the 3.0 MB rival LOD. It also prefetched Forest + Mountain HDRs (~9.6 MB) that title never samples. `watchForCelicaFile` ran on splash and immediately `tryLocalGltf`'d all three heroes. After PRESS START, `prepareRivalLods` ran twice and `prefetchPropKit` `arrayBuffer()`'d the whole Desert kit on top of `preparePropKit` already parsing it. Track cache kept all four stages.
+
+**Shipped (boot/load only — no `track.js` / `vehicle.js` rewrite, lock-30 layers / tire plant / organic roads untouched):**
+- Title preload is `rival.glb`; only kloofendal HDR (title + Desert) is HTML-prefetched
+- Garage watcher starts after PRESS START (or skip-title); paused again if you return to attract
+- Duplicate rival-LOD parse and prop-kit `arrayBuffer` prefetch removed from idle warm
+- Track RAM budget is current + next championship stage (`_preloadMax = 2`)
+- STREAM spline prefetch capped at 2 chunks (440 m); fog still hides the rest; skip-present compile warms the next slice
+
+**Not shipped:** Three.js minify, deleting QA `tools/`, dropping DPR, restoring 16 outdoor point lights, Kenney trees as PASS, rewriting physics.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=770` · `game.js?v=770` · `vehicle.js?v=152` · `celica.js?v=196` · `ai.js?v=178` (shared vehicle/celica)
+
+**Human gate:** hard-refresh title. Network: no `gt4.glb` / `sunflowers` / `kloppenheim` until a race that needs them. Pad still shows the Celica. PRESS START → car buttons unlock from rival LODs without a 7 MB hitch.
+
+---
+
 ## GitHub Pages ship v=770 (2026-09-08)
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard-refresh `?v=770`
@@ -23,7 +124,7 @@
 
 **Proof:** `node tools/qa-asset-quality.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=769` · `game.js?v=769` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
+**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
 
 **Human gate:** Forest stop-and-look at 5/10/20/30 m — two trees must not read as faceted pack trunks. Desert start — sand/dirt/tarmac photographic, not canvas grain.
 
@@ -43,7 +144,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=769` · `game.js?v=769` · `postfx.js?v=31` · `renderer-factory.js?v=5` · `track.js?v=343` · `gpu-lod.js?v=1`
+**Boot:** `main.js?v=771` · `game.js?v=771` · `postfx.js?v=31` · `renderer-factory.js?v=5` · `track.js?v=344` · `gpu-lod.js?v=1`
 
 **Verify:** default URL (WebGL + SSGI + importance LOD). `?webgpu=1` — console `[Phase R.2] renderer=webgl2 three=r170`. `?webgpu=native` — `renderer=webgpu` if `navigator.gpu` works; post off. `?webgpu=0` forces classic WebGL.
 

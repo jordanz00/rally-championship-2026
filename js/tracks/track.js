@@ -52,7 +52,7 @@ function terrainTileSegs() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=19";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=42";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=43";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -78,7 +78,7 @@ import {
   forestMouthBoulderPoses,
   plantForestMouthBoulders,
 } from "./forest-tunnel.js?v=4";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=30";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=31";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, updateClothFlags } from "./flag-cloth.js?v=2";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).

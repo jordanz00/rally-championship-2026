@@ -2,7 +2,7 @@
 
 **Status:** Binding working packet for humans and LLMs.  
 **Date:** 2026-09-08  
-**Boot:** `index.html` → `js/main.js?v=770`  
+**Boot:** `index.html` → `js/main.js?v=771`  
 **Live URL may lag this tree.**
 
 This document replaces `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` as **current engine state**. Those files are historical and marked SUPERSEDED.
