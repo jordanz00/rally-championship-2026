@@ -1,5 +1,395 @@
 # QA report — quality-control pass
 
+## GitHub Pages ship v=770 (2026-09-08)
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/ · hard-refresh `?v=770`
+
+**This push:** grit, Forest tunnel, Desert jumps, lights-out lock, lock-30 light layers, projected PBR, title nose/glass, Forest hero trees + Desert 1k maps, shoulder scrape (not pinball). `prop-kit` one instance. `collide.js?v=53` / `vehicle.js?v=152` shared.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+---
+
+## Photoreal Forest heroes + Desert PBR maps (2026-09-08)
+
+**Player moment:** Medium chase at 5–30 m. Forest verge trees are Poly Haven photoreal GLBs (bark + foliage PBR, ~31k tris), not the Sketchfab 3.7k-tri pack. Desert ribbon and sand land use photographic 1k albedo/normal/rough/AO, world-XZ projected. Lighting is Kelvin sun + IBL + ACES — not bloom, not 16 outdoor point lights.
+
+**Shipped:**
+- Eight CC0 hero trees packed to `assets/props/forest_hero_tree_a…h.glb` (island_tree_01/02/03, fir_sapling_medium, tree_small_02, fir_sapling, pine_sapling_small, searsia_lucida). Far LOD still pack atlas cards.
+- Desert maps: aerial_sand, brown_mud_dry, aerial_rocks_02, asphalt_track. Surgical bind in `track.js` (no `Track.query` rewrite).
+- Forest fog/IBL retuned to match HDR (less green wash, `worldEnv` 1.0). Desert IBL 1.05. Lock-30 light-layer isolation unchanged.
+
+**Not shipped:** Nanite/Lumen. pine_tree_01 / fir_tree_01 as published (~487–958 MB). Volumetric ferns, tunnel portal meshes, extra boulders. Mountain/Lakeside photo sets.
+
+**Proof:** `node tools/qa-asset-quality.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=769` · `game.js?v=769` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
+
+**Human gate:** Forest stop-and-look at 5/10/20/30 m — two trees must not read as faceted pack trunks. Desert start — sand/dirt/tarmac photographic, not canvas grain.
+
+---
+## Phase R.2 — Nanite-like LOD + Lumen-like SSGI (2026-09-08)
+
+**Player moment:** Medium chase on Forest / Desert. Trees dead-ahead stay authored GLB a bit past `lodNear`; side/behind clusters swap to pack cards sooner (no extra polys). Floor and verges pick up a modest colour bounce from neighbours (green canopy, warm sand) without extra point lights. Default boot stays WebGL r160.
+
+**Shipped:**
+- **Nanite-like:** `js/gfx/gpu-lod.js` screen-space importance (distance × screen size × facing) hooked into existing hi/lo stream bands. Instancing unchanged. No cone trees.
+- **Lumen-like:** half-res SSGI in `postfx.js` (8-tap, depth-gated). Every 2nd present; every 3rd on lock-30 / title. Skipped on post `low`. Did **not** restore outdoor `NUM_POINT_LIGHTS`.
+- **WebGPU:** opt-in only. `?webgpu=1` remaps `vendor/three.module.js` → `three.webgpu.js` (r170) and uses WebGPURenderer with **WebGL2 backend** (GLSL post still on). `?webgpu=native` is true WebGPU (GLSL post off). Missing remap or init failure falls back to r160 WebGL. Default path does not load the r170 build.
+
+**Not shipped:** Epic Nanite/Lumen, compute cull, TSL post port, default WebGPU cutover, outdoor point lights.
+
+**FPS risk:** SSGI is one extra half-res pass at 15 Hz (10 Hz on lock-30). LOD can *reduce* fill on peripherals. Lock-30 cadence unchanged. Windows 5 fps cliff (16 point lights) not reintroduced.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=769` · `game.js?v=769` · `postfx.js?v=31` · `renderer-factory.js?v=5` · `track.js?v=343` · `gpu-lod.js?v=1`
+
+**Verify:** default URL (WebGL + SSGI + importance LOD). `?webgpu=1` — console `[Phase R.2] renderer=webgl2 three=r170`. `?webgpu=native` — `renderer=webgpu` if `navigator.gpu` works; post off. `?webgpu=0` forces classic WebGL.
+
+**Human gate:** Forest start, look down the road — near/ahead trees stay detailed; glance left and far cards appear sooner. Stop in a verge: road/soil slightly picks up neighbour colour, not a bloom bloom. Windows iGPU should still lock-30, not 5 fps.
+
+---
+
+## GitHub Pages ship v=766 (2026-09-08)
+
+**Player moment:** Live build at https://jordanz00.github.io/rally-championship-2026/ after this push. Hard-refresh `?v=766`.
+
+**Shipped in this working tree (session consolidation):**
+- Loose-road tire grit; Forest tunnel length + sealed lining; Desert Safari jump spacing; lights-out never reverse; lock-30 light layers; world-projected PBR; title nose + side glass; Forest hero tree GLBs + Desert 1k PBR maps on the player path
+
+**Not in this push:** `hd-src` / Kenney backups (not live). Road-edge pinball follow-up still open.
+
+**Boot:** `main.js?v=766` · `game.js?v=766` · `prop-kit.js?v=42` (one instance) · `track.js?v=341` · `celica.js?v=196` · `vehicle.js?v=151`
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+---
+
+## Title hero — nose paint + side-window panes (2026-09-08)
+
+**Player moment:** Splash / SELECT MODE. The Celica nose reads as painted metal (grille and hood vents are mesh, not black holes). Both side windows are continuous reflective glass, not shattered triangles.
+
+**Cause (code evidence):**
+1. **Nose:** Sketchfab `Grills` on `FRONT_BUMPER_SUB2` / `MOTORHOOD_SUB2` is authored `alphaMode: BLEND`. `isCabinWindowMaterial` treated any transparent material as cabin glass, then `applyShowroomWindowMaterial` painted those intakes **0x0c1218** opaque FrontSide. `/grille/` in the chrome heuristic also pushed metalness toward a black mirror before IBL.
+2. **Side windows:** Title uses `assets/celica/rival.glb`. LOD `x0_window_fl/fr` are **4 tris** (quarters **3**); hero is ~27. `fixTitleShowroomWinding` could also reverse mixed window faces. Showcase then stomped remaining glass back to opaque black FrontSide.
+
+**Shipped (title showroom only — no `track.js` / `vehicle.js`, lock-30 layers untouched):**
+- `isCabinWindowMaterial` is name-gated (`x0_window_*` / `Window_Glass`). Grills stay DoubleSide paint via `applyTitleGrillMaterial`
+- Stop mixed-triangle winding flips (those punched concave bumper intakes)
+- Hide shattered LOD side/quarter panes; plant a smooth outward `PlaneGeometry` with Physical glass (metalness 0, roughness ~0.03, high env/clearcoat, no transmission pass)
+- `setShowcaseReflectivity` keeps that reflective glass and skips lamp lenses
+- Title car still `enableLocalLightReceiver(..., TITLE_LIGHT_LAYER)`; camera still `_armPresentLayers` (0+2+3). Did **not** move outdoor point lights back onto Forest trees
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-sprint84-title-showroom.mjs --static` PASS. Headed title screenshot **SKIP** in this Cursor host (Chrome.app TransformProcessType abort; IDE browser tab unavailable).
+
+**Boot:** `main.js?v=766` · `game.js?v=766` · `celica.js?v=196` · `ai.js?v=178` (shared celica) · `pbr.js?v=49` · `track.js?v=340` · `forest-tunnel.js?v=4` · `rain.js?v=8`
+
+**Human gate:** hard-refresh `http://127.0.0.1:8765/` title. Nose-on: bumper/grille/hood vents are painted, not black holes. Orbit: left and right side glass are one smooth reflective pane each. Delta/Stratos share the dress path.
+
+---
+
+## Lights-out never reverses the car (2026-09-08)
+
+**Player moment:** Championship Stage 3 (Mountain) 3-2-1-GO. Floor it at the lights. The Celica must leave the grid forward — never slide backward a few frames, then catch. Same on Desert / Forest / Lakeside, Time Attack, Practice, uphill or downhill grids.
+
+**Cause:** Countdown does **not** call `Vehicle.step`. Load still ran `_collideCars()` (and left env overlap for later `glanceObstacles`). That wrote leftover reverse Δv / a pending wall shove. First race frames also skip `_guardXZ` while `_glitchIgnore` is 8, so a 1.2 m wall push was legal. Mountain’s cobble village + last-place grid (198 m into the opening climb) made it obvious; authored `dy: 1.4 / 108 m` is only ~0.7° and cannot move the car by itself.
+
+**Shipped (start-flow + launch lock — no `track.js` rewrite, tire plant / deck filter untouched):**
+- After grid collide, `settleStartGrid` depenetrates env then `freezeLaunch` zeros velocity / `_axDrive`
+- GO calls `_armLightsOut` so countdown leftovers cannot apply
+- For 0.55 s after spawn/GO, throttle on + brake off refuses negative body-vx and undoes a backward XZ shove (closed-throttle hill rollback unchanged)
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-go-launch.mjs` PASS (static contracts). Headed Mountain GO **SKIP** in this Cursor host (Chrome.app TransformProcessType abort). Run `RALLY_QA_ALLOW_CHROME=1 node tools/qa-go-launch.mjs` from Terminal.app for the live probe.
+
+**Boot:** `main.js?v=763` · `game.js?v=763` · `vehicle.js?v=151` · `ai.js?v=177` (shared vehicle)
+
+**Human gate:** Mountain practice + championship Stage 3. Hold accelerate through 3-2-1. At GO the car must only go forward. Repeat Desert / Forest / Lakeside Time Attack.
+
+---
+
+## Windows 5 fps — cheaper equivalent present (2026-09-08)
+
+**Player moment:** Low-power Windows laptop (typical iGPU / ANGLE). Race must be playable at a **locked 30 fps** without turning the stage into a potato (no DPR cut, no `perf=min`, no shadows-off as the fix).
+
+**Cause (code evidence, not their box):** Outdoor MeshStandardMaterials were compiling with **16 PointLights + 1 SpotLight** on layer 0 — 14 tunnel sconces + title kick + cabin fill stay `visible: true` at intensity 0 so `NUM_POINT_LIGHTS` never changes. Three.js still evaluates them on every forest/road/terrain fragment. Combined with cinema post, 1536² PCF shadows, and `lockRaceQuality` (no mid-race dump), a Windows iGPU can sit at ~5 fps. Lock-30 was only a present skip; a 200 ms GPU frame still delivers 5 fps.
+
+**Shipped (hidden cost, same hero-camera look):**
+- Isolate tunnel/title/cabin lights onto layers 2/3; trees/road/terrain stay sun+fill+hemi only. Tunnel meshes + cars still receive sconces.
+- Low-power / Windows iGPU (or hidden renderer string) **force lock-30 at settle** — cadence only, cinema post/PCF/DPR kept.
+- `_applyQualityTier` no longer drops DPR / atlas / post / BasicShadowMap unless `?perf=low|min`.
+- Lock-30 shadow bake every 3 presents (soft PCF). Temporal AO every other present. Sky dome 24×16 (was 64×32). Skip-present compile 6 ms at half rate.
+- Did **not** add hero GLBs, density, or Nanite-scale work. Forest trees stay REJECT.
+
+**Not shipped:** Road-edge bounce (collide.js). Identified: env `applyGlance` kills all inward normal vel + up to 0.58 m push; 6 correction passes; shoulder bounce 0.2. Left for a follow-up so this pass did not fight `vehicle.js`.
+
+**Proof:** `node tools/qa-static-audit.mjs`. Headed Windows 5 fps **not measured here**. Frame probe if the host allows.
+
+**Boot:** `main.js?v=764` · `game.js?v=764` · `lighting-rig.js?v=20` · `perf-tier.js?v=52` · `postfx.js?v=29` · `sky.js?v=46` · `renderer-factory.js?v=3` · `capabilities.js?v=2`
+
+**Human gate:** Windows iGPU Desert start, medium chase. HUD should settle near 30, not 5. Shadows and grade still on. Tunnel mouth still lit, no shader pop.
+
+## Lights-out never reverses the car (2026-09-08)
+
+**Player moment:** Championship Stage 3 (Mountain) 3-2-1-GO. Floor it at the lights. The Celica must leave the grid forward — never slide backward a few frames, then catch. Same on Desert / Forest / Lakeside, Time Attack, Practice, uphill or downhill grids.
+
+**Cause:** Countdown does **not** call `Vehicle.step`. Load still ran `_collideCars()` (and left env overlap for later `glanceObstacles`). That wrote leftover reverse Δv / a pending wall shove. First race frames also skip `_guardXZ` while `_glitchIgnore` is 8, so a 1.2 m wall push was legal. Mountain’s cobble village + last-place grid (198 m into the opening climb) made it obvious; authored `dy: 1.4 / 108 m` is only ~0.7° and cannot move the car by itself.
+
+**Shipped (start-flow + launch lock — no `track.js` rewrite, tire plant / deck filter untouched):**
+- After grid collide, `settleStartGrid` depenetrates env then `freezeLaunch` zeros velocity / `_axDrive`
+- GO calls `_armLightsOut` so countdown leftovers cannot apply
+- For 0.55 s after spawn/GO, throttle on + brake off refuses negative body-vx and undoes a backward XZ shove (closed-throttle hill rollback unchanged)
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-go-launch.mjs`
+
+**Boot:** `main.js?v=762` · `game.js?v=762` · `vehicle.js?v=151` · `ai.js?v=177` (shared vehicle)
+
+**Human gate:** Mountain practice + championship Stage 3. Hold accelerate through 3-2-1. At GO the car must only go forward. Repeat Desert / Forest / Lakeside Time Attack.
+
+---
+
+## World-XZ / triplanar maps + AO bump (2026-09-08)
+
+**Player moment:** Medium chase at 5–30 m. Dirt / sand / gravel / mud read as volume (normals + AO cavities in world metres), not ribbon-UV barcode. Tarmac stays flatter and distinct from cobble. Forest floor and skirts stop wallpaper-tiling as hard. Forest tunnel rock uses the unused ARM pack on triplanar UVs.
+
+**Cause:** Organic road already projected **albedo** in world-XZ. Normal, roughness, and AO still sampled ribbon UV, so lighting rebuilt the washboard. Tunnel `tunnel_rock_arm_1k.jpg` was on disk and never bound. Terrain/skirt used tile UVs only.
+
+**Shipped (sampling / bump / projection only — no `Track.query` rewrite, no new post stack, no extra resolution):**
+- Shared `armProjectedMaps`: world-XZ (roads/land/skirt) or triplanar (Forest tunnel)
+- Projects albedo + normal + roughness + AO + metalness; AO/roughness also bound as `bumpMap` and folded into the tangent normal
+- Dual-scale world normals (~12 m + ~2.4 m) so photo grain reads at chase distance
+- Per-surface normal punch: tarmac softer, cobble/gravel/dirt stronger
+- Forest skirt now gets land roughness + AO
+- Forest tunnel loads ARM (R=AO G=rough B=metal) and triplanar-samples it
+
+**Honest:** Three.js r160 WebGL, not Nanite. Forest hero trees still REJECT. No displacement/height files exist for dirt/gravel/forest_floor — bump is AO/roughness, not a real height map. Desert/Mountain/Lakeside roads remain canvas PBR with the same projection.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-road-micro.mjs` · `node tools/qa-asset-quality.mjs` (exit 1 Forest REJECT expected)
+
+**Boot:** `main.js?v=763` · `game.js?v=763` · `pbr.js?v=48` · `track.js?v=339` · `forest-tunnel.js?v=3` · `celica.js?v=195` · `ai.js?v=177` · `rain.js?v=7`
+
+**Human gate:** Desert start, medium chase — sand grain unique under the car, not bars. Forest dirt should not wallpaper every 2 m; tarmac/cobble stay distinct.
+
+---
+
+## Desert Safari jumps — spaced pair, real hang (2026-09-08)
+
+**Player moment:** Championship Stage 1 (Desert). After the easy right, two Safari jumps with a recovery straight you can feel. Takeoff pop, hang over a hole, land with weight — then settle before the second lip. No double-jump stutter.
+
+**Cause:** The pair sat on an **18 m** recovery straight. Spline lip-to-lip was **~70 m** (8+10 m hole + 18 m land + 18 m straight + 16 m next ramp). At Safari pace (~45 m/s) that is ~0.4 s from land pad to the next ramp, so the car was still climbing/settling when it hit jump 2. Authored gaps were 9–10 m, so the hole was shorter than apex distance — the land pad kissed the chassis on the way up.
+
+**Shipped (Desert definition only — no `track.js` / `vehicle.js` rewrite, jump.js ballistic leave unchanged, tire plant / deck filter untouched):**
+- Recovery straight **18 m → 80 m** (land-end to next ramp)
+- Spline lip-to-lip **~70 m → ~170 m**
+- Jump 1: ramp 18 / rise 2.05 / lip 6 / gap 32 / drop 1.55 / land 34 (grade ~11.4%, hole ~36 m)
+- Jump 2: ramp 20 / rise 2.25 / lip 6 / gap 36 / drop 1.75 / land 36 (grade ~11.3%, hole ~40 m)
+- Teaching **bumps** crest unchanged (isolated whoops before the ER, not the stacked pair)
+- Flight feel: existing `JumpModel` leave is still `v·sin(θ)` + capped spring; longer holes let that parabola play (~1.2 s hang at 45 m/s) instead of a stutter hop. Not a moon hop (grade +1% vs old), not a dead thud (deeper drop + land pad past apex)
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-jump-feel.mjs` PASS · `node tools/qa-jump-launch-energy.mjs` PASS · `node tools/qa-sprint74-jump-air.mjs` PASS · `node tools/qa-sprint68-jump-land.mjs` PASS (static; headed SKIP — no Chrome)
+
+**Boot:** `main.js?v=761` · `game.js?v=761` · `courses.js?v=85` · `desert-definition.js?v=8` · `jump.js?v=32` (unchanged)
+
+**Human gate:** Desert practice, medium chase. First jump flies and lands. A beat of sand. Second jump is its own event. Brake-in-air still drops the nose.
+
+---
+
+## Forest tunnel — longer bore + sealed walls (2026-09-08)
+
+**Player moment:** Stage 2 (Forest). After the Very Long Easy Left, the rock tunnel is a long dark tube — enter, medium left, then a long straight — with no sky, terrain, or slit visible in the walls from the medium chase camera.
+
+**Cause:** Authored bore was a 58° / 46 m curve + 72 m straight (~118.5 m). The swept horseshoe left open floor toes (inner/outer thickness uncapped along the length), so the wall–road join could read as a hole.
+
+**Shipped (Forest definition + `forest-tunnel.js` only — no `Track.query` / vehicle rewrite, tire plant / deck filter untouched):**
+- Bore lengthened: 16 m outdoor approach, then **24 m entrance straight + 46.5 m ML curve + 160 m straight ≈ 230.5 m** (was ~118.5 m, **+112 m**)
+- Under-deck wall lips + longitudinal inner↔outer toe caps; denser curve frames; more wall/arc segments
+- Collision volumes / `_wallFace` follow the longer `tunnel: true` run automatically
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS (Forest ~2233 m, 1 tunnel) · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-desert-tunnel-mouth.mjs` PASS (static) · headed Forest practice **SKIP** (Chrome blocked in Cursor agent host; IDE browser tab unavailable)
+
+**Boot:** `main.js?v=758` · `game.js?v=758` · `courses.js?v=85` · `forest-definition.js?v=8` · `track.js?v=338` · `forest-tunnel.js?v=2`
+
+**Human gate:** Forest practice, medium chase, drive the tunnel. It should feel almost twice as long. Walls/ceiling/floor joins stay closed — no sky or woods through the lining.
+
+---
+
+## Subtle tire grit on loose roads (2026-09-08)
+
+**Player moment:** Medium chase on Desert sand, Forest dirt, or a muddy stretch. Rear tires kick a short, small, physics-falling spray — tan on sand, brown on dirt, dark wet clumps on mud. Tarmac and cobble stay clean. Slides throw more grit sideways off the outside rear.
+
+**Cause:** `Dust` already existed, but air drag was a per-frame keep-fraction (`*= 0.86`) and vertical velocity was `*= 0.905` every tick. At 60 Hz grit froze and hit `Track.query` height in a tenth of a second, so the player saw almost no wake. Point size also capped at 34 px, which read as a billboard when anything did survive.
+
+**Shipped (existing `Dust` pool — no second FX system, no `track.js` / `vehicle.js` rewrite):**
+- dt-correct exponential drag and gravity so specks leave the contact patch, arc ~15–40 cm, and die on the ribbon
+- Dirt / sand / mud / gravel only (grass / tarmac / cobble skip)
+- Per-surface tint + variable small sizes; `uMaxPx` 14; points skip depth test so the bumper does not eat the wake
+- Rate follows speed, throttle, slip, and `slidePct()` — cruise trickle, slide burst
+- Spawn sits outside + behind the rear treads so chase cam sees grit beside the quarters
+
+**Proof:** `node tools/qa-sprint27-env.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=755` · `game.js?v=755` · `effects.js?v=74`
+
+**Human gate:** Desert start, medium chase, throttle + a slide. Small tan grit behind the rears. Forest dirt is browner. Lakeside tarmac must throw nothing.
+
+---
+
+## Organic roadways — no washboard barcode (2026-09-08)
+
+**Player moment:** Medium chase on Desert (sand) or Forest (dirt). The driven ribbon looks like packed earth / gravel, not a stack of uniform horizontal lines.
+
+**Cause:** Albedo used `sin(y)` ripples, micro-height used `sin(dist)` corrugation, and the road shader sampled the map only in ribbon UV — every tile seam and washboard bar read as a line across the lane.
+
+**Shipped (paint + micro + road shader — no `Track.query` rewrite):**
+- Canvas dirt/sand/gravel is 2D grain and irregular blotches, not sine washboard
+- Ribbon height uses 2D value-noise with real left/right change
+- Road material blends world-XZ and a rotated sample so photos and canvas do not stamp
+- Upward ribbon normals are welded so spline posts do not light as bars
+
+**Proof:** `node tools/qa-road-micro.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=751` · `game.js?v=751` · `track.js?v=337` · `pbr.js?v=47` · `road-micro.js?v=10` · `vehicle.js?v=150` · `celica.js?v=194` · `ai.js?v=175` · `rain.js?v=6`
+
+**Human gate:** Desert start, medium chase. Road grain should look unique under the car, not repeating bars. Forest dirt should not wallpaper every 2 m.
+
+---
+
+## Player tires kiss the roadway (2026-09-08)
+
+**Player moment:** Medium chase, parked or rolling. Rubber sits on the painted deck — not hovering, not buried through the tarmac.
+
+**Cause:** Physics origin is `TIRE_PLANT` (14 mm) into the slab so the hull can follow a filtered deck. Visual hubs followed that origin, plus `plantOnContactPatch` sink and up to 4.2 cm of `DECK_FOLLOW_SLACK`, so sidewalls clipped the ribbon.
+
+**Shipped (visual plant only — no `track.js` rewrite, deck filter kept so throttle stays smooth):**
+- `TIRE_PLANT` stays 14 mm (anti-float hull)
+- Mesh sink 4 mm; hubs lift via `chassisDeckEmbed` so tread world Y is a 2 mm kiss on paint
+- Extra lift equals chassis vs live `query.height` (capped 6 cm); airborne keeps a chassis-relative offset; never chase a stale low `_deckFilt`
+- Visual hub extension is not drawn through the ribbon (compression into the arch still plays)
+
+**Proof:** `node tools/qa-sprint63-plant.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=749` · `game.js?v=749` · `celica.js?v=192` · `vehicle.js?v=149` · `ai.js?v=173`
+
+**Human gate:** Start grid / first 100 m in medium chase. Tires should look planted on asphalt; floor the throttle and confirm the hull does not trampoline.
+
+---
+
+## Mountain POV rain — speed streaks + full-glass wipers (2026-09-08)
+
+**Player moment:** C into the seat on Stage 3 (Mountain). Rain beads cover the windshield. At crawl they run down; at pace they streak up and outboard. The two blades are longer and wipe the glass they actually pass over — not a tiny patch in the middle.
+
+**Cause:** The POV rain pane was 1.26×0.56 m (cabin-width cap) with 88 static dots on a 256×128 canvas. Sweep used a guessed pie, and each blade was a 0.4 m stick.
+
+**Shipped (weather + cockpit glass only — no `track.js` / `vehicle.js` rewrite):**
+- Glass is parented to the POV head and sized for 80° / 16:9 so drops cover the windshield aperture
+- Droplets spawn across the pane; gravity vs ram-air from `player.speed` (and a hint of slide)
+- Blades sit on that pane (~half-glass long, arm + rubber); they clear only drops under the live rubber
+- Intermittent wipe still, shorter rest in heavy rain
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=745` · `game.js?v=745` · `celica.js?v=188` · `ai.js?v=169` · `rain.js?v=4`
+
+**Human gate:** Mountain (or `?rain=1`) → C for POV. Parked: beads creep down. Throttle: streaks climb. Wipers cut a clean path.
+
+---
+
+
+**Player moment:** Floor it. The player car and the pack stay planted — no herky Y bobble, wheel pump, or hold-then-jump stutter while accelerating.
+
+**Cause:** Grounded Y was overwritten every tick with raw `Track.query` height + road chatter (washboard at speed). An 8 mm hover cap then snapped the hull onto every peak. Meshes also drew at leftover alpha 1, so 90–144 Hz displays held a pose then jumped a 60 Hz physics step.
+
+**Shipped (targeted plant + draw interpolation — no `track.js` rewrite):**
+- Ordinary-road chassis follows a filtered deck (`DECK_FOLLOW_SLACK` 4.2 cm); lips/lands still use the tight 8 mm cap
+- HF `roadChatter` no longer added to chassis Y; wheel hubs ignore centimetre washboard
+- Race draw uses leftover-frame `drawPose` after car-car collide (Gaffer)
+- Medium chase height/look damp so residual Y is not world-shake
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-rival-jitter.mjs` · `node tools/qa-phys-authority.mjs`
+
+**Boot:** `main.js?v=742` · `game.js?v=742` · `vehicle.js?v=148` · `ai.js?v=166`
+
+**Human gate:** Desert or Forest start — full throttle in medium chase. Body should look heavy and smooth; rivals the same.
+
+---
+
+**Player moment:** Stage 2 chase. The racing line is a warm packed-dirt strip with cream/earth kerbs; the woods stay moss-green. The road is ~32% wider (start ~17.4 m, tunnel ~15.3 m).
+
+**Cause:** Forest photo vertex tints lifted both ribbon and land toward the same beige, so `dirt_floor` and `forest_floor` read as one surface. Dirt/gravel had no painted edge. The Saturn-narrow 11.6–13.2 m ribbon disappeared between trees.
+
+**Shipped (Forest definition + ribbon/land tint + kerbs — no `vehicle.js` rewrite):**
+- All Forest widths × **1.32** (`forestWidth()` in the stage definition)
+- Road albedo multiplied warm ochre; vertex tint stays packed tan, not near-white
+- Forest floor / skirt stay moss — beige photo lift removed
+- Shoulder next to paint is moss, not extra brown dirt
+- Dirt/gravel kerbs: alternating cream / dark earth, 0.62 m wide
+
+**Proof:** `node tools/qa-world-geometry.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=741` · `game.js?v=741` · `track.js?v=335` · `courses.js?v=82` · `forest-definition.js?v=7` · `forest-pbr.js?v=2`
+
+**Human gate:** Championship Stage 2 — from the start you can see the dirt vs grass; kerbs mark the edge at speed.
+
+---
+## Forest roadway — no trees or props on the paint (2026-09-08)
+
+**Player moment:** Stage 2 (Forest). Drive the dirt — no trunk or canopy sits in the middle of the road, including the tunnel ridge, corridor wall, and hairpin opposite arm.
+
+**Cause:** Some Forest plants used a 1.5 m footprint at ~2 m past paint (canopy overhang). Strip/scrub tested instance *scale* × 0.55 instead of the GLB AABB, so an 8 m canopy on the lane survived. `_laneKeepout` also skipped anything whose pose Y was a few metres above the deck (bank / hill trees).
+
+**Shipped (scenery plant + corridor scrub only — no `vehicle.js` rewrite):**
+- Every Forest/Mountain plant is `_driveClear` against **all** nearby ribbon arms before it is bagged
+- Pack tree poses, cluster siblings, hero landmark, and corridor walls use `FOREST_TREE_CLEAR` (8.6 m), not the collider buffer
+- `_ribbonClear` hard-refuses footprint overlap with painted asphalt
+- `_stripLanePoses` / `stripDrive` use canopy-aware `_poseLaneRadius`
+- `_scrubInstancedCorridor` drops instances whose **geometry AABB** (centre + XZ corners) hits the drive corridor
+- Overhead skip is only for real gantries/ribs (`halfH >= 3` and bottom > deck + 4.2 m)
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=740` · `game.js?v=740` · `track.js?v=334`
+
+**Human gate:** Championship Stage 2 — start to hairpin. Nothing in the driven lane; verge trees stay in the woods.
+
+---
+## Shoulder verge — gradual slope, no chassis clip (2026-09-08)
+
+**Player moment:** Drive off the painted edge. The car rides a shallow dirt/gravel ramp instead of punching through a steep shoulder wall.
+
+**Cause:** Skirt drop was capped at **0.38 m/m** over a short reach (4.2–6.2 m). Physics used a different smoothstep + `max(ramp, roadH − 0.38·clearance)` than the two-quad mesh, so the hull sat inside the tris.
+
+**Shipped (skirt mesh + `query` plant only — no `vehicle.js` rewrite):**
+- Shared profile: **SKIRT_SLOPE 0.18**, longer base reach (~6.4–8.5 m, max 13.5 m)
+- Inner ring holds near-kerb height (`SKIRT_MID_U` 0.4 / `SKIRT_MID_DROP` 0.26)
+- Plant interpolates that same two-quad Y + 5 cm bias; uses smoothed `_skirtReachL/R` from the mesh
+- `Track.query()` unchanged as the single height authority
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=739` · `game.js?v=739` · `track.js?v=333`
+
+**Human gate:** Desert / Forest — slide a wheel onto the verge at 40–80 km/h; chassis stays on the dirt, no asphalt/shoulder z-fight.
+
+---
+## Medium camera — 25% closer, glued distance (2026-09-08)
+
+**Player moment:** Default (medium) chase. The car fills more of the frame (~4.16 m back, was 5.55). Flooring it does not leave the lens behind or zoom the car away.
+
+**Cause:** `lockPos: false` spring-followed XZ, so throttle lagged the chase point. `speedFovScale` 0.16 also punched FOV at speed, which read as the camera pulling back.
+
+**Shipped (camera only — no `vehicle.js` / `track.js` / physics):**
+- Medium `back` 5.55 → **4.16** (~25% closer); height 1.86 → **1.58**
+- **`lockPos: true`** — XZ glued to the chase point (constant distance)
+- **`speedFovScale: 0`** / **`speedLookAheadScale: 0`** — no speed zoom-out
+- Slide yaw still travel-follow (`stableBehind: false`); POV and far unchanged
+
+**Proof:** `node tools/qa-medium-camera.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=738` · `game.js?v=738` · `config.js?v=221`
+
+**Human gate:** Desert start + full throttle — gap to the car stays put; C-key far/POV still the old cameras.
+
+---
 ## Ship v737 → GitHub Pages (2026-09-08)
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard refresh `?v=737`

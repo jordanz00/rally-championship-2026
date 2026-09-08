@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { RGBELoader } from "../vendor/RGBELoader.js";
-import { VISUAL } from "./config.js?v=220";
+import { VISUAL } from "./config.js?v=222";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
@@ -116,7 +116,7 @@ export function createSky() {
     toneMapped: true,
     color: 0xffffff,
   });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat);
   mesh.scale.setScalar(40);
   mesh.frustumCulled = false;
   mesh.renderOrder = -2000;

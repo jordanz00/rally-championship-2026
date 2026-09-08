@@ -17,6 +17,8 @@
  *
  * Soft fill-rate under `GFX.lockRaceQuality` is owned by QualityManager
  * (render scale only) — this ladder must not mid-race dump post/sky/shadow.
+ * Lock-30 is a *present cadence* weapon, not a fidelity dump. Visual knobs
+ * stay at the start tier; hidden cost (shadow bake interval) may stretch.
  *
  * POWER BI MAPPING: none
  */
@@ -48,7 +50,7 @@ const UP_HOLD = 150;
  * Presented frames of settled, over-deadline cost before the scaler gives up one
  * more quality tier in pursuit of 60 Hz.
  */
-const PUSH_HOLD = 48;
+const PUSH_HOLD = 18;
 /**
  * Presented frames of settled, over-deadline cost *at the cheapest tier* before
  * the present cadence drops from 60 Hz to a deliberate 30 Hz.
@@ -61,11 +63,11 @@ const PUSH_HOLD = 48;
  * 34.0 ms and 65% of frames over budget — the worst case for feel.
  *
  * WHY NOT TEN SECONDS: Sprint 536 probe showed ~50 fps judder at `min` for the
- * whole sample. ~0.8 s of evidence (48 presents at 60 Hz) is enough to prefer
- * a clean 30 — especially once race DPR is raised (Sprint 547).
+ * whole sample. ~0.3 s of evidence (18 presents at 60 Hz) is enough to prefer
+ * a clean 30 without waiting through a 5 fps hole on Windows iGPU.
  */
-/** ~0.8 s at 60 Hz — lock before ~50 fps judder settles in as “the race feel”. */
-const LOCK30_HOLD = 48;
+/** ~0.3 s at 60 Hz — lock before a weak GPU spends seconds in the 5–20 fps hole. */
+const LOCK30_HOLD = 18;
 /**
  * Ceiling on a single sample folded into the EMA. A shader compile or a GC
  * pause can present one 1000 ms frame; letting that raw number into the EMA

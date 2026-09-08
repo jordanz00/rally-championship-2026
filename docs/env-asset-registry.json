@@ -4,7 +4,7 @@
   "stageFocus": "forest",
   "complete": false,
   "visualTarget": "UE5-inspired photorealism at the medium camera (5–30 m), browser WebGL — not Nanite, not arcade decoration",
-  "notes": "Perceptual quality is the bar, not triangle count. A PASS row may not be marked on a file listed in neverPassFiles. Forest trees are MISSING a hero-quality library; do not generate primitives to close the row.",
+  "notes": "Perceptual quality is the bar, not triangle count. A PASS row may not be marked on a file listed in neverPassFiles. Forest close trees are Poly Haven CC0 heroes; the Sketchfab pack remains far-LOD cards only.",
   "neverPassFiles": [
     "assets/props/low_poly_forest_tree_pack.glb",
     "assets/props/log_large.glb",
@@ -33,22 +33,52 @@
     {
       "id": "FOREST_TREE_LARGE",
       "category": "Forest trees",
-      "runtimeKinds": ["forest_tree_a", "forest_tree_b", "forest_tree_c", "forest_tree_d", "forest_tree_e", "forest_tree_f"],
-      "files": ["assets/props/low_poly_forest_tree_pack.glb"],
+      "runtimeKinds": ["forest_tree_a", "forest_tree_b", "forest_tree_c", "forest_tree_d", "forest_tree_e"],
+      "files": [
+        "assets/props/forest_hero_tree_a.glb",
+        "assets/props/forest_hero_tree_b.glb",
+        "assets/props/forest_hero_tree_c.glb",
+        "assets/props/forest_hero_tree_d.glb",
+        "assets/props/forest_hero_tree_e.glb"
+      ],
       "heroDistanceM": 12,
       "layer": "mid",
-      "silhouette": "REJECT",
-      "material": "REJECT",
+      "silhouette": "PASS",
+      "material": "PASS",
       "groundContact": "PASS",
-      "textureRepetition": "REJECT",
+      "textureRepetition": "PASS",
       "scale": "PASS",
       "lod": "PARTIAL",
-      "visualTarget": "REJECT",
-      "verdict": "REJECT",
-      "status": "MISSING",
-      "requiredVariants": "3–5 unique silhouettes (not material swaps of one mesh)",
-      "reason": "Entire Sketchfab pack is 3,747 triangles across 30 meshes. Faceted trunks and card-like canopy are obvious from the medium camera. Far impostor cards may remain. This file is forbidden as a hero PASS.",
-      "license": "Sketchfab Low Poly Forest Tree Pack — keep for far LOD only until replaced"
+      "visualTarget": "PASS",
+      "verdict": "PASS",
+      "status": "HAVE",
+      "requiredVariants": "5 unique silhouettes (island_tree_01/02/03, fir_sapling_medium, tree_small_02)",
+      "reason": "Poly Haven CC0 1k PBR, welded+simplified to ~31k tris / ≲8 MB GLB with albedo+normal+ARM. Far LOD still uses Sketchfab atlas cards. Not Nanite; photoreal at 5–30 m chase.",
+      "license": "Poly Haven CC0 — island_tree_01/02/03, fir_sapling_medium, tree_small_02"
+    },
+    {
+      "id": "FOREST_TREE_MEDIUM",
+      "category": "Forest trees",
+      "runtimeKinds": ["forest_tree_f", "forest_tree_g", "forest_tree_h"],
+      "files": [
+        "assets/props/forest_hero_tree_f.glb",
+        "assets/props/forest_hero_tree_g.glb",
+        "assets/props/forest_hero_tree_h.glb"
+      ],
+      "heroDistanceM": 12,
+      "layer": "mid",
+      "silhouette": "PASS",
+      "material": "PASS",
+      "groundContact": "PASS",
+      "textureRepetition": "PASS",
+      "scale": "PASS",
+      "lod": "PARTIAL",
+      "visualTarget": "PASS",
+      "verdict": "PASS",
+      "status": "HAVE",
+      "requiredVariants": "3 sapling / understory (fir_sapling, pine_sapling_small, searsia_lucida)",
+      "reason": "Poly Haven CC0 1k PBR saplings packed to ~31k tris with normals + ARM. Mix into Forest palette; pack cards remain far LOD.",
+      "license": "Poly Haven CC0 — fir_sapling, pine_sapling_small, searsia_lucida"
     },
     {
       "id": "FOREST_ROCK_BOULDER",
@@ -187,7 +217,7 @@
       "verdict": "REJECT",
       "status": "MISSING",
       "requiredVariants": "sculpted portal rock + bore lining materials, Forest-only",
-      "reason": "Forest tunnel is still spline/primitive construction. Texture cannot compensate. Pass 3.",
+      "reason": "Forest tunnel is still spline/primitive construction. tunnel_rock_diff + nor_gl + ARM (AO/rough/metal) are now triplanar-sampled on the bore, but texture cannot replace sculpted portal rock. Pass 3. Status stays MISSING.",
       "license": ""
     },
     {
@@ -198,8 +228,15 @@
         "assets/env/forest/forest_floor_diff_1k.jpg",
         "assets/env/forest/forest_floor_nor_gl_1k.jpg",
         "assets/env/forest/forest_floor_rough_1k.jpg",
+        "assets/env/forest/forest_floor_ao_1k.jpg",
         "assets/env/forest/dirt_floor_diff_1k.jpg",
-        "assets/env/forest/gravel_road_diff_1k.jpg"
+        "assets/env/forest/dirt_floor_nor_gl_1k.jpg",
+        "assets/env/forest/dirt_floor_rough_1k.jpg",
+        "assets/env/forest/dirt_floor_ao_1k.jpg",
+        "assets/env/forest/gravel_road_diff_1k.jpg",
+        "assets/env/forest/gravel_road_nor_gl_1k.jpg",
+        "assets/env/forest/gravel_road_rough_1k.jpg",
+        "assets/env/forest/gravel_road_ao_1k.jpg"
       ],
       "heroDistanceM": 12,
       "layer": "micro",
@@ -213,7 +250,7 @@
       "verdict": "PARTIAL",
       "status": "HAVE",
       "requiredVariants": "PBR soil / leaf litter / moss / gravel sets plus detail tiling",
-      "reason": "Poly Haven 1k forest_floor / dirt_floor / gravel_road now drive Forest land and ribbon. Geometry is still the heightmap + spline ribbon. Tiling at rest and missing hero trees keep this short of PASS. Not canvas grain.",
+      "reason": "Poly Haven 1k forest_floor / dirt_floor / gravel_road drive Forest land and ribbon (albedo + normal + roughness + AO). Runtime now world-XZ projects those maps and uses AO as bump. Geometry is still the heightmap + spline ribbon. No displacement/height files on disk.",
       "license": "Poly Haven CC0"
     },
     {

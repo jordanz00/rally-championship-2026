@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=147";
+import { Vehicle } from "./physics/vehicle.js?v=152";
 import { getSurface } from "./physics/surfaces.js?v=55";
-import { AI, CARS } from "./config.js?v=220";
-import { aiTintForIndex, createRivalCar, applyWheelPose, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=185";
+import { AI, CARS } from "./config.js?v=222";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=196";
 
 const G = 9.81;
 
@@ -580,7 +580,14 @@ export class Opponent {
       s[3] = Math.max(-cap, Math.min(cap, wy[3]));
       wy = s;
     }
-    applyWheelPose(this.mesh.userData.wheels || [], d.spin, d.steer, d.roll, wy);
+    applyWheelPose(
+      this.mesh.userData.wheels || [],
+      d.spin,
+      d.steer,
+      d.roll,
+      wy,
+      chassisDeckEmbed(this.vehicle, d.y, this.mesh)
+    );
     const braking = this.vehicle.brake > 0.08 || this.vehicle.handbrake > 0.28;
     if (this.mesh.userData.brakeOn !== braking) {
       this.mesh.userData.brakeOn = braking;

@@ -3,16 +3,16 @@
  *
  * WHO THIS IS FOR: RallyGame boot.
  * WHAT IT DOES: Creates WebGLRenderer from three.module.js (r160) by default.
- *   If a future THREE build exports WebGPURenderer (vendor/three.webgpu.js cutover),
- *   prefers it with WebGL2 backend unless ?webgpu=native. Patches shadowMap /
- *   capabilities so existing game code keeps working.
+ *   ?webgpu=1|native remaps that URL to vendor/three.webgpu.js (r170) so
+ *   WebGPURenderer exists; WebGL2 backend unless ?webgpu=native. Patches
+ *   shadowMap / capabilities so existing game code keeps working.
  * HOW IT CONNECTS: async createGameRenderer() from _initRenderer; sets RENDER_CAPS.
  *
  * POWER BI MAPPING: none
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { probeCapabilities, publishRenderCaps } from "./capabilities.js?v=1";
+import { probeCapabilities, publishRenderCaps, classifyGpuRenderer } from "./capabilities.js?v=2";
 import { setRenderCaps } from "./render-caps.js?v=1";
 
 /**
@@ -96,6 +96,15 @@ export async function createGameRenderer(opts = {}) {
     !caps.forceWebGL &&
     typeof location !== "undefined" &&
     /[?&]webgpu=native(?:&|$)/.test(location.search);
+
+  // ?webgpu=1|native remaps vendor/three.module.js → three.webgpu.js (r170)
+  // via the index.html importmap. Without that remap this r160 module has
+  // no WebGPURenderer and we stay on classic WebGL (boot-safe).
+  if (caps.preferWebGPU && !CanWebGPU) {
+    console.warn(
+      "[Phase R.2] ?webgpu=1 set but WebGPURenderer is missing — hard-refresh so index.html can remap three.webgpu.js, or stay on WebGL"
+    );
+  }
 
   // Prefer WebGPURenderer when present on the THREE build AND caps allow it.
   // On three.module.js (r160) WebGPURenderer is absent → classic WebGLRenderer.
@@ -187,8 +196,10 @@ export async function createGameRenderer(opts = {}) {
     isWebGPURenderer,
     threeRevision: revision,
     fallbackReason,
+    webgpuExport: CanWebGPU,
   });
 
+  const gpu = classifyGpuRenderer(renderer);
   const info = {
     api,
     glslCustom,
@@ -197,11 +208,20 @@ export async function createGameRenderer(opts = {}) {
     fallbackReason,
     preferWebGPU: caps.preferWebGPU,
     webgpu: caps.webgpu,
+    webgpuExport: CanWebGPU,
+    gpu: gpu.gpu,
+    windows: gpu.windows,
+    discrete: gpu.discrete,
+    integrated: gpu.integrated,
+    software: gpu.software,
+    lowPower: gpu.lowPower,
+    preferLock30: gpu.preferLock30,
   };
   publishRenderCaps(info);
   try {
     console.info(
-      `[Phase R] renderer=${api} three=r${revision} glsl=${glslCustom}` +
+      `[Phase R.2] renderer=${api} three=r${revision} glsl=${glslCustom}` +
+        ` webgpuExport=${CanWebGPU}` +
         (fallbackReason ? ` (${fallbackReason})` : "")
     );
   } catch {

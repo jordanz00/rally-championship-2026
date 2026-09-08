@@ -1,18 +1,19 @@
 /**
- * Photoreal post stack — bloom, AO, colour grade, vignette (60 Hz budget).
+ * Photoreal post stack — bloom, AO, screen-space GI, colour grade, vignette.
  *
  * WHO THIS IS FOR: the race / title render path (Sprint 23–24, cinema ground).
- * WHAT IT DOES: scene → RT with depth, half-res SSAO, cheap quarter-res bloom,
- *   then a single composite with grade + vignette. Quality auto-scales so
- *   control lag cannot return.
+ * WHAT IT DOES: scene → RT with depth, half-res SSAO, half-res SSGI (Lumen-like
+ *   colour bounce, cost-gated), cheap quarter-res bloom, then a single composite
+ *   with grade + vignette. Quality auto-scales so control lag cannot return.
  * HOW IT CONNECTS: RallyGame creates PhotoRealPost; _render / _onResize drive it.
  *
  * Sprint 24: FXAA/sharpen off by default, bloom at 1/4 res with one separable
  * pair, and a 'low' path that skips bloom and AO when frame time climbs.
+ * Phase R.2: SSGI on balanced/high only — never extra outdoor point lights.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=220";
+import { VISUAL } from "../config.js?v=222";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const BRIGHT_FRAG = /* glsl */ `
@@ -106,13 +107,79 @@ void main() {
 }
 `;
 
+/** Lumen-like screen-space bounce — colour from neighbours, depth-gated. */
+const SSGI_FRAG = /* glsl */ `
+precision mediump float;
+uniform sampler2D tDiffuse;
+uniform sampler2D tDepth;
+uniform vec2 texel;
+uniform float cameraNear;
+uniform float cameraFar;
+uniform float proj00;
+uniform float proj11;
+uniform float giRadius;
+varying vec2 vUv;
+
+float perspectiveDepthToViewZ(float invClipZ, float near, float far) {
+  return (near * far) / ((far - near) * invClipZ - far);
+}
+
+vec3 viewPos(vec2 uv) {
+  float d = texture2D(tDepth, uv).x;
+  float viewZ = perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+  vec2 ndc = uv * 2.0 - 1.0;
+  float w = -viewZ;
+  return vec3(ndc.x * w / max(proj00, 1e-4), ndc.y * w / max(proj11, 1e-4), viewZ);
+}
+
+void main() {
+  float depth = texture2D(tDepth, vUv).x;
+  if (depth > 0.999) {
+    gl_FragColor = vec4(0.0);
+    return;
+  }
+  vec3 origin = viewPos(vUv);
+  vec3 local = texture2D(tDiffuse, vUv).rgb;
+  float dist = max(8.0, -origin.z);
+  vec2 scale = (giRadius / dist) * vec2(1.0, proj00 / max(proj11, 1e-4));
+  vec2 k[8];
+  k[0] = vec2( 1.0,  0.18);
+  k[1] = vec2(-0.92,  0.38);
+  k[2] = vec2( 0.12,  1.0);
+  k[3] = vec2( 0.28, -0.96);
+  k[4] = vec2( 0.72,  0.68);
+  k[5] = vec2(-0.66,  0.74);
+  k[6] = vec2( 0.78, -0.62);
+  k[7] = vec2(-0.74, -0.66);
+  vec3 sum = vec3(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float step = 0.55 + float(i) * 0.22;
+    vec2 uv = clamp(vUv + k[i] * scale * step, texel, 1.0 - texel);
+    float sampleD = texture2D(tDepth, uv).x;
+    if (sampleD > 0.999) continue;
+    vec3 other = viewPos(uv);
+    float dz = abs(other.z - origin.z);
+    float range = 1.0 - smoothstep(0.0, giRadius * 3.2, dz);
+    float w = range * (0.35 + 0.65 * step);
+    sum += texture2D(tDiffuse, uv).rgb * w;
+    wsum += w;
+  }
+  vec3 gi = wsum > 0.001 ? sum / wsum : vec3(0.0);
+  gi = max(gi - local * 0.42, 0.0);
+  gl_FragColor = vec4(gi, 1.0);
+}
+`;
+
 const COMPOSITE_FRAG = /* glsl */ `
 precision mediump float;
 uniform sampler2D tDiffuse;
 uniform sampler2D tBloom;
 uniform sampler2D tAO;
+uniform sampler2D tSSGI;
 uniform float bloomStrength;
 uniform float aoStrength;
+uniform float ssgiStrength;
 uniform float vignette;
 uniform float contrast;
 uniform float saturation;
@@ -130,9 +197,14 @@ float hash(vec2 p) {
 
 void main() {
   vec3 color = texture2D(tDiffuse, vUv).rgb;
+  float ao = 1.0;
   if (aoStrength > 0.001) {
-    float ao = texture2D(tAO, vUv).r;
+    ao = texture2D(tAO, vUv).r;
     color *= mix(1.0, ao, aoStrength);
+  }
+  if (ssgiStrength > 0.001) {
+    vec3 gi = texture2D(tSSGI, vUv).rgb;
+    color += gi * ssgiStrength * mix(0.55, 1.0, ao);
   }
   if (bloomStrength > 0.001) {
     color += texture2D(tBloom, vUv).rgb * bloomStrength;
@@ -166,6 +238,12 @@ void main() {
 }
 `;
 
+/** Optional VISUAL.ssgiStrength; default is a modest outdoor bounce. */
+function ssgiAmount() {
+  if (VISUAL.ssgi === false) return 0;
+  return VISUAL.ssgiStrength != null ? VISUAL.ssgiStrength : 0.2;
+}
+
 /**
  * Fullscreen photoreal compositor with adaptive quality.
  */
@@ -186,6 +264,8 @@ export class PhotoRealPost {
     /** @type {THREE.WebGLRenderTarget|null} */
     this.aoRT = null;
     /** @type {THREE.WebGLRenderTarget|null} */
+    this.ssgiRT = null;
+    /** @type {THREE.WebGLRenderTarget|null} */
     this.brightRT = null;
     /** @type {THREE.WebGLRenderTarget|null} */
     this.blurA = null;
@@ -201,6 +281,9 @@ export class PhotoRealPost {
     const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
     white.needsUpdate = true;
     this._whiteTex = white;
+    const black = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    black.needsUpdate = true;
+    this._blackTex = black;
 
     this._brightMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -243,13 +326,32 @@ export class PhotoRealPost {
       depthWrite: false,
       toneMapped: false,
     });
+    this._ssgiMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        tDepth: { value: null },
+        texel: { value: new THREE.Vector2(1, 1) },
+        cameraNear: { value: 0.2 },
+        cameraFar: { value: 1400 },
+        proj00: { value: 1 },
+        proj11: { value: 1 },
+        giRadius: { value: 4.6 },
+      },
+      vertexShader: VERT,
+      fragmentShader: SSGI_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
     this._compMat = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: null },
         tBloom: { value: null },
         tAO: { value: white },
+        tSSGI: { value: black },
         bloomStrength: { value: VISUAL.bloomStrength ?? 0.28 },
         aoStrength: { value: VISUAL.aoStrength ?? 0 },
+        ssgiStrength: { value: ssgiAmount() },
         vignette: { value: VISUAL.vignette ?? 0.85 },
         contrast: { value: VISUAL.gradeContrast ?? 1.1 },
         saturation: { value: VISUAL.gradeSaturation ?? 1.06 },
@@ -268,6 +370,10 @@ export class PhotoRealPost {
     this._w = 0;
     this._h = 0;
     this._bloomDiv = 4;
+    this._aoTick = 0;
+    this._aoWarmed = false;
+    this._ssgiTick = 0;
+    this._ssgiWarmed = false;
   }
 
   /**
@@ -289,6 +395,7 @@ export class PhotoRealPost {
     const u = this._compMat.uniforms;
     u.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
     u.aoStrength.value = VISUAL.aoStrength ?? 0.55;
+    if (u.ssgiStrength) u.ssgiStrength.value = ssgiAmount();
     u.vignette.value = VISUAL.vignette ?? 0.85;
     u.contrast.value = VISUAL.gradeContrast ?? 1.1;
     u.saturation.value = VISUAL.gradeSaturation ?? 1.06;
@@ -334,6 +441,7 @@ export class PhotoRealPost {
       stencilBuffer: false,
     };
     this.aoRT = new THREE.WebGLRenderTarget(aw, ah, aoOpts);
+    this.ssgiRT = new THREE.WebGLRenderTarget(aw, ah, aoOpts);
     const bw = Math.max(1, w >> 2);
     const bh = Math.max(1, h >> 2);
     const bloomOpts = { ...aoOpts };
@@ -365,21 +473,51 @@ export class PhotoRealPost {
       this.aoRT &&
       this.sceneRT.depthTexture;
 
+    const giAmt = ssgiAmount();
+    const lock30 =
+      typeof window !== "undefined" &&
+      window.__rallyRenderCaps &&
+      window.__rallyRenderCaps.preferLock30;
+    const useSsgi =
+      q !== "low" &&
+      giAmt > 0.001 &&
+      !!this.ssgiRT &&
+      !!this._ssgiMat &&
+      !!this.sceneRT.depthTexture;
+
     r.setRenderTarget(this.sceneRT);
     r.clear();
     r.render(scene, camera);
 
-    if (useAo) {
+    // Same AO look: reuse last half-res field every other present. At 30 Hz
+    // that is 15 Hz contact darkening — invisible at chase distance, half the
+    // depth reconstruct cost.
+    this._aoTick = (this._aoTick || 0) + 1;
+    const refreshAo = useAo && (!this._aoWarmed || this._aoTick % 2 === 1);
+    if (refreshAo) {
       this._prepAo(camera);
       this._blitDepth(this.aoRT, this._aoMat);
+      this._aoWarmed = true;
+    }
+
+    // Lumen-like SSGI: half-res colour bounce, every 2nd present (3rd on lock-30).
+    this._ssgiTick = (this._ssgiTick || 0) + 1;
+    const giEvery = lock30 || titlePad ? 3 : 2;
+    const refreshGi = useSsgi && (!this._ssgiWarmed || this._ssgiTick % giEvery === 1);
+    if (refreshGi) {
+      this._prepSsgi(camera);
+      this._blitDepth(this.ssgiRT, this._ssgiMat);
+      this._ssgiWarmed = true;
     }
 
     if (q === "low") {
       this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
       this._compMat.uniforms.tBloom.value = this.sceneRT.texture;
       this._compMat.uniforms.tAO.value = this._whiteTex;
+      if (this._compMat.uniforms.tSSGI) this._compMat.uniforms.tSSGI.value = this._blackTex;
       this._compMat.uniforms.bloomStrength.value = 0;
       this._compMat.uniforms.aoStrength.value = 0;
+      if (this._compMat.uniforms.ssgiStrength) this._compMat.uniforms.ssgiStrength.value = 0;
       this._compMat.uniforms.grain.value = 0;
       this._compMat.uniforms.time.value = performance.now() * 0.001;
       this._quad.material = this._compMat;
@@ -388,6 +526,9 @@ export class PhotoRealPost {
       r.render(this._scene, this._cam);
       this._compMat.uniforms.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
       this._compMat.uniforms.aoStrength.value = VISUAL.aoStrength ?? 0.55;
+      if (this._compMat.uniforms.ssgiStrength) {
+        this._compMat.uniforms.ssgiStrength.value = giAmt;
+      }
       r.autoClear = prevAuto;
       return;
     }
@@ -404,11 +545,18 @@ export class PhotoRealPost {
     const bloomAmt = titlePad
       ? 0.18
       : (VISUAL.bloomStrength ?? 0.28) * (q === "high" ? 1 : 0.85);
+    const giComp = useSsgi
+      ? giAmt * (titlePad ? 0.55 : q === "high" ? 1 : 0.85)
+      : 0;
     this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
     this._compMat.uniforms.tBloom.value = this.blurB.texture;
     this._compMat.uniforms.tAO.value = useAo ? this.aoRT.texture : this._whiteTex;
+    if (this._compMat.uniforms.tSSGI) {
+      this._compMat.uniforms.tSSGI.value = useSsgi ? this.ssgiRT.texture : this._blackTex;
+    }
     this._compMat.uniforms.bloomStrength.value = bloomAmt;
     this._compMat.uniforms.aoStrength.value = useAo ? VISUAL.aoStrength ?? 0.55 : 0;
+    if (this._compMat.uniforms.ssgiStrength) this._compMat.uniforms.ssgiStrength.value = giComp;
     this._compMat.uniforms.grain.value = titlePad ? 0 : VISUAL.filmGrain ?? 0;
     if (titlePad && this._compMat.uniforms.vignette) {
       this._compMat.uniforms.vignette.value = 0.48;
@@ -429,6 +577,21 @@ export class PhotoRealPost {
     const u = this._aoMat.uniforms;
     u.tDepth.value = this.sceneRT.depthTexture;
     u.texel.value.set(1 / this.aoRT.width, 1 / this.aoRT.height);
+    u.cameraNear.value = camera.near;
+    u.cameraFar.value = camera.far;
+    const e = camera.projectionMatrix.elements;
+    u.proj00.value = e[0];
+    u.proj11.value = e[5];
+  }
+
+  /**
+   * @param {THREE.Camera} camera
+   */
+  _prepSsgi(camera) {
+    const u = this._ssgiMat.uniforms;
+    u.tDiffuse.value = this.sceneRT.texture;
+    u.tDepth.value = this.sceneRT.depthTexture;
+    u.texel.value.set(1 / this.ssgiRT.width, 1 / this.ssgiRT.height);
     u.cameraNear.value = camera.near;
     u.cameraFar.value = camera.far;
     const e = camera.projectionMatrix.elements;
@@ -463,10 +626,13 @@ export class PhotoRealPost {
   _disposeTargets() {
     this.sceneRT?.dispose();
     this.aoRT?.dispose();
+    this.ssgiRT?.dispose();
     this.brightRT?.dispose();
     this.blurA?.dispose();
     this.blurB?.dispose();
-    this.sceneRT = this.aoRT = this.brightRT = this.blurA = this.blurB = null;
+    this.sceneRT = this.aoRT = this.ssgiRT = this.brightRT = this.blurA = this.blurB = null;
+    this._aoWarmed = false;
+    this._ssgiWarmed = false;
   }
 
   dispose() {
@@ -474,8 +640,10 @@ export class PhotoRealPost {
     this._brightMat.dispose();
     this._blurMat.dispose();
     this._aoMat.dispose();
+    this._ssgiMat.dispose();
     this._compMat.dispose();
     this._whiteTex.dispose();
+    this._blackTex.dispose();
     this._quad.geometry.dispose();
   }
 }

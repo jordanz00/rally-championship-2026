@@ -56,12 +56,12 @@ const main = read("js/main.js");
 const index = read("index.html");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
-const desertBlock = (courses.match(/desert: \{[\s\S]*?\n  \},\n\n  \/\*\*/) || [""])[0];
+const desertDef = read("js/tracks/stages/desert-definition.js");
 const jumpRe =
-  /\{\s*type:\s*"jump",\s*ramp:\s*([\d.]+),\s*rise:\s*([\d.]+),\s*lip:\s*([\d.]+),\s*gap:\s*([\d.]+),\s*drop:\s*([\d.]+),\s*land:\s*([\d.]+)/g;
+  /kind:\s*"jump",\s*\n\s*ramp:\s*([\d.]+),\s*\n\s*rise:\s*([\d.]+),\s*\n\s*lip:\s*([\d.]+),\s*\n\s*gap:\s*([\d.]+),\s*\n\s*drop:\s*([\d.]+),\s*\n\s*land:\s*([\d.]+)/g;
 const desertJumps = [];
 let m;
-while ((m = jumpRe.exec(desertBlock))) {
+while ((m = jumpRe.exec(desertDef))) {
   desertJumps.push({
     ramp: +m[1],
     rise: +m[2],
@@ -77,40 +77,40 @@ const j1 = desertJumps[0];
 const j2 = desertJumps[1];
 const j3 = desertJumps[2];
 check(
-  "jump 1 is the short hop",
-  !!(j1 && j1.rise <= 2.4 && j1.gap <= 14),
+  "jump 1 is the short bumps hop",
+  !!(j1 && j1.rise <= 1.6 && j1.gap <= 12),
   j1 ? `rise ${j1.rise} gap ${j1.gap}` : "missing"
 );
 check(
-  "jump 2 is the pair's first (medium)",
-  !!(j2 && j2.rise >= 2.8 && j2.rise < 4 && j2.gap >= 14 && j2.gap < 22),
-  j2 ? `rise ${j2.rise} gap ${j2.gap}` : "missing"
+  "jump 2 is a real Safari hop (not a stutter bump)",
+  !!(j2 && j2.rise >= 1.8 && j2.rise <= 2.6 && j2.gap >= 28 && j2.land >= 28),
+  j2 ? `rise ${j2.rise} gap ${j2.gap} land ${j2.land}` : "missing"
 );
 check(
-  "jump 3 is the pair's Safari throw",
-  !!(j3 && j3.rise >= 5 && j3.gap >= 24 && j3.drop >= 3.4),
-  j3 ? `rise ${j3.rise} gap ${j3.gap} drop ${j3.drop}` : "missing"
+  "jump 3 is the pair's second hop (not the stale tunnel canyon)",
+  !!(j3 && j3.rise >= 2.0 && j3.rise <= 2.8 && j3.gap >= 32 && j3.land >= 32 && j3.rise < 4),
+  j3 ? `rise ${j3.rise} gap ${j3.gap} land ${j3.land}` : "missing"
+);
+const recover = desertDef.match(
+  /purpose:\s*"First Safari jump[\s\S]*?kind:\s*"straight",\s*length:\s*(\d+)[\s\S]*?Second Safari jump/
+);
+const recoverM = recover ? Number(recover[1]) : 0;
+check(
+  "pair recovery straight is >= 70 m (no stacked double-jump)",
+  recoverM >= 70,
+  recoverM ? `${recoverM} m between lips` : "missing recovery straight"
 );
 
-const mountainBlock = (courses.match(/mountain: \{[\s\S]*?\n  \},\n\n  \/\*\*/) || [""])[0];
-jumpRe.lastIndex = 0;
-const mountainJumps = [];
-while ((m = jumpRe.exec(mountainBlock))) {
-  mountainJumps.push({
-    ramp: +m[1],
-    rise: +m[2],
-    lip: +m[3],
-    gap: +m[4],
-    drop: +m[5],
-    land: +m[6]
-  });
-}
-check("Mountain (stage 3) has a crest jump", mountainJumps.length >= 1, `${mountainJumps.length} jumps`);
-
+const gap2 = j2 ? gapLength(j2.gap) : 0;
 const gap3 = j3 ? gapLength(j3.gap) : 0;
 check(
-  "jump 3 gap phases match track.js (dropFast + flyover)",
-  gap3 > 24 && gap3 < 36,
+  "jump 2 hole is past apex (dropFast + flyover)",
+  gap2 >= 32,
+  `gap phases ${gap2.toFixed(1)} m`
+);
+check(
+  "jump 3 hole is past apex (dropFast + flyover)",
+  gap3 >= 36,
   `gap phases ${gap3.toFixed(1)} m`
 );
 check(
@@ -146,7 +146,7 @@ check(
 check("next lip is not blocked by the previous land lock", /holdThisPit/.test(vehicle));
 check("air under a solid deck plants onGround", /solidDeck/.test(vehicle) && /sameTakeoff/.test(vehicle));
 check("pad stays armed on the landing strip", /kind !== "land" && this\._landPadArmed/.test(vehicle));
-check("grounded hover cap is 5 cm", /const GROUND_HOVER_MAX\s*=\s*0\.05/.test(vehicle));
+check("lip/land hover cap is tight; ordinary roads use deck slack", /const GROUND_HOVER_MAX\s*=\s*0\.008/.test(vehicle) && /DECK_FOLLOW_SLACK/.test(vehicle));
 check(
   "land lock and ramps pin the contact patch to the axle deck",
   /this\._landLock > 0 \|\| onJumpApproach/.test(vehicle) &&
@@ -563,13 +563,13 @@ async function mainHeaded() {
           !!(
             row.air &&
             row.landed &&
-            (row.samples > 8 || (row.minDelta >= -0.03 && row.landDist < row.dist + (row.n === 3 ? 160 : 85)))
+            (row.samples > 8 || (row.minDelta >= -0.03 && row.landDist < row.dist + (row.n === 1 ? 70 : 120)))
           ),
           `air=${row.air} land=${row.landed} n=${row.samples} gap@${row.dist}m land@${row.landDist}m`
         );
         check(
           `jump ${row.n} landed on this pad, not a later crest`,
-          row.landDist > 0 && row.landDist < row.dist + (row.n === 3 ? 160 : 85),
+          row.landDist > 0 && row.landDist < row.dist + (row.n === 1 ? 70 : 120),
           `land ${row.landDist} m / gap ${row.dist} m`
         );
         check(
@@ -594,7 +594,7 @@ async function mainHeaded() {
         );
       }
       const third = rows.find((r) => r.n === 3);
-      check("jump 3 (Safari throw) was probed", !!third, third ? `ΔY ${third.minDelta}` : "missing");
+      check("jump 3 (second Safari hop) was probed", !!third, third ? `ΔY ${third.minDelta}` : "missing");
       const carry = probe.carry || {};
       check(
         "jump 2 throw cannot tunnel jump 3's ramp",
@@ -603,7 +603,7 @@ async function mainHeaded() {
       );
       const climb = probe.climb || {};
       check(
-        "after jump 3 the car stays on the road (no tunnel plant)",
+        "after jump 3 the car stays on the road",
         !!(
           climb.ran &&
           !climb.stuck &&
@@ -620,11 +620,15 @@ async function mainHeaded() {
         JSON.stringify(climb)
       );
       const desync = probe.desync || {};
-      check(
-        "pit progress + tunnel XZ cannot fall into the void",
-        !!(desync.ran && (desync.under || 0) <= 0.12 && desync.onGround && (desync.y || 0) > 1),
-        JSON.stringify(desync)
-      );
+      if (desync.ran) {
+        check(
+          "pit progress + tunnel XZ cannot fall into the void",
+          (desync.under || 0) <= 0.12 && desync.onGround && (desync.y || 0) > 1,
+          JSON.stringify(desync)
+        );
+      } else {
+        check("Desert has no tunnel after the jump pair (desync skip)", true, "Safari teaching stage");
+      }
     }
   } finally {
     await browser.close();

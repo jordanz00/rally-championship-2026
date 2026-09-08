@@ -1,0 +1,19 @@
+Forest hero trees — Poly Haven CC0 1.0
+--------------------------------------
+Packed 1k glTF → runtime GLB (weld + meshoptimizer simplify to ~31k tris).
+License: https://polyhaven.com/license (CC0)
+
+  forest_hero_tree_a  island_tree_01         https://polyhaven.com/a/island_tree_01
+  forest_hero_tree_b  island_tree_02         https://polyhaven.com/a/island_tree_02
+  forest_hero_tree_c  island_tree_03         https://polyhaven.com/a/island_tree_03
+  forest_hero_tree_d  fir_sapling_medium     https://polyhaven.com/a/fir_sapling_medium
+  forest_hero_tree_e  tree_small_02          https://polyhaven.com/a/tree_small_02
+  forest_hero_tree_f  fir_sapling            https://polyhaven.com/a/fir_sapling
+  forest_hero_tree_g  pine_sapling_small     https://polyhaven.com/a/pine_sapling_small
+  forest_hero_tree_h  searsia_lucida         https://polyhaven.com/a/searsia_lucida
+
+Not shipped as runtime (too heavy, no game LOD as published):
+  pine_tree_01  ~958 MB / millions of tris  https://polyhaven.com/a/pine_tree_01
+  fir_tree_01   ~487 MB                     https://polyhaven.com/a/fir_tree_01
+
+Sketchfab low_poly_forest_tree_pack.glb remains far-LOD atlas cards only.

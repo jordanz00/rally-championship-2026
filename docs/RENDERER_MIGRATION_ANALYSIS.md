@@ -17,9 +17,9 @@
 
 **Recommendation:** Stay on **Three r160 + `WebGLRenderer`** as the ship path. Treat **WebGPU / `three.webgpu.js` r170** as a gated ceiling raise after TSL ports and headed benchmarks prove material wins. Do **not** migrate because WebGPU is newer.
 
-### Phase R.2 status (2026-09-04)
+### Phase R.2 status (2026-09-08)
 
-**Not started as production cutover** (correct). R.1 factory/caps remain. Opt-in diagnostics only: `?webgpu=native` when on a WebGPU THREE build. Production importmap stays `three.module.js` r160. Full R.2 requires: headed Forest/Desert 30s benchmarks, TSL ports for PhotoRealPost + particle GLSL, WebGL2 fallback proven, explicit **Begin Phase R.2** approval.
+**Opt-in started; production cutover still no.** Default remains r160 `WebGLRenderer`. `index.html` remaps `vendor/three.module.js` → `three.webgpu.js` only for `?webgpu=1|native`. Factory uses WebGPURenderer (WebGL2 backend unless `?webgpu=native`) and falls back to WebGL on init failure. Player-visible R.2 on the default path: screen-space LOD (`gpu-lod.js`) + half-res SSGI in `postfx.js`. TSL ports for PhotoRealPost + particle GLSL still block a default native-WebGPU cutover. Headed Forest/Desert 30s benchmarks still required before flipping the default.
 
 ---
 

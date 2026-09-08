@@ -10,12 +10,32 @@
  *   vehicle.js uses bumpField for yaw kick and roadChatter for tiny HF bobble.
  */
 
-import { SURFACES } from "../config.js?v=220";
+import { SURFACES } from "../config.js?v=222";
 
 /** @param {number} n */
 function hash1(n) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
+}
+
+/**
+ * Smooth value-noise in metres. Used instead of sin(dist) corrugation so the
+ * ribbon does not grow uniform washboard bars the chase camera reads as lines.
+ * @param {number} x
+ * @param {number} z
+ */
+function valueNoise2(x, z) {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx);
+  const v = fz * fz * (3 - 2 * fz);
+  const a = hash1(ix * 19.13 + iz * 7.31);
+  const b = hash1((ix + 1) * 19.13 + iz * 7.31);
+  const c = hash1(ix * 19.13 + (iz + 1) * 7.31);
+  const d = hash1((ix + 1) * 19.13 + (iz + 1) * 7.31);
+  return (a + (b - a) * u + (c - a) * v * (1 - u) + (d - b) * u * v) * 2 - 1;
 }
 
 /**
@@ -94,9 +114,9 @@ function patchBump(dist, lateral, amp) {
   const env = Math.sin(local * Math.PI);
   if (env < 0.06) return 0;
   const patchAmp = amp * (0.62 + h * 1.05);
-  const wave = Math.sin(dist * 0.29 + lateral * 0.24 + h * 6.28);
-  const corrug = Math.sin(dist * 5.4 + lateral * 1.15) * 0.26;
-  return env * patchAmp * (wave * 0.68 + corrug);
+  const wave = valueNoise2(dist * 0.08 + h * 4, lateral * 0.21);
+  const lump = valueNoise2(dist * 0.19 + 3.1, lateral * 0.37 + h * 2);
+  return env * patchAmp * (wave * 0.72 + lump * 0.28);
 }
 
 /**
@@ -114,17 +134,15 @@ export function roadMicroHeight(dist, lateral, surface, jumpKind, tunnel) {
   if (jumpKind === "ramp" || jumpKind === "crest" || jumpKind === "land" || jumpKind === "gap") return 0;
   const amp = surfaceMicroAmp(surface);
   if (amp < 0.002) return 0;
-  const id = surface || "";
+  const n0 = valueNoise2(dist * 0.055, lateral * 0.17);
+  const n1 = valueNoise2(dist * 0.14 + 8.1, lateral * 0.33 + 3.4);
+  const n2 = valueNoise2(dist * 0.31 + 2.2, lateral * 0.61 + 11);
+  // Long undulation with real lateral change — never a 1D washboard.
   let continuous =
-    bumpField(dist, lateral) * amp * 0.78 +
-    Math.sin(dist * 0.19 + lateral * 0.33) * amp * 0.46 +
-    Math.sin(dist * 4.8 + lateral * 0.7) * amp * 0.2;
-  // Visual Pass V3 — gravel corrugation readable in chase without kick-violence.
-  if (id === "gravel") {
-    continuous += Math.sin(dist * 7.2 + lateral * 1.4) * amp * 0.28;
-  } else if (id === "dirt" || id === "sand") {
-    continuous += Math.sin(dist * 5.6 + lateral * 1.1) * amp * 0.16;
-  }
+    n0 * amp * 0.7 +
+    n1 * amp * 0.38 +
+    n2 * amp * 0.16 +
+    Math.sin(dist * 0.09 + lateral * 0.44) * amp * 0.18;
   return continuous + patchBump(dist, lateral, amp * 1.65) + puddleDip(dist, lateral, surface, amp);
 }
 

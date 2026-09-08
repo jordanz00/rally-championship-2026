@@ -44,9 +44,10 @@ check(
     /PLAYER_RIVAL_SIDESTEP/.test(collide)
 );
 check(
-  "pack meshes plant at alpha 1 (no leftover interp stutter)",
-  /o\.syncMesh\(1\)/.test(game) && /_syncPlayerMesh\(1\)/.test(game) &&
-    !/o\.syncMesh\(alpha\)/.test(game)
+  "pack meshes use leftover draw alpha after collide (Gaffer)",
+  /_syncPackMeshes\(drawAlpha\)/.test(game) &&
+    /o\.syncMesh\(alpha\)/.test(game) &&
+    /_syncPlayerMesh\(alpha\)/.test(game)
 );
 check(
   "AI skips road micro chatter",

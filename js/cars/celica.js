@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=220";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=45";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=222";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=49";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -602,58 +602,101 @@ function hideShowroomCabinMeshes(root) {
 }
 
 /**
- * Dark mirrored cabin glass for the title pad — opaque, env-reflective.
+ * Highly reflective cabin glass for the title pad.
  * Race/POV glass stays transmissive; this is showroom-only.
- * Clearcoat carries the sky reflection so a dark tint does not crush IBL.
- * @param {THREE.Material} src
+ * No MeshPhysical transmission (extra scene pass). Sky lives on clearcoat + IBL.
+ * @param {THREE.Material} [src]
  * @returns {THREE.Material}
  */
 function applyShowroomWindowMaterial(src) {
-  const phys = src.isMeshPhysicalMaterial ? src : new THREE.MeshPhysicalMaterial();
-  if (phys !== src) {
+  const phys = src && src.isMeshPhysicalMaterial ? src : new THREE.MeshPhysicalMaterial();
+  if (src && phys !== src) {
     phys.name = src.name || "Window_Glass";
-    if (src.color) phys.color.copy(src.color);
-    if (src.map) phys.map = src.map;
     if (src.envMap) phys.envMap = src.envMap;
-    if (src.normalMap) phys.normalMap = src.normalMap;
+  } else if (!phys.name) {
+    phys.name = "Window_Glass";
   }
-  phys.transparent = false;
-  phys.opacity = 1;
+  phys.transparent = true;
+  phys.opacity = 0.82;
   phys.alphaTest = 0;
   if ("alphaMap" in phys) phys.alphaMap = null;
+  phys.map = null;
   phys.depthWrite = true;
   phys.depthTest = true;
-  phys.side = THREE.FrontSide;
-  phys.color.setHex(0x0c1218);
-  phys.roughness = 0.06;
-  phys.metalness = 0.14;
+  phys.side = THREE.DoubleSide;
+  phys.color.setHex(0x6a8294);
+  phys.roughness = 0.03;
+  phys.metalness = 0;
   phys.transmission = 0;
   phys.thickness = 0;
   phys.clearcoat = 1;
-  phys.clearcoatRoughness = 0.025;
-  phys.clearcoatEnvMapIntensity = 3.2;
-  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 1.85);
+  phys.clearcoatRoughness = 0.018;
+  phys.clearcoatEnvMapIntensity = 3.0;
+  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 2.55);
+  phys.polygonOffset = true;
+  phys.polygonOffsetFactor = -1;
+  phys.polygonOffsetUnits = -1;
   phys.userData.kind = "glass";
-  phys.userData.lockEnv = true;
+  phys.userData.lockEnv = false;
   phys.userData.showroomOpaqueGlass = true;
+  phys.userData.titleWindowPane = true;
   if ("forceSinglePass" in phys) phys.forceSinglePass = true;
   phys.needsUpdate = true;
   return phys;
 }
 
 /**
- * True when this mesh is cabin glazing (not a headlamp lens).
+ * True when this mesh is cabin glazing — never Grills / bumper BLEND / lamps.
  * @param {string} n
  * @param {boolean} lamp
  * @param {THREE.Material} src
  */
 function isCabinWindowMaterial(n, lamp, src) {
   if (lamp) return false;
+  if (/grill|grille|tyre|tire|rubber|bumper|hood|bonnet/.test(n)) return false;
+  if (/light|lamp|lens|pod|combi|rev_/.test(n) && !/window/.test(n)) return false;
+  if (src.userData && src.userData.titleWindowPane) return true;
   if (src.userData && src.userData.showroomOpaqueGlass) return true;
-  if (src.userData && src.userData.kind === "glass") return true;
-  if (/x0_window_|window_glass|windshield|windscreen|glazing|interior_glass_windows/.test(n)) return true;
-  if (/glass|window/.test(n) && !/light|lamp|lens|pod|combi|rev_/.test(n)) return true;
-  return !!(src.transparent && (src.opacity == null || src.opacity < 0.9));
+  if (/x0_window_|int_window_|window_glass|windshield|windscreen|glazing|interior_glass_windows/.test(n)) {
+    return true;
+  }
+  if (src.userData && src.userData.kind === "glass" && /window|windshield|windscreen|glazing/.test(n)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Nose / hood `Grills` is authored BLEND. Treating it as cabin glass painted
+ * the intakes 0x0c1218 — black missing polygons on the title hero nose.
+ * @param {string} n
+ */
+function isTitleGrillTrim(n) {
+  return /grill/.test(n) && !/window|windshield|windscreen/.test(n);
+}
+
+/**
+ * @param {THREE.Material} src
+ * @returns {THREE.Material}
+ */
+function applyTitleGrillMaterial(src) {
+  src.transparent = false;
+  src.opacity = 1;
+  src.alphaTest = 0;
+  if ("alphaMap" in src) src.alphaMap = null;
+  src.depthWrite = true;
+  src.depthTest = true;
+  src.side = THREE.DoubleSide;
+  src.metalness = Math.min(src.metalness != null ? src.metalness : 0.2, 0.26);
+  src.roughness = Math.max(src.roughness != null ? src.roughness : 0.42, 0.38);
+  src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 0.9);
+  src.polygonOffset = true;
+  src.polygonOffsetFactor = 1;
+  src.polygonOffsetUnits = 1;
+  src.userData.kind = "paint";
+  src.userData.lockEnv = false;
+  src.needsUpdate = true;
+  return src;
 }
 
 const _inwardCenter = new THREE.Vector3();
@@ -786,7 +829,8 @@ function fixTitleShowroomWinding(obj, center) {
     flipInwardMesh(obj);
     return;
   }
-  if (frac >= 0.22) reverseInwardOuterTriangles(obj, center);
+  // Mixed 0.22–0.82 used to reverse concave bumper/intake faces that point
+  // toward the bbox center while still being the outer skin — black nose holes.
 }
 
 /**
@@ -817,8 +861,8 @@ function flipInwardMesh(obj) {
 }
 
 /**
- * Title-only dress: opaque mirrored cabin glass, FrontSide shells, hide cabin
- * clutter that used to read as flipped polygons through the windows.
+ * Title-only dress: hide cabin clutter, keep Grills as paint (not black glass),
+ * and rebuild shattered LOD side windows as smooth reflective panes.
  * @param {THREE.Object3D} root
  */
 function dressTitleCarShowroom(root) {
@@ -862,19 +906,23 @@ function dressTitleCarShowroom(root) {
     const nAll = `${name} ${list.map((m) => (m && m.name) || "").join(" ")}`.toLowerCase();
     const lamp = /light|lamp|lens|head|tail|brake|signal/.test(nAll);
     const wheel = /wheel|tyre|tire|rim|hub/.test(nAll);
-    if (!wheel && !lamp && obj.geometry) {
+    const skipWinding = /window|windshield|windscreen|glazing|grill/.test(nAll) && !lamp;
+    if (!wheel && !lamp && !skipWinding && obj.geometry) {
       fixTitleShowroomWinding(obj, _inwardCenter);
     }
     const next = list.map((src) => {
       if (!src) return src;
       const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
       const isLamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
+      if (isTitleGrillTrim(n)) {
+        return applyTitleGrillMaterial(src);
+      }
       if (isCabinWindowMaterial(n, isLamp, src)) {
         return applyShowroomWindowMaterial(src);
       }
       const isChrome =
         src.userData.kind === "chrome" ||
-        (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55);
+        (/chrome|steel|alum|rim|mirror|exhaust/.test(n) && (src.metalness || 0) > 0.55);
       const isRubber = src.userData.kind === "rubber" || isTireRubberName(n, obj);
       // Upgrade Standard body paint → Physical clearcoat for wet showroom lacquer.
       if (
@@ -901,7 +949,7 @@ function dressTitleCarShowroom(root) {
         phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.5, 1.55);
         phys.userData.kind = "paint";
         phys.userData.lockEnv = false;
-        phys.side = src.side != null ? src.side : THREE.DoubleSide;
+        phys.side = THREE.DoubleSide;
         phys.needsUpdate = true;
         return phys;
       }
@@ -914,6 +962,7 @@ function dressTitleCarShowroom(root) {
         );
         src.roughness = Math.min(src.roughness != null ? src.roughness : 0.35, 0.2);
         src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.5, 1.45);
+        src.side = THREE.DoubleSide;
         src.userData.kind = src.userData.kind || "paint";
         src.userData.lockEnv = false;
         src.needsUpdate = true;
@@ -922,6 +971,127 @@ function dressTitleCarShowroom(root) {
     });
     obj.material = next.length === 1 ? next[0] : next;
   });
+  rebuildTitleWindowPanes(root);
+}
+
+const _paneSize = new THREE.Vector3();
+const _paneMid = new THREE.Vector3();
+const _paneN = new THREE.Vector3();
+const _paneZ = new THREE.Vector3(0, 0, 1);
+
+/**
+ * Rival LOD decimates Celica side glass to 3–4 tris (hero is ~27). Hide that
+ * shattered geo and plant a smooth outward pane in the same aperture.
+ * @param {THREE.Object3D} root
+ */
+function rebuildTitleWindowPanes(root) {
+  root.updateMatrixWorld(true);
+  const glass = applyShowroomWindowMaterial(null);
+  const hull = new THREE.Box3().setFromObject(root);
+  const carMid = hull.getCenter(new THREE.Vector3());
+  const doomed = [];
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry || obj.userData.titleWindowPane) return;
+    if (!isTitleExteriorWindowMesh(obj)) return;
+    if (!isTitleSideWindowMesh(obj, root)) {
+      obj.material = glass;
+      return;
+    }
+    const pane = buildSmoothWindowPane(obj, root, carMid);
+    if (!pane) {
+      obj.material = glass;
+      obj.material.side = THREE.DoubleSide;
+      return;
+    }
+    pane.material = glass;
+    pane.name = `title-pane-${obj.name || "glass"}`;
+    pane.userData.titleWindowPane = true;
+    pane.userData.windshield = true;
+    doomed.push(obj);
+    root.add(pane);
+  });
+  for (let i = 0; i < doomed.length; i++) {
+    const obj = doomed[i];
+    obj.visible = false;
+    obj.userData.interior = true;
+    obj.userData.interiorKeepHidden = true;
+  }
+}
+
+/**
+ * @param {THREE.Mesh} obj
+ */
+function isTitleExteriorWindowMesh(obj) {
+  const n = `${obj.name || ""} ${(obj.parent && obj.parent.name) || ""} ${matName(obj)}`.toLowerCase();
+  if (/light|lamp|lens|pod|combi|rev_|grill|mirror/.test(n) && !/window/.test(n)) return false;
+  if (/\bint_window/.test(n) || /interior_glass/.test(n)) return false;
+  return /x0_window_|window_glass|windshield|windscreen|glazing|(^|[^a-z])glass([^a-z]|$)/.test(n);
+}
+
+/**
+ * Side / quarter apertures only — windshield and backlight stay on authored geo.
+ * @param {THREE.Mesh} obj
+ * @param {THREE.Object3D} root
+ */
+function isTitleSideWindowMesh(obj, root) {
+  const n = `${obj.name || ""} ${(obj.parent && obj.parent.name) || ""}`.toLowerCase();
+  if (/x0_window_f[lr]|x0_window_b[lr]|window_fl|window_fr|window_bl|window_br/.test(n)) return true;
+  if (/x0_window_f\b|x0_window_b\b|windshield|windscreen/.test(n)) return false;
+  obj.updateWorldMatrix(true, false);
+  const box = new THREE.Box3().setFromObject(obj);
+  box.getSize(_paneSize);
+  box.getCenter(_paneMid);
+  root.worldToLocal(_paneMid);
+  return Math.abs(_paneMid.x) > 0.35 && _paneSize.x < 0.28 && _paneSize.y > 0.16 && _paneSize.z > 0.22;
+}
+
+/**
+ * Best-fit outward plane from the LOD window AABB, slight bulge for a highlight.
+ * @param {THREE.Mesh} src
+ * @param {THREE.Object3D} root
+ * @param {THREE.Vector3} carMid
+ * @returns {THREE.Mesh|null}
+ */
+function buildSmoothWindowPane(src, root, carMid) {
+  src.updateWorldMatrix(true, false);
+  const box = new THREE.Box3().setFromObject(src);
+  box.getSize(_paneSize);
+  box.getCenter(_paneMid);
+  root.worldToLocal(_paneMid);
+  const axes = [
+    { n: new THREE.Vector3(1, 0, 0), w: _paneSize.z, h: _paneSize.y, thin: _paneSize.x },
+    { n: new THREE.Vector3(0, 1, 0), w: _paneSize.x, h: _paneSize.z, thin: _paneSize.y },
+    { n: new THREE.Vector3(0, 0, 1), w: _paneSize.x, h: _paneSize.y, thin: _paneSize.z },
+  ];
+  axes.sort((a, b) => a.thin - b.thin);
+  const ax = axes[0];
+  if (ax.w < 0.12 || ax.h < 0.1) return null;
+  // Whole-cabin Delta "Glass" blob — keep authored mesh.
+  if (ax.thin > 0.42 && ax.w > 1.05) return null;
+  _paneN.copy(ax.n);
+  _paneMid.sub(carMid);
+  if (_paneN.dot(_paneMid) < 0) _paneN.negate();
+  box.getCenter(_paneMid);
+  root.worldToLocal(_paneMid);
+  const geo = new THREE.PlaneGeometry(ax.w * 1.08, ax.h * 1.06, 12, 8);
+  const pos = geo.attributes.position;
+  const hx = Math.max(0.08, ax.w * 0.5);
+  const hy = Math.max(0.08, ax.h * 0.5);
+  const bulge = Math.min(0.032, ax.w * 0.035);
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) / hx;
+    const v = pos.getY(i) / hy;
+    pos.setZ(i, (1 - u * u) * (1 - v * v) * bulge);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo);
+  mesh.position.copy(_paneMid).addScaledVector(_paneN, 0.01);
+  mesh.quaternion.setFromUnitVectors(_paneZ, _paneN);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.renderOrder = 2;
+  mesh.frustumCulled = true;
+  return mesh;
 }
 
 /**
@@ -1712,8 +1882,8 @@ function plantOnContactPatch(root) {
     });
     minY = has ? box.min.y : 0;
   }
-  // Visual rubber on the contact plane. Chassis Y already embeds TIRE_PLANT.
-  const SINK = 0.01;
+  // Visual rubber kisses the contact plane. Physics already embeds TIRE_PLANT.
+  const SINK = 0.004;
   const delta = -(minY + SINK);
   if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
     const kids = root.children;
@@ -2384,17 +2554,51 @@ const ACKERMANN = 0.12;
  * Front lock uses a small Ackermann split so the inner wheel turns a little
  * more than the outer. Physics steer is not modified.
  *
+ * Physics origin sits `TIRE_PLANT` into the slab (and the mesh may lag
+ * `_deckFilt` by `DECK_FOLLOW_SLACK`). `chassisDeckEmbed` raises visual hubs
+ * so rubber kisses the painted deck instead of following the hull through
+ * the tarmac.
+ *
  * @param {THREE.Object3D[]} wheels
  * @param {number[]} spinArr
  * @param {number} steer
  * @param {number} [chassisRoll=0] vehicle.roll, radians
  * @param {number[]} [wheelY] per-wheel suspension offset (metres, + = hub down)
+ * @param {number} [deckLift=0] metres to raise/lower hubs vs the painted deck
  */
-export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null) {
+export function chassisDeckEmbed(vehicle, drawY, mesh) {
+  const plant = 0.014;
+  const sink =
+    mesh && mesh.userData && Number.isFinite(mesh.userData.tirePlantSink)
+      ? mesh.userData.tirePlantSink
+      : 0.004;
+  // 2 mm kiss so the tread meets paint without a z-fight hover.
+  const kiss = 0.002;
+  let signed = plant + sink - kiss;
+  if (!vehicle || !vehicle.onGround || !Number.isFinite(drawY)) {
+    return Math.max(0, Math.min(0.06, signed));
+  }
+  // Painted deck from the live query — not `_deckFilt`, which can lag low
+  // and would yank the hubs through the ribbon.
+  const qh =
+    vehicle._q && Number.isFinite(vehicle._q.height) ? vehicle._q.height : null;
+  const plantDeck =
+    qh != null
+      ? qh - plant
+      : Number.isFinite(vehicle._deckFilt)
+        ? vehicle._deckFilt
+        : drawY;
+  signed += plantDeck - drawY;
+  return Math.max(-0.02, Math.min(0.06, signed));
+}
+
+/** Pose wheels: spin, steer, roll plant, and `deckLift` from `chassisDeckEmbed`. */
+export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
+  const lift = Math.max(-0.02, Math.min(0.06, Number.isFinite(deckLift) ? deckLift : 0));
   for (let i = 0; i < wheels.length; i++) {
     const w = wheels[i];
     if (!w || !w.quaternion) continue;
@@ -2402,11 +2606,14 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     if (data.restPosY == null && w.position) data.restPosY = w.position.y;
     if (data.restPosX == null && w.position) data.restPosX = w.position.x;
     if (data.restPosY != null) {
-      const travel = wheelY && wheelY[i] != null ? wheelY[i] : 0;
+      const travelRaw = wheelY && wheelY[i] != null ? wheelY[i] : 0;
+      // Extension (hub down) through a flat ribbon reads as clipping.
+      // Compression into the arch stays; the deck kiss is chassisDeckEmbed.
+      const travel = Math.min(0, travelRaw);
       // Cancel parent-roll world lift so rubber stays on the roadway.
       const xLat = data.restPosX != null ? data.restPosX : 0;
       const rollPlant = Math.max(-0.14, Math.min(0.14, tanRoll * xLat));
-      w.position.y = data.restPosY - travel - rollPlant;
+      w.position.y = data.restPosY - travel - rollPlant + lift;
     }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;
@@ -5477,15 +5684,22 @@ function attachCockpit(root) {
  * @param {number} cabinW
  */
 function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
-  const glassZ = Math.max(dashZ + 0.16, rig.eyeZ + 0.58);
-  const glassY = (rig.eyeY + dashY) * 0.5 + 0.1;
-  const gw = Math.min(1.26, cabinW * 0.9);
-  const gh = 0.56;
+  // POV-head pane so look-down does not shrink rain to a stamp in car XY.
+  void cab;
+  void dashZ;
+  void dashY;
+  void cabinW;
+  const host = rig.head || root;
+  const dist = 0.58;
+  const vHalf = dist * Math.tan((40 * Math.PI) / 180);
+  const hHalf = dist * Math.tan((53 * Math.PI) / 180);
+  const gh = vHalf * 1.74;
+  const gw = hHalf * 1.98;
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 128;
+  canvas.width = 512;
+  canvas.height = 256;
   const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, 256, 128);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
@@ -5501,37 +5715,56 @@ function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
   });
   const pane = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), mat);
   pane.name = "pov-rain-glass";
-  pane.position.set(rig.eyeX * 0.1, glassY, glassZ);
+  pane.position.set(0, vHalf * 0.1, dist);
   pane.rotation.x = -0.08;
   pane.userData.povHud = true;
   pane.userData.povRainGlass = true;
   markPovHudMesh(pane, 6, { depthTest: true });
-  cab.add(pane);
+  host.add(pane);
 
-  const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1c22,
-    roughness: 0.74,
-    metalness: 0.16,
+  const armMat = new THREE.MeshStandardMaterial({
+    color: 0x3a4048,
+    roughness: 0.42,
+    metalness: 0.48,
   });
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0x0c0e12,
+    roughness: 0.86,
+    metalness: 0.06,
+  });
+  const bladeLen = Math.min(gh * 0.9, gw * 0.5);
   const makeArm = (side) => {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? "wiper-L" : "wiper-R";
-    pivot.position.set(rig.eyeX * 0.1 + side * gw * 0.24, glassY - gh * 0.42, glassZ + 0.012);
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.011, 0.01), bladeMat);
-    blade.position.set(0.19, 0, 0);
+    pivot.position.set(side * gw * 0.28, -gh * 0.46, 0.012);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.022, 0.014), armMat);
+    arm.position.set(0.14, 0, 0);
+    arm.userData.povHud = true;
+    markPovHudMesh(arm, 7, { depthTest: true });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.032, 0.016), bladeMat);
+    blade.position.set(bladeLen * 0.46, 0, 0.006);
     blade.userData.povHud = true;
-    markPovHudMesh(blade, 7, { depthTest: true });
-    pivot.add(blade);
-    pivot.rotation.z = side < 0 ? 0.12 : -0.12;
+    markPovHudMesh(blade, 8, { depthTest: true });
+    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.012, 0.008), bladeMat);
+    rubber.position.set(bladeLen * 0.46, -0.018, 0.005);
+    rubber.userData.povHud = true;
+    markPovHudMesh(rubber, 8, { depthTest: true });
+    pivot.add(arm, blade, rubber);
+    pivot.rotation.z = side < 0 ? 0.1 : Math.PI - 0.1;
     pivot.userData.parkZ = pivot.rotation.z;
+    pivot.userData.bladeLen = bladeLen;
+    pivot.userData.side = side;
     pivot.userData.povHud = true;
-    cab.add(pivot);
+    pane.add(pivot);
     return pivot;
   };
   root.userData.povRainGlass = pane;
   root.userData.povRainCanvas = canvas;
   root.userData.povRainCtx = ctx;
   root.userData.povRainTex = tex;
+  root.userData.povGlassW = gw;
+  root.userData.povGlassH = gh;
+  root.userData.wiperFar = 1.78;
   root.userData.wiperL = makeArm(-1);
   root.userData.wiperR = makeArm(1);
 }

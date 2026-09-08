@@ -64,7 +64,7 @@ export function forestLandRepeat(span, tileMeters = TILE_FLOOR_M) {
  * @param {number} [roadWidthM]
  * @returns {{x:number,y:number}}
  */
-export function forestRoadRepeat(vScale, tileMeters = TILE_DIRT_M, roadWidthM = 12.5) {
+export function forestRoadRepeat(vScale, tileMeters = TILE_DIRT_M, roadWidthM = 17.4) {
   const tile = Math.max(0.5, tileMeters);
   const metersPerV = 1 / Math.max(0.02, vScale);
   return { x: roadWidthM / tile, y: metersPerV / tile };

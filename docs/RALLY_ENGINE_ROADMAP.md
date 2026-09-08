@@ -34,7 +34,7 @@
 | Stage | Name | Intent | Repo status (2026-09-04) |
 |---:|---|---|---|
 | **1** | Architecture audit | Map systems, deps, bottlenecks; no code churn | **Partial** — [`CURRENT_ENGINE_AUDIT.md`](CURRENT_ENGINE_AUDIT.md); refresh when starting Stage 1 |
-| **2** | Renderer / WebGPU | WebGPU preferred, WebGL2 fallback, TSL for new work, modular pipeline | **R.1 done** — factory/pipeline/caps/quality + vendored `three.webgpu.js`. **R.2 not started** (production still r160 WebGL) |
+| **2** | Renderer / WebGPU | WebGPU preferred, WebGL2 fallback, TSL for new work, modular pipeline | **R.1 done** · **R.2 started (2026-09-08)** — opt-in `?webgpu=1|native` remaps `three.webgpu.js`; production default still r160 WebGL. SSGI + screen-space LOD on WebGL. No default cutover / no TSL post port yet |
 | **3** | Performance profiler | Permanent overlay + honest frame/GPU signals | **Partial** — `PerformanceMonitor`, `perf-tier.js`; extend toward PerformanceDirector |
 | **4** | Physics laboratory | Short handling lab track + live dials | **Started** — `?physlab=1` / F8 + `COURSES.physlab`; assist defaults re-baked 2026-09-04 (human drive still recommended) |
 | **5** | Vehicle physics | Sega Rally feel: slip, surfaces, drift, weight, assist dial | **Strong** — `vehicle.js` + `ARCADE_ASSIST`; tune via Lab, don’t rewrite into sim |

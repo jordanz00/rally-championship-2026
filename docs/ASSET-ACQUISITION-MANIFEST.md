@@ -10,30 +10,21 @@ Runtime: **GLB**, Y-up, metres, ground origin, PBR (albedo + normal + roughness)
 
 ## HIGH PRIORITY (no generator work until trees exist)
 
-### FOREST_TREE_LARGE — MISSING
+### FOREST_TREE_LARGE — PASS
 
 ```
-Required: 5 variants (distinct silhouettes — branching, crown, lean, real trunk diameter)
-Quality: photoreal hero at 5–20 m (UE5-inspired perception, not Nanite)
-Format: GLB
-LOD: 3
-  LOD0  ~15–40k tris, bark geometry, foliage volume
-  LOD1  ~4–10k
-  LOD2  impostor / atlas >60 m
-Material: bark + foliage PBR
-Runtime: ≲ 8 MB per LOD0, 1k–2k maps
-Status: MISSING
-Current: low_poly_forest_tree_pack.glb (3,747 tris) — FORBIDDEN as PASS
-Blocked: Poly Haven pine_* as shipped (hundreds of MB, no game LOD)
-How to supply: DCC LOD bake, then pack like tools/pack-forest-hero-glb.py
+Have: forest_hero_tree_a…e (island_tree_01/02/03, fir_sapling_medium, tree_small_02)
+Quality: ~31k tris, 1k albedo+normal+ARM, ≲8 MB GLB
+LOD: LOD0 packed; LOD2 still Sketchfab atlas cards > STREAM.lodNear
+Status: PASS
+Not used: pine_tree_01 / fir_tree_01 as shipped (958 / 487 MB)
 ```
 
-### FOREST_TREE_MEDIUM — MISSING
+### FOREST_TREE_MEDIUM — PASS
 
 ```
-Required: 2–3 sapling / understory
-Quality: hero at 10–20 m · LOD 2 · PBR
-Status: MISSING
+Have: forest_hero_tree_f/g/h (fir_sapling, pine_sapling_small, searsia_lucida)
+Status: PASS
 ```
 
 ### FOREST_ROCK_HERO — PARTIAL (4 of 6)
@@ -57,6 +48,8 @@ Keep fern_02 as mid/far only
 
 ```
 Required: 4 sculpted portal / strata / debris pieces + bore PBR
+Have maps: tunnel_rock_diff / nor_gl / arm (AO+rough+metal) — now triplanar-sampled
+Gap: sculpted portal / strata / debris meshes. Maps do not close this row.
 Status: MISSING
 ```
 
@@ -65,8 +58,10 @@ Status: MISSING
 ```
 Required: photoreal rally dirt/gravel (albedo, normal, roughness) + shoulder
 Current: Poly Haven 1k dirt_floor + gravel_road on the Forest ribbon (~2 m tiles).
+         Albedo + normal + roughness + AO are world-XZ projected (AO as bump).
          Geometry is still the spline ribbon. Not a scanned road mesh.
-         Canvas paint remains on Desert / Mountain / Lakeside.
+         Canvas paint remains on Desert / Mountain / Lakeside (same projection).
+         No displacement/height files on disk.
 Status: PARTIAL — headed 5/10/20/30 m check still required. Not PASS.
 ```
 
@@ -81,8 +76,8 @@ Kenney `plant_bush*` stay until 2–4 PBR bushes exist.
 ### FOREST_GROUND_PBR — PARTIAL
 
 Poly Haven 1k `forest_floor` on Forest land/skirt (albedo + normal + roughness + AO).
-Vertex colour is a light multiply, not the albedo. Still a heightmap, still tiles.
-Do not call this a scanned forest floor.
+Runtime world-XZ projects those maps and uses AO as bump. Vertex colour is a
+light multiply, not the albedo. Still a heightmap. Do not call this a scanned forest floor.
 
 ### FOREST_ROOTS — MISSING
 
@@ -105,6 +100,7 @@ Do not call this a scanned forest floor.
 
 Desert / Mountain / Lakeside libraries wait until Forest Phase 1 trees pass the stop-and-look test.
 
-## Done for Phase 1
+## Done for Phase 1 trees
 
-`FOREST_TREE_LARGE` **PASS** in `env-asset-registry.json`, files on disk, `qa-asset-quality.mjs` exits 0, two different trees at 12 m do not read as faceted trunks.
+`FOREST_TREE_LARGE` **PASS** in `env-asset-registry.json`, files on disk, `qa-asset-quality.mjs` exits 0.
+Tunnel geology, volumetric ferns, and extra boulders remain open.

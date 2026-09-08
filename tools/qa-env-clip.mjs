@@ -154,12 +154,14 @@ check(
   "long skirts folded sand onto tight gravel corners; 2.6 left see-under canyon"
 );
 check(
-  "every biome skirt is a short tuck",
-  /desert \? 4\.6/.test(trackSrc) &&
-    /scenery === "mountain" \? 6\.2/.test(trackSrc) &&
-    /scenery === "lakeside" \? 4\.4/.test(trackSrc) &&
+  "every biome skirt is a gradual ramp, not a 12 m slab",
+  /function skirtBaseReach/.test(trackSrc) &&
+    /scenery === "desert"\) return 6\.8/.test(trackSrc) &&
+    /scenery === "mountain"\) return 8\.5/.test(trackSrc) &&
+    /scenery === "lakeside"\) return 6\.4/.test(trackSrc) &&
+    /SKIRT_SLOPE = 0\.18/.test(trackSrc) &&
     /Smooth reach so neighbouring posts agree/.test(trackSrc),
-  "per-point reach + smooth; 11–12 m slabs folded onto hairpins"
+  "per-point reach + 0.18 slope; old 11–12 m slabs folded onto hairpins"
 );
 check(
   "land verts that can own a triangle over asphalt stay a floor",
@@ -184,6 +186,27 @@ check(
   "stripDrive uses lane keepout not ribbon-only",
   /stripDrive[\s\S]*?_laneKeepout\(p\.x, p\.z, r/.test(trackSrc),
   "canopy footprint must respect corridor"
+);
+check(
+  "forest corridor walls sit past tree clearance",
+  /_addForestCorridorWalls[\s\S]*?ROAD_VERGE \+ FOREST_TREE_CLEAR/.test(trackSrc),
+  "Stage 2 wall trees were planted inside the collider buffer"
+);
+check(
+  "pack trees require _driveClear before pose push",
+  /_pushPackTreePose[\s\S]*?_driveClear\(x, z, foot\)/.test(trackSrc) &&
+    /_plantForestTree[\s\S]*?_driveClear\(x, z, foot\)/.test(trackSrc),
+  "hairpin opposite-arm plants must fail a multi-sample ribbon test"
+);
+check(
+  "instanced corridor scrub uses geometry AABB",
+  /_scrubInstancedCorridor[\s\S]*?boundingBox/.test(trackSrc),
+  "scale*0.55 missed 8 m canopies sitting on Forest paint"
+);
+check(
+  "ribbon clear refuses painted-asphalt overlap",
+  /over - footprint < 0\.4/.test(trackSrc),
+  "hard floor so a tree cannot sit on the racing line"
 );
 check(
   "prop strip is past a GLB rock radius",
@@ -318,6 +341,8 @@ const PROBE_JS = `const g = window.game;
             }
           }
           if (obj.isInstancedMesh && obj.userData && obj.userData.envProp && obj.instanceMatrix) {
+            if (obj.geometry && !obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+            const box = obj.geometry && obj.geometry.boundingBox;
             const arr = obj.instanceMatrix.array;
             const n = obj.count;
             for (let i = 0; i < n; i++) {
@@ -326,10 +351,15 @@ const PROBE_JS = `const g = window.game;
               const y = arr[o + 13];
               const z = arr[o + 14];
               const sx = Math.hypot(arr[o], arr[o + 1], arr[o + 2]);
+              const sy = Math.hypot(arr[o + 4], arr[o + 5], arr[o + 6]);
               const sz = Math.hypot(arr[o + 8], arr[o + 9], arr[o + 10]);
-              const r = Math.max(0.55, Math.max(sx, sz) * 0.48);
+              const hx = box ? Math.max(Math.abs(box.min.x), Math.abs(box.max.x)) : 0.5;
+              const hz = box ? Math.max(Math.abs(box.min.z), Math.abs(box.max.z)) : 0.5;
+              const r = Math.max(0.55, hx * sx, hz * sz, Math.max(sx, sz) * 0.48);
+              const halfH = (box ? Math.max(Math.abs(box.min.y), Math.abs(box.max.y)) : 1) * sy * 0.5;
+              const bottom = y - halfH;
               const road = track._nearestRoad(x, z);
-              if (y > road.roadY + 2.6) continue;
+              if (halfH >= 3 && bottom > road.roadY + 4.2) continue;
               const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
               if (road.tunnel && over > -1.4) continue;
               if (over - r < 0.75) instHits += 1;

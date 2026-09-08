@@ -100,11 +100,10 @@ check(
 );
 check(
   "medium chase keeps start framing under throttle",
-  /speedFovScale:\s*0\.(?:0[5-9]|1[0-8])/.test(config) &&
-    /speedLookAheadScale:\s*0\.[12]/.test(config) &&
-    /accelFollowBoost:\s*1\./.test(config) &&
+  /id:\s*"medium"[\s\S]*?lockPos:\s*true/.test(config) &&
+    /id:\s*"medium"[\s\S]*?speedFovScale:\s*0,/.test(config) &&
     /speedFovScale/.test(game) &&
-    /accelFollowBoost/.test(game)
+    /lockPos/.test(game)
 );
 check(
   "POV roof clip parks without stripping materials (no C-key recompile)",

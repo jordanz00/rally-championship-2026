@@ -5,6 +5,8 @@
  * WHAT IT DOES: MeshStandard / MeshPhysical surfaces with env response,
  *   roughness maps, and clearcoat lacquer on the player paint path. AI pack
  *   stays on cheaper shared Standard materials (no clearcoat ×14).
+ *   Roads / terrain / skirts world-XZ project albedo+normal+ARM/AO and
+ *   use AO as bump; Forest tunnel rock is triplanar.
  * HOW IT CONNECTS: Track and cars/celica.js build meshes with these; game.js
  *   bakes a sky env map and calls applyEnvMap on the player car.
  *
@@ -13,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=220";
+import { VISUAL } from "../config.js?v=222";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -418,7 +420,22 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
       polygonOffsetUnits: -2,
     });
   }
-  const ns = VISUAL.normalStrength ?? 0.85;
+  const nsBase = VISUAL.normalStrength ?? 0.85;
+  const nsMul =
+    id === "tarmac"
+      ? 0.58
+      : id === "cobble"
+        ? 1.18
+        : id === "gravel"
+          ? 1.22
+          : id === "sand"
+            ? 1.12
+            : id === "dirt"
+              ? 1.16
+              : id === "mud"
+                ? 1.08
+                : 0.9;
+  const ns = nsBase * nsMul;
   const tier = VISUAL.tier || 1;
   const dryTarmac = id === "tarmac";
   const rough = ROAD_ROUGH[id] ?? 0.88;
@@ -432,12 +449,16 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
   const env = dryTarmac
     ? (tier >= 10 ? 0.2 : 0.14) * WORLD_ENV
     : (tier >= 10 ? 0.42 : tier >= 9 ? 0.34 : 0.28) * WORLD_ENV;
+  const heightMap = aoMap || roughnessMap;
+  const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
   const mat = new THREE.MeshStandardMaterial({
     map,
     normalMap,
     aoMap: aoMap || null,
     aoMapIntensity: aoMap ? (tier >= 10 ? 0.72 : 0.55) : 1,
     roughnessMap: roughnessMap || null,
+    bumpMap: heightMap || null,
+    bumpScale: dirty ? 0.58 : id === "cobble" ? 0.42 : id === "tarmac" ? 0.16 : 0.28,
     normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
     side: THREE.FrontSide,
@@ -460,32 +481,94 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
 }
 
 /**
- * Break wallpaper tiling: dual-scale albedo + cheap world-XZ blotches.
- * Same hue family — just less stamped. GLSL only (WebGPU skips onBeforeCompile).
+ * World-XZ / triplanar sampling for albedo + normal + roughness/AO/ARM + AO bump.
+ * Same look family as the organic road — maps follow metres, not ribbon UV bars.
+ * GLSL only (WebGPU skips onBeforeCompile).
+ *
+ * @param {THREE.Material} mat
+ * @param {{
+ *   mode?: "xz"|"triplanar",
+ *   amount?: number,
+ *   ribbon?: number,
+ *   bump?: number,
+ *   blotch?: boolean,
+ *   key?: string,
+ * }} [opts]
+ */
+export function armProjectedMaps(mat, opts = {}) {
+  if (!mat || mat.userData.projArmed) return;
+  mat.userData.projArmed = true;
+  mat.userData.organicArmed = true;
+  const mode = opts.mode === "triplanar" ? "triplanar" : "xz";
+  const amount = opts.amount != null ? opts.amount : 0.85;
+  const ribbon = opts.ribbon != null ? opts.ribbon : 0.12;
+  const bump = opts.bump != null ? opts.bump : 0.45;
+  const blotch = !!opts.blotch;
+  const key = opts.key || `proj-${mode}-v1`;
+  mat.onBeforeCompile = (shader) => {
+    injectProjectedMaps(shader, { mode, amount, ribbon, bump, blotch });
+  };
+  mat.customProgramCacheKey = () => key;
+}
+
+/**
+ * Break wallpaper tiling: dual-scale albedo + world-XZ normals / ARM / bump.
  * @param {THREE.Material} mat
  * @param {string} id
  */
 function armRoadOrganic(mat, id) {
-  if (!mat || mat.userData.organicArmed) return;
-  mat.userData.organicArmed = true;
   const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
-  const amount = dirty ? 1 : id === "tarmac" ? 0.32 : 0.22;
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uRoadVar = { value: amount };
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        "#include <common>\nvarying vec3 vRoadWorld;"
-      )
-      .replace(
-        "#include <project_vertex>",
-        "#include <project_vertex>\nvRoadWorld = (modelMatrix * vec4( transformed, 1.0 )).xyz;"
-      );
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        `#include <common>
+  armProjectedMaps(mat, {
+    mode: "xz",
+    amount: dirty ? 1 : id === "tarmac" ? 0.42 : 0.28,
+    ribbon: dirty ? 0.08 : id === "tarmac" ? 0.52 : id === "cobble" ? 0.22 : 0.32,
+    bump: dirty ? 0.58 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.42 : 0.28,
+    blotch: true,
+    key: `road-organic-v4-${id}`,
+  });
+}
+
+/**
+ * Inject world-projected map / normal / roughness / AO / metalness + AO-as-bump.
+ * @param {object} shader
+ * @param {{mode:string, amount:number, ribbon:number, bump:number, blotch:boolean}} opts
+ */
+function injectProjectedMaps(shader, opts) {
+  shader.uniforms.uProjAmt = { value: opts.amount };
+  shader.uniforms.uProjRibbon = { value: opts.ribbon };
+  shader.uniforms.uBumpAmt = { value: opts.bump };
+  shader.uniforms.uRoadVar = { value: opts.amount };
+  const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
+  const blotchSrc = opts.blotch
+    ? `	float n1 = roadNoise( vProjWorld.xz * 0.11 );
+	float n2 = roadNoise( vProjWorld.xz * 0.37 + 17.0 );
+	float n3 = roadNoise( vProjWorld.xz * 0.019 );
+	float blotch = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.78 + blotch * 0.4 ), uProjAmt );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.41 + vec2( 0.19, 0.11 ) ), 0.12 );`
+    : "";
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      "#include <common>",
+      "#include <common>\nvarying vec3 vProjWorld;\nvarying vec3 vProjNrm;\nvarying vec3 vRoadWorld;"
+    )
+    .replace(
+      "#include <project_vertex>",
+      `#include <project_vertex>
+vProjWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+vRoadWorld = vProjWorld;
+vProjNrm = inverseTransformDirection( transformedNormal, viewMatrix );`
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      "#include <common>",
+      `#include <common>
+${triDef}uniform float uProjAmt;
+uniform float uProjRibbon;
+uniform float uBumpAmt;
 uniform float uRoadVar;
+varying vec3 vProjWorld;
+varying vec3 vProjNrm;
 varying vec3 vRoadWorld;
 float roadHash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -499,24 +582,104 @@ float roadNoise(vec2 p) {
   float d = roadHash(i + vec2(1.0, 1.0));
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+vec2 projUvA(vec3 w) { return w.xz * 0.078; }
+vec2 projUvB(vec3 w) {
+  return vec2(w.x * 0.049 + w.z * 0.064, w.z * 0.049 - w.x * 0.064);
+}
+vec2 projUvDetail(vec3 w) { return w.xz * 0.42; }
+vec4 projTex(sampler2D tex, vec2 meshUv) {
+  vec4 mixW;
+#ifdef USE_PROJ_TRIPLANAR
+  vec3 n = abs(normalize(vProjNrm));
+  n = pow(n, vec3(4.0));
+  n /= max(n.x + n.y + n.z, 1e-4);
+  float sc = 0.48;
+  mixW = texture2D(tex, vProjWorld.zy * sc) * n.x
+    + texture2D(tex, vProjWorld.xz * sc) * n.y
+    + texture2D(tex, vProjWorld.xy * sc) * n.z;
+#else
+  mixW = mix(texture2D(tex, projUvA(vProjWorld)), texture2D(tex, projUvB(vProjWorld)), 0.46 * uProjAmt);
+#endif
+  return mix(mixW, texture2D(tex, meshUv), uProjRibbon);
+}
+vec3 projNormal(sampler2D tex, vec2 meshUv) {
+  vec3 n = projTex(tex, meshUv).xyz * 2.0 - 1.0;
+#ifndef USE_PROJ_TRIPLANAR
+  vec3 nd = texture2D(tex, projUvDetail(vProjWorld)).xyz * 2.0 - 1.0;
+  n = normalize(vec3(n.xy + nd.xy * uProjAmt, n.z));
+#endif
+  return n;
 }`
-      )
-      .replace(
-        "#include <map_fragment>",
-        `#ifdef USE_MAP
-	vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-	vec4 sampledRoadB = texture2D( map, vMapUv * 0.37 + vec2( 0.17, 0.09 ) );
-	sampledDiffuseColor.rgb = mix( sampledDiffuseColor.rgb, sampledRoadB.rgb, 0.28 * uRoadVar );
-	float n1 = roadNoise( vRoadWorld.xz * 0.11 );
-	float n2 = roadNoise( vRoadWorld.xz * 0.37 + 17.0 );
-	float n3 = roadNoise( vRoadWorld.xz * 0.019 );
-	float blotch = n1 * 0.55 + n2 * 0.28 + n3 * 0.17;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.76 + blotch * 0.42 ), uRoadVar );
+    )
+    .replace(
+      "#include <map_fragment>",
+      `#ifdef USE_MAP
+	vec4 sampledDiffuseColor = projTex( map, vMapUv );
+${blotchSrc}
 	diffuseColor *= sampledDiffuseColor;
 #endif`
-      );
-  };
-  mat.customProgramCacheKey = () => `road-organic-${id}`;
+    )
+    .replace(
+      "#include <normal_fragment_maps>",
+      `#ifdef USE_NORMALMAP_OBJECTSPACE
+	normal = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+	#ifdef FLIP_SIDED
+		normal = - normal;
+	#endif
+	#ifdef DOUBLE_SIDED
+		normal = normal * faceDirection;
+	#endif
+	normal = normalize( normalMatrix * normal );
+#elif defined( USE_NORMALMAP_TANGENTSPACE )
+	vec3 mapN = projNormal( normalMap, vNormalMapUv );
+	#ifdef USE_BUMPMAP
+	float h0 = projTex( bumpMap, vNormalMapUv ).r;
+	vec2 hUv = projUvA( vProjWorld );
+	float hx = texture2D( bumpMap, hUv + vec2( 0.003, 0.0 ) ).r;
+	float hz = texture2D( bumpMap, hUv + vec2( 0.0, 0.003 ) ).r;
+	mapN.x += ( h0 - hx ) * uBumpAmt * 2.6;
+	mapN.y += ( h0 - hz ) * uBumpAmt * 2.6;
+	#endif
+	mapN.xy *= normalScale;
+	normal = normalize( tbn * mapN );
+#elif defined( USE_BUMPMAP )
+	normal = perturbNormalArb( - vViewPosition, normal, dHdxy_fwd(), faceDirection );
+#endif`
+    )
+    .replace(
+      "#include <roughnessmap_fragment>",
+      `float roughnessFactor = roughness;
+#ifdef USE_ROUGHNESSMAP
+	vec4 texelRoughness = projTex( roughnessMap, vRoughnessMapUv );
+	roughnessFactor *= texelRoughness.g;
+#endif`
+    )
+    .replace(
+      "#include <metalnessmap_fragment>",
+      `float metalnessFactor = metalness;
+#ifdef USE_METALNESSMAP
+	vec4 texelMetalness = projTex( metalnessMap, vMetalnessMapUv );
+	metalnessFactor *= texelMetalness.b;
+#endif`
+    )
+    .replace(
+      "#include <aomap_fragment>",
+      `#ifdef USE_AOMAP
+	float ambientOcclusion = ( projTex( aoMap, vAoMapUv ).r - 1.0 ) * aoMapIntensity + 1.0;
+	reflectedLight.indirectDiffuse *= ambientOcclusion;
+	#if defined( USE_CLEARCOAT )
+		clearcoatSpecularIndirect *= ambientOcclusion;
+	#endif
+	#if defined( USE_SHEEN )
+		sheenSpecularIndirect *= ambientOcclusion;
+	#endif
+	#if defined( USE_ENVMAP ) && defined( STANDARD )
+		float dotNV = saturate( dot( geometryNormal, geometryViewDir ) );
+		reflectedLight.indirectSpecular *= computeSpecularOcclusion( dotNV, ambientOcclusion, material.roughness );
+	#endif
+#endif`
+    );
 }
 
 /**
@@ -588,11 +751,21 @@ export function worldTerrainMaterial(opts = {}) {
     vertexColors: !!opts.vertexColors,
     roughness: opts.roughness ?? (ue5() ? (cinema ? 0.8 : 0.86) : 0.9),
     metalness: ue5() ? 0.035 : 0.018,
+    bumpMap: opts.aoMap || opts.roughnessMap || null,
+    bumpScale: opts.bumpScale ?? 0.48,
     envMapIntensity: baseEnv * WORLD_ENV * (ue5() ? 1.12 : 1) * (cinema ? 1.12 : 1),
     flatShading: false,
     side: opts.side ?? THREE.FrontSide,
   });
   mat.userData.kind = "terrain";
+  armProjectedMaps(mat, {
+    mode: "xz",
+    amount: 0.88,
+    ribbon: 0.14,
+    bump: opts.bumpScale ?? 0.48,
+    blotch: false,
+    key: "terrain-proj-v1",
+  });
   return mat;
 }
 
@@ -600,9 +773,11 @@ export function worldTerrainMaterial(opts = {}) {
  * Road shoulder / apron ribbon beside the deck (Visual Pass V3 — grain map).
  * @param {THREE.Texture|null} [map]
  * @param {THREE.Texture|null} [normalMap]
+ * @param {THREE.Texture|null} [roughnessMap]
+ * @param {THREE.Texture|null} [aoMap]
  * @returns {THREE.Material}
  */
-export function worldSkirtMaterial(map = null, normalMap = null) {
+export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = null, aoMap = null) {
   if (!VISUAL.realisticArcade) {
     return new THREE.MeshLambertMaterial({
       map: map || null,
@@ -611,10 +786,16 @@ export function worldSkirtMaterial(map = null, normalMap = null) {
       side: THREE.DoubleSide,
     });
   }
-  const ns = (VISUAL.normalStrength ?? 0.85) * 0.72;
-  return new THREE.MeshStandardMaterial({
+  const ns = (VISUAL.normalStrength ?? 0.85) * 0.86;
+  const heightMap = aoMap || roughnessMap;
+  const mat = new THREE.MeshStandardMaterial({
     map: map || null,
     normalMap: normalMap || null,
+    roughnessMap: roughnessMap || null,
+    aoMap: aoMap || null,
+    aoMapIntensity: aoMap ? 0.72 : 1,
+    bumpMap: heightMap || null,
+    bumpScale: 0.42,
     normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
     roughness: 0.9,
@@ -623,6 +804,15 @@ export function worldSkirtMaterial(map = null, normalMap = null) {
     flatShading: false,
     side: THREE.DoubleSide,
   });
+  armProjectedMaps(mat, {
+    mode: "xz",
+    amount: 0.9,
+    ribbon: 0.1,
+    bump: 0.42,
+    blotch: false,
+    key: "skirt-proj-v1",
+  });
+  return mat;
 }
 
 /**
@@ -845,34 +1035,39 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
             };
           }
           const kind = m.userData.kind;
+          const matLabel = `${m.name || ""} ${obj.name || ""}`.toLowerCase();
+          const isLamp = /light|lamp|lens|head|tail|brake|signal/.test(matLabel) && !/window/.test(matLabel);
           const isGlass =
-            kind === "glass" ||
-            !!(m.userData.showroomOpaqueGlass) ||
-            !!(m.transparent && (m.opacity == null || m.opacity < 0.92) && /window|glass|glazing|windshield/.test(`${m.name || ""} ${obj.name || ""}`.toLowerCase()));
+            !isLamp &&
+            (kind === "glass" ||
+              !!(m.userData.showroomOpaqueGlass) ||
+              m.userData.titleWindowPane ||
+              !!(m.transparent && (m.opacity == null || m.opacity < 0.92) && /window|glass|glazing|windshield/.test(matLabel)));
           const isChrome =
             kind === "chrome" || (m.metalness != null && m.metalness > 0.58 && !isGlass);
           const isRubber = kind === "rubber";
           if (envMap) m.envMap = envMap;
           if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
             if (isGlass) {
-              // Showroom panes are mirrored glass, not see-through cabin holes.
-              m.envMapIntensity = Math.max(glassEnv, 1.85);
-              m.roughness = 0.06;
-              m.metalness = 0.14;
-              m.side = THREE.FrontSide;
+              // Title panes: reflective Physical glass, not opaque-black FrontSide.
+              m.envMapIntensity = Math.max(glassEnv, 2.45);
+              m.roughness = 0.03;
+              m.metalness = 0;
+              m.side = THREE.DoubleSide;
               m.depthWrite = true;
-              m.transparent = false;
-              m.opacity = 1;
-              if (m.color) m.color.setHex(0x0c1218);
+              m.transparent = true;
+              m.opacity = 0.82;
+              if (m.color) m.color.setHex(0x6a8294);
               if (m.isMeshPhysicalMaterial) {
                 m.transmission = 0;
                 m.clearcoat = 1;
-                m.clearcoatRoughness = 0.025;
-                m.clearcoatEnvMapIntensity = 3.2;
+                m.clearcoatRoughness = 0.018;
+                m.clearcoatEnvMapIntensity = 3.0;
               }
               m.userData.kind = "glass";
-              m.userData.lockEnv = true;
+              m.userData.lockEnv = false;
               m.userData.showroomOpaqueGlass = true;
+              m.userData.titleWindowPane = true;
             } else if (isChrome) {
               if (!m.userData.lockEnv) m.envMapIntensity = chromeEnv;
               m.roughness = Math.min(m.roughness != null ? m.roughness : 0.22, 0.05);

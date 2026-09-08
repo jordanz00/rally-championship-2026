@@ -7,7 +7,7 @@
  * Championship ~54 s Celica AT → ~3 km of wide easy arcs.
  */
 
-import { COLORS } from "../../config.js?v=220";
+import { COLORS } from "../../config.js?v=222";
 
 export const DESERT_DEFINITION = {
   id: "desert",
@@ -106,35 +106,35 @@ export const DESERT_DEFINITION = {
       width: 16.6,
       purpose: "Easy right",
     },
-    { kind: "straight", length: 48, surface: "sand", width: 16.6, purpose: "Jumps — stay straight" },
+    { kind: "straight", length: 62, surface: "sand", width: 16.6, purpose: "Jumps — stay straight, see the first lip" },
     {
       kind: "jump",
-      ramp: 15,
-      rise: 1.55,
-      lip: 4,
-      gap: 9,
-      drop: 1.05,
-      land: 18,
+      ramp: 18,
+      rise: 2.05,
+      lip: 6,
+      gap: 32,
+      drop: 1.55,
+      land: 34,
       surface: "sand",
       width: 16.8,
-      purpose: "First jump of the pair",
+      purpose: "First Safari jump — takeoff, hang over the hole, land with weight",
     },
-    { kind: "straight", length: 18, surface: "sand", width: 16.8, purpose: "Between jumps" },
+    { kind: "straight", length: 80, surface: "sand", width: 16.8, purpose: "Recovery — settle before the second lip" },
     {
       kind: "jump",
-      ramp: 16,
-      rise: 1.7,
-      lip: 4,
-      gap: 10,
-      drop: 1.15,
-      land: 20,
+      ramp: 20,
+      rise: 2.25,
+      lip: 6,
+      gap: 36,
+      drop: 1.75,
+      land: 36,
       surface: "sand",
       width: 16.8,
-      purpose: "Second jump — land straight",
+      purpose: "Second Safari jump — bigger hang, land straight",
     },
     {
       kind: "straight",
-      length: 56,
+      length: 64,
       surface: "sand",
       width: 16.8,
       checkpoint: true,

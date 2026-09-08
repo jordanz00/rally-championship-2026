@@ -50,9 +50,9 @@ Visual generation is still **one Track method farm**, not a biome world builder 
 ### FOREST (reference stage — Phase 1)
 
 **Trees**  
-Current: Sketchfab low-poly pack, **3,747 tris for 30 meshes**, plus Kenney `tree_*` (no normals) and `trees.js` cone/icosphere cards as far LOD.  
-Hero quality: **FAIL**  
-Action: replace 0–20 m with photoreal GLB library (5 large + 2–3 medium). Leave pack as far impostor only. **Do not generate cylinders.**
+Current: Poly Haven CC0 hero GLBs (`forest_hero_tree_a`–`h`, ~31k tris, 1k PBR) in the 0–20 m belt. Sketchfab pack atlas cards remain far LOD.  
+Hero quality: **PASS** (close/medium). Far cards are still the pack.  
+Action: keep heroes. Optional LOD1 bake later. **Do not generate cylinders.**
 
 **Rocks**  
 Current: Poly Haven photogrammetry in the close belt (`boulder_01`, `rock_07`, moss sets) **and** Kenney densify / pack rocks still in the kit.  
@@ -140,13 +140,14 @@ FOREST_TREE_LARGE
   LOD: 3 (LOD0 ~15–40k, LOD1 ~4–10k, LOD2 cards >60 m)
   Textures: bark + foliage PBR (albedo, normal, roughness; AO if useful)
   Memory: ≲ 8 MB per LOD0 GLB, 1k–2k maps
-  Status: MISSING
-  Blocked: Poly Haven pine_tree_01 / saplings as shipped (~0.3–1.3 GB, millions of tris)
+  Status: HAVE / PASS
+  Runtime: forest_hero_tree_a…e (Poly Haven island_tree_01/02/03, fir_sapling_medium, tree_small_02)
 
 FOREST_TREE_MEDIUM
   Required: 2–3 sapling / understory trees
   Quality: hero at 10–20 m · LOD 2 · PBR
-  Status: MISSING
+  Status: HAVE / PASS
+  Runtime: forest_hero_tree_f/g/h
 
 FOREST_ROCK_HERO
   Required: 6 distinct geological silhouettes
@@ -232,6 +233,4 @@ Placement may stay in `track.js` helpers. Hero **meshes** must not.
 A player stops the Celica, medium camera, and believes it is a real woodland rally — trees, bark, rocks, soil, gravel, road, edge, tunnel — then drives 30–70 m/s without the world collapsing into cards, tiles, and clones.
 
 `qa-static-audit` passing is **not** that test.  
-`qa-asset-quality.mjs` exits **1** until `FOREST_TREE_LARGE` is PASS.
-
-**No generator code until HIGH PRIORITY trees exist on disk.**
+`qa-asset-quality.mjs` exits **0** once `FOREST_TREE_LARGE` is PASS. Tunnel / ferns / extra rocks remain open.

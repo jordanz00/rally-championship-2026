@@ -215,7 +215,7 @@ export const VISUAL = {
   /** Procedural anamorphic lens flare + ghosts when the sun is in frame. */
   lensFlare: true,
   /** Stage IBL fallback — LIGHTING[stage].worldEnv wins at PMREM bake. */
-  worldEnvIntensity: 0.82,
+  worldEnvIntensity: 0.95,
   carEnvIntensity: 0.98,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
@@ -362,8 +362,8 @@ export const COLORS = {
   kerbRed: 0xd4121a,
   dunePale: 0xd8c090,
   // Must match LIGHTING.*.fog — aerial land tint and scene fog share one haze.
-  fogDesert: 0xe2c890,
-  fogForest: 0x88a890,
+  fogDesert: 0xe8d090,
+  fogForest: 0x8a9aa0,
   fogMountain: 0x9aacbc,
   fogLakeside: 0x90b4c4,
 };
@@ -411,29 +411,29 @@ export const LIGHTING = {
     dustStrength: 0.34,
     wind: [1.85, 0, 0.65],
     fog: 0xe8d090,
-    fogNear: 48,
-    fogFar: 360,
+    fogNear: 52,
+    fogFar: 380,
     hemiSky: 0xb0cce0,
     hemiGround: 0xd8b078,
-    hemi: 0.58,
+    hemi: 0.56,
     sun: 0xffecd0,
-    sunKelvin: 5200,
-    sunInt: 2.45,
+    sunKelvin: 5350,
+    sunInt: 2.35,
     sunDir: [0.54, 0.72, 0.36],
     rimSky: 0xd8ccb0,
-    rimInt: 0.32,
+    rimInt: 0.28,
     fill: 0xd0bc98,
-    fillInt: 0.28,
+    fillInt: 0.26,
     ambient: 0xd0c0a0,
     /**
      * Open-sky bounce must light ridge shadows after the tunnel mouth.
      * 0.14 left the mud exit nearly black — keep a floor, not a wash.
      */
-    ambientInt: 0.24,
-    exposure: 0.98,
-    gradeWarmth: 0.2,
+    ambientInt: 0.22,
+    exposure: 0.96,
+    gradeWarmth: 0.18,
     skyBack: 0x3a88b8,
-    worldEnv: 0.92,
+    worldEnv: 1.05,
   },
   forest: {
     /**
@@ -466,26 +466,26 @@ export const LIGHTING = {
     horizonStrength: 0.24,
     dustStrength: 0.06,
     wind: [0.35, 0, -0.85],
-    fog: 0x7a9878,
-    fogNear: 32,
-    fogFar: 240,
+    fog: 0x8a9aa0,
+    fogNear: 38,
+    fogFar: 260,
     skyBack: 0x2274c0,
     hemiSky: 0x8ec4e8,
     hemiGround: 0x4a7840,
-    hemi: 0.48,
+    hemi: 0.5,
     sun: 0xfff8e8,
-    sunKelvin: 5550,
-    sunInt: 2.05,
+    sunKelvin: 5750,
+    sunInt: 2.0,
     sunDir: [0.5, 0.72, 0.38],
     rimSky: 0xb0d4f0,
-    rimInt: 0.26,
+    rimInt: 0.24,
     fill: 0x88b0c8,
-    fillInt: 0.18,
+    fillInt: 0.16,
     ambient: 0x88a090,
-    ambientInt: 0.12,
-    exposure: 0.92,
-    gradeWarmth: 0.05,
-    worldEnv: 0.82,
+    ambientInt: 0.1,
+    exposure: 0.9,
+    gradeWarmth: 0.04,
+    worldEnv: 1.0,
   },
   mountain: {
     /**
@@ -1660,22 +1660,22 @@ export const CAMERA = {
       id: "medium",
       label: "MEDIUM",
       /**
-       * Sega Rally '95 Saturn chase: follow travel, not the rear bumper.
-       * Grip stays snappy; a powerslide lets the car rotate in frame while the
-       * lens stays on the racing line (far-cam freedom, tighter springs).
+       * Sega Rally '95 Saturn chase: follow travel yaw, not the rear bumper.
+       * XZ is glued (`lockPos`) so throttle cannot trail the lens; a powerslide
+       * still lets the car rotate in frame. 25% closer than the old 5.55 m rig.
        */
-      back: 5.55,
-      height: 1.86,
-      lookAhead: 11.2,
-      lookY: 0.4,
+      back: 4.16,
+      height: 1.58,
+      lookAhead: 9.6,
+      lookY: 0.36,
       fov: 62,
-      /** No speed squat — that buried the roof. Road opens via look-ahead + FOV. */
+      /** No speed squat — that buried the roof. */
       speedDropMax: 0,
-      /** ~2° at rally speed — readable extra pavement, not an arcade zoom. */
-      speedFovScale: 0.16,
-      speedLookAheadScale: 0.22,
+      /** No FOV zoom-out — accelerating must not make the car look farther. */
+      speedFovScale: 0,
+      speedLookAheadScale: 0,
       stableBehind: false,
-      lockPos: false,
+      lockPos: true,
       lockHeight: false,
       /** Jump hang must not crane the lens up; landing kick is separate. */
       lockAir: true,

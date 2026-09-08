@@ -75,7 +75,7 @@ check("race maxPixelRatio ≤ 1.25", maxPr > 0 && maxPr <= 1.25, `maxPixelRatio=
 check("race maxPixels ≤ 2.0 M", maxPx > 0 && maxPx <= 2000000, `maxPixels=${maxPx}`);
 check("high tier bakes sun every 3rd present", /id: "high"[\s\S]{0,280}?shadowEvery:\s*3/.test(perf));
 check("30 fps cadence lock retained", /LOCK30_HOLD/.test(perf) && /lockedHz/.test(perf));
-check("lock30 holds ~0.8s (48 presents)", /LOCK30_HOLD = 48/.test(perf));
+check("lock30 holds ~0.3s (18 presents)", /LOCK30_HOLD = 18/.test(perf));
 check("preferLock30 protects quality before dumping to min", /preferLock30:\s*true/.test(config));
 check(
   "settle force-lock is opt-in (capable GPUs free-run 60 from GO)",

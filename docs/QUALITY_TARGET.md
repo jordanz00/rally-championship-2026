@@ -285,7 +285,7 @@ Canonical stage list: [`RALLY_ENGINE_ROADMAP.md`](RALLY_ENGINE_ROADMAP.md) · co
 
 **R.1 shipped (foundation):** RenderPipeline + renderer factory + RENDER_CAPS + QualityManager + vendored `three.webgpu.js` (r170). Production present path remains **WebGL / three.module.js r160** (Pages + CDP safe). Factory is WebGPURenderer-ready when a future THREE cutover exports it; GLSL post/dust gated by `RENDER_CAPS.glslCustom`. Async `_bootGfx` joins in-flight init (race-safe).
 
-**Not yet (R.2):** Default cutover to `three.webgpu.js` / native WebGPU (blocked on TSL ports for PhotoRealPost + particle GLSL). Opt-in after headed smoke.
+**R.2 started (2026-09-08, opt-in only):** `?webgpu=1` remaps the vendored r170 WebGPU build (WebGL2 backend); `?webgpu=native` is true WebGPU. Default present path remains **WebGL / three.module.js r160**. SSGI + screen-space LOD ship on WebGL. TSL ports for PhotoRealPost + particle GLSL still block a default cutover.
 
 Phase R must not strand Pages users: **WebGL fallback required**. Prefer TSL/NodeMaterial for *new* custom shader work so WebGPU + WebGL2 can share graphs.
 

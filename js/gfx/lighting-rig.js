@@ -8,10 +8,14 @@
  *
  * PERFORMANCE: one extra DirectionalLight with castShadow=false; shadow map size
  *   unchanged — only the ortho bounds tighten for sharper contact reads.
+ *   Tunnel/title/cabin lights live on dedicated layers so outdoor PBR does not
+ *   pay NUM_POINT_LIGHTS=16 (Windows/ANGLE 5 fps cliff).
+ * PHOTOREAL (WebGL, not Lumen): Kelvin sun + sky IBL/PMREM + ACES exposure.
+ *   Do not "fix" look by adding outdoor point lights or boosting bloom.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=220";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=222";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -136,12 +140,24 @@ export function updateShadowFrustum(sun, extent, near, far) {
   if (!sun || !sun.shadow || !sun.shadow.camera) return;
   const ext = extent != null ? extent : GFX.shadowExtentRace != null ? GFX.shadowExtentRace : 18;
   const cam = sun.shadow.camera;
+  const n = near != null ? near : cam.near;
+  const f = far != null ? far : cam.far;
+  if (
+    cam.left === -ext &&
+    cam.right === ext &&
+    cam.top === ext &&
+    cam.bottom === -ext &&
+    cam.near === n &&
+    cam.far === f
+  ) {
+    return;
+  }
   cam.left = -ext;
   cam.right = ext;
   cam.top = ext;
   cam.bottom = -ext;
-  if (near != null) cam.near = near;
-  if (far != null) cam.far = far;
+  cam.near = n;
+  cam.far = f;
   cam.updateProjectionMatrix();
 }
 
@@ -205,4 +221,82 @@ export function skyPmremCapture() {
     near: 0.08,
     far: GFX.pmremFar != null ? GFX.pmremFar : 240,
   };
+}
+
+/**
+ * Local lights (tunnel sconces, cave spot, title kick, cabin fill) must not
+ * sit on layer 0. Three.js folds every visible PointLight into NUM_POINT_LIGHTS
+ * for *all* MeshStandardMaterials that share a layer — 14 intensity-0 sconces
+ * plus kick/cabin/spot is a Windows/ANGLE fragment cliff (~5 fps) with no
+ * outdoor look change. Lights on TUNNEL/TITLE layers only shade receivers
+ * that enable those layers (tunnel meshes, cars, title pad).
+ */
+export const TUNNEL_LIGHT_LAYER = 2;
+export const TITLE_LIGHT_LAYER = 3;
+
+/**
+ * @param {THREE.Light | null | undefined} light
+ * @param {number} layer
+ */
+export function setLightLayer(light, layer) {
+  if (!light || !light.layers) return;
+  light.layers.set(layer);
+  if (light.target && light.target.layers) light.target.layers.set(layer);
+}
+
+/**
+ * Isolate local lights so outdoor PBR (trees, road, terrain) compiles with
+ * sun + fill + hemi + ambient only. Never toggle `visible` — that still
+ * changes NUM_*_LIGHTS and hitch-recompiles at the tunnel mouth.
+ *
+ * @param {{
+ *   wallLights?: THREE.Light[],
+ *   caveLight?: THREE.Light,
+ *   titleRim?: THREE.Light,
+ *   titleKick?: THREE.Light,
+ *   cabinFill?: THREE.Light,
+ * }} lights
+ */
+export function isolateLocalLights(lights) {
+  if (!lights) return;
+  const walls = lights.wallLights || [];
+  for (let i = 0; i < walls.length; i++) setLightLayer(walls[i], TUNNEL_LIGHT_LAYER);
+  setLightLayer(lights.caveLight, TUNNEL_LIGHT_LAYER);
+  setLightLayer(lights.titleRim, TITLE_LIGHT_LAYER);
+  setLightLayer(lights.titleKick, TITLE_LIGHT_LAYER);
+  setLightLayer(lights.cabinFill, TUNNEL_LIGHT_LAYER);
+}
+
+/**
+ * Cars and tunnel linings receive the isolated local lights.
+ * @param {THREE.Object3D | null | undefined} object
+ * @param {number} [layer]
+ */
+export function enableLocalLightReceiver(object, layer = TUNNEL_LIGHT_LAYER) {
+  if (!object || !object.traverse) return;
+  object.traverse((node) => {
+    if (node.layers) node.layers.enable(layer);
+  });
+}
+
+/**
+ * Tag authored tunnel meshes so they receive sconces without walking the
+ * whole forest into NUM_POINT_LIGHTS. Does not rewrite Track.create.
+ * @param {THREE.Object3D | null | undefined} root
+ */
+export function tagTunnelWorldReceivers(root) {
+  if (!root || !root.traverse) return;
+  root.traverse((obj) => {
+    if (!obj.isMesh && !obj.isInstancedMesh) return;
+    const u = obj.userData || {};
+    if (
+      u.tunnelPortal ||
+      u.tunnelBoreLining ||
+      u.tunnelBoreRib ||
+      u.tunnelVolume ||
+      u.tunnel
+    ) {
+      obj.layers.enable(TUNNEL_LIGHT_LAYER);
+    }
+  });
 }

@@ -30,7 +30,7 @@ function check(label, ok, hint) {
 
 console.log("qa-road-micro.mjs");
 
-check("roadMicroHeight exported", /export function roadMicroHeight/.test(micro));
+check("micro height is 2D noise, not sin(dist) corrugation", /function valueNoise2/.test(micro) && /n0 \* amp \* 0\.7/.test(micro));
 check("patch bumps in micro module", /function patchBump/.test(micro));
 check("query adds road micro height", /roadMicroHeight\(distAlong, lateral/.test(track));
 check("road mesh vertices use lateral micro", /microL = roadMicroHeight/.test(track));
@@ -39,7 +39,7 @@ check("corner wheel probes", /_wheelCornerProbe/.test(vehicle));
 check("road roll from wheel heights", /roadRollGain/.test(config) && /this\._roadRoll/.test(vehicle));
 check("wheel travel on draw pose", /wheelY/.test(vehicle) && /wheelTravelMax/.test(config));
 check("applyWheelPose suspension Y", /wheelY\[i\]/.test(celica));
-check("roadChatterScale raised", /roadChatterScale:\s*0\.12/.test(config));
+check("roadChatterScale is chassis bobble, not washboard", /roadChatterScale:\s*0\.055/.test(config));
 check("gravel bump tuned up", /gravel:[\s\S]*?bump:\s*0\.052/m.test(config));
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} (${pass} ok, ${fail} fail)`);

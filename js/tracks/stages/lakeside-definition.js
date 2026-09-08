@@ -8,7 +8,7 @@
  * Geometry fidelity: piece lengths/radii/angles match pre-migration COURSES.lakeside.
  */
 
-import { COLORS } from "../../config.js?v=220";
+import { COLORS } from "../../config.js?v=222";
 
 export const LAKESIDE_DEFINITION = {
   id: "lakeside",

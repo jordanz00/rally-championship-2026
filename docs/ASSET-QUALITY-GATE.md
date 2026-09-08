@@ -82,7 +82,7 @@ Procedural code places. It does not author hero organic geometry.
 
 | Pass | Scope | Status now |
 |---|---|---|
-| 1 | Forest inventory + hero trees/rocks | **INCOMPLETE** — rocks/logs PASS, trees REJECT |
+| 1 | Forest inventory + hero trees/rocks | **PASS** — Poly Haven hero trees + rocks/logs |
 | 2 | Forest ground / road visual shoulder | not started |
 | 3 | Forest tunnel geology | not started |
 | 4 | Forest mid/far LOD + repetition | not started |

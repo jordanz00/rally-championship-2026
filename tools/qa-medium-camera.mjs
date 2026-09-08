@@ -2,8 +2,8 @@
 /**
  * qa-medium-camera.mjs — Sega Rally '95 Saturn chase, not a rear-bumper lock.
  *
- * Player moment: powerslide in frame, lens follows travel, far-cam freedom
- * with tighter springs so the world does not whip.
+ * Player moment: closer chase that holds distance under throttle; powerslide
+ * still rotates the car in frame (travel yaw, not rear-bumper lock).
  *
  * RUN: node tools/qa-medium-camera.mjs
  */
@@ -42,24 +42,23 @@ const height = med ? Number(med[2]) : NaN;
 const lookAhead = med ? Number(med[3]) : NaN;
 const lookY = med ? Number(med[4]) : NaN;
 
-check("medium back 5.3–5.9 m (see the car, not the bumper)", back >= 5.3 && back <= 5.9, `back=${back}`);
-check("medium height 1.78–1.95 m", height >= 1.78 && height <= 1.95, `height=${height}`);
-check("medium look-ahead opened", lookAhead >= 9.5 && lookAhead <= 12.5, `lookAhead=${lookAhead}`);
+check("medium back ~25% closer than 5.55 m", back >= 4.0 && back <= 4.3, `back=${back}`);
+check("medium height matches the closer rig", height >= 1.48 && height <= 1.68, `height=${height}`);
+check("medium look-ahead scaled with back", lookAhead >= 8.8 && lookAhead <= 10.4, `lookAhead=${lookAhead}`);
 check("medium lookY aims at the road", lookY > 0.2 && lookY <= 0.48, `lookY=${lookY}`);
-check("not a behind-car lock", /id:\s*"medium"[\s\S]*?stableBehind:\s*false/.test(config));
-check("spring follow (no XZ glue)", /id:\s*"medium"[\s\S]*?lockPos:\s*false/.test(config));
+check("not a behind-car yaw lock", /id:\s*"medium"[\s\S]*?stableBehind:\s*false/.test(config));
+check("XZ glued — throttle cannot trail the lens", /id:\s*"medium"[\s\S]*?lockPos:\s*true/.test(config));
 check("slide yaw follows travel", /id:\s*"medium"[\s\S]*?slideYawBlend:\s*0\.[6-9]/.test(config));
 check("slide yaw stiffness is lazy", /id:\s*"medium"[\s\S]*?yawStiffnessSlide:\s*[1-8](?:\.\d+)?/.test(config));
 check("slide yaw rate is capped", /id:\s*"medium"[\s\S]*?yawRateCapSlide:\s*[0-9.]+/.test(config) && /yawRateCapSlide/.test(game));
 check("tiny rear-quarter, not an orbit", /id:\s*"medium"[\s\S]*?slideCamOut:\s*0\.0[2-4]/.test(config));
 check("jumps do not crane the lens", /id:\s*"medium"[\s\S]*?lockAir:\s*true/.test(config));
 check("no generic SmoothDamp", !/SmoothDamp/.test(game) && !/smoothDamp/.test(game));
-check("tiny speed FOV", /id:\s*"medium"[\s\S]*?speedFovScale:\s*0\.1[0-8]/.test(config));
-check("speed look-ahead", /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0\.2/.test(config));
+check("no speed FOV zoom-out", /id:\s*"medium"[\s\S]*?speedFovScale:\s*0(?:\.0+)?/.test(config) || /id:\s*"medium"[\s\S]*?speedFovScale:\s*0,/.test(config));
+check("no speed look-ahead stretch", /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0(?:\.0+)?/.test(config) || /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0,/.test(config));
 check("subtle brake pitch", /id:\s*"medium"[\s\S]*?brakePitchMul:\s*0\.03/.test(config));
 check("subtle landing kick", /id:\s*"medium"[\s\S]*?landKickMul:\s*0\.2/.test(config));
 check("surface shake scaled", /surfShake/.test(game) && /shakeMul/.test(game));
-check("tighter springs than far", /id:\s*"medium"[\s\S]*?springPosStiff:\s*8[0-9]/.test(config));
 
 const far = config.match(/id:\s*"far"[\s\S]*?back:\s*([0-9.]+)[\s\S]*?height:\s*([0-9.]+)/);
 check(

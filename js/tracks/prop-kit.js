@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=220";
+import { VISUAL } from "../config.js?v=222";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -147,7 +147,7 @@ const CHAR_PARTS = Object.create(null);
  */
 const FOREST_PARTS = Object.create(null);
 
-/** Authored 3D tree variants from the Sketchfab forest pack (geometry + cross-mixes). */
+/** Close-range Forest trees — Poly Haven CC0 heroes (a–h), pack only as far cards. */
 export const FOREST_TREE_KINDS = Object.freeze([
   "forest_tree_a",
   "forest_tree_b",
@@ -155,11 +155,13 @@ export const FOREST_TREE_KINDS = Object.freeze([
   "forest_tree_d",
   "forest_tree_e",
   "forest_tree_f",
+  "forest_tree_g",
+  "forest_tree_h",
 ]);
 
 /**
- * Stage 2 Forest — mixed pack: three trunk01/branch01 shapes, one fir, two cross-mixes.
- * Weighted so the verge reads as a real mixed stand, not one clone.
+ * Stage 2 Forest — mixed photoreal stand: three island broadleaf, fir, small
+ * tree, two saplings, one understory shrub. Weighted so the verge is not one clone.
  */
 export const FOREST_STAGE_PALETTE = Object.freeze([
   "forest_tree_a",
@@ -168,20 +170,24 @@ export const FOREST_STAGE_PALETTE = Object.freeze([
   "forest_tree_b",
   "forest_tree_c",
   "forest_tree_d",
+  "forest_tree_d",
   "forest_tree_e",
   "forest_tree_f",
+  "forest_tree_g",
+  "forest_tree_h",
   "forest_tree_c",
 ]);
 
 /**
- * Stage 3 Mountain — same GLB pack, different mix: more fir / narrow cross-mixes,
- * fewer broadleaf clones so the hills read alpine instead of woodland.
+ * Stage 3 Mountain — same hero files, more conifer / sapling, fewer broadleaf.
  */
 export const FOREST_MOUNTAIN_PALETTE = Object.freeze([
   "forest_tree_d",
   "forest_tree_d",
   "forest_tree_f",
   "forest_tree_f",
+  "forest_tree_g",
+  "forest_tree_g",
   "forest_tree_e",
   "forest_tree_b",
   "forest_tree_a",
@@ -252,7 +258,20 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "22";
+const KIT_ASSET_V = "23";
+/** @type {Promise<void>|null} */
+let forestHeroPromise = null;
+
+const FOREST_HERO_TREE_FILES = Object.freeze({
+  forest_tree_a: "forest_hero_tree_a.glb",
+  forest_tree_b: "forest_hero_tree_b.glb",
+  forest_tree_c: "forest_hero_tree_c.glb",
+  forest_tree_d: "forest_hero_tree_d.glb",
+  forest_tree_e: "forest_hero_tree_e.glb",
+  forest_tree_f: "forest_hero_tree_f.glb",
+  forest_tree_g: "forest_hero_tree_g.glb",
+  forest_tree_h: "forest_hero_tree_h.glb",
+});
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([
@@ -292,13 +311,6 @@ const FOREST_NATURE = Object.freeze([
   "plant_bushRound",
   "plant_bushFern",
   "log_large",
-  "tree_pineDefaultA",
-  "tree_pineDefaultB",
-  "tree_oak",
-  "tree_detailed",
-  "tree_default",
-  "tree_cone",
-  "tree_fir",
 ]);
 const MOUNTAIN_NATURE = Object.freeze([...FOREST_NATURE, "tent_detailedClosed", "house-alpine"]);
 
@@ -617,6 +629,8 @@ function loadSceneryKit(scenery) {
       await new Promise((r) => setTimeout(r, 0));
     }
     if (key === "forest" || key === "mountain") {
+      if (!forestHeroPromise) forestHeroPromise = loadForestHeroTrees(getKitLoader(), KIT_ASSET_V);
+      await forestHeroPromise;
       if (!forestPackPromise) forestPackPromise = loadForestTreePack(getKitLoader(), KIT_ASSET_V);
       await forestPackPromise;
     }
@@ -646,13 +660,36 @@ export function preparePropKit(scenery) {
  */
 export function prefetchPropKit(scenery) {
   const kinds = kindsForScenery(scenery || "desert");
+  const extra =
+    scenery === "forest" || scenery === "mountain"
+      ? Object.values(FOREST_HERO_TREE_FILES)
+      : [];
   return Promise.all(
-    kinds.map((kind) =>
-      fetch(`assets/props/${kind}.glb?v=${KIT_ASSET_V}`, { mode: "cors", credentials: "same-origin" }).then(
-        (res) => {
-          if (res && res.ok) return res.arrayBuffer();
-          return null;
-        },
+    kinds
+      .map((kind) => `assets/props/${kind}.glb?v=${KIT_ASSET_V}`)
+      .concat(extra.map((file) => `assets/props/${file}?v=${KIT_ASSET_V}`))
+      .map((url) =>
+        fetch(url, { mode: "cors", credentials: "same-origin" }).then(
+          (res) => {
+            if (res && res.ok) return res.arrayBuffer();
+            return null;
+          },
+          () => null
+        )
+      )
+  ).then(() => {});
+}
+
+/**
+ * HTTP-cache Poly Haven hero trees without parsing. Call when Forest/Mountain
+ * is the next queued stage so Track.create hits cache instead of 8×8 MB cold.
+ * @returns {Promise<void>}
+ */
+export function prefetchForestHeroTrees() {
+  return Promise.all(
+    Object.values(FOREST_HERO_TREE_FILES).map((file) =>
+      fetch(`assets/props/${file}?v=${KIT_ASSET_V}`, { mode: "cors", credentials: "same-origin" }).then(
+        (res) => (res && res.ok ? res.arrayBuffer() : null),
         () => null
       )
     )
@@ -761,13 +798,160 @@ export function loadTitleRocks() {
 }
 
 /**
- * Load Sketchfab low_poly_forest_tree_pack.glb — realistic trunk/canopy trees,
- * atlas backdrop cards, and pack rocks for Forest + Mountain stages.
+ * Load Poly Haven CC0 hero trees (1k PBR, ~30k tris). Close/medium Forest
+ * canopy. The Sketchfab pack stays as far-LOD cards only.
  *
- * HOW VARIETY WORKS: the pack ships a few trunk/branch instances (01 / 01.001 /
- * 01.002 / 02). We pair each trunk to its nearest canopy, then build two
- * cross-material mixes so Stage 2 and Stage 3 can draw from six distinct looks
- * out of the same GLB.
+ * @param {GLTFLoader} loader
+ * @param {string} assetV
+ * @returns {Promise<void>}
+ */
+async function loadForestHeroTrees(loader, assetV) {
+  const kinds = Object.keys(FOREST_HERO_TREE_FILES);
+  await Promise.all(
+    kinds.map(async (kind) => {
+      const file = FOREST_HERO_TREE_FILES[kind];
+      const url = `assets/props/${file}?v=${assetV}`;
+      try {
+        const gltf = await loader.loadAsync(url);
+        const root = gltf.scene || gltf.scenes[0];
+        if (!root) {
+          console.warn(`[prop-kit] empty hero tree: ${url}`);
+          return;
+        }
+        root.updateMatrixWorld(true);
+        const parts = buildHeroTreeParts(kind, root, 11.5);
+        if (!parts) {
+          console.warn(`[prop-kit] hero tree split failed: ${kind}`);
+          return;
+        }
+        FOREST_PARTS[kind] = parts;
+        CACHE[kind] = parts.canopy;
+        MAT_CACHE[kind] = parts.canopyMat;
+        MAT_CACHE[`${kind}_trunk`] = parts.trunkMat;
+      } catch (err) {
+        console.warn(`[prop-kit] hero tree failed: ${url}`, err);
+      }
+    })
+  );
+  console.info(
+    `[prop-kit] forest hero trees ${FOREST_TREE_KINDS.filter((k) => FOREST_PARTS[k]).length}/${FOREST_TREE_KINDS.length}`
+  );
+}
+
+/**
+ * Classify a GLB mesh or material as woody trunk vs alpha foliage.
+ * @param {string} meshName
+ * @param {THREE.Material|undefined} mat
+ * @returns {"trunk"|"canopy"}
+ */
+function heroTreeMatRole(meshName, mat) {
+  const n = `${meshName || ""} ${mat && mat.name ? mat.name : ""}`.toLowerCase();
+  if (/leaf|leaves|twig|needle|foliage|canopy/.test(n)) return "canopy";
+  if (/trunk|bark/.test(n)) return "trunk";
+  if (/branch/.test(n)) return "trunk";
+  if (mat && (mat.transparent || mat.alphaTest > 0 || mat.alphaMap)) return "canopy";
+  return "trunk";
+}
+
+/**
+ * Island trees ship one mesh + 3 materials. Slice groups so bark and leaves
+ * keep their own PBR instead of painting the whole crown with mat[0].
+ * @param {THREE.BufferGeometry} srcGeo
+ * @param {{start:number, count:number}} group
+ * @returns {THREE.BufferGeometry}
+ */
+function extractGroupGeometry(srcGeo, group) {
+  const geo = srcGeo.clone();
+  if (geo.index) {
+    const src = geo.index.array;
+    const sliced = src.subarray(group.start, group.start + group.count);
+    const copy = sliced.slice();
+    geo.setIndex(new THREE.BufferAttribute(copy, 1));
+  } else {
+    const start = group.start;
+    const count = group.count;
+    const attrs = geo.attributes;
+    for (const name of Object.keys(attrs)) {
+      const attr = attrs[name];
+      const item = attr.itemSize;
+      const src = attr.array;
+      const dst = src.slice(start * item, (start + count) * item);
+      geo.setAttribute(name, new THREE.BufferAttribute(dst, item, attr.normalized));
+    }
+    geo.setIndex(null);
+  }
+  if (geo.clearGroups) geo.clearGroups();
+  return geo;
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ * @returns {{mesh:THREE.Mesh, role:"trunk"|"canopy"}[]}
+ */
+function splitHeroTreeMesh(mesh) {
+  const mats = [].concat(mesh.material || []);
+  const geo = mesh.geometry;
+  const groups = geo && geo.groups && geo.groups.length ? geo.groups : null;
+  if (!geo || mats.length < 2 || !groups) {
+    return [{ mesh, role: heroTreeMatRole(mesh.name, mats[0]) }];
+  }
+  const out = [];
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    const mat = mats[g.materialIndex] || mats[0];
+    const sub = new THREE.Mesh(extractGroupGeometry(geo, g), mat);
+    sub.name = `${mesh.name || "tree"}_${mat && mat.name ? mat.name : i}`;
+    sub.matrixWorld.copy(mesh.matrixWorld);
+    out.push({ mesh: sub, role: heroTreeMatRole(sub.name, mat) });
+  }
+  return out;
+}
+
+/**
+ * @param {string} kind
+ * @param {THREE.Object3D} root
+ * @param {number} targetH
+ */
+function buildHeroTreeParts(kind, root, targetH) {
+  /** @type {THREE.Mesh[]} */
+  const trunkMeshes = [];
+  /** @type {THREE.Mesh[]} */
+  const canopyMeshes = [];
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const pieces = splitHeroTreeMesh(o);
+    for (let i = 0; i < pieces.length; i++) {
+      if (pieces[i].role === "canopy") canopyMeshes.push(pieces[i].mesh);
+      else trunkMeshes.push(pieces[i].mesh);
+    }
+  });
+  if (!canopyMeshes.length && trunkMeshes.length) {
+    canopyMeshes.push(...trunkMeshes);
+  }
+  if (!trunkMeshes.length && canopyMeshes.length) {
+    trunkMeshes.push(canopyMeshes[0]);
+  }
+  if (!trunkMeshes.length || !canopyMeshes.length) return null;
+  const parts = buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH);
+  if (!parts) return null;
+  if (parts.canopyMat) {
+    parts.canopyMat.alphaTest = 0.38;
+    parts.canopyMat.transparent = false;
+    parts.canopyMat.depthWrite = true;
+    parts.canopyMat.side = THREE.DoubleSide;
+    parts.canopyMat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.42 : 0.28;
+  }
+  if (parts.trunkMat) {
+    parts.trunkMat.alphaTest = 0;
+    parts.trunkMat.transparent = false;
+    parts.trunkMat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.48 : 0.32;
+  }
+  return parts;
+}
+
+/**
+ * Load Sketchfab low_poly_forest_tree_pack.glb — far atlas cards and pack rocks.
+ * Close trees come from loadForestHeroTrees; pack pairs fill only empty slots.
  *
  * @param {GLTFLoader} loader
  * @param {string} assetV
@@ -857,6 +1041,7 @@ async function loadForestTreePack(loader, assetV) {
 
     for (let i = 0; i < FOREST_TREE_KINDS.length; i++) {
       const kind = FOREST_TREE_KINDS[i];
+      if (FOREST_PARTS[kind]) continue;
       const pair = pairs[i];
       if (!pair) {
         FOREST_PARTS[kind] = null;

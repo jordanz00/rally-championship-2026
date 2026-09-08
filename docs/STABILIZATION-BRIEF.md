@@ -1,8 +1,8 @@
 # Stabilization brief — Rally Championship 2026
 
 **Status:** Binding working packet for humans and LLMs.  
-**Date:** 2026-09-06  
-**Boot:** `index.html` → `js/main.js?v=727`  
+**Date:** 2026-09-08  
+**Boot:** `index.html` → `js/main.js?v=770`  
 **Live URL may lag this tree.**
 
 This document replaces `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` as **current engine state**. Those files are historical and marked SUPERSEDED.
@@ -28,7 +28,7 @@ Browser arcade rally inspired by Sega Rally Championship **feel** — original s
 - Four stages: Desert, Forest, Mountain, Lakeside (+ `?physlab=1` / F8)
 - Championship / Time Attack / Practice
 - 14 AI rivals on the same `Vehicle` class
-- Static HTML + ES modules, Three.js **r160 WebGL**, no bundler, no `src/**/*.ts`
+- Static HTML + ES modules, Three.js **r160 WebGL** default. Phase **R.2 opt-in:** `?webgpu=1` (r170 WebGPURenderer / WebGL2 backend) or `?webgpu=native`. No `src/**/*.ts`
 
 **Priority:** fun → feel → visuals where the player looks → performance → maintainability → sim.
 
@@ -58,7 +58,7 @@ index.html
 - `FIXED_DT = 1/60`. Meshes follow `drawPose()`. Never write `Vehicle.position` from the mesh.
 - `Track.query(x,z)` is the shared height/surface authority (`splineY + ROAD_DECK + micro`).
 - Visual plant lives on **child** meshes, not `root.position.y` (sync overwrites the wrapper).
-- Default camera is medium Saturn chase: travel-follow yaw (`slideYawBlend`, yaw rate cap), spring XZ (not `lockPos`), `height: 1.86`. POV and far unchanged.
+- Default camera is medium Saturn chase: ~4.16 m back, XZ glued (`lockPos`) so throttle cannot trail, travel-follow yaw on slides. POV and far unchanged.
 - Cache-bust: every first-party import is `file.js?v=N`. **One file → one version in the whole graph.** `game.js` and `ai.js` must share `vehicle.js` and `celica.js` versions or ES modules create two singletons.
 
 ---
@@ -85,6 +85,7 @@ Inspect before “fixing” these — they are in the tree as of 2026-09-05/06:
 | Rival tire plant | `plantOnContactPatch` + zero lowDetail fake wheel travel |
 | Version conflict = FAIL | `tools/qa-static-audit.mjs` `checkVersionConsistency` |
 | Off-road recoverable | `bounceOffRoad` + player verge speed floor |
+| Screen-space LOD + SSGI (R.2 WebGL) | `gpu-lod.js` + `postfx.js` SSGI; WebGPU opt-in `?webgpu=1` |
 | Progressive grip envelope (PATCH 1) | `combinedTire` peak-hold + breakaway + recover floor; `pedalLoadBlend` into axle load. Jumps not in this patch. |
 | Forest hero photogrammetry (rocks/logs) | `prop-kit.js` `FOREST_HERO_KINDS`. Trees still REJECT — see [`ASSET-QUALITY-GATE.md`](ASSET-QUALITY-GATE.md). |
 
@@ -99,7 +100,7 @@ Inspect before “fixing” these — they are in the tree as of 2026-09-05/06:
 Forest is the reference stage. **Phase 1 is blocked** until hero trees exist.
 
 - Audit: [`ENVIRONMENT-AUDIT.md`](ENVIRONMENT-AUDIT.md) — read before generator edits
-- Gate: `node tools/qa-asset-quality.mjs` (exit 1 while `FOREST_TREE_LARGE` is REJECT)
+- Gate: `node tools/qa-asset-quality.mjs` (FOREST_TREE_LARGE PASS; tunnel/ferns still open)
 - Manifest: [`ASSET-ACQUISITION-MANIFEST.md`](ASSET-ACQUISITION-MANIFEST.md)
 - Do not generate primitive trees. Do not skim Desert/Mountain/Lakeside yet.
 
@@ -159,7 +160,7 @@ Hero GLB: title LOD already; race hero. Damage: keep procedural. Co-driver: geom
 
 1. Evolve `js/`. No TypeScript `src/` tree. No new engine.
 2. No `track.js` / `vehicle.js` rewrites for cleanliness.
-3. WebGL r160 production. WebGPU only with explicit Phase R.2 approval.
+3. WebGL r160 production default. Phase R.2 opt-in is `?webgpu=1` / `?webgpu=native` with WebGL fallback. No default cutover.
 4. Cache-bust every touched module. One file, one `?v=`.
 5. Fix generators, not one-off props.
 6. Arcade, not sim. Lab for handling.

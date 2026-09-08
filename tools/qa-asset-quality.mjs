@@ -149,8 +149,18 @@ for (const a of assets) {
 const trees = assets.find((a) => a.id === "FOREST_TREE_LARGE");
 check(!!trees, "FOREST_TREE_LARGE row exists", "required category missing");
 if (trees) {
-  check(trees.verdict === "REJECT", "Forest trees are REJECT until a hero library exists", trees.verdict);
-  check(trees.status === "MISSING", "Forest trees status MISSING", trees.status);
+  check(trees.verdict === "PASS", "Forest trees PASS with a Poly Haven hero library", trees.verdict);
+  check(trees.status === "HAVE", "Forest trees status HAVE", trees.status);
+  const heroFiles = (trees.files || []).filter((f) => /forest_hero_tree_/.test(f));
+  check(heroFiles.length >= 5, "FOREST_TREE_LARGE has ≥5 hero GLBs", String(heroFiles.length));
+  for (const rel of heroFiles) {
+    check(!never.has(rel.replace(/\\/g, "/")), `${rel} is not a never-pass file`, rel);
+  }
+}
+
+const medium = assets.find((a) => a.id === "FOREST_TREE_MEDIUM");
+if (medium) {
+  check(medium.verdict === "PASS", "Forest medium trees PASS", medium.verdict);
 }
 
 const boulder = assets.find((a) => a.id === "FOREST_ROCK_BOULDER");
@@ -168,17 +178,18 @@ const kit = fs.readFileSync(path.join(ROOT, "js", "tracks", "prop-kit.js"), "utf
 const track = fs.readFileSync(path.join(ROOT, "js", "tracks", "track.js"), "utf8");
 check(/FOREST_HERO_KINDS/.test(kit), "prop-kit exports Forest hero kinds", "missing FOREST_HERO_KINDS");
 check(/forest_hero_boulder_a/.test(track), "track plants Forest hero boulders", "hero rocks not referenced");
+check(/loadForestHeroTrees/.test(kit) && /forest_hero_tree_a/.test(kit), "prop-kit loads Forest hero trees", "hero tree load path missing");
 check(
   /low_poly_forest_tree_pack/.test(kit),
-  "current close trees still come from the Sketchfab pack (honest)",
-  "pack load path changed — update the registry"
+  "Sketchfab pack remains for far-LOD cards only",
+  "pack load path removed — keep cards"
 );
 
 console.log("");
-const incomplete = trees && trees.verdict === "REJECT";
+const incomplete = trees && trees.verdict !== "PASS";
 if (fail) {
   console.log(`FAIL  ·  ${fail} honesty/quality check(s) failed`);
-  console.log("Do not mark Forest trees PASS. Acquire hero GLBs or leave the existing pack.");
+  console.log("Do not mark Forest trees PASS without hero GLBs + PBR normals.");
   process.exit(1);
 }
 if (incomplete) {

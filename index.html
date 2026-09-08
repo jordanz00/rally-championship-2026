@@ -20,15 +20,27 @@
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
     <link rel="stylesheet" href="css/game.css?v=44" />
-    <!-- Splash: title bed + hero Celica so the showroom is ready on first paint. -->
+    <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/sky/kloofendal_partly_cloudy_2k.hdr" as="fetch" crossorigin="anonymous" />
-    <link rel="prefetch" href="assets/sky/kloppenheim_06_2k.hdr" as="fetch" crossorigin="anonymous" />
-    <link rel="prefetch" href="assets/sky/sunflowers_2k.hdr" as="fetch" crossorigin="anonymous" />
-    <link rel="preload" href="assets/celica/gt4.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
+    <link rel="preload" href="assets/celica/rival.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
     <script>
       window.__rallyLeftTitle = false;
+      // Phase R.2 — opt-in WebGPU THREE build. Default stays r160 WebGL.
+      // Must run before js/main.js so every `three.module.js` import remaps.
+      (function () {
+        try {
+          var q = typeof location !== "undefined" ? location.search : "";
+          if (!/[?&]webgpu=(?:1|native)(?:&|$)/.test(q)) return;
+          var threeUrl = new URL("vendor/three.module.js", document.baseURI).href;
+          var gpuUrl = new URL("vendor/three.webgpu.js", document.baseURI).href;
+          var map = document.createElement("script");
+          map.type = "importmap";
+          map.textContent = JSON.stringify({ imports: { [threeUrl]: gpuUrl } });
+          document.currentScript.after(map);
+        } catch (e) { /* no importmap — WebGL boot still works */ }
+      })();
       // Dev / garage / FPS chrome — off for players; ?dev=1 · ?debug=1 · rally-debug=1
       (function () {
         try {
@@ -355,6 +367,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=737"></script>
+    <script type="module" src="js/main.js?v=770"></script>
   </body>
 </html>

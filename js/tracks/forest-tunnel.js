@@ -7,11 +7,12 @@
  *   at the entrance/exit. Does not own height, collision volumes, or query().
  * HOW IT CONNECTS: track.js Forest branch. Desert/Mountain keep _addTunnelPortal.
  *
- * Interior is one BufferGeometry (inner + outer + end rims). Mouth geology
- * stays outside the drive hole. Land floors stay in Track.
+ * Interior is one BufferGeometry (inner + outer + end rims + floor-toe caps).
+ * Mouth geology stays outside the drive hole. Land floors stay in Track.
  */
 
 import * as THREE from "../../vendor/three.module.js";
+import { armProjectedMaps } from "../gfx/pbr.js?v=49";
 
 const ASSET_V = "1";
 const TEX_BASE = "assets/env/forest";
@@ -19,7 +20,7 @@ const TEX_BASE = "assets/env/forest";
 const TILE_M = 2.0;
 
 let prepared = false;
-/** @type {{map:THREE.Texture, normalMap:THREE.Texture|null}|null} */
+/** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, armMap:THREE.Texture|null}|null} */
 let rockSet = null;
 
 /**
@@ -34,7 +35,8 @@ export async function prepareForestTunnelPbr() {
   const map = await loadTex(loader, `${TEX_BASE}/tunnel_rock_diff_1k.jpg`, true);
   if (!map) return;
   const normalMap = await loadTex(loader, `${TEX_BASE}/tunnel_rock_nor_gl_1k.jpg`, false);
-  rockSet = { map, normalMap };
+  const armMap = await loadTex(loader, `${TEX_BASE}/tunnel_rock_arm_1k.jpg`, false);
+  rockSet = { map, normalMap, armMap };
 }
 
 /**
@@ -46,18 +48,34 @@ export function createForestTunnelMaterial(kind) {
   const bore = kind === "bore";
   const map = rockSet && rockSet.map ? cloneMap(rockSet.map) : null;
   const normalMap = rockSet && rockSet.normalMap ? cloneMap(rockSet.normalMap) : null;
-  return new THREE.MeshStandardMaterial({
+  const arm = rockSet && rockSet.armMap ? cloneMap(rockSet.armMap) : null;
+  const mat = new THREE.MeshStandardMaterial({
     color: map ? 0xc8c2b6 : bore ? 0x6a6860 : 0x7a7468,
     map,
     normalMap,
-    normalScale: normalMap ? new THREE.Vector2(bore ? 0.7 : 0.95, bore ? 0.7 : 0.95) : undefined,
+    normalScale: normalMap ? new THREE.Vector2(bore ? 0.95 : 1.22, bore ? 0.95 : 1.22) : undefined,
+    aoMap: arm,
+    roughnessMap: arm,
+    metalnessMap: arm,
+    bumpMap: arm,
+    bumpScale: bore ? 0.55 : 0.78,
+    aoMapIntensity: arm ? 0.88 : 1,
     roughness: bore ? 0.88 : 0.92,
-    metalness: 0.02,
+    metalness: 0.04,
     envMapIntensity: bore ? 0.22 : 0.18,
     side: THREE.FrontSide,
     flatShading: false,
     fog: true,
   });
+  armProjectedMaps(mat, {
+    mode: "triplanar",
+    amount: 1,
+    ribbon: 0.06,
+    bump: bore ? 0.55 : 0.72,
+    blotch: false,
+    key: `tunnel-tri-v1-${kind}`,
+  });
+  return mat;
 }
 
 /**
@@ -76,7 +94,9 @@ export function buildForestTunnelTubeGeometry(pts, start, end, spec) {
   const thick = spec.thick != null ? spec.thick : 2.45;
   const tile = spec.tileMeters != null ? spec.tileMeters : TILE_M;
   const frames = densifyFrames(pts, start, end);
-  const inner = horseshoeProfile(clearHalf, openH, -1.65, 4, 18);
+  // Toes tuck under the deck; longitudinal caps seal wall/floor so the
+  // chase camera cannot see sky or terrain through the lining.
+  const inner = horseshoeProfile(clearHalf, openH, -2.35, 6, 24, 1.35);
   const outer = offsetProfile(inner, thick);
   return sweepTube(frames, inner, outer, tile);
 }
@@ -93,7 +113,7 @@ export function buildForestMouthCollarGeometry(spec, depth) {
   const hole = spec.clearHalf + 0.22;
   const openH = spec.openH;
   const thick = Math.max(5.4, hole * 0.72);
-  const inner = horseshoeProfile(hole, openH + 0.15, -2.1, 4, 20);
+  const inner = horseshoeProfile(hole, openH + 0.15, -2.45, 6, 24, 1.35);
   const outer = offsetProfile(inner, thick);
   displaceProfile(outer, 1.15, 0.55);
   const frames = [
@@ -265,7 +285,7 @@ function densifyFrames(pts, start, end) {
     let dh = q.heading - p.heading;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
-    const steps = Math.abs(dh) > 0.07 ? 2 : Math.abs(dh) > 0.03 ? 1 : 0;
+    const steps = Math.abs(dh) > 0.05 ? 3 : Math.abs(dh) > 0.022 ? 2 : Math.abs(dh) > 0.01 ? 1 : 0;
     for (let s = 1; s <= steps; s++) {
       const t = s / (steps + 1);
       let nx = p.nx + (q.nx - p.nx) * t;
@@ -287,18 +307,23 @@ function densifyFrames(pts, start, end) {
 }
 
 /**
- * Open horseshoe in local (right, up). Floor stays open.
+ * Open horseshoe in local (right, up). Floor stays open for the deck, but
+ * both toes tuck under the ribbon so wall/floor joins are not see-through.
  * @param {number} half
  * @param {number} openH
  * @param {number} floorY
  * @param {number} wallSegs
  * @param {number} arcSegs
+ * @param {number} [lipIn=1.2] under-deck inset toward the racing line (m)
  * @returns {Array<{x:number,y:number}>}
  */
-function horseshoeProfile(half, openH, floorY, wallSegs, arcSegs) {
+function horseshoeProfile(half, openH, floorY, wallSegs, arcSegs, lipIn = 1.2) {
   const spring = openH * 0.62;
+  const lip = Math.max(0.55, Math.min(half * 0.42, lipIn));
   const out = [];
-  for (let i = 0; i <= wallSegs; i++) {
+  out.push({ x: -half + lip, y: floorY });
+  out.push({ x: -half, y: floorY });
+  for (let i = 1; i <= wallSegs; i++) {
     const t = i / wallSegs;
     out.push({ x: -half, y: floorY + (spring - floorY) * t });
   }
@@ -310,6 +335,7 @@ function horseshoeProfile(half, openH, floorY, wallSegs, arcSegs) {
     const t = i / wallSegs;
     out.push({ x: half, y: spring + (floorY - spring) * t });
   }
+  out.push({ x: half - lip, y: floorY });
   return out;
 }
 
@@ -435,7 +461,7 @@ function sweepTube(frames, inner, outer, tile) {
     }
   }
 
-  const quads = (F - 1) * (P - 1) * 2 + (P - 1) * 2;
+  const quads = (F - 1) * (P - 1) * 2 + (P - 1) * 2 + (F - 1) * 2;
   const idx = new Uint32Array(quads * 6);
   let t = 0;
   const tri = (a, b, c) => {
@@ -477,6 +503,21 @@ function sweepTube(frames, inner, outer, tile) {
     const lo0 = innerCount + last + j;
     const lo1 = innerCount + last + j + 1;
     quad(li0, lo0, lo1, li1);
+  }
+
+  // Longitudinal toe caps — seal inner↔outer along both open floor edges
+  // so wall thickness is not a slit to terrain/sky from the chase camera.
+  for (let i = 0; i < F - 1; i++) {
+    const a0 = i * P;
+    const a1 = (i + 1) * P;
+    const o0 = innerCount + a0;
+    const o1 = innerCount + a1;
+    quad(a0, o0, o1, a1);
+    const ar0 = a0 + (P - 1);
+    const ar1 = a1 + (P - 1);
+    const or0 = o0 + (P - 1);
+    const or1 = o1 + (P - 1);
+    quad(ar0, ar1, or1, or0);
   }
 
   const geo = new THREE.BufferGeometry();

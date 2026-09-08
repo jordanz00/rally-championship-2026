@@ -16,7 +16,7 @@
  * pedal at the lip fly different — never RNG.
  */
 
-import { JUMP } from "../config.js?v=220";
+import { JUMP } from "../config.js?v=222";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));

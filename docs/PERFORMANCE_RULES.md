@@ -33,7 +33,7 @@ These rules apply to the **existing** engine (`THREE.WebGLRenderer`, Three r160,
 21. **Dynamic resolution / DPR / present scale** may drop under load and recover when headroom returns. Do not force permanent native ultra on integrated GPUs.
 22. **Do not brute-force UE5 polygon counts** in the browser. Reproduce AAA *cues* (lighting, materials, atmosphere, contact) under these constraints.
 23. Preserve existing architecture: **evolve** `perf-tier`, `STREAM`, `InstancedMesh`, postfx — do not replace with a parallel renderer “because it would be cleaner.”
-24. **WebGPU** is an approved migration target only as its own sprint (fallback WebGL required). Until then, all work ships on the current WebGL present path.
+24. **WebGPU** default cutover is still its own headed-benchmark sprint. Phase R.2 **opt-in** (`?webgpu=1|native`) plus WebGL Nanite-like LOD / SSGI is the current slice. WebGL fallback required.
 
 ---
 

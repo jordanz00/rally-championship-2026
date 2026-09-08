@@ -32,7 +32,7 @@ const MAX_PUSH = 3;
  * Player env depenetration cap (m). A contact nudge — never a metres-long
  * shove that fights `_guardXZ` and freezes the car against a rock.
  */
-const PLAYER_ENV_PUSH = 0.58;
+const PLAYER_ENV_PUSH = 0.24;
 const AI_ENV_PUSH = 0.85;
 /** Tunnel / underpass faces need a firmer shove than soft rocks. */
 const PLAYER_WALL_PUSH = 1.2;
@@ -96,9 +96,10 @@ const OFF_SHOULDER = 1.6;
 const OFF_RUNOFF = 10;
 const OFF_RECOVER = 17;
 const OFF_RESET = 24;
-/** Player shoulder: soft berm — bleed outward speed, do not kill forward momentum. */
+/** Player shoulder: soft berm — bleed outward speed into along-track scrape. */
 const PLAYER_SHOULDER_OUT = 0.14;
-const PLAYER_SHOULDER_BOUNCE = 0.2;
+/** Fraction of killed outward speed fed back along the ribbon (scrape, not inward bounce). */
+const PLAYER_SHOULDER_SCRAPE = 0.88;
 /**
  * Player runoff along-track drag, per 60 Hz step.
  * 1.2–4.8%/frame was ~50–95% speed loss per second and parked the car.
@@ -487,7 +488,7 @@ function circleVsCarObb(cx, cz, cr, px, pz, fx, fz, rx, rz) {
  * @param {number} fx
  * @param {number} fz
  * @param {number} fast
- * @param {{wall?:boolean}} [opts]
+ * @param {{wall?:boolean, vel?:boolean}} [opts]
  */
 function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   if (!(overlap > 0) || !Number.isFinite(nx) || !Number.isFinite(nz)) return;
@@ -495,6 +496,7 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   nx /= nLen;
   nz /= nLen;
   const wall = !!opts.wall;
+  const applyVel = opts.vel !== false;
   const cap = wall
     ? v.ai
       ? AI_WALL_PUSH
@@ -506,32 +508,48 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   v.position.x += nx * push;
   v.position.z += nz * push;
 
-  // Resolve velocity against the normal — keep tangential / along-track speed.
-  // AM3: walls glance; never dump all speed into a hard stop that ends a run.
+  if (!applyVel) {
+    v.hitWall = Math.max(v.hitWall || 0, push * 0.35);
+    v.hitNx = nx;
+    v.hitNz = nz;
+    return;
+  }
+
+  // Scrape: kill only a share of closing speed and feed it along-nose.
+  // Zeroing the whole normal (old) plus 0.58 m × 6 correction passes pinballed drifts.
   const vn = v.velocity.x * nx + v.velocity.z * nz;
   if (vn < 0) {
     const closed = -vn;
-    v.velocity.x -= vn * nx;
-    v.velocity.z -= vn * nz;
+    const tx = -nz;
+    const tz = nx;
+    const vt = v.velocity.x * tx + v.velocity.z * tz;
+    const along = v.velocity.x * fx + v.velocity.z * fz;
+    const glancing = closed < Math.max(1.8, Math.abs(vt) * 0.5 + Math.max(0, along) * 0.22);
     if (v.ai) {
-      const along = v.velocity.x * fx + v.velocity.z * fz;
-      if (along < 6) {
-        v.velocity.x += fx * (6 - along) * 0.35;
-        v.velocity.z += fz * (6 - along) * 0.35;
+      v.velocity.x -= vn * nx;
+      v.velocity.z -= vn * nz;
+      const alongNow = v.velocity.x * fx + v.velocity.z * fz;
+      if (alongNow < 6) {
+        v.velocity.x += fx * (6 - alongNow) * 0.35;
+        v.velocity.z += fz * (6 - alongNow) * 0.35;
       }
     } else {
-      if (wall) {
-        // Redirect most of the closed normal into along-nose — a scrape, not a wall.
-        const keep = closed * 0.62;
+      const killFrac = wall ? (glancing ? 0.32 : 0.78) : glancing ? 0.14 : 0.48;
+      v.velocity.x -= vn * nx * killFrac;
+      v.velocity.z -= vn * nz * killFrac;
+      const keep = closed * killFrac * (wall ? 0.7 : 0.88);
+      if (along >= -2) {
         v.velocity.x += fx * keep;
         v.velocity.z += fz * keep;
+      } else {
+        const tSign = Math.sign(vt) || 1;
+        v.velocity.x += tx * tSign * keep * 0.55;
+        v.velocity.z += tz * tSign * keep * 0.55;
       }
-      const tx = -nz;
-      const tz = nx;
-      const vt = v.velocity.x * tx + v.velocity.z * tz;
-      const scrub = wall ? 0.016 : 0.035;
-      v.velocity.x -= tx * vt * scrub;
-      v.velocity.z -= tz * vt * scrub;
+      const vt2 = v.velocity.x * tx + v.velocity.z * tz;
+      const scrub = glancing ? (wall ? 0.008 : 0.014) : wall ? 0.016 : 0.028;
+      v.velocity.x -= tx * vt2 * scrub;
+      v.velocity.z -= tz * vt2 * scrub;
     }
     v.hitWall = Math.max(v.hitWall || 0, Math.abs(vn) * 0.55 + push * 0.35);
     v.hitNx = nx;
@@ -539,7 +557,8 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   }
   if (v.yawRate != null) {
     const past = nx * fz - nz * fx;
-    v.yawRate += past * 0.028 * fast;
+    const yawK = v.ai ? 0.028 : wall ? 0.018 : 0.01;
+    v.yawRate += past * yawK * fast;
   }
   void MAX_PUSH;
 }
@@ -693,7 +712,7 @@ export function correctEnvPenetration(v, track) {
       }
       if (!hit || hit.overlap <= 0.02) continue;
       if (hit.overlap > worst) worst = hit.overlap;
-      applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall });
+      applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall, vel: pass === 0 });
     }
     if (worst <= 0.12) break;
   }
@@ -795,18 +814,17 @@ export function bounceOffRoad(v, q, track = null) {
     const t = over / shoulder;
     pull = 1.4 * t;
     yawAuth = 0.18 * t;
-    // Soft berm: trim outward speed and bounce lightly inward — never a full stop.
+    // Soft berm: trim outward speed into along-track scrape — never bounce inward.
     const vn = v.velocity.x * nx + v.velocity.z * nz;
     if (vn * Math.sign(lat || 1) > 0) {
       const kill = vn * (isPlayer ? PLAYER_SHOULDER_OUT : 0.22) * t;
       v.velocity.x -= nx * kill;
       v.velocity.z -= nz * kill;
-      if (isPlayer) {
-        v.velocity.x += nx * inward * Math.abs(vn) * PLAYER_SHOULDER_BOUNCE * t;
-        v.velocity.z += nz * inward * Math.abs(vn) * PLAYER_SHOULDER_BOUNCE * t;
-      } else if (v.velocity.x * hx + v.velocity.z * hz > 0) {
-        v.velocity.x += hx * Math.abs(kill) * 0.7;
-        v.velocity.z += hz * Math.abs(kill) * 0.7;
+      const alongNow = v.velocity.x * hx + v.velocity.z * hz;
+      if (alongNow > 1) {
+        const feed = isPlayer ? PLAYER_SHOULDER_SCRAPE : 0.7;
+        v.velocity.x += hx * Math.abs(kill) * feed;
+        v.velocity.z += hz * Math.abs(kill) * feed;
       }
     }
   } else if (over <= runoff) {

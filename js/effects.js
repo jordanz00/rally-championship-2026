@@ -2,21 +2,21 @@
  * Wheel dirt spray — particles kicked from the contact patch.
  *
  * WHO THIS IS FOR: the race loop.
- * WHAT IT DOES (Sprint 27): almost all spray from the rear tires. Fine hanging
- *   dust + heavier grit leave the left/right contact patches independently,
- *   inherit chassis + tire-tangential velocity, fall with gravity, and die on
- *   Track.query height. Rate follows speed, throttle, slip, and spin. Tarmac /
- *   cobble stay clean.
+ * WHAT IT DOES: almost all spray from the rear tires. Fine grit + a short
+ *   hanging veil leave the left/right patches independently, inherit chassis +
+ *   tire-tangential velocity, fall with dt-correct gravity/drag, and die on
+ *   Track.query height. Rate follows speed, throttle, slip, and slides.
+ *   Dirt / sand / mud / gravel only — tarmac, cobble, and grass stay clean.
  * HOW IT CONNECTS: game.js emit()s the player (and at most two near rivals)
  *   after physics, then step(dt, track); setAtmosphere() syncs fog + wind.
  *
- * FRAME BUDGET: one pooled Points system. Point size is clamped; AI is a
+ * FRAME BUDGET: one pooled Points system. Point size is clamped small; AI is a
  *   whisper. Sprites fog out. No per-particle alloc on the hot path.
  */
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=55";
-import { VISUAL } from "./config.js?v=220";
+import { VISUAL } from "./config.js?v=222";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 
 /**
@@ -37,17 +37,18 @@ function particleMaterial(spec) {
 }
 
 /**
- * How each loose surface throws dirt. `rate` is particles/sec at ~80 km/h
- * with moderate throttle. `chunks` = heavy grit; `plume` = fine hanging dust.
- * Lift stays low — rally spray kicks backward and sideways, not skyward.
- * Sand = more / lighter / wider; dirt in between; mud = fewer heavier clumps.
+ * Loose ribbon only. `rate` is particles/sec at ~80 km/h with moderate throttle.
+ * `chunks` = heavy grit; `plume` = fine hanging veil. `damp` is air-drag (1/s),
+ * not a per-frame keep-fraction — grit has to leave the tire and fall.
+ * Sand = lighter / warmer; dirt = brown grit; mud = dark wet clumps; gravel =
+ * cooler chips. Peak height stays under ~40 cm so the wake is a tire spray,
+ * not a geyser — high enough to peek beside the rear fenders in chase.
  */
 const PROFILE = {
-  sand: { rate: 205, size: [0.13, 0.56], life: [0.36, 1.02], gravity: 5.6, drag: 0.8, spread: 3.2, lift: 0.7, kick: 12.2, chunks: 0.14, plume: 0.5 },
-  dirt: { rate: 124, size: [0.11, 0.46], life: [0.26, 0.76], gravity: 9.4, drag: 0.86, spread: 2.12, lift: 0.46, kick: 10.2, chunks: 0.38, plume: 0.28 },
-  gravel: { rate: 104, size: [0.08, 0.34], life: [0.18, 0.54], gravity: 16.4, drag: 0.9, spread: 1.92, lift: 0.26, kick: 11.4, chunks: 0.74, plume: 0.08 },
-  mud: { rate: 58, size: [0.15, 0.54], life: [0.22, 0.58], gravity: 20.2, drag: 0.955, spread: 1.08, lift: 0.16, kick: 7.8, chunks: 0.9, plume: 0.04 },
-  grass: { rate: 30, size: [0.09, 0.28], life: [0.16, 0.46], gravity: 11.0, drag: 0.89, spread: 1.2, lift: 0.24, kick: 6.4, chunks: 0.22, plume: 0.12 },
+  sand: { rate: 64, size: [0.07, 0.16], life: [0.34, 0.76], gravity: 9.0, damp: 1.7, spread: 1.22, lift: 2.45, kick: 4.4, chunks: 0.12, plume: 0.38 },
+  dirt: { rate: 50, size: [0.075, 0.17], life: [0.28, 0.6], gravity: 10.8, damp: 2.15, spread: 0.95, lift: 2.05, kick: 3.9, chunks: 0.32, plume: 0.2 },
+  gravel: { rate: 42, size: [0.065, 0.15], life: [0.22, 0.5], gravity: 13.8, damp: 2.65, spread: 0.85, lift: 1.7, kick: 4.15, chunks: 0.58, plume: 0.08 },
+  mud: { rate: 34, size: [0.08, 0.18], life: [0.24, 0.52], gravity: 15.4, damp: 3.1, spread: 0.5, lift: 1.35, kick: 2.7, chunks: 0.76, plume: 0.05 },
 };
 
 const VERT = /* glsl */ `
@@ -88,9 +89,9 @@ void main() {
   vec2 uv = gl_PointCoord - 0.5;
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   float mask = texture2D(uMap, uv).a;
-  // Soft birth + linger — plumes must read as volume, not spark pops.
-  float fade = smoothstep(0.0, 0.1, vLife) * smoothstep(0.0, 0.28, vLife);
-  float alpha = mask * fade * 0.84;
+  // Soft birth — grit, not a billboard cloud.
+  float fade = smoothstep(0.0, 0.07, vLife) * smoothstep(0.0, 0.22, vLife);
+  float alpha = mask * fade * 0.62;
   if (alpha < 0.022) discard;
   float fog = clamp((vDepth - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
   gl_FragColor = vec4(mix(vColor, uFogColor, fog * 0.92), alpha * (1.0 - fog * 0.88));
@@ -128,8 +129,8 @@ export class Dust {
     this.mat = particleMaterial({
       uniforms: {
         uMap: { value: makeDustSprite() },
-        uScale: { value: 168 },
-        uMaxPx: { value: 34 },
+        uScale: { value: 340 },
+        uMaxPx: { value: 14 },
         uFogColor: { value: new THREE.Color(0xc9b48a) },
         uFogNear: { value: 100 },
         uFogFar: { value: 480 },
@@ -138,6 +139,7 @@ export class Dust {
       fragmentShader: FRAG,
       transparent: true,
       depthWrite: false,
+      depthTest: false,
       blending: THREE.NormalBlending,
       toneMapped: false,
     });
@@ -223,15 +225,18 @@ export class Dust {
     const oppX = travel > 0.15 ? -vx / travel : -fx;
     const oppZ = travel > 0.15 ? -vz / travel : -fz;
 
+    const slidePct =
+      typeof vehicle.slidePct === "function" ? vehicle.slidePct() : vehicle._slidePct || 0;
     const speedK = clamp01((speed - 1.5) / 30);
-    const slipK = clamp01(slip * 0.95 + (vehicle.drifting ? 0.45 : 0) + drift * 0.9);
+    const slipK = clamp01(slip * 0.95 + (vehicle.drifting ? 0.45 : 0) + drift * 0.9 + slidePct * 0.85);
     const spinK = clamp01(kappa * 1.4 + spinExcess / 16);
     const throtK = clamp01(throttle);
-    const work = speedK * 0.4 + throtK * 0.88 + slipK * 1.5 + spinK * 1.4;
-    if (work < 0.06) return;
+    // Cruise trickle + throttle roost + a real burst on slides / wheelspin.
+    const work = speedK * 0.52 + throtK * 0.42 + slipK * 1.95 + spinK * 1.2;
+    if (work < 0.05) return;
 
-    const focus = vehicle.ai ? 0.3 : this.cockpit ? 1.05 : 1.72;
-    const envBoost = 0.82 + this._dustStrength * 0.7;
+    const focus = vehicle.ai ? 0.28 : this.cockpit ? 0.92 : 1.18;
+    const envBoost = 0.78 + this._dustStrength * 0.55;
     const wakeOn = VISUAL.rearDirtWake !== false;
 
     let bag = this._carry.get(vehicle);
@@ -247,7 +252,7 @@ export class Dust {
     const hint = vehicle.progress || 0;
     const slideSign = Math.sign(vehicle.driftAngle || 0);
     const tread = omega * radius;
-    const liftCap = this.cockpit ? 0.38 : 1.05;
+    const liftCap = this.cockpit ? 0.85 : 2.55;
     let spawned = false;
 
     for (let side = 0; side < 2; side++) {
@@ -278,7 +283,7 @@ export class Dust {
       const perSec =
         profile.rate * work * (surf.dust || 1) * focus * envBoost * outside * (this.cockpit ? 0.52 : 1);
       bag[side] += perSec * dt;
-      const cap = vehicle.ai ? 3 : this.cockpit ? 16 : 20;
+      const cap = vehicle.ai ? 2 : this.cockpit ? 10 : 12;
       let n = Math.min(cap, bag[side] | 0);
       bag[side] -= n;
       if (n < 1) continue;
@@ -363,77 +368,99 @@ export class Dust {
     const i = this.i % this.count;
     this.i += 1;
 
-    // Contact patch — tiny rearward jitter, not a fountain spawned behind the car.
-    const jitter = (Math.random() - 0.5) * 0.1;
-    this.pos[i * 3] = px + rx * jitter - fx * (0.04 + Math.random() * 0.08);
-    this.pos[i * 3 + 1] = groundY + 0.02 + Math.random() * 0.03;
-    this.pos[i * 3 + 2] = pz + rz * jitter - fz * (0.04 + Math.random() * 0.08);
+    // Outside + behind the tread so grit peeks past the rear quarter in chase.
+    const out = sideSign * (0.14 + Math.random() * 0.16);
+    const jitter = (Math.random() - 0.5) * 0.06;
+    this.pos[i * 3] = px + rx * (jitter + out) - fx * (0.12 + Math.random() * 0.2);
+    this.pos[i * 3 + 1] = groundY + 0.08 + Math.random() * 0.06;
+    this.pos[i * 3 + 2] = pz + rz * (jitter + out) - fz * (0.12 + Math.random() * 0.2);
     this.gnd[i] = groundY;
 
     const kick =
       profile.kick *
-      (0.22 + speedK * 0.28 + throtK * 0.42 + slipK * 0.55 + spinK * 0.5) *
-      (plume ? 0.82 : 1);
+      (0.28 + speedK * 0.32 + throtK * 0.38 + slipK * 0.72 + spinK * 0.42) *
+      (plume ? 0.78 : 1);
     const spread = profile.spread * (0.55 + Math.random() * 0.5);
-    const liftBase = profile.lift * (0.1 + Math.random() * 0.32);
-    let lift = grit ? liftBase * 0.28 : plume ? liftBase * 0.48 : liftBase * 0.55;
+    const liftBase = profile.lift * (0.62 + Math.random() * 0.48);
+    let lift = grit ? liftBase * 0.55 : plume ? liftBase * 0.86 : liftBase * 0.94;
     if (lift > liftCap) lift = liftCap;
 
-    const inherit = plume ? 0.34 : grit ? 0.18 : 0.26;
-    const fanLat = (Math.random() - 0.5) * spread * 1.7;
-    const fanRear = kick * (0.55 + Math.random() * 0.4);
-    const tangent = tread * (0.18 + throtK * 0.16 + spinK * 0.22);
+    const inherit = plume ? 0.38 : grit ? 0.16 : 0.28;
+    const fanLat = (Math.random() - 0.5) * spread;
+    const fanRear = kick * (0.55 + Math.random() * 0.45);
+    const tangent = tread * (0.08 + throtK * 0.08 + spinK * 0.12);
+    const slideLat = sideSign * (0.22 + slipK * 1.15);
     this.vel[i * 3] =
       vx * inherit +
       oppX * fanRear +
       -fx * tangent +
       rx * fanLat +
-      rx * sideSign * (0.55 + slipK * 1.35) +
-      this._wind.x * (0.22 + Math.random() * 0.28);
-    this.vel[i * 3 + 1] = lift + (Math.random() - 0.5) * 0.12;
+      rx * slideLat +
+      this._wind.x * (0.12 + Math.random() * 0.18);
+    this.vel[i * 3 + 1] = lift + (Math.random() - 0.5) * 0.18;
     this.vel[i * 3 + 2] =
       vz * inherit +
       oppZ * fanRear +
       -fz * tangent +
       rz * fanLat +
-      rz * sideSign * (0.55 + slipK * 1.35) +
-      this._wind.z * (0.22 + Math.random() * 0.28);
+      rz * slideLat +
+      this._wind.z * (0.12 + Math.random() * 0.18);
 
     const life =
       lerp(profile.life[0], profile.life[1], Math.random()) *
-      (grit ? 0.5 : plume ? 1.08 : speck ? 0.7 : 0.88);
+      (grit ? 0.62 : plume ? 1.05 : speck ? 0.72 : 0.9);
     this.life[i] = life;
     this.maxLife[i] = life;
     this.fade[i] = 1;
 
     let sz = lerp(profile.size[0], profile.size[1], Math.random());
-    if (grit) sz *= 0.58 + Math.random() * 0.38;
-    else if (plume) sz *= 0.68 + Math.random() * 0.28 + slipK * 0.08;
-    else if (speck) sz *= 0.32 + Math.random() * 0.22;
-    else sz *= 0.58 + Math.random() * 0.32 + slipK * 0.06;
-    sz *= 0.78 + speedK * 0.22;
+    if (grit) sz *= 0.78 + Math.random() * 0.28;
+    else if (plume) sz *= 0.78 + Math.random() * 0.2 + slipK * 0.05;
+    else if (speck) sz *= 0.55 + Math.random() * 0.22;
+    else sz *= 0.7 + Math.random() * 0.28 + slipK * 0.04;
+    sz *= 0.92 + speedK * 0.08;
     if (this.cockpit) sz *= 0.72;
+    if (sz < 0.055) sz = 0.055;
     this.size[i] = sz;
 
     this.angle[i] = Math.random() * 6.283;
-    this.spin[i] = (Math.random() - 0.5) * (grit ? 14 : plume ? 2.6 : 7);
+    this.spin[i] = (Math.random() - 0.5) * (grit ? 16 : plume ? 2.4 : 8);
     this.seed[i] = Math.random() * 6.283;
     this.grav[i] = grit
-      ? profile.gravity * (1.08 + Math.random() * 0.4)
-      : profile.gravity * (plume ? 0.74 : 0.96) * (0.78 + Math.random() * 0.3);
-    this.drag[i] = grit ? 0.968 : plume ? profile.drag * 0.94 : profile.drag * 0.98;
+      ? profile.gravity * (1.08 + Math.random() * 0.32)
+      : profile.gravity * (plume ? 0.72 : 0.96) * (0.88 + Math.random() * 0.22);
+    // Air-drag rate (1/s). Heavier clumps dump speed faster than the veil.
+    const damp = profile.damp != null ? profile.damp : 2.4;
+    this.drag[i] = grit ? damp * 1.35 : plume ? damp * 0.72 : damp;
 
     let shade;
-    if (grit) shade = 0.28 + Math.random() * 0.24;
-    else if (speck) shade = 0.52 + Math.random() * 0.2;
-    else if (plume) shade = 0.58 + Math.random() * 0.2;
-    else shade = 0.44 + Math.random() * 0.28;
-    const warm = sid === "sand" ? 0.98 + Math.random() * 0.05 : sid === "dirt" ? 1.02 + Math.random() * 0.04 : 1;
-    const cool = sid === "mud" ? 0.78 + Math.random() * 0.08 : sid === "gravel" ? 0.93 + Math.random() * 0.05 : 1;
-    const gritGrey = sid === "gravel" && grit ? 0.9 + Math.random() * 0.08 : 1;
-    this.col[i * 3] = br * shade * warm * gritGrey;
-    this.col[i * 3 + 1] = bg * shade * warm * cool * gritGrey;
-    this.col[i * 3 + 2] = bb * shade * cool * (sid === "sand" ? 0.96 : gritGrey);
+    if (grit) shade = 0.32 + Math.random() * 0.22;
+    else if (speck) shade = 0.58 + Math.random() * 0.18;
+    else if (plume) shade = 0.62 + Math.random() * 0.16;
+    else shade = 0.48 + Math.random() * 0.24;
+    let cr = br * shade;
+    let cg = bg * shade;
+    let cb = bb * shade;
+    if (sid === "sand") {
+      cr *= 1.42 + Math.random() * 0.1;
+      cg *= 1.22 + Math.random() * 0.06;
+      cb *= 0.7;
+    } else if (sid === "dirt") {
+      cr *= 1.18 + Math.random() * 0.06;
+      cg *= 1.02;
+      cb *= 0.78;
+    } else if (sid === "mud") {
+      cr *= 0.62;
+      cg *= 0.55;
+      cb *= 0.42;
+    } else if (sid === "gravel") {
+      cr *= 1.08 + Math.random() * 0.06;
+      cg *= 1.04;
+      cb *= 0.96;
+    }
+    this.col[i * 3] = cr;
+    this.col[i * 3 + 1] = cg;
+    this.col[i * 3 + 2] = cb;
   }
 
   /**
@@ -457,15 +484,19 @@ export class Dust {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;
       const t = this.life[i];
-      const dragK = 1 - this.drag[i];
-      const swirl = Math.sin(this.seed[i] + t * 9) * dragK * 4.2;
-      const cross = Math.cos(this.seed[i] * 1.9 + t * 7) * dragK * 4.2;
-      this.vel[i * 3] += (swirl + wx * 0.38) * dt;
-      this.vel[i * 3 + 2] += (cross + wz * 0.38) * dt;
+      const maxL = this.maxLife[i] || 1;
+      const age = 1 - clamp01(t / maxL);
+      const turb = 0.42 * (1 - age);
+      const swirl = Math.sin(this.seed[i] + t * 8) * turb;
+      const cross = Math.cos(this.seed[i] * 1.9 + t * 6.2) * turb;
+      this.vel[i * 3] += (swirl + wx * 0.22) * dt;
+      this.vel[i * 3 + 2] += (cross + wz * 0.22) * dt;
       this.vel[i * 3 + 1] -= this.grav[i] * dt;
-      this.vel[i * 3] *= this.drag[i];
-      this.vel[i * 3 + 2] *= this.drag[i];
-      this.vel[i * 3 + 1] *= 0.905;
+      // dt-correct exponential air drag (1/s). Per-frame *= 0.86 used to freeze grit in ~0.1 s.
+      const keep = Math.exp(-this.drag[i] * dt);
+      this.vel[i * 3] *= keep;
+      this.vel[i * 3 + 2] *= keep;
+      this.vel[i * 3 + 1] *= Math.exp(-0.9 * dt);
       this.pos[i * 3] += this.vel[i * 3] * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
@@ -489,7 +520,7 @@ export class Dust {
         }
       }
 
-      if (py <= floor + 0.016 || t <= 0 || py < -8) {
+      if (py <= floor + 0.01 || t <= 0 || py < -8) {
         this.life[i] = 0;
         this.fade[i] = 0;
         this.pos[i * 3 + 1] = -40;
@@ -1027,16 +1058,11 @@ function makeDustSprite() {
   g.clearRect(0, 0, 64, 64);
   // Fine dust puffs + sharp grit specks — reads as sand/dirt, not soft blobs.
   const blobs = [
-    [32, 32, 18, 0.82],
-    [24, 28, 10, 0.55],
-    [40, 34, 9, 0.48],
-    [30, 38, 7, 0.42],
-    [36, 26, 6, 0.38],
-    [28, 30, 4, 0.65],
-    [38, 36, 3, 0.58],
-    [22, 34, 3, 0.52],
-    [42, 28, 2.5, 0.48],
-    [34, 40, 2, 0.44],
+    [32, 32, 11, 0.9],
+    [28, 30, 5, 0.55],
+    [36, 34, 4.5, 0.48],
+    [31, 36, 3, 0.7],
+    [35, 28, 2.5, 0.62],
   ];
   for (let i = 0; i < blobs.length; i++) {
     const [x, y, r, a] = blobs[i];
