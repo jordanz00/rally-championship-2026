@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=222";
+import { VISUAL } from "../config.js?v=223";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const UNIFORMS = {
@@ -229,6 +229,8 @@ function rivalInSightline(cam, car, rival, radius) {
  */
 export function updatePackSeeThrough(roots, camPos, carPos, on, dt) {
   if (!roots || !camPos || !carPos) return;
+  // Default OFF — semi-transparent chassis read as player/rival ghosting.
+  const allowGhost = on && VISUAL.packSeeThrough === true;
   const follow = 1 - Math.exp(-12 * Math.max(1 / 120, dt || 1 / 60));
   _carBody.copy(carPos);
   _carBody.y += PACK_BODY_LIFT;
@@ -236,7 +238,7 @@ export function updatePackSeeThrough(roots, camPos, carPos, on, dt) {
     const root = roots[i];
     if (!root) continue;
     let want = 0;
-    if (on) {
+    if (allowGhost) {
       root.getWorldPosition(_rivalBody);
       _rivalBody.y += PACK_BODY_LIFT;
       const latched = !!root.userData.packFadeLatch;

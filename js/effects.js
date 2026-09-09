@@ -16,7 +16,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=55";
-import { VISUAL } from "./config.js?v=222";
+import { VISUAL } from "./config.js?v=223";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 
 /**
@@ -144,7 +144,8 @@ export class Dust {
       toneMapped: false,
     });
     this.points = new THREE.Points(this.geo, this.mat);
-    this.points.frustumCulled = false;
+    this.points.frustumCulled = true;
+    this.geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 48);
     this.points.renderOrder = 3;
     this.points.visible = RENDER_CAPS.glslCustom;
     scene.add(this.points);
@@ -168,6 +169,8 @@ export class Dust {
     this._track = null;
     /** POV seat — keep roost off the windshield. */
     this.cockpit = false;
+    /** Lock-30: fewer Track.query samples; rival emit is skipped in game.js. */
+    this.locked30 = false;
     for (let i = 0; i < this.count; i++) {
       this.pos[i * 3 + 1] = -40;
       this.gnd[i] = -20;
@@ -202,6 +205,10 @@ export class Dust {
   emit(vehicle, dt, track) {
     if (vehicle.onGround === false) return;
     if (track && typeof track.query === "function") this._track = track;
+    const sphere = this.geo.boundingSphere;
+    if (sphere && vehicle.position) {
+      sphere.center.set(vehicle.position.x, vehicle.position.y + 0.35, vehicle.position.z);
+    }
 
     const speed = vehicle.speed || 0;
     const throttle = vehicle.throttle || 0;
@@ -479,7 +486,7 @@ export class Dust {
     this._qPhase = (this._qPhase + 1) & 3;
     let live = 0;
     let queries = 0;
-    const QCAP = 72;
+    const QCAP = this.locked30 ? 36 : 72;
     for (let i = 0; i < this.count; i++) {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;

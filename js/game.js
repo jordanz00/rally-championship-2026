@@ -7,14 +7,14 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=153";
+import { Vehicle } from "./physics/vehicle.js?v=154";
 import { getSurface } from "./physics/surfaces.js?v=55";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=85";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=196";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=199";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=4";
-import { Track } from "./tracks/track.js?v=344";
+import { Track } from "./tracks/track.js?v=346";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=43";
-import { Opponent } from "./ai.js?v=179";
+import { Opponent } from "./ai.js?v=183";
 import { RallyAudio } from "./audio/engine.js?v=71";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=44";
@@ -27,13 +27,13 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=37";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=74";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=54";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=75";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=55";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=46";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=49";
-import { StageWeather, courseWantsRain } from "./weather/rain.js?v=8";
-import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=19";
-import { PhotoRealPost } from "./gfx/postfx.js?v=31";
+import { StageWeather, courseWantsRain } from "./weather/rain.js?v=10";
+import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=20";
+import { PhotoRealPost } from "./gfx/postfx.js?v=34";
 import { createPerfTier } from "./gfx/perf-tier.js?v=52";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=5";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -57,7 +57,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=222";
+} from "./config.js?v=223";
 import { Input } from "./input.js?v=42";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -2172,6 +2172,7 @@ export class RallyGame {
       const far = band === 2;
       if (o.fxBand === band && mesh.userData.lodFar === far) continue;
       o.fxBand = band;
+      if (o.vehicle) o.vehicle.envCheap = band === 2;
       if (mesh.userData.lodFar === far) continue;
       mesh.userData.lodFar = far;
       if (!mesh.userData.lodShadowCasters) {
@@ -2364,6 +2365,9 @@ export class RallyGame {
     this.player.confirmOnRoad(this.track);
     for (const o of this.opponents) {
       o.vehicle.stabilize();
+      // Far pack already ran confirmOnRoad inside Vehicle.step. A second
+      // deck sweep per substep was CPU with no readable pose change off-camera.
+      if (o.fxBand === 2) continue;
       o.vehicle.confirmOnRoad(this.track);
     }
   }
@@ -2962,9 +2966,9 @@ export class RallyGame {
           // warms. Half-rate + 6 ms so lock-30 skips do not eat the GPU budget.
           this._skipCompileTick = (this._skipCompileTick || 0) + 1;
           if (this._skipCompileTick % 2 === 0) this._compileStreamSlices(6);
-          // POV rearview: refresh every rAF so the glass stays 60 Hz even when
-          // present cadence locks to 30 — tier lock must not make mirror laggy.
-          this._renderMirror(true);
+          // Do not capture the rearview on skipped presents. A full-scene
+          // mirror + forced shadow bake at rAF rate made lock-30 still pay
+          // ~60 GPU frames/s. Glass updates with the presented frame instead.
         }
         if (this._qaDrive && this.state === "race" && this.player) {
           if (!this._qaSamples) this._qaSamples = [];
@@ -3244,8 +3248,14 @@ export class RallyGame {
         near1 = i;
       }
     }
-    if (near0 >= 0) this.dust.emit(this.opponents[near0].vehicle, dt, this.track);
-    if (near1 >= 0) this.dust.emit(this.opponents[near1].vehicle, dt, this.track);
+    const locked30 = !!(this.perfTier && this.perfTier.locked30);
+    if (this.dust) this.dust.locked30 = locked30;
+    // Lock-30: player wake only. Rival grit is a second Track.query spray
+    // the chase camera barely reads.
+    if (!locked30) {
+      if (near0 >= 0) this.dust.emit(this.opponents[near0].vehicle, dt, this.track);
+      if (near1 >= 0) this.dust.emit(this.opponents[near1].vehicle, dt, this.track);
+    }
     this.dust.step(dt, this.track);
     if (this.sparks) this.sparks.step(dt);
     this.tireMarks.emit(this.player, this.track, dt);
@@ -5052,7 +5062,7 @@ export class RallyGame {
     this._mirrorCam.updateMatrixWorld();
   }
 
-  _renderMirror(onSkippedPresent = false) {
+  _renderMirror() {
     const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
     if (!pov || !this._cockpitLive) return;
     this._ensureMirrorRT();
@@ -5065,9 +5075,9 @@ export class RallyGame {
     }
     this._mirrorDefer = 0;
     this._mirrorTick += 1;
-    // POV only — quality tier mirrorEvery is for chase; cabin glass needs every frame.
+    // POV glass follows the presented frame (60 or lock-30), not rAF.
     const every = Math.max(1, GFX.mirrorEveryPov != null ? GFX.mirrorEveryPov : 1);
-    if (!onSkippedPresent && this._mirrorHasImage && every > 1 && this._mirrorTick % every !== 0) return;
+    if (this._mirrorHasImage && every > 1 && this._mirrorTick % every !== 0) return;
     this._captureMirror(false);
   }
 
@@ -5111,34 +5121,16 @@ export class RallyGame {
       if (marks) marks.visible = false;
 
       this._syncMirrorCam();
-      // Stream against player + rearview lens so road / trees / rivals behind
-      // the car stay on for the cheap RT (forward POV cam alone can miss them).
-      if (this.track && this.track.update && this.player && this.player.position) {
-        try {
-          const fogFar = Math.max(prevFogFar || 0, lens.far);
-          this.track.update(this.player.position, this._mirrorCam.position, {
-            fogFar,
-            progress: Number.isFinite(this.player.progress) ? this.player.progress : undefined,
-            speed: 0,
-            yaw: Number.isFinite(this.player.yaw) ? this.player.yaw : 0,
-            settle:
-              this._presentFrozen ||
-              this.state === "countdown" ||
-              this.state === "loading" ||
-              (this._raceWarmFrames || 0) > 0,
-          });
-        } catch {
-          /* keep prior stream */
-        }
-      }
+      // Reuse the main-camera stream from this present. A second Track.update
+      // walk (and a forced shadow atlas) doubled POV GPU cost for a 384×120 RT.
+      // Player-centred unload already keeps the road behind the car loaded.
       if (this.sky) this.sky.position.copy(this._mirrorCam.position);
       if (this.scene.fog) {
         const keep = prevFogFar != null ? prevFogFar : lens.far;
         this.scene.fog.far = Math.min(Math.max(keep, lens.far), lens.far * 1.12);
       }
 
-      // Keep sun shadows — flat mirror reads as a downgraded pass.
-      if (shadowsOn) this.renderer.shadowMap.needsUpdate = true;
+      // Reuse the last sun atlas — do not rebuild 1536² PCF for postage-stamp glass.
       this.renderer.toneMapping = THREE.NoToneMapping;
       this.renderer.toneMappingExposure = prevExposure;
       this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -5319,6 +5311,9 @@ export class RallyGame {
     // Real play: countdown uses the race present (post/shadow/mirror) so GO
     // does not grade-pop. Webdriver/SwiftShader only: skip cinema cost.
     const countdownLite = this.state === "countdown" && countdownLitePresent();
+    if (this.post && this.post.setLocked30) {
+      this.post.setLocked30(!!(this.perfTier && this.perfTier.locked30));
+    }
     if (!onPad && !countdownLite) this._renderMirror();
     // Cube / mirror captures first. They must not bake the sun shadow map
     // while the car is hidden, or the pad shadow strobes.
@@ -5344,11 +5339,8 @@ export class RallyGame {
           : onPad
             ? Math.max(2, padShadowEvery | 0)
             : Math.max(1, this._qualityShadowEvery || GFX.shadowEvery | 0 || 1);
-    // Soft PCF hides a 10 Hz atlas at lock-30 — same contact blob, half the
-    // extra geometry pass vs baking every second 30 Hz present.
-    if (!onPad && !countdownLite && this.perfTier && this.perfTier.locked30) {
-      every = Math.max(every, 3);
-    }
+    // Do not throttle the sun atlas further on lock-30 — a 10 Hz shadow
+    // silhouette trails the chassis and reads as a ghost car in medium/far.
     this._shadowTick = (this._shadowTick || 0) + 1;
     if (this.renderer.shadowMap.enabled) {
       // Soft PCF hides a one-frame skip. Forcing a full atlas bake every

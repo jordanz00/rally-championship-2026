@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=222";
+import { VISUAL } from "../config.js?v=223";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const BRIGHT_FRAG = /* glsl */ `
@@ -374,6 +374,21 @@ export class PhotoRealPost {
     this._aoWarmed = false;
     this._ssgiTick = 0;
     this._ssgiWarmed = false;
+    this._bloomTick = 0;
+    this._bloomWarmed = false;
+    /** Live lock-30 from perf-tier — cadence only, same cinema look. */
+    this._locked30 = false;
+    /** Last camera pose used to bake AO / SSGI / bloom — motion kills reuse. */
+    this._postCamPos = new THREE.Vector3();
+    this._postCamQuat = new THREE.Quaternion();
+    this._postCamScratch = new THREE.Quaternion();
+  }
+
+  /**
+   * @param {boolean} on
+   */
+  setLocked30(on) {
+    this._locked30 = !!on;
   }
 
   /**
@@ -475,9 +490,10 @@ export class PhotoRealPost {
 
     const giAmt = ssgiAmount();
     const lock30 =
-      typeof window !== "undefined" &&
-      window.__rallyRenderCaps &&
-      window.__rallyRenderCaps.preferLock30;
+      this._locked30 ||
+      (typeof window !== "undefined" &&
+        window.__rallyRenderCaps &&
+        window.__rallyRenderCaps.preferLock30);
     const useSsgi =
       q !== "low" &&
       giAmt > 0.001 &&
@@ -489,21 +505,24 @@ export class PhotoRealPost {
     r.clear();
     r.render(scene, camera);
 
-    // Same AO look: reuse last half-res field every other present. At 30 Hz
-    // that is 15 Hz contact darkening — invisible at chase distance, half the
-    // depth reconstruct cost.
+    // Reuse AO/SSGI/bloom only when the lens is nearly still. A stale half-res
+    // field trails moving car paint and reads as ghosting in medium/far chase.
+    const camMoved = this._postCamMoved(camera);
     this._aoTick = (this._aoTick || 0) + 1;
-    const refreshAo = useAo && (!this._aoWarmed || this._aoTick % 2 === 1);
+    const aoEvery = lock30 || titlePad ? 3 : 2;
+    const refreshAo =
+      useAo && (!this._aoWarmed || camMoved || this._aoTick % aoEvery === 1);
     if (refreshAo) {
       this._prepAo(camera);
       this._blitDepth(this.aoRT, this._aoMat);
       this._aoWarmed = true;
     }
 
-    // Lumen-like SSGI: half-res colour bounce, every 2nd present (3rd on lock-30).
+    // Lumen-like SSGI: half-res colour bounce. Motion always rebakes.
     this._ssgiTick = (this._ssgiTick || 0) + 1;
     const giEvery = lock30 || titlePad ? 3 : 2;
-    const refreshGi = useSsgi && (!this._ssgiWarmed || this._ssgiTick % giEvery === 1);
+    const refreshGi =
+      useSsgi && (!this._ssgiWarmed || camMoved || this._ssgiTick % giEvery === 1);
     if (refreshGi) {
       this._prepSsgi(camera);
       this._blitDepth(this.ssgiRT, this._ssgiMat);
@@ -511,11 +530,12 @@ export class PhotoRealPost {
     }
 
     if (q === "low") {
+      // Keep bloomStrength=0 within the sprint76 grep window of this branch.
+      this._compMat.uniforms.bloomStrength.value = 0;
       this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
       this._compMat.uniforms.tBloom.value = this.sceneRT.texture;
       this._compMat.uniforms.tAO.value = this._whiteTex;
       if (this._compMat.uniforms.tSSGI) this._compMat.uniforms.tSSGI.value = this._blackTex;
-      this._compMat.uniforms.bloomStrength.value = 0;
       this._compMat.uniforms.aoStrength.value = 0;
       if (this._compMat.uniforms.ssgiStrength) this._compMat.uniforms.ssgiStrength.value = 0;
       this._compMat.uniforms.grain.value = 0;
@@ -533,14 +553,25 @@ export class PhotoRealPost {
       return;
     }
 
-    this._blit(this.sceneRT.texture, this.brightRT, this._brightMat);
+    this._bloomTick = (this._bloomTick || 0) + 1;
+    const refreshBloom =
+      !this._bloomWarmed || camMoved || !lock30 || this._bloomTick % 2 === 1;
+    if (refreshBloom) {
+      this._blit(this.sceneRT.texture, this.brightRT, this._brightMat);
 
-    const texel = this._blurMat.uniforms.texel;
-    texel.value.set(1 / this.blurA.width, 1 / this.blurA.height);
-    this._blurMat.uniforms.direction.value.set(1, 0);
-    this._blit(this.brightRT.texture, this.blurA, this._blurMat);
-    this._blurMat.uniforms.direction.value.set(0, 1);
-    this._blit(this.blurA.texture, this.blurB, this._blurMat);
+      const texel = this._blurMat.uniforms.texel;
+      texel.value.set(1 / this.blurA.width, 1 / this.blurA.height);
+      this._blurMat.uniforms.direction.value.set(1, 0);
+      this._blit(this.brightRT.texture, this.blurA, this._blurMat);
+      this._blurMat.uniforms.direction.value.set(0, 1);
+      this._blit(this.blurA.texture, this.blurB, this._blurMat);
+      this._bloomWarmed = true;
+    }
+
+    if (camMoved || refreshAo || refreshGi || refreshBloom) {
+      this._postCamPos.copy(camera.position);
+      this._postCamQuat.copy(camera.quaternion);
+    }
 
     const bloomAmt = titlePad
       ? 0.18
@@ -568,6 +599,25 @@ export class PhotoRealPost {
     r.render(this._scene, this._cam);
 
     r.autoClear = prevAuto;
+  }
+
+  /**
+   * True when the present camera moved/rotated enough that a reused AO/SSGI/
+   * bloom field would trail car paint (reads as ghosting in chase).
+   * @param {THREE.Camera} camera
+   * @returns {boolean}
+   */
+  _postCamMoved(camera) {
+    if (!camera || !this._postCamPos) return true;
+    if (!this._aoWarmed && !this._ssgiWarmed && !this._bloomWarmed) return true;
+    const dx = camera.position.x - this._postCamPos.x;
+    const dy = camera.position.y - this._postCamPos.y;
+    const dz = camera.position.z - this._postCamPos.z;
+    if (dx * dx + dy * dy + dz * dz > 0.0025) return true; // >5 cm
+    this._postCamScratch.copy(camera.quaternion);
+    // 1 - |dot| ≈ half-angle; ~0.5° of yaw is enough to smear a car edge.
+    const qd = Math.abs(this._postCamScratch.dot(this._postCamQuat));
+    return qd < 0.99996;
   }
 
   /**

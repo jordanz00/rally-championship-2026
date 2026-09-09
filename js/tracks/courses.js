@@ -16,7 +16,7 @@
  * SIGN CONVENTION: positive `angle` bends left, negative bends right.
  */
 
-import { COLORS } from "../config.js?v=222";
+import { COLORS } from "../config.js?v=223";
 import { compileTrackDefinition } from "./track-definition.js?v=2";
 import { validateCourseData } from "./stage-data-validate.js?v=1";
 import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=8";

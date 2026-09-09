@@ -586,17 +586,116 @@ function wallHitAt(c, px, pz, fx, fz, rx, rz) {
   return { overlap: Math.min(overlap, ext + (c.depth || WALL_BACK)), nx, nz };
 }
 
+/** Spatial hash cell size (m). Rebuilds when collider count changes. */
+const COL_CELL = 14;
+let _colStamp = 1;
+const _colScratch = [];
+
+/**
+ * Bucket env solids so glanceObstacles does not walk the whole Forest list.
+ * @param {{colliders: Array<object>, _colGrid?: {n:number, map:Map<string, object[]>}}} track
+ */
+function ensureColliderGrid(track) {
+  const list = track.colliders;
+  const n = list.length;
+  if (track._colGrid && track._colGrid.n === n) return track._colGrid;
+  const map = new Map();
+  const put = (gx, gz, c) => {
+    const k = gx + ":" + gz;
+    let b = map.get(k);
+    if (!b) {
+      b = [];
+      map.set(k, b);
+    }
+    b.push(c);
+  };
+  for (let i = 0; i < n; i++) {
+    const c = list[i];
+    let minX;
+    let maxX;
+    let minZ;
+    let maxZ;
+    if (c.kind === "wall") {
+      const hl = (c.halfLen || 4) + 3;
+      const tx = c.tx || 0;
+      const tz = c.tz || 1;
+      const pad = (c.depth || WALL_BACK) + 3;
+      const ax = c.x - tx * hl;
+      const az = c.z - tz * hl;
+      const bx = c.x + tx * hl;
+      const bz = c.z + tz * hl;
+      minX = Math.min(ax, bx) - pad;
+      maxX = Math.max(ax, bx) + pad;
+      minZ = Math.min(az, bz) - pad;
+      maxZ = Math.max(az, bz) + pad;
+    } else {
+      const r = (c.r || 0.5) + 3.2;
+      minX = c.x - r;
+      maxX = c.x + r;
+      minZ = c.z - r;
+      maxZ = c.z + r;
+    }
+    const gx0 = Math.floor(minX / COL_CELL);
+    const gx1 = Math.floor(maxX / COL_CELL);
+    const gz0 = Math.floor(minZ / COL_CELL);
+    const gz1 = Math.floor(maxZ / COL_CELL);
+    for (let gx = gx0; gx <= gx1; gx++) {
+      for (let gz = gz0; gz <= gz1; gz++) put(gx, gz, c);
+    }
+  }
+  track._colGrid = { n, map };
+  return track._colGrid;
+}
+
+/**
+ * Colliders whose cells overlap the XZ AABB. Reuses a scratch array.
+ * @param {{colliders: Array<object>}} track
+ * @param {number} minX
+ * @param {number} maxX
+ * @param {number} minZ
+ * @param {number} maxZ
+ * @returns {object[]}
+ */
+function nearbyColliders(track, minX, maxX, minZ, maxZ) {
+  const g = ensureColliderGrid(track);
+  _colStamp += 1;
+  if (_colStamp > 1e9) {
+    _colStamp = 1;
+    const all = track.colliders;
+    for (let i = 0; i < all.length; i++) all[i]._gs = 0;
+  }
+  _colScratch.length = 0;
+  const gx0 = Math.floor(minX / COL_CELL);
+  const gx1 = Math.floor(maxX / COL_CELL);
+  const gz0 = Math.floor(minZ / COL_CELL);
+  const gz1 = Math.floor(maxZ / COL_CELL);
+  const map = g.map;
+  for (let gx = gx0; gx <= gx1; gx++) {
+    for (let gz = gz0; gz <= gz1; gz++) {
+      const b = map.get(gx + ":" + gz);
+      if (!b) continue;
+      for (let i = 0; i < b.length; i++) {
+        const c = b[i];
+        if (c._gs === _colStamp) continue;
+        c._gs = _colStamp;
+        _colScratch.push(c);
+      }
+    }
+  }
+  return _colScratch;
+}
+
 /**
  * Env solids authority:
  *   proposed XZ → TOI sweep (path, not endpoint) → contact resolve
  *   → penetration correction → validity flag for caller.
  *
- * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, speed:number, yawRate?:number, hitWall?:number, _prevX?:number, _prevZ?:number, _envIntersect?:boolean, _envDeep?:boolean}} v
+ * @param {{position:{x:number,z:number}, velocity:{x:number,z:number}, yaw:number, speed:number, yawRate?:number, hitWall?:number, _prevX?:number, _prevZ?:number, _envIntersect?:boolean, _envDeep?:boolean, lowDetail?:boolean, envCheap?:boolean}} v
  * @param {{colliders: Array<{x:number,z:number,r?:number,kind?:string,nx?:number,nz?:number,tx?:number,tz?:number,halfLen?:number,depth?:number}>}} track
  */
 export function glanceObstacles(v, track) {
-  const list = track.colliders;
-  if (!list || !list.length) {
+  const all = track.colliders;
+  if (!all || !all.length) {
     v._envIntersect = false;
     v._envDeep = false;
     return;
@@ -611,8 +710,18 @@ export function glanceObstacles(v, track) {
   const x1 = v.position.x;
   const z1 = v.position.z;
   const move = Math.hypot(x1 - x0, z1 - z0);
+  const pad = 4.4;
+  const list = nearbyColliders(
+    track,
+    Math.min(x0, x1) - pad,
+    Math.max(x0, x1) + pad,
+    Math.min(z0, z1) - pad,
+    Math.max(z0, z1) + pad
+  );
+  const farAi = !!(v.lowDetail && v.envCheap);
   // Sub-metre samples — at 40 m/s a 1/60 step is ~0.67 m; 0.4 left a gap.
-  const sweepSteps = Math.min(18, Math.max(1, Math.ceil(move / 0.28)));
+  const sweepCap = farAi ? 1 : v.lowDetail ? 8 : 18;
+  const sweepSteps = Math.min(sweepCap, Math.max(1, Math.ceil(move / 0.28)));
   v._envIntersect = false;
   v._envDeep = false;
 
@@ -620,6 +729,7 @@ export function glanceObstacles(v, track) {
   let toi = null;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
+    if (farAi && c.kind !== "wall") continue;
     if (!colliderHitsCarY(c, v)) continue;
     for (let s = 0; s <= sweepSteps; s++) {
       const t = s / sweepSteps;
@@ -651,6 +761,7 @@ export function glanceObstacles(v, track) {
   // --- Pass B: residual contacts at the resolved pose (walls + nearby rocks).
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
+    if (farAi && c.kind !== "wall") continue;
     if (!colliderHitsCarY(c, v)) continue;
     if (c.kind === "wall") {
       const hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
@@ -684,13 +795,22 @@ export function glanceObstacles(v, track) {
  * @param {{colliders: Array<object>}} track
  */
 export function correctEnvPenetration(v, track) {
-  const list = track.colliders;
-  if (!list || !list.length) {
+  const all = track.colliders;
+  if (!all || !all.length) {
     v._envIntersect = false;
     v._envDeep = false;
     return;
   }
-  const passes = v.ai ? 3 : 6;
+  const pad = 4.4;
+  const list = nearbyColliders(
+    track,
+    v.position.x - pad,
+    v.position.x + pad,
+    v.position.z - pad,
+    v.position.z + pad
+  );
+  const farAi = !!(v.lowDetail && v.envCheap);
+  const passes = farAi ? 1 : v.ai ? 3 : 6;
   let worst = 0;
   for (let pass = 0; pass < passes; pass++) {
     const fx = Math.sin(v.yaw);
@@ -701,6 +821,7 @@ export function correctEnvPenetration(v, track) {
     worst = 0;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
+      if (farAi && c.kind !== "wall") continue;
       if (!colliderHitsCarY(c, v)) continue;
       let hit = null;
       let wall = false;

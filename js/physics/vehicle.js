@@ -48,9 +48,9 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=222";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=223";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=55";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=54";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=55";
 import { JumpModel } from "./jump.js?v=32";
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=10";
 

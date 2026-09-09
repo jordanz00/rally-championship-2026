@@ -216,6 +216,12 @@ export class StageWeather {
     const raining = rain > 0.1;
     if (!raining && !this._wipeOn) {
       this._parkWipers(car);
+      const glass = car.userData.povRainGlass;
+      const weather = car.userData.povWeather;
+      if (weather) weather.visible = !!pov;
+      if (glass) glass.visible = !!pov;
+      if (car.userData.wiperL) car.userData.wiperL.visible = !!pov;
+      if (car.userData.wiperR) car.userData.wiperR.visible = !!pov;
       if (pov) this._paintDrops(car, true);
       return;
     }
@@ -252,6 +258,14 @@ export class StageWeather {
     const parkR = right && right.userData.parkZ != null ? right.userData.parkZ : Math.PI - 0.1;
     if (left) left.rotation.z = parkL + ang;
     if (right) right.rotation.z = parkR - ang;
+
+    // Rain glass + blades are POV-only — hide hard so chase never sees them.
+    const glass = car.userData.povRainGlass;
+    const weather = car.userData.povWeather;
+    if (weather) weather.visible = !!pov;
+    if (glass) glass.visible = !!pov;
+    if (left) left.visible = !!pov;
+    if (right) right.visible = !!pov;
 
     if (!pov) return;
     if (raining) this._spawnDrops(dt, rain, speedMs);

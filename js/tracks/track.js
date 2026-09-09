@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=222";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=223";
 import { selectLodBand } from "../gfx/gpu-lod.js?v=1";
 import { roadMicroHeight } from "./road-micro.js?v=10";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=5";
@@ -51,7 +51,7 @@ function terrainTileSegs() {
   return STREAM.terrainTileSegs;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=19";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=20";
 import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=43";
 import {
   prepareForestPbr,
@@ -2569,6 +2569,8 @@ export class Track {
         mesh.setMatrixAt(i, dummy.matrix);
       }
       mesh.instanceMatrix.needsUpdate = true;
+      mesh.matrixAutoUpdate = false;
+      mesh.updateMatrixWorld(true);
       mesh.userData.envProp = true;
       this.group.add(mesh);
       this._registerChunk(mesh, -2);
@@ -4970,6 +4972,8 @@ export class Track {
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrixWorld(true);
     mesh.userData.envProp = true;
     if (opts && opts.cameraFade) mesh.userData.cameraFade = true;
     if (opts && opts.lod) mesh.userData.lod = opts.lod;

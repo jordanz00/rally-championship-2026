@@ -10,7 +10,7 @@
  * Lightweight read-only: ?physdebug=1 / ?debug=1 (no dials)
  */
 
-import { ARCADE_ASSIST, HANDLING } from "../config.js?v=222";
+import { ARCADE_ASSIST, HANDLING } from "../config.js?v=223";
 
 /** @typedef {{ key: string, label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void }} LabDial */
 

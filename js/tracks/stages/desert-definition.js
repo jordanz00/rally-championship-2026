@@ -7,7 +7,7 @@
  * Championship ~54 s Celica AT → ~3 km of wide easy arcs.
  */
 
-import { COLORS } from "../../config.js?v=222";
+import { COLORS } from "../../config.js?v=223";
 
 export const DESERT_DEFINITION = {
   id: "desert",

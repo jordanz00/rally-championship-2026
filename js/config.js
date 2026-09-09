@@ -183,6 +183,11 @@ export const VISUAL = {
   terrainRealism: true,
   /** Ghost only fragments on the cam→car sightline (tight tube; opaque otherwise). */
   cameraOcclusionFade: true,
+  /**
+   * Rival body see-through on the chase cam→player tube. Off — ghosted car
+   * models read as a defect in medium/far chase; keep every chassis solid.
+   */
+  packSeeThrough: false,
   /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
   aerialPerspective: true,
   aerialStrength: 0.88,

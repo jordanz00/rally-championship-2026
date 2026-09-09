@@ -19,7 +19,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=222";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=223";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=49";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
@@ -403,6 +403,7 @@ export function createPlayerCar(carId = "celica") {
   tagWindshield(root);
   tagInterior(root);
   tagPovShell(root);
+  attachPovWeatherGlass(root);
   buildPovHideCache(root);
   if (!root.userData.povRig) root.userData.povRig = buildPovRig(root);
   setCockpitView(root, false);
@@ -862,7 +863,8 @@ function flipInwardMesh(obj) {
 
 /**
  * Title-only dress: hide cabin clutter, keep Grills as paint (not black glass),
- * and rebuild shattered LOD side windows as smooth reflective panes.
+ * and rebuild shattered LOD side windows as smooth panes fitted to the
+ * authored aperture (raked trapezoid), not axis-aligned rectangles.
  * @param {THREE.Object3D} root
  */
 function dressTitleCarShowroom(root) {
@@ -976,12 +978,16 @@ function dressTitleCarShowroom(root) {
 
 const _paneSize = new THREE.Vector3();
 const _paneMid = new THREE.Vector3();
-const _paneN = new THREE.Vector3();
-const _paneZ = new THREE.Vector3(0, 0, 1);
+const _winTmp = new THREE.Vector3();
+const _winN = new THREE.Vector3();
+const _winU = new THREE.Vector3();
+const _winV = new THREE.Vector3();
+const _winO = new THREE.Vector3();
+const _winC = new THREE.Vector3();
 
 /**
  * Rival LOD decimates Celica side glass to 3–4 tris (hero is ~27). Hide that
- * shattered geo and plant a smooth outward pane in the same aperture.
+ * shattered geo and plant a smooth pane whose outline matches the aperture.
  * @param {THREE.Object3D} root
  */
 function rebuildTitleWindowPanes(root) {
@@ -1046,47 +1052,223 @@ function isTitleSideWindowMesh(obj, root) {
 }
 
 /**
- * Best-fit outward plane from the LOD window AABB, slight bulge for a highlight.
+ * Unique mesh verts in title-car local space (LOD windows are 5–6 points).
+ * @param {THREE.Mesh} src
+ * @param {THREE.Object3D} root
+ * @returns {THREE.Vector3[]}
+ */
+function collectUniqueLocalPoints(src, root) {
+  const pos = src.geometry && src.geometry.attributes.position;
+  if (!pos) return [];
+  src.updateWorldMatrix(true, false);
+  const seen = new Set();
+  const out = [];
+  const visit = (i) => {
+    _winTmp.fromBufferAttribute(pos, i);
+    _winTmp.applyMatrix4(src.matrixWorld);
+    root.worldToLocal(_winTmp);
+    const key = `${_winTmp.x.toFixed(4)}|${_winTmp.y.toFixed(4)}|${_winTmp.z.toFixed(4)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(_winTmp.clone());
+  };
+  const idx = src.geometry.index;
+  if (idx) {
+    for (let i = 0; i < idx.count; i++) visit(idx.getX(i));
+  } else {
+    for (let i = 0; i < pos.count; i++) visit(i);
+  }
+  return out;
+}
+
+/**
+ * Largest-triangle plane, flipped to face away from the car centre.
+ * @param {THREE.Vector3[]} points
+ * @param {THREE.Vector3} carMid
+ * @returns {boolean}
+ */
+function fitWindowPlane(points, carMid) {
+  let bestArea = -1;
+  let ia = 0;
+  let ib = 1;
+  let ic = 2;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      for (let k = j + 1; k < points.length; k++) {
+        _winU.subVectors(points[j], points[i]);
+        _winV.subVectors(points[k], points[i]);
+        _winN.crossVectors(_winU, _winV);
+        const area = _winN.lengthSq();
+        if (area > bestArea) {
+          bestArea = area;
+          ia = i;
+          ib = j;
+          ic = k;
+        }
+      }
+    }
+  }
+  if (bestArea < 1e-10) return false;
+  _winC.set(0, 0, 0);
+  for (let i = 0; i < points.length; i++) _winC.add(points[i]);
+  _winC.multiplyScalar(1 / points.length);
+  _winO.copy(_winC);
+  _winU.subVectors(points[ib], points[ia]);
+  _winV.subVectors(points[ic], points[ia]);
+  _winN.crossVectors(_winU, _winV).normalize();
+  _winTmp.copy(_winC).sub(carMid);
+  if (_winN.dot(_winTmp) < 0) _winN.negate();
+  if (Math.abs(_winN.y) < 0.9) _winU.set(0, 1, 0);
+  else _winU.set(1, 0, 0);
+  _winU.cross(_winN).normalize();
+  _winV.crossVectors(_winN, _winU).normalize();
+  return true;
+}
+
+/**
+ * Andrew's monotone chain. Input `{x,y}[]`, returns CCW hull.
+ * @param {{x:number,y:number}[]} pts
+ * @returns {{x:number,y:number}[]}
+ */
+function convexHull2(pts) {
+  if (pts.length < 3) return pts.slice();
+  const sorted = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross2 = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const p = sorted[i];
+    while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+/**
+ * Welded midpoint subdivision of a hull fan, slight outward bulge.
+ * Geometry is already in title-car local space.
+ * @param {{x:number,y:number}[]} hull2
+ * @param {number} subdiv
+ * @param {number} bulge
+ * @param {number} offset
+ * @returns {THREE.BufferGeometry}
+ */
+function tessellateAperturePane(hull2, subdiv, bulge, offset) {
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < hull2.length; i++) {
+    cx += hull2[i].x;
+    cy += hull2[i].y;
+  }
+  cx /= hull2.length;
+  cy /= hull2.length;
+  let rx = 1e-4;
+  let ry = 1e-4;
+  for (let i = 0; i < hull2.length; i++) {
+    rx = Math.max(rx, Math.abs(hull2[i].x - cx));
+    ry = Math.max(ry, Math.abs(hull2[i].y - cy));
+  }
+  const positions = [];
+  const indices = [];
+  const vertMap = new Map();
+  const vertOf = (x, y) => {
+    const key = `${x.toFixed(5)},${y.toFixed(5)}`;
+    if (vertMap.has(key)) return vertMap.get(key);
+    const dx = (x - cx) / rx;
+    const dy = (y - cy) / ry;
+    const r2 = Math.min(1, dx * dx + dy * dy);
+    const lift = offset + bulge * (1 - r2);
+    _winTmp.copy(_winO).addScaledVector(_winU, x).addScaledVector(_winV, y).addScaledVector(_winN, lift);
+    const idx = positions.length / 3;
+    positions.push(_winTmp.x, _winTmp.y, _winTmp.z);
+    vertMap.set(key, idx);
+    return idx;
+  };
+  const split = (ax, ay, bx, by, cx2, cy2, level) => {
+    if (level <= 0) {
+      indices.push(vertOf(ax, ay), vertOf(bx, by), vertOf(cx2, cy2));
+      return;
+    }
+    const abx = (ax + bx) * 0.5;
+    const aby = (ay + by) * 0.5;
+    const bcx = (bx + cx2) * 0.5;
+    const bcy = (by + cy2) * 0.5;
+    const cax = (cx2 + ax) * 0.5;
+    const cay = (cy2 + ay) * 0.5;
+    const next = level - 1;
+    split(ax, ay, abx, aby, cax, cay, next);
+    split(abx, aby, bx, by, bcx, bcy, next);
+    split(cax, cay, bcx, bcy, cx2, cy2, next);
+    split(abx, aby, bcx, bcy, cax, cay, next);
+  };
+  for (let i = 0; i < hull2.length; i++) {
+    const a = hull2[i];
+    const b = hull2[(i + 1) % hull2.length];
+    split(cx, cy, a.x, a.y, b.x, b.y, subdiv);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * Fit a smooth pane to the LOD window's actual aperture — not its AABB.
+ * Celica rival `x0_window_fl` is a 6-vert raked trapezoid (~34° tumblehome);
+ * an axis-aligned PlaneGeometry overshoots the A/B pillars and sits off the body.
  * @param {THREE.Mesh} src
  * @param {THREE.Object3D} root
  * @param {THREE.Vector3} carMid
  * @returns {THREE.Mesh|null}
  */
 function buildSmoothWindowPane(src, root, carMid) {
-  src.updateWorldMatrix(true, false);
-  const box = new THREE.Box3().setFromObject(src);
-  box.getSize(_paneSize);
-  box.getCenter(_paneMid);
-  root.worldToLocal(_paneMid);
-  const axes = [
-    { n: new THREE.Vector3(1, 0, 0), w: _paneSize.z, h: _paneSize.y, thin: _paneSize.x },
-    { n: new THREE.Vector3(0, 1, 0), w: _paneSize.x, h: _paneSize.z, thin: _paneSize.y },
-    { n: new THREE.Vector3(0, 0, 1), w: _paneSize.x, h: _paneSize.y, thin: _paneSize.z },
-  ];
-  axes.sort((a, b) => a.thin - b.thin);
-  const ax = axes[0];
-  if (ax.w < 0.12 || ax.h < 0.1) return null;
-  // Whole-cabin Delta "Glass" blob — keep authored mesh.
-  if (ax.thin > 0.42 && ax.w > 1.05) return null;
-  _paneN.copy(ax.n);
-  _paneMid.sub(carMid);
-  if (_paneN.dot(_paneMid) < 0) _paneN.negate();
-  box.getCenter(_paneMid);
-  root.worldToLocal(_paneMid);
-  const geo = new THREE.PlaneGeometry(ax.w * 1.08, ax.h * 1.06, 12, 8);
-  const pos = geo.attributes.position;
-  const hx = Math.max(0.08, ax.w * 0.5);
-  const hy = Math.max(0.08, ax.h * 0.5);
-  const bulge = Math.min(0.032, ax.w * 0.035);
-  for (let i = 0; i < pos.count; i++) {
-    const u = pos.getX(i) / hx;
-    const v = pos.getY(i) / hy;
-    pos.setZ(i, (1 - u * u) * (1 - v * v) * bulge);
+  const points = collectUniqueLocalPoints(src, root);
+  if (points.length < 3) return null;
+  if (!fitWindowPlane(points, carMid)) return null;
+  const pts2 = [];
+  for (let i = 0; i < points.length; i++) {
+    _winTmp.copy(points[i]).sub(_winO);
+    pts2.push({ x: _winTmp.dot(_winU), y: _winTmp.dot(_winV) });
   }
-  geo.computeVertexNormals();
+  const hull2 = convexHull2(pts2);
+  if (hull2.length < 3) return null;
+  let area = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < hull2.length; i++) {
+    const p = hull2[i];
+    const q = hull2[(i + 1) % hull2.length];
+    area += p.x * q.y - q.x * p.y;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (area < 0) hull2.reverse();
+  if (Math.abs(area) < 1e-4) return null;
+  const w = maxX - minX;
+  const h = maxY - minY;
+  if (w < 0.12 || h < 0.1) return null;
+  // Whole-cabin Delta "Glass" blob — keep authored mesh.
+  if (w > 1.15 && h > 0.55) return null;
+  const bulge = Math.min(0.02, Math.max(w, h) * 0.022);
+  const geo = tessellateAperturePane(hull2, 3, bulge, 0.006);
   const mesh = new THREE.Mesh(geo);
-  mesh.position.copy(_paneMid).addScaledVector(_paneN, 0.01);
-  mesh.quaternion.setFromUnitVectors(_paneZ, _paneN);
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   mesh.renderOrder = 2;
@@ -5199,6 +5381,7 @@ function tagWindshield(root) {
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     if (inCockpitTree(obj)) return;
+    if (obj.userData.povRainGlass || obj.userData.povWiper) return;
     if (isLampish(obj)) return;
     const n = ((obj.name || "") + " " + matName(obj)).toLowerCase();
     const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
@@ -5376,6 +5559,7 @@ function markPovHudMesh(mesh, order, opts) {
   mesh.frustumCulled = false;
   mesh.renderOrder = order != null ? order : 20;
   const wantDepth = !!(opts && opts.depthTest);
+  const wantWrite = !!(opts && opts.depthWrite);
   const list = [].concat(mesh.material || []);
   for (let i = 0; i < list.length; i++) {
     const m = list[i];
@@ -5384,7 +5568,7 @@ function markPovHudMesh(mesh, order, opts) {
     m.toneMapped = false;
     m.fog = false;
     m.depthTest = wantDepth;
-    m.depthWrite = false;
+    m.depthWrite = wantWrite;
     m.transparent = true;
     if (m.opacity == null || m.opacity > 0.98) m.opacity = 1;
   }
@@ -5657,7 +5841,7 @@ function attachCockpit(root) {
   mirror.position.set(rig.mirrorEyeX, rig.mirrorEyeY, rig.mirrorEyeZ);
   mirror.lookAt(rig.eyeX, rig.eyeY, rig.eyeZ);
   cab.add(mirror);
-  attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW);
+  // Weather glass waits until tagWindshield — createPlayerCar calls it after.
 
   root.add(cab);
   root.userData.cockpit = cab;
@@ -5674,27 +5858,107 @@ function attachCockpit(root) {
 }
 
 /**
- * Cockpit-space glass + intermittent wiper arms. Not tagged `windshield`
- * (POV hides those). LHD eye / wheel stay where attachCockpit put them.
- * @param {THREE.Group} cab
+ * Front windshield mesh for rain overlay (hero `x0_window_f`, not side panes).
  * @param {THREE.Object3D} root
- * @param {{eyeX:number,eyeY:number,eyeZ:number}} rig
- * @param {number} dashZ
- * @param {number} dashY
- * @param {number} cabinW
+ * @returns {THREE.Mesh|null}
  */
-function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
-  // POV-head pane so look-down does not shrink rain to a stamp in car XY.
-  void cab;
-  void dashZ;
-  void dashY;
-  void cabinW;
-  const host = rig.head || root;
-  const dist = 0.58;
-  const vHalf = dist * Math.tan((40 * Math.PI) / 180);
-  const hHalf = dist * Math.tan((53 * Math.PI) / 180);
-  const gh = vHalf * 1.74;
-  const gw = hHalf * 1.98;
+function findFrontWindshieldMesh(root) {
+  let best = null;
+  let bestScore = -1;
+  const c = new THREE.Vector3();
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return;
+    if (inCockpitTree(obj)) return;
+    if (obj.userData.povRainGlass || obj.userData.povWiper) return;
+    const n = `${obj.name || ""} ${matName(obj)}`.toLowerCase();
+    if (/x0_window_f[lr]|x0_window_b[lr]|window_fl|window_fr|window_bl|window_br/.test(n)) return;
+    if (/x0_window_b\b|backlight|rear.?glass|rear.?window/.test(n)) return;
+    const named =
+      /x0_window_f\b|windshield|windscreen|front.?glass|frontglass|front_glass/.test(n);
+    const tagged = !!obj.userData.windshield;
+    if (!named && !tagged) return;
+    obj.updateWorldMatrix(true, false);
+    const box = new THREE.Box3().setFromObject(obj);
+    box.getCenter(c);
+    root.worldToLocal(c);
+    const size = box.getSize(new THREE.Vector3());
+    // Prefer the widest forward pane near cabin mid-height.
+    let score = size.x * size.y + (named ? 2 : 0) + (tagged ? 0.5 : 0);
+    if (c.z > 0) score += 0.8;
+    if (Math.abs(c.x) < 0.35) score += 0.6;
+    if (score > bestScore) {
+      bestScore = score;
+      best = obj;
+    }
+  });
+  return best;
+}
+
+/**
+ * Rain droplet pane + wiper arms fitted to the authored windshield, slightly
+ * outside the glass. POV HUD layer only — chase never sees them.
+ * @param {THREE.Object3D} root
+ */
+function attachPovWeatherGlass(root) {
+  if (!root || root.userData.povRainGlass) return;
+  const rig = root.userData.povRig || buildPovRig(root);
+  root.updateMatrixWorld(true);
+  const hull = localHull(root);
+  const carMid = new THREE.Vector3(
+    (hull.minX + hull.maxX) * 0.5,
+    (hull.minY + hull.maxY) * 0.5,
+    (hull.minZ + hull.maxZ) * 0.5
+  );
+
+  let gw = 1.05;
+  let gh = 0.48;
+  let paneLocal = new THREE.Vector3(0, 1.05, 0.55);
+  let quat = new THREE.Quaternion();
+  const src = findFrontWindshieldMesh(root);
+  if (src) {
+    const points = collectUniqueLocalPoints(src, root);
+    if (points.length >= 3 && fitWindowPlane(points, carMid)) {
+      let minU = Infinity;
+      let maxU = -Infinity;
+      let minV = Infinity;
+      let maxV = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        _winTmp.copy(points[i]).sub(_winO);
+        const u = _winTmp.dot(_winU);
+        const v = _winTmp.dot(_winV);
+        if (u < minU) minU = u;
+        if (u > maxU) maxU = u;
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
+      }
+      gw = Math.max(0.55, maxU - minU);
+      gh = Math.max(0.28, maxV - minV);
+      const midU = (minU + maxU) * 0.5;
+      const midV = (minV + maxV) * 0.5;
+      // Sit just outside the glass (+normal toward the world, away from cabin).
+      paneLocal
+        .copy(_winO)
+        .addScaledVector(_winU, midU)
+        .addScaledVector(_winV, midV)
+        .addScaledVector(_winN, 0.014);
+      const basis = new THREE.Matrix4().makeBasis(_winU, _winV, _winN);
+      quat.setFromRotationMatrix(basis);
+    }
+  } else {
+    // Fallback: raked cabin plane ahead of the eye (never a huge FOV card).
+    paneLocal.set(0, rig.eyeY + 0.02, Math.max(rig.eyeZ + 0.72, 0.42));
+    quat.setFromEuler(new THREE.Euler(-0.52, 0, 0, "YXZ"));
+    gw = 1.02;
+    gh = 0.46;
+  }
+
+  const weather = new THREE.Group();
+  weather.name = "pov-weather";
+  weather.userData.povHud = true;
+  weather.visible = false;
+  weather.position.copy(paneLocal);
+  weather.quaternion.copy(quat);
+
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 256;
@@ -5715,12 +5979,10 @@ function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
   });
   const pane = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), mat);
   pane.name = "pov-rain-glass";
-  pane.position.set(0, vHalf * 0.1, dist);
-  pane.rotation.x = -0.08;
   pane.userData.povHud = true;
   pane.userData.povRainGlass = true;
   markPovHudMesh(pane, 6, { depthTest: true });
-  host.add(pane);
+  weather.add(pane);
 
   const armMat = new THREE.MeshStandardMaterial({
     color: 0x3a4048,
@@ -5732,39 +5994,49 @@ function attachPovWeatherGlass(cab, root, rig, dashZ, dashY, cabinW) {
     roughness: 0.86,
     metalness: 0.06,
   });
-  const bladeLen = Math.min(gh * 0.9, gw * 0.5);
+  // Real Celica-scale blades on the exterior of the glass — not FOV-sized sticks.
+  const bladeLen = Math.min(0.52, Math.max(0.36, Math.hypot(gw, gh) * 0.38));
+  const armLen = Math.min(0.2, bladeLen * 0.38);
   const makeArm = (side) => {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? "wiper-L" : "wiper-R";
-    pivot.position.set(side * gw * 0.28, -gh * 0.46, 0.012);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.022, 0.014), armMat);
-    arm.position.set(0.14, 0, 0);
+    // Cowl pivots near the bottom of the pane, slightly outboard of centre.
+    pivot.position.set(side * gw * 0.18, -gh * 0.44, 0.01);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.012, 0.008), armMat);
+    arm.position.set(armLen * 0.5, 0, 0);
     arm.userData.povHud = true;
+    arm.userData.povWiper = true;
     markPovHudMesh(arm, 7, { depthTest: true });
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.032, 0.016), bladeMat);
-    blade.position.set(bladeLen * 0.46, 0, 0.006);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.018, 0.01), bladeMat);
+    blade.position.set(bladeLen * 0.48, 0, 0.004);
     blade.userData.povHud = true;
+    blade.userData.povWiper = true;
     markPovHudMesh(blade, 8, { depthTest: true });
-    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.012, 0.008), bladeMat);
-    rubber.position.set(bladeLen * 0.46, -0.018, 0.005);
+    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.008, 0.005), bladeMat);
+    rubber.position.set(bladeLen * 0.48, -0.01, 0.003);
     rubber.userData.povHud = true;
+    rubber.userData.povWiper = true;
     markPovHudMesh(rubber, 8, { depthTest: true });
     pivot.add(arm, blade, rubber);
-    pivot.rotation.z = side < 0 ? 0.1 : Math.PI - 0.1;
+    pivot.rotation.z = side < 0 ? 0.12 : Math.PI - 0.12;
     pivot.userData.parkZ = pivot.rotation.z;
     pivot.userData.bladeLen = bladeLen;
     pivot.userData.side = side;
     pivot.userData.povHud = true;
+    pivot.userData.povWiper = true;
     pane.add(pivot);
     return pivot;
   };
+
+  root.add(weather);
+  root.userData.povWeather = weather;
   root.userData.povRainGlass = pane;
   root.userData.povRainCanvas = canvas;
   root.userData.povRainCtx = ctx;
   root.userData.povRainTex = tex;
   root.userData.povGlassW = gw;
   root.userData.povGlassH = gh;
-  root.userData.wiperFar = 1.78;
+  root.userData.wiperFar = 1.22;
   root.userData.wiperL = makeArm(-1);
   root.userData.wiperR = makeArm(1);
 }
@@ -5989,6 +6261,10 @@ export function setCockpitView(root, on, _camera, renderer) {
   if (root.userData._povHideVer !== 4) root.userData._povHideReady = false;
   if (root.userData._cockpitOn === want && root.userData._povHideReady) {
     setPovRoofClip(root, want, renderer);
+    const weather = root.userData.povWeather || root.userData.povRainGlass;
+    if (weather) weather.visible = want;
+    if (root.userData.wiperL) root.userData.wiperL.visible = want;
+    if (root.userData.wiperR) root.userData.wiperR.visible = want;
     return;
   }
   root.userData._cockpitOn = want;
@@ -6021,6 +6297,10 @@ export function setCockpitView(root, on, _camera, renderer) {
     mir.visible = want;
     mir.scale.setScalar(1);
   }
+  const weather = root.userData.povWeather || root.userData.povRainGlass;
+  if (weather) weather.visible = want;
+  if (root.userData.wiperL) root.userData.wiperL.visible = want;
+  if (root.userData.wiperR) root.userData.wiperR.visible = want;
   setPovRoofClip(root, want, renderer);
 }
 

@@ -1,5 +1,81 @@
 # QA report — quality-control pass
 
+## Ship v777 — 24h session to Pages (2026-09-09)
+
+**Player moment:** Live github.io build after this push. Hard-refresh `?v=777`.
+
+**Closed this session (working tree → main):**
+- Title splash side windows conform to door apertures (hull pane, not AABB card)
+- Lock-30 present path: skip mirror on skipped rAF, SSGI/AO cadence, collide hash, instanced `matrixAutoUpdate`, dust budget
+- Chase ghosting off: no pack see-through, motion-gated post reuse, no lock-30 shadow throttle
+- Mountain POV rain: droplets + wipers fitted to authored windshield (exterior, ~0.5 m blades), POV-only
+
+**Lock-30 proof (this host):** `qa-sprint76-perf` present-cadence gates PASS (healthy 60; over-budget at min → even 30; preferLock30). Headed `qa-frame-probe` SKIP — Chrome blocked in Cursor agent host (`TransformProcessType`).
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint76-perf.mjs` (cadence gates)
+
+**Boot:** `main.js?v=777` · `game.js?v=777` · `celica.js?v=199` · `rain.js?v=10` · `postfx.js?v=34` · `occlusion-fade.js?v=20` · `config.js?v=223` · `ai.js?v=183` · `track.js?v=346`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/ · hard-refresh `?v=777`
+
+---
+
+## Chase cam — no ghosted car models (2026-09-09)
+
+**Player moment:** Medium and far chase. Player and pack chassis stay solid — no see-through rivals, no paint trail, no lagging shadow silhouette.
+
+**Cause:** Pack sightline fade intentionally dropped rival opacity; lock-30 reused stale SSGI/bloom and forced a 10 Hz sun atlas, which trailed bright car bodies.
+
+**Shipped:**
+- `VISUAL.packSeeThrough` default **off** — cars never go translucent on the chase tube (world occlusion discard unchanged).
+- Post AO/SSGI/bloom only skip when the lens is nearly still; any camera move rebakes so GI/bloom cannot ghost the chassis.
+- Removed lock-30 `shadowEvery ≥ 3` throttle.
+- POV rain glass + wipers hard-hidden outside POV.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=777` · `game.js?v=777` · `config.js?v=223` · `postfx.js?v=34` · `occlusion-fade.js?v=20` · `celica.js?v=199` · `rain.js?v=10` · `ai.js?v=183` · `track.js?v=346`
+
+**Human gate:** Hard-refresh, C to medium/far on any stage. Cars stay opaque. Drive past a pack car on your nose — it stays solid (may briefly occlude you).
+
+---
+
+## Race present budget — lock-30 must actually cost 30 (2026-09-09)
+
+**Player moment:** Championship Desert / Forest, medium chase or POV. When the machine cannot hold 60, HUD should settle on a **clean 30** — not 8–15 fps — with the same resolution, shadows, and cinema grade.
+
+**Cause:** Lock-30 only skipped `pipeline.present`. POV still full-scene-rendered the rearview (and forced a sun atlas bake) on every skipped rAF, so the GPU still paid ~60 world frames/s. Env collide walked every Forest collider × 18 sweep samples × 15 cars. Instanced world meshes still rebuilt Object3D matrices every pass.
+
+**Shipped (hot path only — no DPR cut, no `perf=min`, no shadow-off, no `track.js` / `vehicle.js` rewrite):**
+- Skip rearview capture on skipped presents; glass follows the presented frame. Mirror no longer forces `shadowMap.needsUpdate`. No second `Track.update` for the 384×120 RT.
+- SSGI / AO / bloom cadence follow live `perfTier.locked30` (reuse last field; same look).
+- Collider spatial hash in `glanceObstacles`; far AI (fxBand 2) walls-only, 1 sweep. Skip a second `confirmOnRoad` on far pack after car-car.
+- `InstancedMesh.matrixAutoUpdate = false` after bake. Dust frustum cull + no rival grit on lock-30.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
+
+**Boot:** `main.js?v=773` · `game.js?v=773` · `collide.js?v=55` · `vehicle.js?v=154` · `ai.js?v=181` · `track.js?v=345` · `effects.js?v=75` · `postfx.js?v=32`
+
+**Human gate:** Hard-refresh, Desert championship. If 60 is not held, FPS readout should sit near 30 without a potato look. POV mirror may update at present Hz (not 60 while the world is 30).
+
+---
+
+## Title splash — side windows conform to the body (2026-09-09)
+
+**Player moment:** Title orbit. Left and right side glass sit in the door apertures — raked trapezoids along the A/B pillars — not floating rectangles that overshoot the bodyshell.
+
+**Cause:** `buildSmoothWindowPane` planted an axis-aligned `PlaneGeometry` from the LOD window AABB, inflated 8%/6%. Rival `x0_window_fl/fr` are 6-vert panes with ~34° tumblehome (`n ≈ (0.83, 0, -0.56)`). A +X rectangle cannot match that hole.
+
+**Shipped (title showroom only):** convex hull of authored window verts in the best-fit plane, welded subdivision, slight outward bulge. Windshield/backlight stay authored. Delta whole-cabin `Glass` blob still skipped. No `track.js` / `vehicle.js`.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
+
+**Boot:** `main.js?v=772` · `game.js?v=772` · `celica.js?v=197` · `ai.js?v=180`
+
+**Human gate:** hard-refresh title. Side-on: glass follows the door cut, not a card in front of the pillar.
+
+---
+
 ## Consolidation sprint — scrape, hero trees, boot (2026-09-08)
 
 **Player moment:** Hard-refresh `main.js?v=771`. Drift along a road edge and scrape instead of pinball. Forest close trees are Poly Haven PBR (bark vs leaves split). Title still has painted nose + reflective side glass. Championship Desert boot does not pull Forest hero GLBs until Forest is queued.
