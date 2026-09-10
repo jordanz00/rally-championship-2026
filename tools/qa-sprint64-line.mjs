@@ -56,7 +56,7 @@ check(
 );
 check(
   "traffic dodge cannot shove past half the envelope",
-  /half \* 0\.48/.test(ai)
+  /half \* 0\.42/.test(ai)
 );
 check("tight corners drop the speed cap", /tightMul/.test(ai) && /Math\.abs\(d1\) \* 0\.48/.test(ai));
 check("hairpin handbrake only while on-road", /off < -0\.7/.test(ai) && /hb = 0\.22/.test(ai));
@@ -65,7 +65,9 @@ check(
   "Sprint 26 pace formula kept",
   /this\.pace\s*=\s*0\.92\s*\+\s*this\.skill\s*\*\s*0\.2/.test(ai)
 );
-check("game imports ai.js?v=110", /ai\.js\?v=109/.test(game));
+check("personal groove bias + apex style", /this\.lineBias/.test(ai) && /this\.apexStyle/.test(ai));
+check("rival groove is tight, not whole-road", /GROOVE_RIVAL\s*=\s*1\.15/.test(ai));
+check("game imports current ai.js", /ai\.js\?v=\d+/.test(game));
 check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "pack holds an on-road racing line"}`);

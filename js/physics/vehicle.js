@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=223";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=55";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=233";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=57";
 import { bounceOffRoad, glanceObstacles } from "./collide.js?v=55";
-import { JumpModel } from "./jump.js?v=32";
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=10";
+import { JumpModel } from "./jump.js?v=34";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=12";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -4160,10 +4160,9 @@ export class Vehicle {
   }
 
   /**
-   * Race-fun automatic: hold gears on throttle, dump them fast under brake,
-   * and kick-down when the turbo goes quiet. The old logic only downshifted
-   * below 2700 with light throttle only — that left the car stuck in a tall gear
-   * into every hairpin.
+   * Race-fun automatic: early upshifts under light throttle, hold near redline
+   * on WOT, dump gears fast under brake / coast, and kick-down when RPM sags.
+   * Arcade-first (docs/SEGA_RALLY_DRIVING_MODEL.md) — snappy, never economy-lazy.
    *
    * @param {number} dt
    */
@@ -4180,39 +4179,49 @@ export class Vehicle {
     const th = this.throttle;
     const br = Math.max(this.brake, this.handbrake * 0.9);
     const rpm = this.rpm;
+    const upMinTh = A.upMinThrottle != null ? A.upMinThrottle : 0.1;
+    const kickTh = A.kickThrottle != null ? A.kickThrottle : 0.38;
+    const coastTh = A.coastThrottle != null ? A.coastThrottle : 0.28;
 
-    // Upshift RPM rises with throttle — WOT holds near redline for punch.
+    // Upshift RPM rises with throttle — light throttle early, WOT holds pull.
+    // th^1.35 keeps partial throttle closer to the early (ease) end.
     const upRpm = lerp(
-      red * (A.upCoast != null ? A.upCoast : 0.68),
-      red * (A.upWot != null ? A.upWot : 0.955),
-      clamp(th * th, 0, 1)
+      red * (A.upCoast != null ? A.upCoast : 0.56),
+      red * (A.upWot != null ? A.upWot : 0.93),
+      clamp(Math.pow(th, 1.35), 0, 1)
     );
-    if (this.gear < top && br < 0.14 && rpm >= upRpm) {
+    // Require throttle so lift-off / coast cannot upshift into a tall gear.
+    if (this.gear < top && th > upMinTh && br < 0.16 && rpm >= upRpm) {
       this.gear += 1;
-      this._autoCool = A.coolUp != null ? A.coolUp : 0.09;
+      this._autoCool = A.coolUp != null ? A.coolUp : 0.05;
       return;
     }
 
     if (this.gear <= 1) return;
 
-    const kickRpm = A.kickDownRpm != null ? A.kickDownRpm : 4800;
+    const kickRpm = A.kickDownRpm != null ? A.kickDownRpm : 5200;
     const brakeFloor = lerp(
-      A.brakeDownMin != null ? A.brakeDownMin : 5000,
-      A.brakeDownMax != null ? A.brakeDownMax : 6400,
+      A.brakeDownMin != null ? A.brakeDownMin : 5600,
+      A.brakeDownMax != null ? A.brakeDownMax : 7000,
       clamp(br, 0, 1)
     );
-    const coastRpm = A.coastDownRpm != null ? A.coastDownRpm : 3400;
+    const coastRpm = A.coastDownRpm != null ? A.coastDownRpm : 4200;
+    const sagRpm = A.sagDownRpm != null ? A.sagDownRpm : 3900;
+    const hardDumpRpm = A.hardDumpRpm != null ? A.hardDumpRpm : 5200;
 
     let drops = 0;
-    if (br > 0.1 && rpm < brakeFloor) {
+    if (br > 0.08 && rpm < brakeFloor) {
       // Hard brake into a hairpin: skip gears so the next throttle pull bites.
-      if (br > 0.75 && rpm < 4800) drops = Math.min(3, this.gear - 1);
-      else if (br > 0.4) drops = Math.min(2, this.gear - 1);
+      if (br > 0.7 && rpm < hardDumpRpm) drops = Math.min(3, this.gear - 1);
+      else if (br > 0.35) drops = Math.min(2, this.gear - 1);
       else drops = 1;
-    } else if (th > 0.55 && rpm < kickRpm) {
+    } else if (th >= kickTh && rpm < kickRpm) {
       // Kick-down — keep the engine in the meat under throttle.
-      drops = rpm < kickRpm * 0.72 && this.gear > 2 ? 2 : 1;
-    } else if (th < 0.22 && br < 0.08 && rpm < coastRpm) {
+      drops = rpm < kickRpm * 0.7 && this.gear > 2 ? 2 : 1;
+    } else if (th < coastTh && br < 0.1 && rpm < coastRpm) {
+      drops = 1;
+    } else if (th >= coastTh && th < kickTh && br < 0.1 && rpm < sagRpm) {
+      // Partial throttle + sagging RPM (hill / tall gear) — was a dead zone.
       drops = 1;
     }
 
@@ -4222,19 +4231,19 @@ export class Vehicle {
     const steps = this.gear - next;
     this.gear = next;
     // Blip so the next gear feels loaded, not soggy.
-    this.rpm = clamp(this.rpm + 850 * steps, s.idleRpm, red);
+    this.rpm = clamp(this.rpm + 900 * steps, s.idleRpm, red);
     // Brake/kick-down while turning = Sakamoto gear-drift (auto players get it too).
     if (br > 0.12 || Math.abs(this.steer) > 0.1) {
       this._applyGearDriftKick(this.steer, steps);
     }
     this._autoCool =
-      br > 0.15
+      br > 0.12
         ? A.coolBrake != null
           ? A.coolBrake
-          : 0.04
+          : 0.025
         : A.coolDown != null
           ? A.coolDown
-          : 0.055;
+          : 0.035;
   }
 
   speedKmh() {

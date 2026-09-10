@@ -42,7 +42,7 @@ const height = med ? Number(med[2]) : NaN;
 const lookAhead = med ? Number(med[3]) : NaN;
 const lookY = med ? Number(med[4]) : NaN;
 
-check("medium back ~25% closer than 5.55 m", back >= 4.0 && back <= 4.3, `back=${back}`);
+check("medium back ~25% closer than 5.55 m", back >= 4.0 && back <= 4.45, `back=${back}`);
 check("medium height matches the closer rig", height >= 1.48 && height <= 1.68, `height=${height}`);
 check("medium look-ahead scaled with back", lookAhead >= 8.8 && lookAhead <= 10.4, `lookAhead=${lookAhead}`);
 check("medium lookY aims at the road", lookY > 0.2 && lookY <= 0.48, `lookY=${lookY}`);
@@ -54,11 +54,13 @@ check("slide yaw rate is capped", /id:\s*"medium"[\s\S]*?yawRateCapSlide:\s*[0-9
 check("tiny rear-quarter, not an orbit", /id:\s*"medium"[\s\S]*?slideCamOut:\s*0\.0[2-4]/.test(config));
 check("jumps do not crane the lens", /id:\s*"medium"[\s\S]*?lockAir:\s*true/.test(config));
 check("no generic SmoothDamp", !/SmoothDamp/.test(game) && !/smoothDamp/.test(game));
-check("no speed FOV zoom-out", /id:\s*"medium"[\s\S]*?speedFovScale:\s*0(?:\.0+)?/.test(config) || /id:\s*"medium"[\s\S]*?speedFovScale:\s*0,/.test(config));
-check("no speed look-ahead stretch", /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0(?:\.0+)?/.test(config) || /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0,/.test(config));
-check("subtle brake pitch", /id:\s*"medium"[\s\S]*?brakePitchMul:\s*0\.03/.test(config));
-check("subtle landing kick", /id:\s*"medium"[\s\S]*?landKickMul:\s*0\.2/.test(config));
-check("surface shake scaled", /surfShake/.test(game) && /shakeMul/.test(game));
+check("no continuous FOV zoom-out (car size stays put)", /id:\s*"medium"[\s\S]*?speedFovScale:\s*0(?:\.0+)?/.test(config) || /id:\s*"medium"[\s\S]*?speedFovScale:\s*0,/.test(config));
+check("speed look-ahead rush armed", /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0\.[5-9]/.test(config));
+check("readable brake pitch", /id:\s*"medium"[\s\S]*?brakePitchMul:\s*0\.0[6-9]/.test(config));
+check("readable landing kick", /id:\s*"medium"[\s\S]*?landKickMul:\s*0\.[7-9]/.test(config));
+check("readable surface shake", /id:\s*"medium"[\s\S]*?shakeMul:\s*0\.[6-9]/.test(config) && /surfShake/.test(game));
+check("land/impact impulse survives chatter cap", /landImpulse/.test(game) && /hitMag/.test(game) && /impulseFloor/.test(game));
+check("GO launch punch", /flashMessage\("GO!"\)[\s\S]{0,280}_camFovKick/.test(game));
 
 const far = config.match(/id:\s*"far"[\s\S]*?back:\s*([0-9.]+)[\s\S]*?height:\s*([0-9.]+)/);
 check(

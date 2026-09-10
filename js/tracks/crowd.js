@@ -6,7 +6,8 @@
  *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing/face atlas;
  *   per-person kind + tint + scale + cheer style/rate; splits authored cheer
  *   arms; body bob, lean, jump-cheer, and knee squash sell readable humans
- *   without a collider army. Track plants start/finish grandstands.
+ *   without a collider army. Track plants start/finish grandstands (finish is
+ *   the denser hero bank — rows/seats/span in Track._addGrandstandCrowds).
  * HOW IT CONNECTS: Track._addSpectators() / _addGrandstandCrowds() build a
  *   CrowdField; Track.update() and RallyAudio consume crowd points for Doppler.
  *
@@ -16,7 +17,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=43";
+import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=45";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([

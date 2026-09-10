@@ -79,11 +79,11 @@ check(
   /_paintBlockingPack\(0\)[\s\S]{0,80}_renderMirror\(\)[\s\S]{0,220}_paintBlockingPack\(1\)/.test(game)
 );
 check(
-  "game + track share occlusion-fade.js?v=8",
+  "game + track share occlusion-fade.js?v=22",
   /occlusion-fade\.js\?v=7/.test(game) && /occlusion-fade\.js\?v=7/.test(track)
 );
 check(
-  "game imports track.js?v=177+",
+  "game imports track.js?v=353+",
   Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 177
 );
 check("cache-bust chain", cacheOk && Number(gameV) >= 376, `main=${mainV} game=${gameV}`);

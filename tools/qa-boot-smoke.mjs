@@ -188,18 +188,32 @@ async function main() {
       return `state="${g.state}"`;
     });
 
-    /* ---------------- 7. PRESS START advances to SELECT CAR (Arcade First Boot) ---------------- */
-    await step("real click on PRESS START advances to SELECT CAR", async () => {
+    /* ---------------- 7. PRESS START advances to SELECT MODE hub ---------------- */
+    await step("real click on PRESS START advances to SELECT MODE", async () => {
       await clickSelector(cdp, "#btn-start", "PRESS START");
       const screen = await waitFor(
         cdp,
-        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
-        { timeout: 15000, label: "#screen-cars to become the active screen" }
+        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-menu" ? el.id : null;`,
+        { timeout: 15000, label: "#screen-menu to become the active screen" }
       );
       const mode = await evaluate(cdp, `return window.game ? { state: window.game.state, mode: window.game.mode } : null;`);
+      assert(screen === "screen-menu", `expected screen-menu, got ${screen}`);
+      assert(mode && mode.state === "menu", `game.state should be menu after Start, got "${mode && mode.state}"`);
+      return `active screen: ${screen}, state=${mode.state}`;
+    });
+
+    /* ---------------- 7b. Championship opens SELECT CAR ---------------- */
+    await step("CHAMPIONSHIP opens SELECT CAR", async () => {
+      await clickSelector(cdp, '[data-menu="championship"]', "CHAMPIONSHIP");
+      const screen = await waitFor(
+        cdp,
+        `const el = document.querySelector(".screen.active"); return el && el.id === "screen-cars" ? el.id : null;`,
+        { timeout: 15000, label: "#screen-cars after championship" }
+      );
+      const mode = await evaluate(cdp, `return window.game ? window.game.mode : null;`);
       assert(screen === "screen-cars", `expected screen-cars, got ${screen}`);
-      assert(mode && mode.mode === "championship", `game.mode should be championship after Start, got "${mode && mode.mode}"`);
-      return `active screen: ${screen}, mode=${mode.mode}`;
+      assert(mode === "championship", `game.mode should be championship, got "${mode}"`);
+      return `active screen: ${screen}, mode=${mode}`;
     });
 
     /* ---------------- 8. audio actually came up ---------------- */
@@ -238,7 +252,7 @@ async function main() {
       return `music=${a.musicVol} sfx=${a.sfxVol} ${note}`;
     });
 
-    /* ---------------- 9. SELECT CAR is ready (championship already defaulted) ---------------- */
+    /* ---------------- 9. SELECT CAR is ready after championship pick ---------------- */
     await step("SELECT CAR has at least one selectable car", async () => {
       await waitFor(
         cdp,

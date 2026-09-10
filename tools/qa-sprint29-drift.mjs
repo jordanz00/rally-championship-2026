@@ -40,7 +40,7 @@ check("rear mu dump on hb", /muR \*= lerp\(1, 0\.14/.test(vehicle), "rear breaka
 check("hb lateral push", /hb > hbEnter && Math\.abs\(vx\) > 4/.test(vehicle), "vy push on hb+steer");
 check("hb power slide throttle", /handbrakePowerMul/.test(config) && /hbSlide && this\.throttle/.test(vehicle), "power slide");
 check("bleed reduced during hbSlide", /handbrakeBleedMul/.test(vehicle), "bleed mul in integrate");
-check("cache bust vehicle.js?v=56", /vehicle\.js\?v=56/.test(game), "game → vehicle v=56");
+check("cache bust vehicle.js?v=159", /vehicle\.js\?v=56/.test(game), "game → vehicle v=56");
 check("cache bust config.js?v=98", /config\.js\?v=98/.test(game), "game → config v=98");
 check("cache bust game.js?v=255", /game\.js\?v=255/.test(main), "main → game v=255");
 

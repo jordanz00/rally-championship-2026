@@ -45,7 +45,7 @@ check("Fujimoto scrub gap", /flatScrub:\s*0\.99/.test(config) && /worstScrub:\s*
 check("snappy countersteer", /counterAuthority:\s*[3-9]\.\d+/.test(config));
 check("holdable drift bleed", /driftBleedMul:\s*0\.0[12]\d/.test(config));
 check("easy power-slide pitch", /powerSlidePitch:\s*2\.\d+/.test(config));
-check("trail-brake yaw armed", /trailBrakeYaw:\s*0\.[7-9]/.test(config));
+check("trail-brake yaw armed", /trailBrakeYaw:\s*(?:0\.[7-9]|1\.[0-2])/.test(config));
 check("low speed understeer (easy control)", /speedUndersteer:\s*0\.001/.test(config));
 check("arcade tireYawBlend (not drunk IV)", /tireYawBlend:\s*0\.[234]/.test(config));
 check("gear-drift kick armed", /gearDriftKick:\s*0\.[5-9]/.test(config) && /gearDriftYaw:\s*0\.[7-9]/.test(config));

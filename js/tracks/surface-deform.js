@@ -4,7 +4,8 @@
  * WHO THIS IS FOR: Track.query (physics height) and the race visual layer.
  * WHAT IT DOES: stamps a sparse height grid where wheels roll on sand, dirt,
  *   mud, and gravel; bilinear samples feed query height so cars sink into
- *   their own tracks; a solid mesh sculpts a tire trench + berms.
+ *   their own tracks; a solid mesh sculpts a tire trench + berms that read
+ *   behind the car in chase.
  * HOW IT CONNECTS: track.js owns WheelDeformField; TireMarks stamps segments;
  *   vehicle axle probes read the lowered height through Track.query.
  *
@@ -18,22 +19,25 @@ import * as THREE from "../../vendor/three.module.js";
 /** Surfaces that accumulate wheel ruts. */
 export const DEFORM_SURFACES = new Set(["sand", "dirt", "mud", "gravel"]);
 
-/** Max rut depth per surface (metres) — readable Group A tire trenches. */
+/**
+ * Max rut depth per surface (metres) — chase-readable tire trenches.
+ * Mud digs deepest; gravel chips shallower but still casts a trench.
+ */
 const DEPTH_CAP = {
-  sand: 0.095,
-  dirt: 0.078,
-  mud: 0.115,
-  gravel: 0.055,
+  sand: 0.145,
+  dirt: 0.118,
+  mud: 0.185,
+  gravel: 0.085,
 };
 
 /**
  * Compressed / damp tire-track earth — muted browns, not desert-yellow paint.
  */
 const RUT_TINT = {
-  sand: 0x7a6248,
-  dirt: 0x4e3c2c,
-  mud: 0x2e2820,
-  gravel: 0x555048,
+  sand: 0x6e5640,
+  dirt: 0x3f3024,
+  mud: 0x221c16,
+  gravel: 0x484440,
 };
 
 /** Pack ix,iz into one int key — avoids `"ix,iz"` string allocs on the hot path. */
@@ -43,11 +47,29 @@ function cellKey(ix, iz) {
 }
 
 /**
+ * Lateral trench shape in normalised tire half-width space.
+ * Negative = dig, positive = berm lip.
+ * @param {number} u
+ * @returns {number}
+ */
+export function trenchProfile(u) {
+  const a = Math.abs(u);
+  if (a < 0.5) return -(0.88 + (1 - a / 0.5) * 0.12);
+  if (a < 0.92) return -0.88 * (1 - (a - 0.5) / 0.42);
+  if (a < 1.22) {
+    const t = 1 - Math.abs(a - 1.05) / 0.22;
+    return 0.62 * Math.max(0, t);
+  }
+  return 0;
+}
+
+/**
  * Sparse world grid of accumulated wheel depression (metres, positive = deeper).
  */
 export class WheelDeformField {
   constructor() {
-    this.cell = 0.36;
+    /** Finer than a tire width so left/right tracks stay distinct. */
+    this.cell = 0.22;
     this.cells = new Map();
     this.berms = new Map();
   }
@@ -95,10 +117,10 @@ export class WheelDeformField {
    * @param {number} [cap]
    */
   stamp(x, z, dirX, dirZ, halfW, depth, cap = depth) {
-    if (depth < 0.0008) return;
+    if (depth < 0.0005) return;
     const latX = -dirZ;
     const latZ = dirX;
-    const r = Math.ceil((halfW * 1.35) / this.cell) + 1;
+    const r = Math.ceil((halfW * 1.45) / this.cell) + 1;
     const ix0 = Math.floor(x / this.cell);
     const iz0 = Math.floor(z / this.cell);
     const maxDep = Math.max(depth, cap);
@@ -112,25 +134,35 @@ export class WheelDeformField {
         const dz = cz - z;
         const lat = Math.abs(dx * latX + dz * latZ);
         const along = Math.abs(dx * dirX + dz * dirZ);
-        if (lat > halfW * 1.22 || along > halfW * 1.05) continue;
-        const lt = lat / Math.max(0.08, halfW);
-        const at = along / Math.max(0.08, halfW * 1.05);
-        let bowl;
-        if (lt < 0.55) bowl = 0.92 + (1 - lt / 0.55) * 0.08;
-        else if (lt < 1.0) bowl = 0.92 * (1 - (lt - 0.55) / 0.45);
-        else bowl = 0;
+        if (lat > halfW * 1.28 || along > halfW * 1.12) continue;
+        const lt = lat / Math.max(0.06, halfW);
+        const at = along / Math.max(0.06, halfW * 1.12);
+        const profile = trenchProfile(lt * (lt > 1 ? 1.05 : 1));
+        let bowl = profile < 0 ? -profile : 0;
         bowl *= 1 - at * at;
-        if (bowl < 0.015) continue;
+        if (bowl < 0.012) {
+          if (profile > 0.05 && at < 0.85) {
+            const berm = depth * profile * (1 - at * at);
+            const key = cellKey(ix0 + di, iz0 + dj);
+            const bp = berms.get(key) || 0;
+            const bermNext = Math.min(maxDep * 0.95, Math.max(bp, berm) + berm * 0.35);
+            if (bermNext > bp) berms.set(key, bermNext);
+          }
+          continue;
+        }
         const key = cellKey(ix0 + di, iz0 + dj);
         const prev = cells.get(key) || 0;
-        const add = depth * bowl * 0.38;
-        const next = Math.min(maxDep, Math.max(prev, depth * bowl * 0.55) + add * (prev > 0 ? 0.55 : 1));
+        // Accumulate quickly so a single pass already reads as a trench.
+        const add = depth * bowl * 0.72;
+        const next = Math.min(maxDep, prev + add);
         if (next > prev) cells.set(key, next);
-        if (lt > 0.58 && lt < 1.18) {
-          const berm = depth * 0.72 * Math.max(0, 1 - Math.abs(lt - 0.88) / 0.28);
-          const bp = berms.get(key) || 0;
-          const bermNext = Math.min(maxDep * 0.85, Math.max(bp, berm) + berm * 0.22);
-          if (bermNext > bp) berms.set(key, bermNext);
+        if (lt > 0.55 && lt < 1.22) {
+          const berm = depth * 0.95 * Math.max(0, trenchProfile(lt));
+          if (berm > 0.001) {
+            const bp = berms.get(key) || 0;
+            const bermNext = Math.min(maxDep * 0.95, Math.max(bp, berm) + berm * 0.4);
+            if (bermNext > bp) berms.set(key, bermNext);
+          }
         }
       }
     }
@@ -144,24 +176,33 @@ export class WheelDeformField {
    * @param {number} slip
    * @param {number} drift
    * @param {number} speed
+   * @param {{throttle?:number, brake?:number, dig?:number}} [load]
    */
-  stampSegment(a, b, halfW, surface, slip, drift, speed) {
+  stampSegment(a, b, halfW, surface, slip, drift, speed, load = null) {
     if (!DEFORM_SURFACES.has(surface)) return;
-    const cap = DEPTH_CAP[surface] || 0.042;
+    const cap = DEPTH_CAP[surface] || 0.06;
     const dx = b.x - a.x;
     const dz = b.z - a.z;
     const len = Math.hypot(dx, dz);
-    if (len < 0.035) return;
+    if (len < 0.03) return;
     const dirX = dx / len;
     const dirZ = dz / len;
+    const throt = load && load.throttle != null ? load.throttle : 0;
+    const brake = load && load.brake != null ? load.brake : 0;
+    const digBoost = load && load.dig != null ? load.dig : 0;
     const pressure = Math.min(
-      1.15,
-      0.48 + slip * 0.52 + drift * 0.62 + Math.min(0.38, speed * 0.0042)
+      1.45,
+      0.55 +
+        slip * 0.7 +
+        drift * 0.78 +
+        Math.min(0.42, speed * 0.005) +
+        throt * 0.28 +
+        brake * 0.32 +
+        digBoost * 0.4
     );
     const depth = cap * pressure;
-    // Slightly coarser steps than cell*0.4 — same depth, fewer stamp kernels.
-    const steps = Math.max(1, Math.ceil(len / (this.cell * 0.55)));
-    const hw = Math.max(0.09, halfW);
+    const steps = Math.max(1, Math.ceil(len / (this.cell * 0.48)));
+    const hw = Math.max(0.11, halfW);
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       this.stamp(a.x + dx * t, a.z + dz * t, dirX, dirZ, hw, depth, cap);
@@ -181,16 +222,17 @@ export class WheelDeformField {
 
 /** Lateral trench profile (berm → wall → floor → wall → berm). */
 const RUT_RINGS = [
-  { u: -1.18, shade: 0.92 },
-  { u: -0.98, shade: 1.02 },
-  { u: -0.78, shade: 0.78 },
-  { u: -0.42, shade: 0.62 },
-  { u: -0.12, shade: 0.55 },
-  { u: 0.12, shade: 0.55 },
-  { u: 0.42, shade: 0.62 },
-  { u: 0.78, shade: 0.78 },
-  { u: 0.98, shade: 1.02 },
-  { u: 1.18, shade: 0.92 },
+  { u: -1.22, shade: 0.95 },
+  { u: -1.05, shade: 1.08 },
+  { u: -0.88, shade: 0.82 },
+  { u: -0.55, shade: 0.58 },
+  { u: -0.22, shade: 0.48 },
+  { u: 0.0, shade: 0.44 },
+  { u: 0.22, shade: 0.48 },
+  { u: 0.55, shade: 0.58 },
+  { u: 0.88, shade: 0.82 },
+  { u: 1.05, shade: 1.08 },
+  { u: 1.22, shade: 0.95 },
 ];
 
 /**
@@ -203,7 +245,7 @@ export class WheelRutMesh {
    */
   constructor(parent, field) {
     this.field = field;
-    this.count = 14000;
+    this.count = 18000;
     this.pos = new Float32Array(this.count * 6 * 3);
     this.col = new Float32Array(this.count * 6 * 3);
     this.norm = new Float32Array(this.count * 6 * 3);
@@ -213,18 +255,19 @@ export class WheelRutMesh {
     this.geo.setAttribute("normal", new THREE.BufferAttribute(this.norm, 3));
     this.mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.97,
+      roughness: 0.94,
       metalness: 0,
       flatShading: false,
       polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = true;
     this.mesh.receiveShadow = true;
     this.mesh.castShadow = false;
     this.mesh.renderOrder = 1;
+    this.mesh.visible = true;
     parent.add(this.mesh);
     this.i = 0;
     this._gpuDirty = false;
@@ -289,9 +332,8 @@ export class WheelRutMesh {
     this._wrapDirty = false;
     this._dirtyMin = 0;
     this._dirtyMax = -1;
-    // Rare bounds refresh so frustum culling stays honest without per-stamp cost.
     this._boundsDirty += 1;
-    if (this._boundsDirty >= 48) {
+    if (this._boundsDirty >= 32) {
       this._boundsDirty = 0;
       this.geo.computeBoundingSphere();
     }
@@ -304,45 +346,63 @@ export class WheelRutMesh {
    * @param {string} surface
    * @param {number} slip
    * @param {number} drift
+   * @param {{throttle?:number, brake?:number, dig?:number, speed?:number}} [load]
    */
-  writeSegment(a, b, halfW, surface, slip, drift) {
+  writeSegment(a, b, halfW, surface, slip, drift, load = null) {
     if (!DEFORM_SURFACES.has(surface)) return;
     const dx = b.x - a.x;
     const dz = b.z - a.z;
     const len = Math.hypot(dx, dz) || 1;
     const nx = dz / len;
     const nz = -dx / len;
-    const hw = Math.max(0.09, halfW);
-    const tint = RUT_TINT[surface] || 0x4e3c2c;
-    const dig = Math.min(0.18, slip * 0.1 + drift * 0.12);
+    const hw = Math.max(0.12, halfW);
+    const tint = RUT_TINT[surface] || 0x3f3024;
+    const cap = DEPTH_CAP[surface] || 0.06;
+    const throt = load && load.throttle != null ? load.throttle : 0;
+    const brake = load && load.brake != null ? load.brake : 0;
+    const digBoost = load && load.dig != null ? load.dig : 0;
+    const speed = load && load.speed != null ? load.speed : 0;
+    const pressure = Math.min(
+      1.4,
+      0.5 + slip * 0.65 + drift * 0.7 + throt * 0.25 + brake * 0.3 + digBoost * 0.35 + Math.min(0.3, speed * 0.004)
+    );
+    /** Immediate visual dig so the trail reads before the height field fills. */
+    const liveDig = Math.max(0.018, cap * pressure * 0.92);
     const field = this.field;
-    const yAt = (x, z, baseY) => baseY + field.sample(x, z);
+    const digShade = 0.9 - Math.min(0.28, slip * 0.12 + drift * 0.14 + digBoost * 0.1);
     const rings = RUT_RINGS;
 
+    const yAt = (x, z, baseY, u) => {
+      const fieldY = field.sample(x, z);
+      const shaped = trenchProfile(u) * liveDig;
+      // Prefer the deeper of accumulated field vs this segment's live trench.
+      return baseY + Math.min(fieldY, shaped);
+    };
+
     for (let r = 0; r < rings.length - 1; r++) {
-      const u0 = rings[r].u * hw;
-      const u1 = rings[r + 1].u * hw;
-      const shade = (rings[r].shade + rings[r + 1].shade) * 0.5 * (0.94 - dig);
-      const ax0 = a.x + nx * u0;
-      const az0 = a.z + nz * u0;
-      const ax1 = a.x + nx * u1;
-      const az1 = a.z + nz * u1;
-      const bx0 = b.x + nx * u0;
-      const bz0 = b.z + nz * u0;
-      const bx1 = b.x + nx * u1;
-      const bz1 = b.z + nz * u1;
+      const u0 = rings[r].u;
+      const u1 = rings[r + 1].u;
+      const shade = (rings[r].shade + rings[r + 1].shade) * 0.5 * digShade;
+      const ax0 = a.x + nx * (u0 * hw);
+      const az0 = a.z + nz * (u0 * hw);
+      const ax1 = a.x + nx * (u1 * hw);
+      const az1 = a.z + nz * (u1 * hw);
+      const bx0 = b.x + nx * (u0 * hw);
+      const bz0 = b.z + nz * (u0 * hw);
+      const bx1 = b.x + nx * (u1 * hw);
+      const bz1 = b.z + nz * (u1 * hw);
       this._triQuad(
         ax0,
-        yAt(ax0, az0, a.y),
+        yAt(ax0, az0, a.y, u0),
         az0,
         ax1,
-        yAt(ax1, az1, a.y),
+        yAt(ax1, az1, a.y, u1),
         az1,
         bx0,
-        yAt(bx0, bz0, b.y),
+        yAt(bx0, bz0, b.y, u0),
         bz0,
         bx1,
-        yAt(bx1, bz1, b.y),
+        yAt(bx1, bz1, b.y, u1),
         bz1,
         tint,
         shade
@@ -356,7 +416,6 @@ export class WheelRutMesh {
       this._dirtyMax = slot;
       this._gpuDirty = true;
     } else if (slot < this._dirtyMin || slot > this._dirtyMax) {
-      // Ring wrap or out-of-order → full upload this flush.
       if (slot < this._dirtyMin && this._dirtyMax - slot > this.count * 0.5) this._wrapDirty = true;
       if (slot < this._dirtyMin) this._dirtyMin = slot;
       if (slot > this._dirtyMax) this._dirtyMax = slot;
@@ -367,7 +426,7 @@ export class WheelRutMesh {
     const slot = this.i % this.count;
     const prevI = this.i;
     this.i += 1;
-    if (this.i > this.count && slot < (prevI % this.count)) this._wrapDirty = true;
+    if (this.i > this.count && slot < prevI % this.count) this._wrapDirty = true;
     this._markDirty(slot);
     const base = slot * 18;
     this._color.setHex(hex);

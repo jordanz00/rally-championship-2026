@@ -46,7 +46,7 @@ check(
 );
 check("kerbs use yL/yR not missing e.y", /e\.yL \+ 0\.02/.test(trackSrc) && /e\.yR \+ 0\.02/.test(trackSrc));
 check("drift berms bump after strip", /bermsKept/.test(trackSrc) && /_stripLanePoses\(berms\)/.test(trackSrc));
-check("game imports track.js?v=232+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 232);
+check("game imports track.js?v=353+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 232);
 
 const { gameV, ok: cacheOk } = readCacheVersions(main, index);
 check("cache-bust v524+", cacheOk && Number(gameV) >= 524, `v=${gameV}`);

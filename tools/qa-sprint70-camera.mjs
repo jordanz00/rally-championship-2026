@@ -99,9 +99,10 @@ check(
     !/_cycleCamera\([\s\S]{0,400}_warmPov\(/.test(game)
 );
 check(
-  "medium chase keeps start framing under throttle",
+  "medium chase keeps start framing under throttle (XZ lock, no FOV zoom-out)",
   /id:\s*"medium"[\s\S]*?lockPos:\s*true/.test(config) &&
     /id:\s*"medium"[\s\S]*?speedFovScale:\s*0,/.test(config) &&
+    /id:\s*"medium"[\s\S]*?speedLookAheadScale:\s*0\.[5-9]/.test(config) &&
     /speedFovScale/.test(game) &&
     /lockPos/.test(game)
 );

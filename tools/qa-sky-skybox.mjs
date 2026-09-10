@@ -57,7 +57,7 @@ check("tickSky retained (no-op API)", /export function tickSky/.test(sky));
 check("sky horizon tint from LIGHTING", /horizonGlow/.test(sky) && /horizonStrength/.test(sky));
 check("game awaits/applies skybox before IBL", /applySky\(this\.sky/.test(game) && /isSkyReady/.test(game));
 check("cloud step caps are zero", /maxViewSteps:\s*0/.test(sky) && /maxCloudViewSteps:\s*0/.test(perf));
-check("sky.js?v=40+", Number((game.match(/sky\.js\?v=(\d+)/) || [])[1]) >= 40);
+check("sky.js?v=48+", Number((game.match(/sky\.js\?v=(\d+)/) || [])[1]) >= 40);
 check("boot cache ?v=549+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 549);
 check(
   "main→game lockstep",

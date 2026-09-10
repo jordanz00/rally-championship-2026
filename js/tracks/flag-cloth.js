@@ -7,12 +7,13 @@
  *   LIGHTING.wind each frame. Not a Kenney toy mesh. Not a UV wiggle shader.
  * HOW IT CONNECTS: Track._addStageGates() plants; Track.update() ticks.
  *   Wind comes from config LIGHTING[scenery].wind — no second weather system.
+ *   Each flag carries phase / seed offsets so a finish row never sync-waves.
  *
- * Cost: a handful of flags (≈4–8). 96 particles each. No extra physics world.
+ * Cost: start pair + finish row of 10. 96 particles each. No extra physics world.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { LIGHTING, VISUAL } from "../config.js?v=223";
+import { LIGHTING, VISUAL } from "../config.js?v=233";
 
 const COLS = 8;
 const ROWS = 12;
@@ -49,11 +50,21 @@ let reduceMotion = null;
 /**
  * Stage wind from the lighting profile, plus a gust envelope.
  * Desert / Mountain gust harder; Forest stays sheltered.
+ * Per-flag `phase` / `gustPhase` desync the envelope so a row never flaps as one.
  * @param {string} scenery
  * @param {number} time
+ * @param {{phase?:number,gustPhase?:number,windMul?:number,dirBias?:number}|number} [opts]
  * @returns {{x:number,y:number,z:number,mag:number}}
  */
-export function stageWind(scenery, time) {
+export function stageWind(scenery, time, opts) {
+  const o =
+    opts && typeof opts === "object"
+      ? opts
+      : { phase: typeof opts === "number" ? opts : 0 };
+  const phase = o.phase || 0;
+  const gustPhase = o.gustPhase != null ? o.gustPhase : phase * 1.37;
+  const windMul = o.windMul != null ? o.windMul : 1;
+  const dirBias = o.dirBias || 0;
   const L = LIGHTING[scenery] || LIGHTING.forest || {};
   const w = L.wind || [0.4, 0, 0.4];
   const mag = Math.hypot(w[0], w[2]) || 0.45;
@@ -73,12 +84,21 @@ export function stageWind(scenery, time) {
     fa = 0.74;
     fb = 0.22;
   }
-  const gust = 1 + gustAmp * Math.sin(time * fa + 0.4) * Math.sin(time * fb + 1.1);
+  const gust =
+    1 +
+    gustAmp *
+      Math.sin(time * fa + 0.4 + phase) *
+      Math.sin(time * fb + 1.1 + gustPhase);
+  // Small yaw bias so neighbouring poles do not share one wind vector.
+  const cosb = Math.cos(dirBias);
+  const sinb = Math.sin(dirBias);
+  const wx = (w[0] * cosb - w[2] * sinb) * gust * windMul;
+  const wz = (w[0] * sinb + w[2] * cosb) * gust * windMul;
   return {
-    x: w[0] * gust,
-    y: (w[1] || 0) + mag * 0.1,
-    z: w[2] * gust,
-    mag,
+    x: wx,
+    y: ((w[1] || 0) + mag * 0.1) * windMul,
+    z: wz,
+    mag: mag * windMul,
   };
 }
 
@@ -224,6 +244,17 @@ function prefersReduce() {
 }
 
 /**
+ * Stable 0..1 hash from plant index + world xz (reproducible, not Math.random sync).
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ */
+function hash3(a, b, c) {
+  const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/**
  * @param {object} opts
  * @param {number} opts.x
  * @param {number} opts.y land height
@@ -234,6 +265,8 @@ function prefersReduce() {
  * @param {string} opts.scenery
  * @param {number} opts.nx
  * @param {number} opts.nz
+ * @param {number} [opts.seed] plant index / unique id for independent dynamics
+ * @param {number} [opts.phase] optional explicit wind phase (radians)
  * @returns {ClothFlag}
  */
 export function createClothFlag(opts) {
@@ -245,6 +278,17 @@ export function createClothFlag(opts) {
   const ox = nx * side;
   const oz = nz * side;
   const ry = Math.atan2(-oz, ox);
+  const seed = opts.seed != null ? opts.seed : hash3(opts.x || 0, opts.z || 0, side) * 97;
+  const h0 = hash3(seed, 1.1, 2.3);
+  const h1 = hash3(seed, 4.7, 8.9);
+  const h2 = hash3(seed, 13.1, 17.3);
+  const h3 = hash3(seed, 19.7, 23.9);
+  const phase = opts.phase != null ? opts.phase : h0 * Math.PI * 2;
+  const gustPhase = h1 * Math.PI * 2;
+  const turbPhase = h2 * Math.PI * 2;
+  const windMul = 0.82 + h3 * 0.38;
+  const dirBias = (h0 - 0.5) * 0.55;
+  const dampMul = 0.96 + h1 * 0.04;
 
   const group = new THREE.Group();
   group.name = kind === "checkers" ? "cloth-flag-finish" : "cloth-flag-start";
@@ -252,6 +296,7 @@ export function createClothFlag(opts) {
   group.rotation.y = ry;
   group.userData.clothFlag = true;
   group.userData.envProp = false;
+  group.userData.clothSeed = seed;
 
   const geos = poleGeos();
   const pole = new THREE.Mesh(geos.pole, steelMaterial());
@@ -281,17 +326,22 @@ export function createClothFlag(opts) {
   const cur = new Float32Array(count * 3);
   const prev = new Float32Array(count * 3);
   const pin = new Uint8Array(count);
+  // Seeded micro-jitter so warm-up starts from unique rest shapes.
+  const jx = (h2 - 0.5) * 0.02;
+  const jz = (h3 - 0.5) * 0.028;
   for (let i = 0; i < count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    cur[i * 3] = x;
+    const col = i % COLS;
+    const row = (i / COLS) | 0;
+    const j = hash3(seed, col + 0.3, row + 0.7);
+    cur[i * 3] = x + (col === 0 ? 0 : jx * (j - 0.5));
     cur[i * 3 + 1] = y;
-    cur[i * 3 + 2] = z + (Math.random() - 0.5) * 0.012;
+    cur[i * 3 + 2] = z + (col === 0 ? 0 : jz * (j - 0.5));
     prev[i * 3] = cur[i * 3];
     prev[i * 3 + 1] = cur[i * 3 + 1];
     prev[i * 3 + 2] = cur[i * 3 + 2];
-    const col = i % COLS;
     if (col === 0) pin[i] = 1;
   }
 
@@ -333,9 +383,18 @@ export function createClothFlag(opts) {
     y: opts.y,
     z: opts.z,
     frame: 0,
+    seed,
+    phase,
+    gustPhase,
+    turbPhase,
+    windMul,
+    dirBias,
+    dampMul,
   };
 
-  for (let i = 0; i < 28; i++) stepCloth(flag, 1 / 60, i / 60, scenery, 1);
+  // Unique warm-up clock so neighbours do not share one settled pose.
+  const warmT0 = h0 * 2.4;
+  for (let i = 0; i < 28; i++) stepCloth(flag, 1 / 60, warmT0 + i / 60, scenery, 1);
   writeCloth(flag);
   return flag;
 }
@@ -374,7 +433,13 @@ export function updateClothFlags(flags, dt, time, scenery, camera) {
 function stepCloth(flag, dt, time, scenery, windScale) {
   const h = Math.min(0.042, Math.max(0.008, dt));
   const h2 = h * h;
-  const wind = stageWind(scenery, time);
+  const phase = flag.phase || 0;
+  const gustPhase = flag.gustPhase || 0;
+  const turbPhase = flag.turbPhase || 0;
+  const windMul = flag.windMul != null ? flag.windMul : 1;
+  const dirBias = flag.dirBias || 0;
+  const damp = DAMPING * (flag.dampMul != null ? flag.dampMul : 1);
+  const wind = stageWind(scenery, time, { phase, gustPhase, windMul, dirBias });
   const c = Math.cos(flag.ry);
   const s = Math.sin(flag.ry);
   let lx = (c * wind.x - s * wind.z) * windScale;
@@ -392,12 +457,12 @@ function stepCloth(flag, dt, time, scenery, windScale) {
     const row = (i / COLS) | 0;
     const turb =
       0.22 *
-      Math.sin(time * 2.1 + col * 0.7 + flag.x * 0.05) *
-      Math.sin(time * 1.3 + row * 0.45 + flag.z * 0.04);
+      Math.sin(time * 2.1 + col * 0.7 + phase + flag.x * 0.05) *
+      Math.sin(time * 1.3 + row * 0.45 + turbPhase + flag.z * 0.04);
     const edge = 0.55 + col / (COLS - 1);
-    const vx = (cur[i3] - prev[i3]) * DAMPING;
-    const vy = (cur[i3 + 1] - prev[i3 + 1]) * DAMPING;
-    const vz = (cur[i3 + 2] - prev[i3 + 2]) * DAMPING;
+    const vx = (cur[i3] - prev[i3]) * damp;
+    const vy = (cur[i3 + 1] - prev[i3 + 1]) * damp;
+    const vz = (cur[i3 + 2] - prev[i3 + 2]) * damp;
     prev[i3] = cur[i3];
     prev[i3 + 1] = cur[i3 + 1];
     prev[i3 + 2] = cur[i3 + 2];
@@ -572,5 +637,12 @@ function dist3(cur, ia, ib) {
  *   y: number,
  *   z: number,
  *   frame: number,
+ *   seed: number,
+ *   phase: number,
+ *   gustPhase: number,
+ *   turbPhase: number,
+ *   windMul: number,
+ *   dirBias: number,
+ *   dampMul: number,
  * }} ClothFlag
  */

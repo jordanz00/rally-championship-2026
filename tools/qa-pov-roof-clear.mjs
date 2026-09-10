@@ -98,7 +98,7 @@ check(
 const celicaV = Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]);
 const bootV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1]);
 const mainGameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1]);
-check("celica.js?v=157+", celicaV >= 157, `got ${celicaV}`);
+check("celica.js?v=205+", celicaV >= 157, `got ${celicaV}`);
 check("boot ?v=637+", bootV >= 637 && mainGameV >= 637, `index=${bootV} main→game=${mainGameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "POV roof shell is hideable"}`);

@@ -54,8 +54,8 @@ check("tumbleweeds tick / roll", /_tickTumbleweeds/.test(track) && /w\.tumbling/
 check("tumbleweed is a twig ball (cylinders + tori)", /TorusGeometry/.test(track) && /CylinderGeometry/.test(track));
 
 check("cache main.js ↔ index.html", cacheOk, `main ${mainV} / index ${gameV}`);
-check("game imports track.js?v=195+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 195);
-check("prop-kit.js?v=22+", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 22);
+check("game imports track.js?v=353+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 195);
+check("prop-kit.js?v=45+", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 22);
 check("track + crowd share prop-kit version", (track.match(/prop-kit\.js\?v=(\d+)/) || [])[1] === (crowd.match(/prop-kit\.js\?v=(\d+)/) || [])[1]);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Desert scenery uses saguaros, rocks, and rolling tumbleweeds"}`);

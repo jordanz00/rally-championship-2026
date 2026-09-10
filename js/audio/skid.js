@@ -94,46 +94,48 @@ export class SkidVoice {
     const shock = s.shock || 0;
     const bump = s.bump || 0;
     // Landing shock briefly fattens road texture — sells the plant with tires.
-    const rumble = 1 + dust * 0.55 + bump * 2.6 + shock * 1.15;
-    const road = live && speed > 3.5 ? clamp((speed - 2.5) / 26, 0, 1) : 0;
-    const yawAmt = yaw > 0.075 ? clamp((yaw - 0.075) / 0.2, 0, 1) : 0;
-    const slipAmt = slip > 0.12 ? clamp((slip - 0.12) / 0.38, 0, 1) : 0;
-    const spdAmt = speed > 7 ? clamp((speed - 5) / 20, 0.3, 1) : 0;
-    const skid = live ? yawAmt * Math.max(slipAmt, 0.32 * yawAmt) * spdAmt : 0;
+    const rumble = 1 + dust * 0.62 + bump * 2.85 + shock * 1.35;
+    const road = live && speed > 3.2 ? clamp((speed - 2.2) / 24, 0, 1) : 0;
+    // Speak earlier on yaw/slip so the first Desert corner reads as a slide.
+    const yawAmt = yaw > 0.055 ? clamp((yaw - 0.055) / 0.18, 0, 1) : 0;
+    const slipAmt = slip > 0.09 ? clamp((slip - 0.09) / 0.34, 0, 1) : 0;
+    const spdAmt = speed > 6 ? clamp((speed - 4) / 18, 0.35, 1) : 0;
+    const skid = live ? yawAmt * Math.max(slipAmt, 0.38 * yawAmt) * spdAmt : 0;
 
     const a = this._mix.asphalt;
     const g = this._mix.gravel;
     const m = this._mix.mud;
 
-    // Slightly louder road bed + clearer skid so surfaces read at speed.
-    this.asphaltGain.gain.setTargetAtTime((road * a * 0.12 + skid * a * 0.44) * rumble, now, 0.06);
-    this.gravelGain.gain.setTargetAtTime((road * g * 0.28 + skid * g * 0.48) * rumble, now, 0.055);
-    this.mudGain.gain.setTargetAtTime((road * m * 0.24 + skid * m * 0.4) * rumble, now, 0.08);
+    // Friend-demo beds: road rumble + scrape read at chase distance without
+    // restoring the harsh cabin whistle the feel pass softened.
+    this.asphaltGain.gain.setTargetAtTime((road * a * 0.17 + skid * a * 0.58) * rumble, now, 0.055);
+    this.gravelGain.gain.setTargetAtTime((road * g * 0.36 + skid * g * 0.64) * rumble, now, 0.05);
+    this.mudGain.gain.setTargetAtTime((road * m * 0.3 + skid * m * 0.5) * rumble, now, 0.075);
 
     // Surface EQ — asphalt brighter when sliding; mud stays dark.
     if (this.ashLp) {
-      this.ashLp.frequency.setTargetAtTime(5600 + skid * 2200 + road * 800, now, 0.1);
+      this.ashLp.frequency.setTargetAtTime(5400 + skid * 2000 + road * 700, now, 0.1);
     }
     if (this.ashPresence) {
-      this.ashPresence.gain.setTargetAtTime(1.2 + skid * 3.2 + road * 0.6, now, 0.08);
+      this.ashPresence.gain.setTargetAtTime(1.35 + skid * 3.6 + road * 0.7, now, 0.08);
     }
     if (this.grLp) {
-      this.grLp.frequency.setTargetAtTime(4200 + skid * 900 + dust * 600, now, 0.1);
+      this.grLp.frequency.setTargetAtTime(4000 + skid * 1100 + dust * 700, now, 0.1);
     }
     if (this.mudLp) {
-      this.mudLp.frequency.setTargetAtTime(480 + m * 80 + shock * 120, now, 0.12);
+      this.mudLp.frequency.setTargetAtTime(500 + m * 90 + shock * 140, now, 0.12);
     }
 
     // AM3: gravel/mud spatialize to the door on the direction of travel.
     if (this.pan) {
       const loose = clamp(g + m * 0.85, 0, 1);
-      const strength = skid * (0.4 + loose * 0.65);
-      const pan = clamp((-signedYaw / 0.3) * strength, -0.95, 0.95);
-      this.pan.pan.setTargetAtTime(pan, now, 0.065);
+      const strength = skid * (0.5 + loose * 0.72);
+      const pan = clamp((-signedYaw / 0.28) * strength, -0.95, 0.95);
+      this.pan.pan.setTargetAtTime(pan, now, 0.06);
     }
 
-    const aRate = clamp(0.8 + speed * 0.011 + skid * 0.14, 0.68, 1.5);
-    const gRate = clamp(0.76 + speed * 0.013 + skid * 0.1 + bump * 0.08, 0.62, 1.55);
+    const aRate = clamp(0.78 + speed * 0.012 + skid * 0.16, 0.66, 1.55);
+    const gRate = clamp(0.74 + speed * 0.014 + skid * 0.12 + bump * 0.09, 0.6, 1.58);
     if (this.asphaltSrc) this.asphaltSrc.playbackRate.setTargetAtTime(aRate, now, 0.09);
     if (this.gravelSrc) this.gravelSrc.playbackRate.setTargetAtTime(gRate, now, 0.09);
   }

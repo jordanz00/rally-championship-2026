@@ -10,11 +10,11 @@
  * See assets/sfx/ATTRIBUTION.txt and assets/music/ATTRIBUTION.txt.
  */
 
-import { CdSoundtrack } from "./soundtrack.js?v=136";
-import { PowertrainVoice } from "./powertrain.js?v=28";
-import { SkidVoice } from "./skid.js?v=9";
+import { CdSoundtrack } from "./soundtrack.js?v=353";
+import { PowertrainVoice } from "./powertrain.js?v=30";
+import { SkidVoice } from "./skid.js?v=10";
 import { loadSample, playHit, playClip } from "./bank.js?v=3";
-import { CrowdVoice } from "./crowd.js?v=5";
+import { CrowdVoice } from "./crowd.js?v=6";
 import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
 
 /** Default SFX bus level (slider at 100%). */
@@ -125,6 +125,9 @@ export class RallyAudio {
     this._landRecipe = -1;
     /** Finish / DNF — looping beds stay muted until the next stage. */
     this._raceLoopsMuted = false;
+    /** performance.now() deadline while finish cheer owns crowd gains. */
+    this._crowdBurstUntil = 0;
+    this._crowdMuteTimer = 0;
     /** @type {Record<string, AudioBuffer|null>} */
     this._hits = {};
     /** @type {Record<string, AudioBuffer|null>} */
@@ -146,6 +149,8 @@ export class RallyAudio {
     this.crowd = null;
     this._sfxReady = false;
     this._unlocking = false;
+    /** Pack exhaust stays off until a licensed multi-car sample pack ships. */
+    this._rivalEngineMuted = true;
   }
 
   /**
@@ -210,14 +215,14 @@ export class RallyAudio {
 
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.value = 9800;
-    lp.Q.value = 0.6;
+    lp.frequency.value = 5600;
+    lp.Q.value = 0.65;
 
     const airCut = ctx.createBiquadFilter();
     airCut.type = "peaking";
-    airCut.frequency.value = 4500;
+    airCut.frequency.value = 3800;
     airCut.Q.value = 0.85;
-    airCut.gain.value = -2.2;
+    airCut.gain.value = -5.8;
 
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
@@ -254,6 +259,8 @@ export class RallyAudio {
     this.voice = new PowertrainVoice(ctx, sfxMerge);
     this.voice.setCar(this._pendingCar);
     this.voice.boot();
+    /** Hero cabin only — pack never gets PowertrainVoice beds (see updateRivalEngines). */
+    this._rivalEngineMuted = true;
     this.skid = new SkidVoice(ctx, sfxMerge);
     this.skid.boot();
     this.crowd = new CrowdVoice(ctx, sfxMerge);
@@ -625,7 +632,8 @@ export class RallyAudio {
       const now = this.ctx.currentTime;
       const spd = mix.speed || 0;
       const open = live ? Math.min(1, spd / 42) : 0;
-      this._sfxLp.frequency.setTargetAtTime(7200 + open * 3200, now, 0.15);
+      // Cap air: friend soften used 7200+open*3200 and reopened the shrill band at pace.
+      this._sfxLp.frequency.setTargetAtTime(5600 + open * 1600, now, 0.15);
     }
     if (this._windGain && this.ctx) {
       const spd = mix.speed || 0;
@@ -649,26 +657,58 @@ export class RallyAudio {
   }
 
   /**
+   * Rival / pack engine + exhaust — intentionally silent.
+   * Only the player PowertrainVoice runs. No per-rival beds, Doppler pass-bys,
+   * or shared pack loops. Re-enable only after a licensed multi-car sample pack
+   * lands (open-source V8 pack is still an acquisition gap).
+   * @param {unknown} [_rivals]
+   */
+  updateRivalEngines(_rivals) {
+    // Hard mute: do not allocate voices, do not decode pack beds, do not mix.
+    return;
+  }
+
+  /**
    * Pass-by clap / cheer with Doppler. Call each race frame after setState.
    * @param {{x:number,y:number,z:number}} listenerPos
    * @param {{x:number,y:number,z:number}} listenerVel
    * @param {Array<{x:number,y:number,z:number}>} crowdPoints
    * @param {{x:number,y:number,z:number}} [fwd]
    * @param {{x:number,y:number,z:number}} [up]
+   * @param {number} [excitement=1] finish approach / event multiplier
    */
-  updateCrowd(listenerPos, listenerVel, crowdPoints, fwd, up) {
+  updateCrowd(listenerPos, listenerVel, crowdPoints, fwd, up, excitement = 1) {
     if (!this.ready || !this.crowd) return;
     if (this._raceLoopsMuted || this._workMute || this.sfxVol <= 0.001) {
       this.crowd.mute();
       return;
     }
     this.crowd.setListener(listenerPos, fwd, up);
-    this.crowd.update(listenerPos, listenerVel || { x: 0, y: 0, z: 0 }, crowdPoints || [], this.sfxVol);
+    this.crowd.update(
+      listenerPos,
+      listenerVel || { x: 0, y: 0, z: 0 },
+      crowdPoints || [],
+      this.sfxVol,
+      excitement
+    );
+  }
+
+  /**
+   * Finish gantry cheer spike — call before fadeOutRaceLoops so the event lands.
+   * @param {number} [mul]
+   * @param {number} [holdSec]
+   */
+  finishCrowdBurst(mul = 2.55, holdSec = 1.25) {
+    if (!this.ready || !this.crowd || this._workMute || this.sfxVol <= 0.001) return;
+    const hold = Math.max(0.35, holdSec);
+    this._crowdBurstUntil = performance.now() + hold * 1000;
+    this.crowd.finishBurst(mul, hold);
   }
 
   /**
    * Fade engine, tire, and cabin loops when crossing the finish gantry.
    * One-shot stings (GO, game over) stay on the bus — only loops ramp down.
+   * Crowd mute is deferred while a finish cheer burst owns the gains.
    * @param {number} [durationSec]
    */
   fadeOutRaceLoops(durationSec = 1.35) {
@@ -677,7 +717,23 @@ export class RallyAudio {
     const dur = Math.max(0.25, durationSec);
     if (this.voice) this.voice.fadeOut(dur);
     if (this.skid) this.skid.fadeOut(dur);
-    if (this.crowd) this.crowd.mute();
+    if (this.crowd) {
+      const burstLeft =
+        this._crowdBurstUntil && performance.now() < this._crowdBurstUntil
+          ? (this._crowdBurstUntil - performance.now()) / 1000
+          : 0;
+      if (burstLeft <= 0.05) {
+        this.crowd.mute();
+      } else {
+        // Burst already ramps to silence; hard-mute only after it finishes.
+        const delayMs = Math.ceil(burstLeft * 1000) + 40;
+        if (this._crowdMuteTimer) clearTimeout(this._crowdMuteTimer);
+        this._crowdMuteTimer = setTimeout(() => {
+          this._crowdMuteTimer = 0;
+          if (this.crowd) this.crowd.mute();
+        }, delayMs);
+      }
+    }
     if (this._windGain && this.ctx) {
       const now = this.ctx.currentTime;
       this._windGain.gain.cancelScheduledValues(now);
@@ -689,6 +745,11 @@ export class RallyAudio {
   /** Re-enable looping beds at the next countdown / stage load. */
   restoreRaceLoops() {
     this._raceLoopsMuted = false;
+    this._crowdBurstUntil = 0;
+    if (this._crowdMuteTimer) {
+      clearTimeout(this._crowdMuteTimer);
+      this._crowdMuteTimer = 0;
+    }
   }
 
   /**

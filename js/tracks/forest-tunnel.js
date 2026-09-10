@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { armProjectedMaps } from "../gfx/pbr.js?v=49";
+import { armProjectedMaps } from "../gfx/pbr.js?v=53";
 
 const ASSET_V = "1";
 const TEX_BASE = "assets/env/forest";

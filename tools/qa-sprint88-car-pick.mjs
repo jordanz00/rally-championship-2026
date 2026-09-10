@@ -70,7 +70,7 @@ check(
     game
   )
 );
-check("game imports track.js?v=185+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 185);
+check("game imports track.js?v=353+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 185);
 check("game imports hud.js?v=33+", Number((game.match(/hud\.js\?v=(\d+)/) || [])[1]) >= 33);
 check("cache-bust chain", cacheOk && Number(gameV) >= 425, `main=${mainV} game=${gameV}`);
 

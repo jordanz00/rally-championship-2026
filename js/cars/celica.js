@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=223";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=49";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=233";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=53";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -485,10 +485,7 @@ function upgradeRacePaint(src, obj) {
       !!(src.transparent && (src.opacity == null || src.opacity < 0.9)) ||
       /glass|window|windshield|windscreen|glazing/.test(n));
   if (isGlass) {
-    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.2);
-    src.userData.kind = "glass";
-    src.needsUpdate = true;
-    return src;
+    return applyRaceWindowMaterial(src);
   }
   // Sketchfab often author paint as metalness=1. Name wins over the metalness
   // heuristic — otherwise Car_Body_Paint never gets clearcoat. Stratos CAD
@@ -511,6 +508,9 @@ function upgradeRacePaint(src, obj) {
       (!isInterior && (src.metalness || 0) > 0.72 && !/plastic|carbon|matte|matt|rubber|tyre|tire/.test(n)));
   if (isChrome) {
     src.userData.kind = "chrome";
+    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.7, 1.15);
+    src.roughness = Math.min(src.roughness != null ? src.roughness : 0.28, 0.22);
+    src.needsUpdate = true;
     return src;
   }
   if (isRubber) {
@@ -547,12 +547,12 @@ function upgradeRacePaint(src, obj) {
     phys.emissiveIntensity = src.emissiveIntensity != null ? src.emissiveIntensity : 1;
     // Author metalness=1 on paint is wrong for lacquer — clamp to automotive range.
     const srcMetal = src.metalness != null ? src.metalness : 0.1;
-    phys.roughness = Math.min(Math.max(src.roughness != null ? src.roughness : 0.42, 0.18), 0.42);
+    phys.roughness = Math.min(Math.max(src.roughness != null ? src.roughness : 0.34, 0.14), 0.34);
     phys.metalness = Math.min(Math.max(isPaintName ? Math.min(srcMetal, 0.22) : srcMetal, 0.08), 0.28);
     phys.clearcoat = 1;
-    phys.clearcoatRoughness = 0.07;
-    phys.clearcoatEnvMapIntensity = 1.4;
-    phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 0.85);
+    phys.clearcoatRoughness = 0.032;
+    phys.clearcoatEnvMapIntensity = 2.35;
+    phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 1.35);
     phys.side = src.side != null ? src.side : THREE.FrontSide;
     phys.userData.kind = "paint";
     phys.userData.lockEnv = false;
@@ -560,19 +560,61 @@ function upgradeRacePaint(src, obj) {
     return phys;
   }
   if (src.isMeshPhysicalMaterial && !src.transparent && !isInterior) {
-    src.clearcoat = Math.max(src.clearcoat != null ? src.clearcoat : 0, 0.92);
-    src.clearcoatRoughness = Math.min(src.clearcoatRoughness != null ? src.clearcoatRoughness : 0.12, 0.1);
+    src.clearcoat = Math.max(src.clearcoat != null ? src.clearcoat : 0, 1);
+    src.clearcoatRoughness = Math.min(src.clearcoatRoughness != null ? src.clearcoatRoughness : 0.12, 0.04);
     src.clearcoatEnvMapIntensity = Math.max(
       src.clearcoatEnvMapIntensity != null ? src.clearcoatEnvMapIntensity : 1,
-      1.25
+      2.1
     );
-    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 0.72);
+    src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 1.25);
+    if (src.roughness != null) src.roughness = Math.min(src.roughness, 0.34);
     src.userData.kind = src.userData.kind || "paint";
     src.needsUpdate = true;
   } else if (!src.transparent && (isPaintName || src.metalness == null || src.metalness < 0.55)) {
     src.userData.kind = src.userData.kind || "paint";
   }
   return src;
+}
+
+/**
+ * Race / POV cabin glass — see-through enough for the windshield view, but
+ * clearcoat + IBL so panes read as highly reflective from outside.
+ * @param {THREE.Material} [src]
+ * @returns {THREE.Material}
+ */
+function applyRaceWindowMaterial(src) {
+  const phys = src && src.isMeshPhysicalMaterial ? src : new THREE.MeshPhysicalMaterial();
+  if (src && phys !== src) {
+    phys.name = src.name || "Window_Glass";
+    if (src.envMap) phys.envMap = src.envMap;
+    if (src.color) phys.color.copy(src.color);
+  } else if (!phys.name) {
+    phys.name = "Window_Glass";
+  }
+  // Dark tint + high coat — sky/trees dominate the pane without a transmission pass.
+  if (!src || !src.isMeshPhysicalMaterial) phys.color.setHex(0x152028);
+  phys.transparent = true;
+  phys.opacity = Math.min(Math.max(src && src.opacity != null ? src.opacity : 0.52, 0.42), 0.62);
+  phys.alphaTest = 0;
+  if ("alphaMap" in phys) phys.alphaMap = null;
+  phys.depthWrite = false;
+  phys.depthTest = true;
+  phys.side = THREE.FrontSide;
+  phys.roughness = 0.018;
+  phys.metalness = 0.06;
+  phys.ior = 1.5;
+  phys.transmission = 0;
+  phys.thickness = 0;
+  phys.clearcoat = 1;
+  phys.clearcoatRoughness = 0.01;
+  phys.clearcoatEnvMapIntensity = 3.6;
+  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 3.1);
+  phys.userData.kind = "glass";
+  phys.userData.lockEnv = false;
+  phys.userData.raceReflectiveGlass = true;
+  if ("forceSinglePass" in phys) phys.forceSinglePass = true;
+  phys.needsUpdate = true;
+  return phys;
 }
 
 /**
@@ -617,23 +659,24 @@ function applyShowroomWindowMaterial(src) {
   } else if (!phys.name) {
     phys.name = "Window_Glass";
   }
+  // Dark mirror tint — sky / pad / rim read as hard reflections, not milky glass.
   phys.transparent = true;
-  phys.opacity = 0.82;
+  phys.opacity = 0.94;
   phys.alphaTest = 0;
   if ("alphaMap" in phys) phys.alphaMap = null;
   phys.map = null;
   phys.depthWrite = true;
   phys.depthTest = true;
   phys.side = THREE.DoubleSide;
-  phys.color.setHex(0x6a8294);
-  phys.roughness = 0.03;
-  phys.metalness = 0;
+  phys.color.setHex(0x1c2a36);
+  phys.roughness = 0.012;
+  phys.metalness = 0.08;
   phys.transmission = 0;
   phys.thickness = 0;
   phys.clearcoat = 1;
-  phys.clearcoatRoughness = 0.018;
-  phys.clearcoatEnvMapIntensity = 3.0;
-  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 2.55);
+  phys.clearcoatRoughness = 0.006;
+  phys.clearcoatEnvMapIntensity = 4.8;
+  phys.envMapIntensity = Math.max(phys.envMapIntensity != null ? phys.envMapIntensity : 0, 4.2);
   phys.polygonOffset = true;
   phys.polygonOffsetFactor = -1;
   phys.polygonOffsetUnits = -1;
@@ -1223,6 +1266,87 @@ function tessellateAperturePane(hull2, subdiv, bulge, offset) {
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   return geo;
+}
+
+/**
+ * POV rain glass in the windshield plane's local XY (centred), with UVs for
+ * the droplet canvas. Insets the hull and cuts the top so beads never cover
+ * the rearview / roof band.
+ * @param {{x:number,y:number}[]} hull2
+ * @param {number} inset 0..0.25 shrink toward centre
+ * @param {number} topCut 0..0.35 fraction of height removed from the top
+ * @returns {{geo:THREE.BufferGeometry, gw:number, gh:number}|null}
+ */
+function buildRainApertureLocal(hull2, inset, topCut) {
+  if (!hull2 || hull2.length < 3) return null;
+  let cx = 0;
+  let cy = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < hull2.length; i++) {
+    const p = hull2[i];
+    cx += p.x;
+    cy += p.y;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  cx /= hull2.length;
+  cy /= hull2.length;
+  const h0 = Math.max(0.05, maxY - minY);
+  const topLimit = maxY - h0 * Math.max(0, Math.min(0.4, topCut));
+  const shrink = Math.max(0, Math.min(0.28, inset));
+  /** @type {{x:number,y:number}[]} */
+  const pts = [];
+  for (let i = 0; i < hull2.length; i++) {
+    let x = hull2[i].x + (cx - hull2[i].x) * shrink;
+    let y = hull2[i].y + (cy - hull2[i].y) * shrink;
+    if (y > topLimit) y = topLimit;
+    pts.push({ x, y });
+  }
+  minX = Infinity;
+  maxX = -Infinity;
+  minY = Infinity;
+  maxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const gw = maxX - minX;
+  const gh = maxY - minY;
+  if (gw < 0.35 || gh < 0.18) return null;
+  const midX = (minX + maxX) * 0.5;
+  const midY = (minY + maxY) * 0.5;
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  // Fan from centre in local pane space (Z=0). Canvas: v=0 at top of glass (+Y).
+  positions.push(0, 0, 0);
+  uvs.push(0.5, 0.5);
+  for (let i = 0; i < pts.length; i++) {
+    const lx = pts[i].x - midX;
+    const ly = pts[i].y - midY;
+    positions.push(lx, ly, 0);
+    uvs.push((pts[i].x - minX) / gw, 1 - (pts[i].y - minY) / gh);
+  }
+  for (let i = 0; i < pts.length; i++) {
+    const a = 1 + i;
+    const b = 1 + ((i + 1) % pts.length);
+    indices.push(0, a, b);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return { geo, gw, gh, midX, midY };
 }
 
 /**
@@ -2157,14 +2281,23 @@ function shadeCarMaterial(src, obj) {
       src.envMapIntensity = 0.7;
     } else if (isGlass) {
       src.transparent = true;
-      src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.36);
-      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.04);
+      src.opacity = Math.min(src.opacity != null ? src.opacity : 1, 0.55);
+      src.roughness = Math.min(src.roughness != null ? src.roughness : 1, 0.025);
       src.metalness = Math.min(src.metalness != null ? src.metalness : 0, 0.08);
-      src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 1.15);
+      src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0, 2.4);
       src.depthWrite = false;
       src.side = THREE.FrontSide;
       src.userData.kind = "glass";
       src.userData.lockEnv = false;
+      if (src.isMeshPhysicalMaterial) {
+        src.clearcoat = 1;
+        src.clearcoatRoughness = 0.012;
+        src.clearcoatEnvMapIntensity = Math.max(
+          src.clearcoatEnvMapIntensity != null ? src.clearcoatEnvMapIntensity : 1,
+          3.2
+        );
+        src.transmission = 0;
+      }
       if ("forceSinglePass" in src) src.forceSinglePass = true;
     } else if (!src.isMeshPhysicalMaterial && (src.metalness || 0) < 0.4 && !transparent) {
       // Bodywork. This used to upgrade the material to MeshPhysicalMaterial for
@@ -5855,6 +5988,125 @@ function attachCockpit(root) {
   root.userData._rpmGauge = { x: -GAUGE_START, v: 0 };
   root.userData.mirror = mirror;
   root.userData.mirrorGlass = mirror.userData.glass;
+  attachPovDriverArms(root);
+}
+
+/**
+ * POV-only driver arms + gloved hands gripping the rim. Hands ride the steer
+ * spin so they turn with the wheel; sleeves stretch from fixed shoulders.
+ * @param {THREE.Object3D} root
+ */
+function attachPovDriverArms(root) {
+  if (!root) return;
+  const prev = root.userData.povDriver;
+  if (prev && prev.root && prev.root.parent) prev.root.parent.remove(prev.root);
+  if (prev && prev.shoulders && prev.shoulders.parent) prev.shoulders.parent.remove(prev.shoulders);
+
+  const spin = root.userData.steerSpin || root.userData.steerWheel;
+  const cab = root.userData.cockpit;
+  const rig = root.userData.povRig || buildPovRig(root);
+  if (!spin || !cab || !rig) {
+    root.userData.povDriver = null;
+    return;
+  }
+
+  const suit = cabinMat(0x1a1e28, 0.88, 0.04, 0x12151c);
+  const glove = cabinMat(0x2a241c, 0.92, 0.02, 0x1a1510);
+  const cuff = cabinMat(0x0e1014, 0.75, 0.06, 0x181410);
+
+  let rimR = 0.155;
+  try {
+    const box = new THREE.Box3().setFromObject(spin);
+    if (!box.isEmpty()) {
+      const s = box.getSize(new THREE.Vector3());
+      rimR = THREE.MathUtils.clamp(Math.max(s.x, s.y) * 0.42, 0.12, 0.2);
+    }
+  } catch {
+    /* keep default */
+  }
+
+  const grips = new THREE.Group();
+  grips.name = "pov-driver-grips";
+  grips.userData.povDriver = true;
+
+  /** @param {number} side +1 = driver's left (car +X / screen-left) */
+  function makeHand(side) {
+    const g = new THREE.Group();
+    g.name = side > 0 ? "hand-L" : "hand-R";
+    // Palm sits on the rim at 9 / 3 o'clock in spin-local XY.
+    g.position.set(side * rimR * 0.92, -rimR * 0.02, 0.01);
+    g.rotation.z = side > 0 ? 0.15 : -0.15;
+    g.rotation.x = 0.35;
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.028, 0.072), glove);
+    palm.position.set(0, 0, 0);
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.016, 0.034), glove);
+    thumb.position.set(side * -0.028, 0.012, 0.01);
+    thumb.rotation.z = side * 0.7;
+    const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.016, 0.028), cuff);
+    knuckle.position.set(0, 0.002, -0.04);
+    g.add(palm, thumb, knuckle);
+    g.userData.wrist = knuckle;
+    return g;
+  }
+
+  const handL = makeHand(1);
+  const handR = makeHand(-1);
+  grips.add(handL, handR);
+  spin.add(grips);
+  markSteerPovLayer(grips);
+
+  const shoulders = new THREE.Group();
+  shoulders.name = "pov-driver-shoulders";
+  shoulders.userData.povDriver = true;
+  // Fixed in cabin — just below / behind the eye so sleeves enter frame at the bottom.
+  const shY = rig.eyeY - 0.28;
+  const shZ = Math.min(rig.eyeZ + 0.02, (root.userData.povWheelZ || rig.eyeZ + 0.35) - 0.22);
+  const shL = new THREE.Object3D();
+  shL.position.set(rig.eyeX + 0.2, shY, shZ - 0.04);
+  const shR = new THREE.Object3D();
+  shR.position.set(rig.eyeX - 0.12, shY, shZ - 0.04);
+  shoulders.add(shL, shR);
+
+  function makeSleeve() {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 1, 8, 1, true), suit);
+    mesh.geometry.translate(0, 0.5, 0);
+    mesh.userData.povDriver = true;
+    mesh.frustumCulled = false;
+    mesh.layers.set(POV_HUD_LAYER);
+    mesh.renderOrder = 7;
+    const mats = [].concat(mesh.material || []);
+    for (let i = 0; i < mats.length; i++) {
+      if (!mats[i]) continue;
+      mats[i].depthTest = true;
+      mats[i].depthWrite = true;
+      mats[i].side = THREE.DoubleSide;
+    }
+    return mesh;
+  }
+
+  const sleeveL = makeSleeve();
+  const sleeveR = makeSleeve();
+  shoulders.add(sleeveL, sleeveR);
+  cab.add(shoulders);
+  markSteerPovLayer(shoulders);
+
+  root.userData.povDriver = {
+    root: grips,
+    shoulders,
+    handL,
+    handR,
+    sleeveL,
+    sleeveR,
+    shoulderL: shL,
+    shoulderR: shR,
+    rimR,
+    _tmpA: new THREE.Vector3(),
+    _tmpB: new THREE.Vector3(),
+    _tmpC: new THREE.Vector3(),
+  };
+  // Start hidden until setCockpitView(true).
+  grips.visible = !!root.userData._cockpitOn;
+  shoulders.visible = !!root.userData._cockpitOn;
 }
 
 /**
@@ -5895,8 +6147,8 @@ function findFrontWindshieldMesh(root) {
 }
 
 /**
- * Rain droplet pane + wiper arms fitted to the authored windshield, slightly
- * outside the glass. POV HUD layer only — chase never sees them.
+ * Rain droplet pane + wiper arms fitted to the authored windshield aperture.
+ * Top of the glass is cut so beads never cover the rearview. POV HUD only.
  * @param {THREE.Object3D} root
  */
 function attachPovWeatherGlass(root) {
@@ -5910,46 +6162,43 @@ function attachPovWeatherGlass(root) {
     (hull.minZ + hull.maxZ) * 0.5
   );
 
-  let gw = 1.05;
-  let gh = 0.48;
-  let paneLocal = new THREE.Vector3(0, 1.05, 0.55);
+  let gw = 0.92;
+  let gh = 0.4;
+  let paneLocal = new THREE.Vector3(0, 1.02, 0.52);
   let quat = new THREE.Quaternion();
+  /** @type {THREE.BufferGeometry|null} */
+  let paneGeo = null;
   const src = findFrontWindshieldMesh(root);
   if (src) {
     const points = collectUniqueLocalPoints(src, root);
     if (points.length >= 3 && fitWindowPlane(points, carMid)) {
-      let minU = Infinity;
-      let maxU = -Infinity;
-      let minV = Infinity;
-      let maxV = -Infinity;
+      const pts2 = [];
       for (let i = 0; i < points.length; i++) {
         _winTmp.copy(points[i]).sub(_winO);
-        const u = _winTmp.dot(_winU);
-        const v = _winTmp.dot(_winV);
-        if (u < minU) minU = u;
-        if (u > maxU) maxU = u;
-        if (v < minV) minV = v;
-        if (v > maxV) maxV = v;
+        pts2.push({ x: _winTmp.dot(_winU), y: _winTmp.dot(_winV) });
       }
-      gw = Math.max(0.55, maxU - minU);
-      gh = Math.max(0.28, maxV - minV);
-      const midU = (minU + maxU) * 0.5;
-      const midV = (minV + maxV) * 0.5;
-      // Sit just outside the glass (+normal toward the world, away from cabin).
-      paneLocal
-        .copy(_winO)
-        .addScaledVector(_winU, midU)
-        .addScaledVector(_winV, midV)
-        .addScaledVector(_winN, 0.014);
-      const basis = new THREE.Matrix4().makeBasis(_winU, _winV, _winN);
-      quat.setFromRotationMatrix(basis);
+      const hull2 = convexHull2(pts2);
+      // Inset + top cut keeps droplets off the roof band / rearview.
+      const built = buildRainApertureLocal(hull2, 0.1, 0.16);
+      if (built) {
+        gw = built.gw;
+        gh = built.gh;
+        paneGeo = built.geo;
+        paneLocal
+          .copy(_winO)
+          .addScaledVector(_winU, built.midX)
+          .addScaledVector(_winV, built.midY)
+          .addScaledVector(_winN, 0.022);
+        quat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(_winU, _winV, _winN));
+      }
     }
-  } else {
-    // Fallback: raked cabin plane ahead of the eye (never a huge FOV card).
+  }
+  if (!paneGeo) {
     paneLocal.set(0, rig.eyeY + 0.02, Math.max(rig.eyeZ + 0.72, 0.42));
     quat.setFromEuler(new THREE.Euler(-0.52, 0, 0, "YXZ"));
-    gw = 1.02;
-    gh = 0.46;
+    gw = 0.92;
+    gh = 0.4;
+    paneGeo = new THREE.PlaneGeometry(gw, gh);
   }
 
   const weather = new THREE.Group();
@@ -5961,7 +6210,7 @@ function attachPovWeatherGlass(root) {
 
   const canvas = document.createElement("canvas");
   canvas.width = 512;
-  canvas.height = 256;
+  canvas.height = 288;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const tex = new THREE.CanvasTexture(canvas);
@@ -5972,55 +6221,58 @@ function attachPovWeatherGlass(root) {
     transparent: true,
     opacity: 1,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     side: THREE.DoubleSide,
     fog: false,
     toneMapped: false,
+    alphaTest: 0.04,
   });
-  const pane = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), mat);
+  const pane = new THREE.Mesh(paneGeo, mat);
   pane.name = "pov-rain-glass";
   pane.userData.povHud = true;
   pane.userData.povRainGlass = true;
-  markPovHudMesh(pane, 6, { depthTest: true });
+  // Below mirror (30) / gauges (20) so beads cannot paint over the rearview.
+  markPovHudMesh(pane, 4, { depthTest: false });
   weather.add(pane);
 
   const armMat = new THREE.MeshStandardMaterial({
-    color: 0x3a4048,
-    roughness: 0.42,
-    metalness: 0.48,
+    color: 0x2e343c,
+    roughness: 0.38,
+    metalness: 0.55,
   });
   const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0x0c0e12,
-    roughness: 0.86,
-    metalness: 0.06,
+    color: 0x0a0c10,
+    roughness: 0.9,
+    metalness: 0.04,
   });
-  // Real Celica-scale blades on the exterior of the glass — not FOV-sized sticks.
-  const bladeLen = Math.min(0.52, Math.max(0.36, Math.hypot(gw, gh) * 0.38));
-  const armLen = Math.min(0.2, bladeLen * 0.38);
+  // Each blade covers most of its half of the aperture (~Celica GT-Four scale).
+  const bladeLen = Math.min(0.48, Math.max(0.34, Math.min(gw * 0.48, gh * 0.95)));
+  const armLen = Math.min(0.16, bladeLen * 0.32);
   const makeArm = (side) => {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? "wiper-L" : "wiper-R";
-    // Cowl pivots near the bottom of the pane, slightly outboard of centre.
-    pivot.position.set(side * gw * 0.18, -gh * 0.44, 0.01);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.012, 0.008), armMat);
+    pivot.position.set(side * gw * 0.34, -gh * 0.46, 0.009);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.01, 0.007), armMat);
     arm.position.set(armLen * 0.5, 0, 0);
     arm.userData.povHud = true;
     arm.userData.povWiper = true;
-    markPovHudMesh(arm, 7, { depthTest: true });
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.018, 0.01), bladeMat);
-    blade.position.set(bladeLen * 0.48, 0, 0.004);
+    markPovHudMesh(arm, 5, { depthTest: false });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.014, 0.008), bladeMat);
+    blade.position.set(bladeLen * 0.52, 0, 0.003);
     blade.userData.povHud = true;
     blade.userData.povWiper = true;
-    markPovHudMesh(blade, 8, { depthTest: true });
-    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.008, 0.005), bladeMat);
-    rubber.position.set(bladeLen * 0.48, -0.01, 0.003);
+    markPovHudMesh(blade, 5, { depthTest: false });
+    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.006, 0.004), bladeMat);
+    rubber.position.set(bladeLen * 0.52, -0.008, 0.002);
     rubber.userData.povHud = true;
     rubber.userData.povWiper = true;
-    markPovHudMesh(rubber, 8, { depthTest: true });
+    markPovHudMesh(rubber, 5, { depthTest: false });
     pivot.add(arm, blade, rubber);
-    pivot.rotation.z = side < 0 ? 0.12 : Math.PI - 0.12;
+    // Parked along the cowl; sweep up toward the A-pillar / centre.
+    pivot.rotation.z = side < 0 ? 0.08 : Math.PI - 0.08;
     pivot.userData.parkZ = pivot.rotation.z;
     pivot.userData.bladeLen = bladeLen;
+    pivot.userData.bladeHalfW = 0.028;
     pivot.userData.side = side;
     pivot.userData.povHud = true;
     pivot.userData.povWiper = true;
@@ -6036,7 +6288,8 @@ function attachPovWeatherGlass(root) {
   root.userData.povRainTex = tex;
   root.userData.povGlassW = gw;
   root.userData.povGlassH = gh;
-  root.userData.wiperFar = 1.22;
+  // Sweep ~65° — covers the aperture without parking mid-glass.
+  root.userData.wiperFar = 1.12;
   root.userData.wiperL = makeArm(-1);
   root.userData.wiperR = makeArm(1);
 }
@@ -6265,6 +6518,11 @@ export function setCockpitView(root, on, _camera, renderer) {
     if (weather) weather.visible = want;
     if (root.userData.wiperL) root.userData.wiperL.visible = want;
     if (root.userData.wiperR) root.userData.wiperR.visible = want;
+    const driverFast = root.userData.povDriver;
+    if (driverFast) {
+      if (driverFast.root) driverFast.root.visible = want;
+      if (driverFast.shoulders) driverFast.shoulders.visible = want;
+    }
     return;
   }
   root.userData._cockpitOn = want;
@@ -6301,6 +6559,12 @@ export function setCockpitView(root, on, _camera, renderer) {
   if (weather) weather.visible = want;
   if (root.userData.wiperL) root.userData.wiperL.visible = want;
   if (root.userData.wiperR) root.userData.wiperR.visible = want;
+  if (want && !root.userData.povDriver) attachPovDriverArms(root);
+  const driver = root.userData.povDriver;
+  if (driver) {
+    if (driver.root) driver.root.visible = want;
+    if (driver.shoulders) driver.shoulders.visible = want;
+  }
   setPovRoofClip(root, want, renderer);
 }
 

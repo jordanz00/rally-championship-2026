@@ -71,7 +71,7 @@ check("pad hit absorbs vel into spring", /landVelAbsorb/.test(config) && /_seedL
 check("soft re-air only on severe bounce", /landReairMin/.test(config) && /bounce > reairMin && impact > bounceNeed/.test(vehicle));
 check("JUMP.launchHeightScale is not the old 0.28 squash", !/launchHeightScale:\s*0\.28/.test(config));
 check("land SFX armed via _noteLandImpact", /_noteLandImpact\(/.test(vehicle) && /landThump\(/.test(game));
-check("game imports vehicle.js?v=112+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 112);
+check("game imports vehicle.js?v=159+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 112);
 check("cache-bust chain", cacheOk && Number(gameV) >= 522, `main=${mainV} game=${gameV}`);
 
 const jumpUrl = pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href + "?v=20";

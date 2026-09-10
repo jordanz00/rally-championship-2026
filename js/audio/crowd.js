@@ -97,12 +97,14 @@ export class CrowdVoice {
    * @param {{x:number,y:number,z:number}} velocity world m/s
    * @param {Array<{x:number,y:number,z:number}>} crowdPoints
    * @param {number} [master=1] 0..1 from SFX bus / race mute
+   * @param {number} [excitement=1] finish-corridor / burst multiplier (1 = normal)
    */
-  update(listener, velocity, crowdPoints, master = 1) {
+  update(listener, velocity, crowdPoints, master = 1, excitement = 1) {
     if (!this.ready || !listener) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const clusters = pickClusters(crowdPoints, listener, EMITTERS);
+    const hype = clamp(excitement, 0.5, 3.2);
 
     for (let i = 0; i < this._slots.length; i++) {
       const slot = this._slots[i];
@@ -133,13 +135,40 @@ export class CrowdVoice {
       const closing = (velocity.x * dx + velocity.y * dy + velocity.z * dz) / dist;
       // Approaching → higher pitch; fleeing → lower.
       const doppler = clamp(1 + closing / SOUND_SPEED, 0.86, 1.18);
-      slot.clapRate.setTargetAtTime(doppler * (0.96 + (i % 3) * 0.02), now, 0.08);
-      slot.cheerRate.setTargetAtTime(doppler * (0.94 + (i % 2) * 0.03), now, 0.1);
+      slot.clapRate.setTargetAtTime(doppler * (0.96 + (i % 3) * 0.02) * (0.98 + hype * 0.02), now, 0.08);
+      slot.cheerRate.setTargetAtTime(doppler * (0.94 + (i % 2) * 0.03) * (0.97 + hype * 0.03), now, 0.1);
 
       const near = clamp(1 - dist / MAX_RANGE, 0, 1);
-      const presence = near * near * master;
-      slot.clapGain.gain.setTargetAtTime(0.0001 + presence * 0.11, now, 0.1);
-      slot.cheerGain.gain.setTargetAtTime(0.0001 + presence * 0.09, now, 0.12);
+      const presence = near * near * master * hype;
+      slot.clapGain.gain.setTargetAtTime(0.0001 + presence * 0.14, now, 0.09);
+      slot.cheerGain.gain.setTargetAtTime(0.0001 + presence * 0.13, now, 0.1);
+    }
+  }
+
+  /**
+   * Finish-line event: spike cheer/clap for a beat so the gantry reads as a crowd.
+   * @param {number} [mul=2.4]
+   * @param {number} [holdSec=1.15]
+   */
+  finishBurst(mul = 2.4, holdSec = 1.15) {
+    if (!this.ready) return;
+    const now = this.ctx.currentTime;
+    const peak = clamp(mul, 1.2, 3.5);
+    const hold = Math.max(0.35, holdSec);
+    for (let i = 0; i < this._slots.length; i++) {
+      const slot = this._slots[i];
+      const clapPeak = 0.0001 + peak * 0.22;
+      const cheerPeak = 0.0001 + peak * 0.28;
+      slot.clapGain.gain.cancelScheduledValues(now);
+      slot.cheerGain.gain.cancelScheduledValues(now);
+      slot.clapGain.gain.setValueAtTime(Math.max(slot.clapGain.gain.value, clapPeak * 0.55), now);
+      slot.cheerGain.gain.setValueAtTime(Math.max(slot.cheerGain.gain.value, cheerPeak * 0.55), now);
+      slot.clapGain.gain.linearRampToValueAtTime(clapPeak, now + 0.08);
+      slot.cheerGain.gain.linearRampToValueAtTime(cheerPeak, now + 0.1);
+      slot.clapGain.gain.linearRampToValueAtTime(clapPeak * 0.35, now + hold * 0.55);
+      slot.cheerGain.gain.linearRampToValueAtTime(cheerPeak * 0.4, now + hold * 0.55);
+      slot.clapGain.gain.linearRampToValueAtTime(0.0001, now + hold);
+      slot.cheerGain.gain.linearRampToValueAtTime(0.0001, now + hold);
     }
   }
 

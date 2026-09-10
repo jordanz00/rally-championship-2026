@@ -29,17 +29,18 @@ export const POWERTRAINS = {
     recLoad: 4600,
     /** High-load scream uses the load bed pitched from this RPM centre. */
     recHigh: 6200,
-    rateMul: 1,
-    idleVol: 0.52,
-    loadVol: 0.92,
-    highVol: 0.66,
-    pulseVol: 0.13,
-    whistleVol: 0.085,
-    hp: 62,
-    lp: 8600,
-    body: 1.85,
-    presence: 2.45,
-    presenceHz: 2350,
+    /** Slightly flatter pitch — less chipmunk at redline until a real V8 pack lands. */
+    rateMul: 0.96,
+    idleVol: 0.54,
+    loadVol: 0.9,
+    highVol: 0.26,
+    pulseVol: 0.14,
+    whistleVol: 0.04,
+    hp: 52,
+    lp: 5000,
+    body: 2.75,
+    presence: 0.85,
+    presenceHz: 1650,
     spoolUp: 2.5,
     spoolDown: 6.2,
     bovDrop: 0.18,
@@ -59,17 +60,17 @@ export const POWERTRAINS = {
     recIdle: 960,
     recLoad: 4300,
     recHigh: 5800,
-    rateMul: 0.98,
-    idleVol: 0.56,
-    loadVol: 0.95,
-    highVol: 0.58,
-    pulseVol: 0.14,
-    whistleVol: 0.065,
-    hp: 48,
-    lp: 6400,
-    body: 4.0,
-    presence: 0.7,
-    presenceHz: 1700,
+    rateMul: 0.94,
+    idleVol: 0.58,
+    loadVol: 0.96,
+    highVol: 0.28,
+    pulseVol: 0.15,
+    whistleVol: 0.032,
+    hp: 42,
+    lp: 4400,
+    body: 4.6,
+    presence: 0.35,
+    presenceHz: 1450,
     spoolUp: 2.9,
     spoolDown: 7.0,
     bovDrop: 0.16,
@@ -89,17 +90,17 @@ export const POWERTRAINS = {
     recIdle: 900,
     recLoad: 4200,
     recHigh: 6400,
-    rateMul: 1.04,
-    idleVol: 0.58,
-    loadVol: 0.88,
-    highVol: 0.76,
-    pulseVol: 0.1,
+    rateMul: 0.98,
+    idleVol: 0.6,
+    loadVol: 0.86,
+    highVol: 0.28,
+    pulseVol: 0.12,
     whistleVol: 0,
-    hp: 72,
-    lp: 9800,
-    body: 1.05,
-    presence: 3.35,
-    presenceHz: 2750,
+    hp: 58,
+    lp: 5200,
+    body: 1.85,
+    presence: 0.95,
+    presenceHz: 1850,
     spoolUp: 0,
     spoolDown: 0,
     bovDrop: 1,
@@ -215,10 +216,11 @@ export class PowertrainVoice {
       mute *
       (rpmN * 0.38 + throttle * 0.78 + coast * 0.45 + brakeLoad) *
       (1 - Math.max(0, rpmN - 0.72) * 0.55);
+    // Scream opens later and softer — load bed owns the meat; high is garnish.
     const highMix =
       mute *
-      Math.pow(clamp((rpmN - 0.48) / 0.52, 0, 1), 1.35) *
-      (0.35 + throttle * 0.75 + coast * 0.25);
+      Math.pow(clamp((rpmN - 0.58) / 0.48, 0, 1), 1.55) *
+      (0.22 + throttle * 0.62 + coast * 0.18);
 
     this.idleGain.gain.setTargetAtTime(idleMix * p.idleVol, now, 0.055);
     this.loadGain.gain.setTargetAtTime(loadMix * p.loadVol, now, 0.045);
@@ -337,17 +339,17 @@ export class PowertrainVoice {
     const open = this.boost * throttle * clamp((rpmN - 0.12) / 0.55, 0, 1);
     this.whistleGain.gain.setTargetAtTime(mute * p.whistleVol * open, now, 0.07);
     if (this.whistleFilt) {
-      this.whistleFilt.frequency.setTargetAtTime(3200 + this.boost * 4200 + rpmN * 1800, now, 0.08);
+      this.whistleFilt.frequency.setTargetAtTime(2600 + this.boost * 2800 + rpmN * 1200, now, 0.08);
     }
   }
 
   _tickDynamicEq(p, rpmN, throttle, mute, now) {
-    // Presence and air open with throttle; idle stays darker / thicker.
-    const load = mute * (rpmN * 0.45 + throttle * 0.7);
-    this.presence.gain.setTargetAtTime(p.presence * (0.55 + load * 0.7), now, 0.07);
-    this.presence.frequency.setTargetAtTime(p.presenceHz * (0.92 + throttle * 0.14), now, 0.08);
-    this.lp.frequency.setTargetAtTime(p.lp * (0.72 + load * 0.38), now, 0.08);
-    this.body.gain.setTargetAtTime(p.body * (1.05 - throttle * 0.18), now, 0.08);
+    // Presence stays restrained; LP barely opens under load so the cabin stays bass-heavy.
+    const load = mute * (rpmN * 0.35 + throttle * 0.55);
+    this.presence.gain.setTargetAtTime(p.presence * (0.4 + load * 0.45), now, 0.07);
+    this.presence.frequency.setTargetAtTime(p.presenceHz * (0.9 + throttle * 0.08), now, 0.08);
+    this.lp.frequency.setTargetAtTime(p.lp * (0.62 + load * 0.26), now, 0.08);
+    this.body.gain.setTargetAtTime(p.body * (1.12 - throttle * 0.1), now, 0.08);
   }
 
   _buildGraph() {
@@ -366,23 +368,23 @@ export class PowertrainVoice {
 
     this.hp = ctx.createBiquadFilter();
     this.hp.type = "highpass";
-    this.hp.frequency.value = 70;
+    this.hp.frequency.value = 55;
     this.hp.Q.value = 0.7;
 
     this.body = ctx.createBiquadFilter();
     this.body.type = "lowshelf";
-    this.body.frequency.value = 135;
-    this.body.gain.value = 1.6;
+    this.body.frequency.value = 125;
+    this.body.gain.value = 2.2;
 
     this.presence = ctx.createBiquadFilter();
     this.presence.type = "peaking";
-    this.presence.frequency.value = 2100;
-    this.presence.Q.value = 0.85;
-    this.presence.gain.value = 1.2;
+    this.presence.frequency.value = 1650;
+    this.presence.Q.value = 0.75;
+    this.presence.gain.value = 0.7;
 
     this.lp = ctx.createBiquadFilter();
     this.lp.type = "lowpass";
-    this.lp.frequency.value = 7200;
+    this.lp.frequency.value = 5000;
     this.lp.Q.value = 0.7;
 
     // Soft bus compressor — recorded beds stay punchy without clipping the SFX bus.
@@ -413,8 +415,8 @@ export class PowertrainVoice {
     // Turbo whistle: high bandpass on shared noise.
     this.whistleFilt = ctx.createBiquadFilter();
     this.whistleFilt.type = "bandpass";
-    this.whistleFilt.frequency.value = 4800;
-    this.whistleFilt.Q.value = 6.5;
+    this.whistleFilt.frequency.value = 3600;
+    this.whistleFilt.Q.value = 5.5;
     this.whistleGain.connect(this.whistleFilt);
     this.whistleFilt.connect(this.presence);
 

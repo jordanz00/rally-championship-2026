@@ -63,6 +63,16 @@ check(
   "same column spin as the procedural torus"
 );
 
+check(
+  "POV driver arms grip the steer spin",
+  /function attachPovDriverArms/.test(car) &&
+    /pov-driver-grips/.test(car) &&
+    /userData\.povDriver/.test(car) &&
+    /poseSleeve/.test(anim) &&
+    /ud\.povDriver/.test(anim),
+  "hands parented to spin; sleeves stretch shoulder→wrist each frame"
+);
+
 const celicaV = game.match(/celica\.js\?v=(\d+)/);
 const animV = game.match(/cockpit-anim\.js\?v=(\d+)/);
 const gameV = main.match(/game\.js\?v=(\d+)/);
@@ -73,9 +83,14 @@ check(
   celicaV ? `got ${celicaV[1]}` : "missing"
 );
 check(
-  "cache bust cockpit-anim.js?v>=4",
-  animV && Number(animV[1]) >= 4,
+  "cache bust cockpit-anim.js?v>=5",
+  animV && Number(animV[1]) >= 5,
   animV ? `got ${animV[1]}` : "missing"
+);
+check(
+  "cache bust celica.js?v>=202",
+  celicaV && Number(celicaV[1]) >= 202,
+  celicaV ? `got ${celicaV[1]}` : "missing"
 );
 check(
   "cache bust main↔game",

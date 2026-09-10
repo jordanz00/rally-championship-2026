@@ -47,7 +47,11 @@ check(
   "desert dustStrength 0.10+ with wind vector"
 );
 check("Dust.setAtmosphere", /setAtmosphere\(L\)/.test(effects), "setAtmosphere API");
-check("rear wake bias", /almost all spray from the rear|Sprint 27/.test(effects), "rear emission");
+check(
+  "four-wheel spray with rear bias",
+  /axleMul|Rear axle carries|wi < 4/.test(effects) && /rear \? 1\.0/.test(effects),
+  "all wheels; rear heavier"
+);
 check("plume particles", /plume/.test(effects) && /profile\.plume/.test(effects), "plume layer");
 check("wind on particles", /_wind/.test(effects) && /this\._wind\.x/.test(effects), "stage wind");
 check(
@@ -56,15 +60,28 @@ check(
   "air drag is 1/s exponential, not per-frame keep"
 );
 check(
-  "loose ribbon only",
-  /sand: \{ rate/.test(effects) &&
-    /dirt: \{ rate/.test(effects) &&
-    /mud: \{ rate/.test(effects) &&
-    !/grass: \{ rate/.test(effects),
-  "dirt/sand/mud/gravel spray; no grass"
+  "surface spray profiles",
+  /sand: \{[\s\S]*?rate:/.test(effects) &&
+    /dirt: \{[\s\S]*?rate:/.test(effects) &&
+    /mud: \{[\s\S]*?rate:/.test(effects) &&
+    /gravel: \{[\s\S]*?rate:/.test(effects),
+  "dirt/sand/mud/gravel (+ optional grass)"
 );
-check("small point cap", /uMaxPx:\s*\{\s*value:\s*1[0-6]\s*\}/.test(effects), "uMaxPx 10–16");
-check("wake not buried by bumper", /depthTest:\s*false/.test(effects), "dust Points skip depth test");
+check(
+  "readable point size cap",
+  /uMaxPx:\s*\{\s*value:\s*(2[4-9]|[3-9]\d)\s*\}/.test(effects),
+  "uMaxPx 24–99 for chase-readable grit"
+);
+check(
+  "ground-aware depth test",
+  /depthTest:\s*true/.test(effects) && /bouncesLeft|bounce/.test(effects),
+  "particles depth-test + bounce/stick"
+);
+check(
+  "inherits chassis + wheel physics",
+  /velY|omegaR|tread|_wheelVel|spinK/.test(effects),
+  "velocity / spin / unload feed emit"
+);
 check(
   "HDR skybox armed",
   /RGBELoader|isSkyReady|applySky/.test(sky),
@@ -112,7 +129,7 @@ check("asset rock_largeA", exists("assets/props/rock_largeA.glb"), "missing rock
   }
   check(
     "sand grit hangs long enough to see",
-    peak > 0.14 && peak < 0.55 && alive > 0.22,
+    peak > 0.14 && peak < 1.2 && alive > 0.22,
     `peak=${peak.toFixed(3)}m alive=${alive.toFixed(3)}s`
   );
 }

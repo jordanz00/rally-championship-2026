@@ -169,6 +169,12 @@ export const VISUAL = {
   /** V1 — restrained grade; polish from ACES + IBL, not punchier post. */
   bloomStrength: 0.14,
   bloomThreshold: 0.74,
+  /**
+   * Half-res SSGI (Phase R.2) samples scene colour and adds it back — reads as
+   * a semi-transparent double of the whole frame. Keep off until depth-aware.
+   */
+  ssgi: false,
+  ssgiStrength: 0,
   vignette: 0.11,
   gradeContrast: 1.08,
   gradeSaturation: 1.02,
@@ -221,7 +227,7 @@ export const VISUAL = {
   lensFlare: true,
   /** Stage IBL fallback — LIGHTING[stage].worldEnv wins at PMREM bake. */
   worldEnvIntensity: 0.95,
-  carEnvIntensity: 0.98,
+  carEnvIntensity: 1.32,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
@@ -413,7 +419,7 @@ export const LIGHTING = {
     cloudScale: 1.72,
     horizonGlow: 0xf4d8b0,
     horizonStrength: 0.4,
-    dustStrength: 0.34,
+    dustStrength: 0.48,
     wind: [1.85, 0, 0.65],
     fog: 0xe8d090,
     fogNear: 52,
@@ -469,7 +475,7 @@ export const LIGHTING = {
     cloudScale: 1.68,
     horizonGlow: 0xc8dcd0,
     horizonStrength: 0.24,
-    dustStrength: 0.06,
+    dustStrength: 0.28,
     wind: [0.35, 0, -0.85],
     fog: 0x8a9aa0,
     fogNear: 38,
@@ -642,7 +648,8 @@ export const LIGHTING = {
     envIntensity: 1.55,
     bodyEnv: 1.45,
     chromeEnv: 2.05,
-    glassEnv: 2.05,
+    /** Title cabin glass — high IBL so panes read as wet mirrors. */
+    glassEnv: 4.2,
     /** Pad / apron pick up sky IBL so asphalt reads wet, not white. */
     worldEnv: 0.95,
   },
@@ -817,8 +824,8 @@ export const SURFACES = {
     /** Catch authority on opposite-lock — still patient vs tarmac, not mush. */
     gripSnap: 1.34,
     bumpSteer: 0.88,
-    roll: 0.03,
-    sink: 0.02,
+    roll: 0.032,
+    sink: 0.038,
     bump: 0.054,
     dust: 1.12,
     speedScale: 0.93,
@@ -841,8 +848,8 @@ export const SURFACES = {
     slideHold: 1.48,
     gripSnap: 1.36,
     bumpSteer: 0.9,
-    roll: 0.03,
-    sink: 0.022,
+    roll: 0.034,
+    sink: 0.042,
     bump: 0.052,
     dust: 1.0,
     speedScale: 0.9,
@@ -898,20 +905,21 @@ export const SURFACES = {
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.84,
-    muSlide: 0.56,
-    slipPeak: 0.162,
-    brakeHold: 0.22,
-    brakeYaw: 0.98,
-    slideHold: 2.05,
-    gripSnap: 1.24,
-    bumpSteer: 0.8,
-    roll: 0.048,
-    sink: 0.055,
-    bump: 0.024,
-    dust: 1.48,
-    speedScale: 0.88,
-    driftEase: 1.72,
+    muPeak: 0.82,
+    muSlide: 0.52,
+    slipPeak: 0.168,
+    /** Soft stop — brake rotates you into the slide (Desert headline). */
+    brakeHold: 0.18,
+    brakeYaw: 1.12,
+    slideHold: 2.22,
+    gripSnap: 1.18,
+    bumpSteer: 0.86,
+    roll: 0.062,
+    sink: 0.092,
+    bump: 0.028,
+    dust: 1.55,
+    speedScale: 0.86,
+    driftEase: 1.88,
     pacejkaB: 3.1,
     pacejkaC: 1.22,
     pacejkaE: 0.17,
@@ -932,8 +940,8 @@ export const SURFACES = {
     slideHold: 2.48,
     gripSnap: 0.92,
     bumpSteer: 0.98,
-    roll: 0.09,
-    sink: 0.095,
+    roll: 0.1,
+    sink: 0.135,
     bump: 0.036,
     dust: 1.15,
     speedScale: 0.7,
@@ -983,7 +991,7 @@ export const HANDLING = {
    * straight on hard ground). Scales with the surface driftEase spread, so
    * one dial covers "throttle steers you" across all seven surfaces.
    */
-  throttleSlide: 2.25,
+  throttleSlide: 2.48,
   /**
    * Bump + steering-away amplifier. Research: two wheels on a bump plus
    * steering away from it can end you. Amplify it, do not hide it.
@@ -1031,12 +1039,12 @@ export const HANDLING = {
    * Throttle + steer pitch-in on loose ground (no e-brake). Higher = easier
    * to light the rear with power alone — classic arcade power slide.
    */
-  powerSlidePitch: 2.55,
+  powerSlidePitch: 2.88,
   /**
    * Trail-brake rotation. Brake + steer on loose surfaces transfers weight
    * forward and rotates the nose — AM3 "brake into the corner" technique.
    */
-  trailBrakeYaw: 0.88,
+  trailBrakeYaw: 1.08,
   /**
    * Bonus countersteer authority when catching a slide at the limit.
    * Scales yawFollow when opposite lock is active — catch = switch.
@@ -1047,12 +1055,12 @@ export const HANDLING = {
    * throttle unloads the front → mild push. Keep below GTA IV so novices
    * are not "drunk car" heavy.
    */
-  weightTransferMul: 2.28,
+  weightTransferMul: 2.48,
   /**
    * How much brake/throttle load the tires before `_ax` from tire force catches
    * up. 0 = only measured accel. ~0.34 = the player caused the weight shift.
    */
-  pedalLoadBlend: 0.34,
+  pedalLoadBlend: 0.38,
   /** Bicycle understeer gradient — mild push at speed, still AM3-easy. */
   speedUndersteer: 0.00185,
   /** Lift-off oversteer mid-corner — close throttle, the tail comes. */
@@ -1066,8 +1074,8 @@ export const HANDLING = {
    * Phase 1 — readable longitudinal weight transfer on the mesh (radians toward
    * nose-down when braking). Kept modest so Sprint 542 planted stance remains.
    */
-  brakeDiveVis: 0.052,
-  accelSquatVis: 0.038,
+  brakeDiveVis: 0.068,
+  accelSquatVis: 0.048,
   /** Extra visual scale on per-wheel travel (player mesh). Keep near 1 — 1.5× read as trampoline. */
   wheelTravelVisual: 1.05,
   /**
@@ -1114,14 +1122,14 @@ export const HANDLING = {
    * Sprint 28 — dead-stop launch. Multiplies drive torque at 0 km/h and fades
    * toward 1.0 by launchFadeKmh. Raised for arcade exit punch after drifts.
    */
-  launchBoost: 1.62,
-  launchFadeKmh: 105,
+  launchBoost: 1.88,
+  launchFadeKmh: 112,
   /**
    * Extra drive when throttling out of a yaw slide (AM3 arcade exit).
    * Multiplies tqDrive while sideways + on throttle so the car *surges*
    * as you straighten — classic rally power-slide fun.
    */
-  slideExitBoost: 1.46,
+  slideExitBoost: 1.68,
   /** |driftAngle| (rad) where exit boost is fully armed. */
   slideExitAngle: 0.12,
   /** Fade exit boost once speed exceeds this (km/h) so top end stays honest. */
@@ -1155,26 +1163,37 @@ export const HANDLING = {
   /** Landing-squash follow rate (1/s). Accel/brake do not pitch the mesh. */
   squatSmoothRate: 12,
   /**
-   * Arcade automatic — tuned for fast rally fun, not economy cruising.
-   * Hold gears near redline on throttle; drop early under brake / kick-down.
+   * Arcade automatic — snappy rally fun, not economy cruising.
+   * Early light-throttle upshifts; WOT holds the pull; decisive brake/coast/
+   * kick-down dumps. Binding feel: docs/SEGA_RALLY_DRIVING_MODEL.md (arcade).
    */
   auto: {
-    /** Fraction of redline for WOT upshift (hold the pull). */
-    upWot: 0.955,
-    /** Light-throttle upshift (fraction of redline). */
-    upCoast: 0.68,
-    /** Kick-down when throttle is pinned and RPM is below this. */
-    kickDownRpm: 4800,
+    /** Fraction of redline for WOT upshift (hold the pull, shift before limiter). */
+    upWot: 0.93,
+    /** Light-throttle upshift (fraction of redline) — early for ease of use. */
+    upCoast: 0.56,
+    /** Min throttle to allow an upshift (blocks coast-upshift hunting). */
+    upMinThrottle: 0.1,
+    /** Kick-down when throttle is open and RPM is below this. */
+    kickDownRpm: 5200,
+    /** Throttle above this uses kick-down instead of coast/sag. */
+    kickThrottle: 0.38,
     /** Brake-downshift floor at light brake (rises with pedal). */
-    brakeDownMin: 5000,
+    brakeDownMin: 5600,
     /** Brake-downshift floor at full brake / handbrake. */
-    brakeDownMax: 6400,
+    brakeDownMax: 7000,
     /** Coasting downshift RPM (throttle shut, no brake). */
-    coastDownRpm: 3400,
+    coastDownRpm: 4200,
+    /** Throttle below this counts as coast for downshifts. */
+    coastThrottle: 0.28,
+    /** Mid-throttle sag downshift — closes the old throttle dead zone. */
+    sagDownRpm: 3900,
+    /** Hard-brake multi-gear dump when RPM is below this. */
+    hardDumpRpm: 5200,
     /** Min seconds between shifts (brake path uses the short cool). */
-    coolUp: 0.09,
-    coolDown: 0.055,
-    coolBrake: 0.04,
+    coolUp: 0.05,
+    coolDown: 0.035,
+    coolBrake: 0.025,
   },
 };
 
@@ -1200,13 +1219,13 @@ export const ARCADE_ASSIST = {
    * Extra yaw toward steering intent while grip is building (0 = off).
    * Cap is hard inside vehicle.js — never a spin motor.
    */
-  yawAssist: 0.20,
+  yawAssist: 0.24,
   /** Soften lateral velocity when opposite-lock + slip still recoverable. */
-  recoveryAssist: 0.76,
+  recoveryAssist: 0.86,
   /** |vy| (m/s) below which recoveryAssist may help (above = consequence). */
-  recoverableSlide: 12.5,
+  recoverableSlide: 13.5,
   /** Extra rear grip rebuild while countersteering at mid slip (0–1 scale). */
-  driftStability: 0.48,
+  driftStability: 0.56,
   /** Landing: damp residual yaw rate after a planted touchdown. */
   landingAssist: 0.55,
   /**
@@ -1584,10 +1603,10 @@ export const CAMERA = {
   accelCamPitch: 0.14,
   brakeCamPitch: 0.22,
   /** Multiplier on existing land Y/FOV kick in `_feelPad` (Stage 6 mass punch). */
-  landKickScale: 1.12,
+  landKickScale: 1.38,
   /** Pitch bias scale in `_chaseCam` (was hard-coded 0.04 / 0.03). */
-  brakePitchMul: 0.065,
-  accelPitchMul: 0.045,
+  brakePitchMul: 0.085,
+  accelPitchMul: 0.062,
   /** World-up lean from chassis roll — a hint, not a horizon swing. */
   rollFollow: 0.14,
   /** How hard chase yaw tracks the car — medium view overrides softer. */
@@ -1667,18 +1686,23 @@ export const CAMERA = {
       /**
        * Sega Rally '95 Saturn chase: follow travel yaw, not the rear bumper.
        * XZ is glued (`lockPos`) so throttle cannot trail the lens; a powerslide
-       * still lets the car rotate in frame. 25% closer than the old 5.55 m rig.
+       * still lets the car rotate in frame. +5% back / +3% height vs the 4.16 / 1.58 rig.
        */
-      back: 4.16,
-      height: 1.58,
+      back: 4.37,
+      height: 1.63,
       lookAhead: 9.6,
       lookY: 0.36,
       fov: 62,
       /** No speed squat — that buried the roof. */
       speedDropMax: 0,
-      /** No FOV zoom-out — accelerating must not make the car look farther. */
+      /**
+       * No continuous FOV zoom-out (that made the car look farther under
+       * throttle). Speed reads through look-ahead + brake/accel pitch +
+       * land/impact kicks instead.
+       */
       speedFovScale: 0,
-      speedLookAheadScale: 0,
+      /** Push look down the road at pace — Model 2 rush without shrinking the car. */
+      speedLookAheadScale: 0.62,
       stableBehind: false,
       lockPos: true,
       lockHeight: false,
@@ -1696,15 +1720,17 @@ export const CAMERA = {
       slideCamOut: 0.035,
       slideLookAhead: 1.8,
       slideKickMax: 0.01,
-      rollFollow: 0.08,
+      rollFollow: 0.12,
       /** Aim along the ribbon, not a side orbit. */
       roadLookBlend: 0.18,
-      brakePitchMul: 0.034,
-      accelPitchMul: 0.012,
-      landKickMul: 0.22,
-      landFovMul: 0.5,
-      shakeMul: 0.22,
-      shakeAmp: 0.1,
+      /** Readable mass: brake nose-down / accel squat on the look target. */
+      brakePitchMul: 0.078,
+      accelPitchMul: 0.042,
+      /** Safari landings must punch the lens — 0.22 erased weight. */
+      landKickMul: 0.82,
+      landFovMul: 1.05,
+      shakeMul: 0.78,
+      shakeAmp: 0.58,
       /** Tighter than far (far uses ~0.55× global) — smooth, not floaty. */
       springPosStiff: 82,
       springPosStiffY: 48,
@@ -1804,24 +1830,30 @@ export const CHAMPIONSHIP = {
  */
 export const AI = {
   /**
-   * Sprint 26: pack must outpace a throttle-only player. Floor/ceiling raised so
-   * holding accelerate without steering cannot casually take 1st on every stage.
+   * Pack spread for a 10-minute friend demo: floor stays beatable, ceiling keeps
+   * a front-runner worth chasing. Wider than Sprint 26 so the field reads as
+   * drivers — not a same-pace train — without chaos weave.
    */
-  skillFloor: 0.9,
-  skillCeiling: 1.05,
+  skillFloor: 0.86,
+  skillCeiling: 1.08,
   /** Corner-entry braking bias. Higher = more trail-braking, later apex. */
   trailBrake: 0.55,
   /** Seconds between a rival's chances to make a small mistake. */
-  mistakeInterval: 8.5,
+  mistakeInterval: 9.5,
   /** Peak size of a mistake: a late brake, a wide line, a scruffy exit. */
-  mistakeSize: 0.22,
+  mistakeSize: 0.17,
+  /** Line wander samples/sec — keep low so personal grooves stay readable. */
+  lineWanderRate: 0.08,
+  /** Scales mistakeSize into metres of continuous line noise. */
+  lineWanderAmp: 0.42,
   /**
    * Catch-up authority, as a fraction of throttle. Still invisible — only when
-   * a rival is behind the player after a mistake.
+   * a rival is behind the player after a mistake. Slightly firmer so the pack
+   * stays in the fight during a friend championship lap.
    */
-  rubberBand: 0.09,
+  rubberBand: 0.115,
   /** Metres of gap at which the rubber band reaches full (still tiny) effect. */
-  rubberBandRange: 200,
+  rubberBandRange: 185,
   /** Pro line: tighter apex on tarmac, wider on loose surfaces. */
   proLineTarmac: 1.18,
   proLineLoose: 0.82,

@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=223";
+import { VISUAL } from "../config.js?v=233";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -103,11 +103,12 @@ export function paint(color, extra = {}) {
     const mat = new THREE.MeshPhysicalMaterial({
       color,
       map: extra.map || null,
-      roughness: extra.roughness != null ? extra.roughness : 0.34,
-      metalness: extra.metalness != null ? extra.metalness : 0.12,
+      roughness: extra.roughness != null ? extra.roughness : 0.28,
+      metalness: extra.metalness != null ? extra.metalness : 0.14,
       clearcoat: 1,
-      clearcoatRoughness: 0.1,
-      envMapIntensity: VISUAL.carEnvIntensity ?? 0.72,
+      clearcoatRoughness: 0.035,
+      clearcoatEnvMapIntensity: 2.2,
+      envMapIntensity: VISUAL.carEnvIntensity ?? 1.25,
       flatShading: !!extra.flatShading,
       vertexColors: !!extra.vertexColors,
       transparent: !!extra.transparent,
@@ -160,11 +161,14 @@ export function glass(color = 0x1a2832, extra = {}) {
     const mat = new THREE.MeshPhysicalMaterial({
       color,
       transparent: true,
-      opacity: extra.opacity != null ? extra.opacity : 0.34,
-      roughness: extra.roughness != null ? extra.roughness : 0.035,
-      metalness: 0,
-      ior: 1.45,
-      envMapIntensity: extra.envMapIntensity != null ? extra.envMapIntensity : 1.35,
+      opacity: extra.opacity != null ? extra.opacity : 0.5,
+      roughness: extra.roughness != null ? extra.roughness : 0.02,
+      metalness: 0.05,
+      ior: 1.5,
+      clearcoat: 1,
+      clearcoatRoughness: 0.012,
+      clearcoatEnvMapIntensity: 3.4,
+      envMapIntensity: extra.envMapIntensity != null ? extra.envMapIntensity : 2.9,
       depthWrite: false,
       // FrontSide only — DoubleSide transparent draws the back face first and
       // reads as flipped / inside-out panes on the title orbit cam.
@@ -520,11 +524,11 @@ function armRoadOrganic(mat, id) {
   const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: dirty ? 1 : id === "tarmac" ? 0.42 : 0.28,
-    ribbon: dirty ? 0.08 : id === "tarmac" ? 0.52 : id === "cobble" ? 0.22 : 0.32,
-    bump: dirty ? 0.58 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.42 : 0.28,
+    amount: dirty ? 1 : id === "tarmac" ? 0.55 : 0.38,
+    ribbon: dirty ? 0.06 : id === "tarmac" ? 0.48 : id === "cobble" ? 0.18 : 0.28,
+    bump: dirty ? 0.68 : id === "tarmac" ? 0.2 : id === "cobble" ? 0.48 : 0.34,
     blotch: true,
-    key: `road-organic-v4-${id}`,
+    key: `road-organic-v5-${id}`,
   });
 }
 
@@ -540,12 +544,18 @@ function injectProjectedMaps(shader, opts) {
   shader.uniforms.uRoadVar = { value: opts.amount };
   const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
   const blotchSrc = opts.blotch
-    ? `	float n1 = roadNoise( vProjWorld.xz * 0.11 );
-	float n2 = roadNoise( vProjWorld.xz * 0.37 + 17.0 );
-	float n3 = roadNoise( vProjWorld.xz * 0.019 );
-	float blotch = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.78 + blotch * 0.4 ), uProjAmt );
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.41 + vec2( 0.19, 0.11 ) ), 0.12 );`
+    ? `	float n1 = roadNoise( vProjWorld.xz * 0.09 );
+	float n2 = roadNoise( vProjWorld.xz * 0.31 + 17.0 );
+	float n3 = roadNoise( vProjWorld.xz * 0.015 );
+	float n4 = roadNoise( vProjWorld.xz * 0.72 + 41.0 );
+	float blotch = n1 * 0.42 + n2 * 0.3 + n3 * 0.18 + n4 * 0.1;
+	float hueShift = ( n2 - 0.5 ) * 0.08 * uProjAmt;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.68 + blotch * 0.52 ), uProjAmt );
+	sampledDiffuseColor.r *= 1.0 + hueShift;
+	sampledDiffuseColor.g *= 1.0 + hueShift * 0.4;
+	sampledDiffuseColor.b *= 1.0 - hueShift * 0.6;
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.37 + vec2( 0.19, 0.11 ) ), 0.18 * uProjAmt );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 1.7 + vec2( 0.07, 0.23 ) ), 0.1 * uProjAmt );`
     : "";
   shader.vertexShader = shader.vertexShader
     .replace(
@@ -760,11 +770,11 @@ export function worldTerrainMaterial(opts = {}) {
   mat.userData.kind = "terrain";
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: 0.88,
-    ribbon: 0.14,
-    bump: opts.bumpScale ?? 0.48,
-    blotch: false,
-    key: "terrain-proj-v1",
+    amount: 0.94,
+    ribbon: 0.1,
+    bump: opts.bumpScale ?? 0.52,
+    blotch: true,
+    key: "terrain-proj-v2",
   });
   return mat;
 }
@@ -806,11 +816,11 @@ export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = 
   });
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: 0.9,
-    ribbon: 0.1,
-    bump: 0.42,
-    blotch: false,
-    key: "skirt-proj-v1",
+    amount: 0.95,
+    ribbon: 0.08,
+    bump: 0.48,
+    blotch: true,
+    key: "skirt-proj-v2",
   });
   return mat;
 }
@@ -959,8 +969,9 @@ export function applyEnvMap(root, envMap, intensity) {
             if (kind === "road") {
               if (m.userData.dryEnv != null) tint = m.userData.dryEnv;
               else tint *= m.userData.surfaceId === "tarmac" ? 0.28 : 0.78;
-            } else if (kind === "chrome") tint *= cinema ? 1.38 : 1.22;
-            else if (kind === "glass") tint *= cinema ? 1.08 : 0.95;
+            } else if (kind === "chrome") tint *= cinema ? 1.55 : 1.35;
+            else if (kind === "glass") tint *= cinema ? 2.55 : 2.2;
+            else if (kind === "paint") tint *= cinema ? 1.28 : 1.15;
             else if (kind === "prop") tint *= cinema ? 0.92 : 0.88;
             else if (kind === "terrain") tint *= cinema ? 1.05 : 0.98;
             m.envMapIntensity = tint;
@@ -968,8 +979,10 @@ export function applyEnvMap(root, envMap, intensity) {
           }
           if (m.isMeshPhysicalMaterial && m.clearcoat > 0) {
             m.clearcoatMap = m.clearcoatMap || null;
-            if (m.clearcoatEnvMapIntensity == null || m.clearcoatEnvMapIntensity < 0.5) {
-              m.clearcoatEnvMapIntensity = ue5() ? 1.15 : 0.9;
+            const coatFloor =
+              m.userData.kind === "glass" ? 3.2 : m.userData.kind === "paint" ? 2.0 : ue5() ? 1.35 : 0.9;
+            if (m.clearcoatEnvMapIntensity == null || m.clearcoatEnvMapIntensity < coatFloor) {
+              m.clearcoatEnvMapIntensity = coatFloor;
             }
           }
           continue;
@@ -1049,20 +1062,20 @@ export function setShowcaseReflectivity(root, active, envMap, profile = {}) {
           if (envMap) m.envMap = envMap;
           if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
             if (isGlass) {
-              // Title panes: reflective Physical glass, not opaque-black FrontSide.
-              m.envMapIntensity = Math.max(glassEnv, 2.45);
-              m.roughness = 0.03;
-              m.metalness = 0;
+              // Title panes: dark clearcoat mirrors — sky/pad catch hard.
+              m.envMapIntensity = Math.max(glassEnv, 4.0);
+              m.roughness = 0.012;
+              m.metalness = Math.max(m.metalness != null ? m.metalness : 0, 0.08);
               m.side = THREE.DoubleSide;
               m.depthWrite = true;
               m.transparent = true;
-              m.opacity = 0.82;
-              if (m.color) m.color.setHex(0x6a8294);
+              m.opacity = 0.94;
+              if (m.color) m.color.setHex(0x1c2a36);
               if (m.isMeshPhysicalMaterial) {
                 m.transmission = 0;
                 m.clearcoat = 1;
-                m.clearcoatRoughness = 0.018;
-                m.clearcoatEnvMapIntensity = 3.0;
+                m.clearcoatRoughness = 0.006;
+                m.clearcoatEnvMapIntensity = 4.8;
               }
               m.userData.kind = "glass";
               m.userData.lockEnv = false;

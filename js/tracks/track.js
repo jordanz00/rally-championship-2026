@@ -10,10 +10,10 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=223";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=233";
 import { selectLodBand } from "../gfx/gpu-lod.js?v=1";
-import { roadMicroHeight } from "./road-micro.js?v=10";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=5";
+import { roadMicroHeight } from "./road-micro.js?v=12";
+import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=6";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=6";
@@ -23,7 +23,7 @@ import {
   crownGeometry,
   foliageMaterial,
   treeCardKind,
-} from "./trees.js?v=42";
+} from "./trees.js?v=43";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=49";
+} from "../gfx/pbr.js?v=53";
 
 /** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {
@@ -51,8 +51,8 @@ function terrainTileSegs() {
   return STREAM.terrainTileSegs;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=20";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=43";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=22";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=45";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -61,7 +61,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=2";
+} from "./forest-pbr.js?v=53";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -69,7 +69,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=1";
+} from "./desert-pbr.js?v=53";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -77,10 +77,10 @@ import {
   buildForestMouthCollarGeometry,
   forestMouthBoulderPoses,
   plantForestMouthBoulders,
-} from "./forest-tunnel.js?v=4";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=31";
+} from "./forest-tunnel.js?v=5";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=34";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, updateClothFlags } from "./flag-cloth.js?v=2";
+import { createClothFlag, updateClothFlags } from "./flag-cloth.js?v=4";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -9266,7 +9266,8 @@ export class Track {
     const step = desert ? 10 : forest ? 34 : 12;
     const chance = desert ? 0.55 : forest ? 0.2 : 0.42;
     const standOff = ROAD_VERGE + 2.4;
-    const maxPoses = desert ? 280 : forest ? 80 : 150;
+    // Room for finish hero grandstands (~170 seated) + start (~70) + gallery.
+    const maxPoses = desert ? 420 : forest ? 120 : 280;
     const poses = [];
     let kindCursor = 0;
     const tintPalette = [
@@ -9350,6 +9351,7 @@ export class Track {
 
   /**
    * Bleachers at START and FINISH — wood/steel decks filled with a mixed crowd.
+   * Finish is the hero moment (denser seats, longer span, dual Kenney modules).
    * @param {() => number} rng
    * @param {object} def
    * @param {string[]} order shuffled character kinds
@@ -9376,14 +9378,29 @@ export class Track {
     const rails = [];
     const stands = [];
 
+    // Start stays readable; finish packs both banks for the checkered-row hero.
     const tips = [
-      { label: "start", i: Math.min(4, pts.length - 1), alongSpan: 18, rows: 4, seats: 9 },
+      {
+        label: "start",
+        i: Math.min(4, pts.length - 1),
+        alongSpan: 18,
+        rows: 4,
+        seats: 9,
+        modules: 1,
+        scaleMul: 1,
+        rowPitch: 1.15,
+        seatRise: 0.55,
+      },
       {
         label: "finish",
         i: Math.max(0, pts.length - 5),
-        alongSpan: 20,
-        rows: 4,
-        seats: 10,
+        alongSpan: 32,
+        rows: 6,
+        seats: 14,
+        modules: 2,
+        scaleMul: 1.28,
+        rowPitch: 1.05,
+        seatRise: 0.52,
       },
     ];
 
@@ -9393,32 +9410,57 @@ export class Track {
       const fx = Math.sin(p.heading);
       const fz = Math.cos(p.heading);
       const chunk = this._chunkOfDist(p.dist);
+      const isFinish = tip.label === "finish";
+      const modules = Math.max(1, tip.modules | 0);
+      const rowPitch = tip.rowPitch != null ? tip.rowPitch : 1.15;
+      const seatRise = tip.seatRise != null ? tip.seatRise : 0.55;
+      const scaleMul = tip.scaleMul != null ? tip.scaleMul : 1;
       for (const side of [-1, 1]) {
         const baseLat = p.width * 0.5 + ROAD_VERGE + 3.8;
         if (standKind) {
-          const lat = baseLat + 2.2;
-          const cx = p.x + p.nx * side * lat;
-          const cz = p.z + p.nz * side * lat;
-          const gy = this._groundHeight(cx, cz, def.scenery);
-          if (!this._ribbonClear(cx, cz, 2.2)) continue;
-          stands.push({
-            c: chunk,
-            x: cx,
-            y: gy,
-            z: cz,
-            s: tip.alongSpan / 10,
-            ry: p.heading + (side > 0 ? 0 : Math.PI),
-          });
+          // Prefer both banks: nudge outward if the near verge fails ribbon clear.
+          let sideLat = null;
+          let gy = 0;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const tryLat = baseLat + 2.2 + attempt * 1.35;
+            const tx = p.x + p.nx * side * tryLat;
+            const tz = p.z + p.nz * side * tryLat;
+            if (!this._ribbonClear(tx, tz, isFinish ? 1.6 : 2.2)) continue;
+            sideLat = tryLat;
+            gy = this._groundHeight(tx, tz, def.scenery);
+            break;
+          }
+          if (sideLat == null) continue;
+
+          const moduleSpan = tip.alongSpan / modules;
+          const moduleScale = (moduleSpan / 10) * scaleMul;
+          for (let m = 0; m < modules; m++) {
+            const alongOff =
+              modules === 1 ? 0 : (m / (modules - 1) - 0.5) * (tip.alongSpan - moduleSpan * 0.35);
+            const cx = p.x + p.nx * side * sideLat + fx * alongOff;
+            const cz = p.z + p.nz * side * sideLat + fz * alongOff;
+            if (!this._ribbonClear(cx, cz, isFinish ? 1.4 : 2.0)) continue;
+            const mGy = this._groundHeight(cx, cz, def.scenery);
+            stands.push({
+              c: chunk,
+              x: cx,
+              y: mGy,
+              z: cz,
+              s: moduleScale,
+              ry: p.heading + (side > 0 ? 0 : Math.PI),
+            });
+          }
+
           for (let row = 0; row < tip.rows; row++) {
-            const seatLat = baseLat + row * 1.15 + 0.4;
-            const seatY = 0.55 + row * 0.55;
+            const seatLat = baseLat + row * rowPitch + 0.4 + (sideLat - baseLat - 2.2) * 0.35;
+            const seatY = 0.55 + row * seatRise;
             for (let s = 0; s < tip.seats; s++) {
               const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
               const along = (t - 0.5) * (tip.alongSpan - 1.2);
-              const jitter = (rng() - 0.5) * 0.22;
+              const jitter = (rng() - 0.5) * (isFinish ? 0.16 : 0.22);
               const sx = p.x + p.nx * side * seatLat + fx * along + p.nx * side * jitter;
               const sz = p.z + p.nz * side * seatLat + fz * along + p.nz * side * jitter;
-              if (!this._ribbonClear(sx, sz, 0.7)) continue;
+              if (!this._ribbonClear(sx, sz, isFinish ? 0.55 : 0.7)) continue;
               const foot = gy + seatY + 0.08;
               const kind = order[(s * 3 + row * 5 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
               pushSpectator({
@@ -9442,20 +9484,20 @@ export class Track {
 
         // Support posts + stepped decks (primitive fallback).
         for (let row = 0; row < tip.rows; row++) {
-          const lat = baseLat + row * 1.35 + 0.4;
-          const seatY = 0.55 + row * 0.62;
+          const lat = baseLat + row * (isFinish ? 1.2 : 1.35) + 0.4;
+          const seatY = 0.55 + row * (isFinish ? 0.55 : 0.62);
           const depth = tip.alongSpan;
           const cx = p.x + p.nx * side * lat;
           const cz = p.z + p.nz * side * lat;
           const gy = this._groundHeight(cx, cz, def.scenery);
-          if (!this._ribbonClear(cx, cz, 2.2)) continue;
+          if (!this._ribbonClear(cx, cz, isFinish ? 1.6 : 2.2)) continue;
 
           decks.push({
             c: chunk,
             x: cx,
             y: this._plantBoxY(gy + seatY, 0.14, 0.02),
             z: cz,
-            sx: 1.15,
+            sx: isFinish ? 1.25 : 1.15,
             sy: 0.14,
             sz: depth,
             ry: p.heading,
@@ -9486,10 +9528,10 @@ export class Track {
           for (let s = 0; s < tip.seats; s++) {
             const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
             const along = (t - 0.5) * (tip.alongSpan - 1.2);
-            const jitter = (rng() - 0.5) * 0.22;
+            const jitter = (rng() - 0.5) * (isFinish ? 0.16 : 0.22);
             const sx = cx + fx * along + p.nx * side * jitter;
             const sz = cz + fz * along + p.nz * side * jitter;
-            if (!this._ribbonClear(sx, sz, 0.7)) continue;
+            if (!this._ribbonClear(sx, sz, isFinish ? 0.55 : 0.7)) continue;
             const foot = gy + seatY + 0.08;
             const kind = order[(s * 3 + row * 5 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
             pushSpectator({
@@ -9677,19 +9719,25 @@ export class Track {
   }
 
   /**
-   * Wind-driven cloth flags at a stage gate — red at START, checkered at FINISH.
+   * Wind-driven cloth flags at a stage gate — red pair at START,
+   * ten checkered poles in a finish-corridor row at FINISH.
    * Poles sit on land beside the gantry, off the racing line. No cloth colliders.
    * @param {object} p gate sample
    * @param {string} label
    */
   _plantClothFlags(p, label) {
     const scenery = (this._def && this._def.scenery) || "forest";
-    const kind = label === "FINISH" ? "checkers" : "red";
+    if (!this._clothFlags) this._clothFlags = [];
+    if (label === "FINISH") {
+      this._plantFinishCheckerRow(p, scenery);
+      return;
+    }
+    const kind = "red";
     const half = p.width * 0.5;
-    const along = label === "FINISH" ? 2.5 : -2.7;
+    const along = -2.7;
     const tx = Math.sin(p.heading);
     const tz = Math.cos(p.heading);
-    if (!this._clothFlags) this._clothFlags = [];
+    let seed = 0;
     for (const side of [-1, 1]) {
       const extras = [2.75, 3.55, 4.7, ROAD_VERGE + 1.25];
       for (let i = 0; i < extras.length; i++) {
@@ -9712,11 +9760,90 @@ export class Track {
           scenery,
           nx: p.nx,
           nz: p.nz,
+          seed: seed++,
         });
         this.group.add(flag.group);
         this._clothFlags.push(flag);
         this._bump(fx, fz, 0.28, over);
         break;
+      }
+    }
+  }
+
+  /**
+   * Ten checkered cloth flags in one ceremonial row at the finish —
+   * five poles per verge, spaced along-track just past the gantry.
+   * Each pole gets a unique cloth seed so wind phases stay independent.
+   * @param {object} p finish gate sample
+   * @param {string} scenery
+   */
+  _plantFinishCheckerRow(p, scenery) {
+    const half = p.width * 0.5;
+    const tx = Math.sin(p.heading);
+    const tz = Math.cos(p.heading);
+    const extras = [2.75, 3.55, 4.7, ROAD_VERGE + 1.25, ROAD_VERGE + 2.1];
+    // Along-track slots: a single row past the gantry (not a synced pair).
+    const alongSlots = [-1.15, 0.55, 2.25, 3.95, 5.65];
+    let planted = 0;
+    for (const side of [-1, 1]) {
+      for (let s = 0; s < alongSlots.length; s++) {
+        const along = alongSlots[s];
+        let placed = false;
+        for (let e = 0; e < extras.length; e++) {
+          const lat = half + extras[e];
+          const fx = p.x + p.nx * side * lat + tx * along;
+          const fz = p.z + p.nz * side * lat + tz * along;
+          if (this._inTunnelMouthCorridor && this._inTunnelMouthCorridor(fx, fz)) continue;
+          const road = this._nearestRoad(fx, fz);
+          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+          if (over < 1.7) continue;
+          const gy = this._groundHeight(fx, fz, scenery);
+          const flag = createClothFlag({
+            x: fx,
+            y: gy,
+            z: fz,
+            heading: p.heading,
+            side,
+            kind: "checkers",
+            scenery,
+            nx: p.nx,
+            nz: p.nz,
+            seed: 100 + planted,
+          });
+          this.group.add(flag.group);
+          this._clothFlags.push(flag);
+          this._bump(fx, fz, 0.28, over);
+          planted++;
+          placed = true;
+          break;
+        }
+        if (!placed) {
+          // Last-resort: push farther off the ribbon so the row still hits 10.
+          const lat = half + ROAD_VERGE + 2.8 + s * 0.15;
+          const fx = p.x + p.nx * side * lat + tx * along;
+          const fz = p.z + p.nz * side * lat + tz * along;
+          if (this._inTunnelMouthCorridor && this._inTunnelMouthCorridor(fx, fz)) continue;
+          const road = this._nearestRoad(fx, fz);
+          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+          if (over < 1.2) continue;
+          const gy = this._groundHeight(fx, fz, scenery);
+          const flag = createClothFlag({
+            x: fx,
+            y: gy,
+            z: fz,
+            heading: p.heading,
+            side,
+            kind: "checkers",
+            scenery,
+            nx: p.nx,
+            nz: p.nz,
+            seed: 100 + planted,
+          });
+          this.group.add(flag.group);
+          this._clothFlags.push(flag);
+          this._bump(fx, fz, 0.28, Math.max(over, 1.2));
+          planted++;
+        }
       }
     }
   }
@@ -9834,21 +9961,26 @@ export class Track {
   }
 
   /**
-   * Vinyl banner + painted checkers. Lit materials — never MeshBasic / emissive.
+   * Vinyl banner (START only) + painted checkers on the deck.
+   * FINISH drops the overhead banner plane — that read as an awkward blob;
+   * the ten checkered cloth flags carry the finish identity instead.
+   * Lit materials — never MeshBasic / emissive.
    * @param {object} p
    * @param {string} label
    * @param {number} gy gantry foot / road Y for the banner beam
    */
   _dressGantry(p, label, gy) {
-    const banner = new THREE.Mesh(
-      new THREE.PlaneGeometry(p.width + 1.8, 1.28),
-      gantryBannerMaterial(label)
-    );
-    banner.name = `stage-banner-${label}`;
-    banner.position.set(p.x, gy + 4.42, p.z);
-    banner.rotation.y = p.heading + Math.PI;
-    banner.castShadow = true;
-    this.group.add(banner);
+    if (label !== "FINISH") {
+      const banner = new THREE.Mesh(
+        new THREE.PlaneGeometry(p.width + 1.8, 1.28),
+        gantryBannerMaterial(label)
+      );
+      banner.name = `stage-banner-${label}`;
+      banner.position.set(p.x, gy + 4.42, p.z);
+      banner.rotation.y = p.heading + Math.PI;
+      banner.castShadow = true;
+      this.group.add(banner);
+    }
 
     const stripe = new THREE.Mesh(
       new THREE.BoxGeometry(p.width * 0.96, 0.035, 1.35),
@@ -10466,22 +10598,34 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
   const n = texHash((x * 0.22) | 0, (z * 0.22) | 0, 61);
   const n2 = texHash((x * 0.055) | 0, (z * 0.055) | 0, 17);
   const n3 = texHash((x * 0.9) | 0, (z * 0.9) | 0, 83);
+  const n4 = texHash((x * 0.012) | 0, (z * 0.012) | 0, 29);
+  // Photo stages still need world-space soil blotches — maps alone tile too evenly.
   if (scenery === "forest" && forestPbrReady()) {
-    const k = 0.9 + n * 0.14 + (n2 - 0.5) * 0.1;
+    const k = 0.78 + n * 0.28 + (n2 - 0.5) * 0.14 + (n4 - 0.5) * 0.1;
     _organicTint.multiplyScalar(k);
-    if (n3 > 0.84) _organicTint.multiplyScalar(0.86);
-    if (n2 > 0.8 && n < 0.32) {
-      _organicTint.r *= 0.9;
-      _organicTint.g *= 0.93;
-      _organicTint.b *= 0.88;
+    if (n3 > 0.8) _organicTint.multiplyScalar(0.82);
+    if (n2 > 0.78 && n < 0.36) {
+      _organicTint.r *= 0.88;
+      _organicTint.g *= 0.92;
+      _organicTint.b *= 0.84;
+    }
+    if (n4 < 0.22) {
+      _organicTint.r *= 1.06;
+      _organicTint.g *= 1.04;
+      _organicTint.b *= 0.96;
     }
   } else {
-    const k = 0.8 + n * 0.32 + (n2 - 0.5) * 0.16;
+    const k = 0.72 + n * 0.4 + (n2 - 0.5) * 0.2 + (n4 - 0.5) * 0.12;
     _organicTint.r *= k;
-    _organicTint.g *= k * (0.97 + n2 * 0.06);
-    _organicTint.b *= k * (0.94 + n * 0.08);
-    if (n3 > 0.87) _organicTint.multiplyScalar(0.74);
-    if (n2 < 0.18) _organicTint.multiplyScalar(1.08);
+    _organicTint.g *= k * (0.95 + n2 * 0.08);
+    _organicTint.b *= k * (0.9 + n * 0.1);
+    if (n3 > 0.84) _organicTint.multiplyScalar(0.7);
+    if (n2 < 0.16) _organicTint.multiplyScalar(1.12);
+    if (n4 > 0.82) {
+      _organicTint.r *= 0.9;
+      _organicTint.g *= 0.94;
+      _organicTint.b *= 0.86;
+    }
   }
   return _organicTint.getHex();
 }
@@ -11943,7 +12087,7 @@ function landAlbedoMap(scenery, span) {
   const scale = VISUAL.textureScale || 1;
   const tier = VISUAL.tier || 1;
   const base = paintedTexture(
-    `land-albedo-v4-t${tier}-${kind}`,
+    `land-albedo-v5-t${tier}-${kind}`,
     (g, w, h) => {
       const img = g.createImageData(w, h);
       paintLandAlbedo(kind, w, h, img.data);
@@ -11980,77 +12124,81 @@ function paintLandAlbedo(kind, w, h, d) {
       const n = texHash(x, y, 1);
       const n2 = texHash(x, y, 11);
       const blotch = texHash((x / 10) | 0, (y / 10) | 0, 5);
-      let lum = 208 + n * 36 + blotch * 14;
+      // Multi-scale fbm so land sheets stop reading as flat noise cloth.
+      const mac = texFbm(x * 0.22, y * 0.22, 21);
+      const mid = texFbm(x * 0.7, y * 0.7, 33);
+      const fine = texFbm(x * 2.4, y * 2.4, 45);
+      let lum = 198 + n * 42 + blotch * 18 + (mac - 0.5) * 36 + (mid - 0.5) * 22;
+      lum *= 0.9 + fine * 0.16;
       let r = lum;
       let g = lum;
       let b = lum;
       if (kind === "desert") {
-        // V4 — lower-frequency ripples so grain matches dune scale at rest.
+        // Organic dune chatter — fbm primary, soft sin only as a whisper.
         const ripple = 0.5 + 0.5 * Math.sin(y * 0.14 + x * 0.022);
         const windRipple = 0.5 + 0.5 * Math.sin(x * 0.055 + y * 0.011);
-        lum *= 0.91 + ripple * 0.09 + windRipple * 0.055;
+        const dune = texFbm(x * 0.12, y * 0.35, 51);
+        const slip = texFbm(x * 0.4 + 4, y * 0.08, 53);
+        lum *= 0.86 + dune * 0.16 + slip * 0.1 + ripple * 0.05 + windRipple * 0.035;
         if (hi) {
-          const cross = 0.5 + 0.5 * Math.sin(x * 0.31 + y * 0.09);
-          const fine = 0.5 + 0.5 * Math.sin(y * 0.55 + x * 0.12);
-          lum *= 0.97 + cross * 0.04 + fine * 0.03 + (n - 0.5) * 0.04;
+          const cross = texFbm(x * 0.55, y * 0.2, 55);
+          lum *= 0.94 + cross * 0.08 + (n - 0.5) * 0.05;
         }
         if (photo) {
-          // Micro-scale dune chatter + sparse darker wet patches.
-          const micro = 0.5 + 0.5 * Math.sin(x * 1.15 + y * 0.87) * Math.sin(y * 0.93);
+          const micro = texFbm(x * 1.4, y * 1.1, 57);
           const wet = texHash((x / 3) | 0, (y / 3) | 0, 101);
-          lum *= 0.96 + micro * 0.06 + (n2 - 0.5) * 0.05;
-          if (wet > 0.93) lum *= 0.86;
+          lum *= 0.93 + micro * 0.1 + (n2 - 0.5) * 0.06;
+          if (wet > 0.9) lum *= 0.82;
         }
         if (cinema) {
-          // Fine silica glitter + wind-sorted grain bands.
           const silica = texHash(x, y, 131);
-          if (silica > 0.97) lum *= 1.08;
-          const band = 0.5 + 0.5 * Math.sin(x * 0.045 + y * 0.22);
-          lum *= 0.98 + band * 0.035;
-          lum += (texHash(x * 3, y * 3, 137) - 0.5) * 14;
+          if (silica > 0.965) lum *= 1.1;
+          const band = texFbm(x * 0.08, y * 0.3, 59);
+          lum *= 0.96 + band * 0.06;
+          lum += (texHash(x * 3, y * 3, 137) - 0.5) * 18;
         }
         r = lum * 1.04;
         g = lum * 0.98;
         b = lum * 0.88;
-        if (n2 > 0.985) {
+        if (n2 > 0.98) {
           const peb = texHash(x, y, 31);
           r = lum * (0.58 + peb * 0.32);
           g = lum * (0.54 + peb * 0.3);
           b = lum * (0.46 + peb * 0.26);
-        } else if (n2 > 0.975) {
+        } else if (n2 > 0.965) {
           r *= 0.62;
           g *= 0.58;
           b *= 0.5;
-        } else if (hi && n2 > 0.955) {
-          // Sparse dark gravel flecks between larger pebbles.
+        } else if (hi && n2 > 0.94) {
           r *= 0.78;
           g *= 0.74;
           b *= 0.66;
         }
         const crack = texHash((x / 4) | 0, (y / 4) | 0, 17);
         const crack2 = texHash((x / 6) | 0, (y / 6) | 0, 23);
-        if ((crack > 0.88 && crack < 0.905) || (crack2 > 0.91 && crack2 < 0.928)) {
-          r *= 0.72;
-          g *= 0.68;
-          b *= 0.58;
+        if ((crack > 0.86 && crack < 0.91) || (crack2 > 0.89 && crack2 < 0.93)) {
+          r *= 0.7;
+          g *= 0.66;
+          b *= 0.56;
         }
         if (hi) {
           const crust = texHash((x / 5) | 0, (y / 7) | 0, 71);
-          if (crust > 0.9 && crust < 0.94) {
+          if (crust > 0.88 && crust < 0.94) {
             r *= 1.05;
             g *= 1.02;
             b *= 0.95;
           }
         }
       } else if (kind === "mountain") {
-        r = lum * 0.98;
-        g = lum * 0.96;
-        b = lum * 0.92;
+        r = lum * (0.94 + (mac - 0.5) * 0.08);
+        g = lum * (0.92 + (mid - 0.5) * 0.06);
+        b = lum * (0.88 + (fine - 0.5) * 0.05);
         const vein = Math.sin(x * 0.12 + y * 0.04 + texHash((x / 8) | 0, (y / 8) | 0, 19) * 3);
-        if (vein > 0.82) {
-          r += 22;
-          g += 20;
-          b += 16;
+        const veinOrg = texFbm(x * 0.09, y * 0.04, 71);
+        if (vein > 0.82 || veinOrg > 0.78) {
+          r += 22 + veinOrg * 10;
+          g += 20 + veinOrg * 8;
+          b += 16 + veinOrg * 6;
         }
         if (n2 > 0.9 && n2 < 0.96) {
           r *= 0.78;
@@ -12115,15 +12263,15 @@ function paintLandAlbedo(kind, w, h, d) {
           }
         }
       } else if (kind === "lakeside") {
-        r = lum * 0.9;
-        g = lum * 1.02;
-        b = lum * 0.88;
+        r = lum * (0.88 + (mac - 0.5) * 0.06);
+        g = lum * (1.0 + (mid - 0.5) * 0.08);
+        b = lum * (0.86 + (fine - 0.5) * 0.05);
         const wet = texHash((x / 8) | 0, (y / 8) | 0, 13);
-        if (wet > 0.72) {
-          const k = (wet - 0.72) / 0.28;
-          r *= 1 - k * 0.22;
-          g *= 1 - k * 0.18;
-          b *= 1 - k * 0.15;
+        if (wet > 0.68) {
+          const k = (wet - 0.68) / 0.32;
+          r *= 1 - k * 0.28;
+          g *= 1 - k * 0.22;
+          b *= 1 - k * 0.18;
         }
         const reed = texHash(x, (y / 12) | 0, 41);
         if (reed > 0.93 && reed < 0.97) {
@@ -12175,56 +12323,56 @@ function paintLandAlbedo(kind, w, h, d) {
           }
         }
       } else {
-        r = lum * 0.92;
-        g = lum * 0.98;
-        b = lum * 0.84;
-        if (n2 > 0.82 && n2 < 0.93) {
-          r *= 1.08;
-          g *= 0.9;
-          b *= 0.7;
-        } else if (n2 > 0.93 && n2 < 0.965) {
+        r = lum * (0.88 + (mac - 0.5) * 0.1);
+        g = lum * (0.96 + (mid - 0.5) * 0.1);
+        b = lum * (0.8 + (fine - 0.5) * 0.08);
+        if (n2 > 0.78 && n2 < 0.92) {
+          r *= 1.1;
+          g *= 0.88;
+          b *= 0.68;
+        } else if (n2 > 0.92 && n2 < 0.96) {
           const moss = texHash((x / 6) | 0, (y / 6) | 0, 43);
-          r *= 0.82;
-          g *= 1.08 + moss * 0.06;
-          b *= 0.75;
+          r *= 0.8;
+          g *= 1.1 + moss * 0.08;
+          b *= 0.72;
         }
         const litter = texHash(x, y, 47);
-        if (litter > 0.92 && litter < 0.945) {
-          r *= 0.78;
-          g *= 0.72;
-          b *= 0.55;
-        } else if (litter > 0.97) {
-          r *= 0.85;
-          g *= 0.88;
-          b *= 0.62;
-        }
-        if (n > 0.94) {
-          r *= 0.62;
-          g *= 0.74;
+        if (litter > 0.9 && litter < 0.94) {
+          r *= 0.76;
+          g *= 0.7;
           b *= 0.52;
+        } else if (litter > 0.96) {
+          r *= 0.82;
+          g *= 0.86;
+          b *= 0.58;
+        }
+        if (n > 0.92) {
+          r *= 0.6;
+          g *= 0.72;
+          b *= 0.5;
         }
         if (hi) {
           // Denser moss cushions, needle litter streaks, soft soil grain.
           const mossPad = texHash((x / 4) | 0, (y / 4) | 0, 89);
-          if (mossPad > 0.78 && mossPad < 0.92) {
-            const k = (mossPad - 0.78) / 0.14;
-            r *= 1 - k * 0.12;
-            g *= 1 + k * 0.1;
-            b *= 1 - k * 0.08;
+          if (mossPad > 0.72 && mossPad < 0.92) {
+            const k = (mossPad - 0.72) / 0.2;
+            r *= 1 - k * 0.16;
+            g *= 1 + k * 0.14;
+            b *= 1 - k * 0.1;
           }
           const needle = texHash(x, (y / 3) | 0, 97);
-          if (needle > 0.9 && needle < 0.955) {
-            r *= 0.9;
-            g *= 0.84;
-            b *= 0.68;
-          }
-          const soil = texHash(x, y, 101);
-          if (soil > 0.94) {
+          if (needle > 0.88 && needle < 0.955) {
             r *= 0.88;
             g *= 0.82;
-            b *= 0.7;
+            b *= 0.64;
           }
-          const grain = (n - 0.5) * 9;
+          const soil = texHash(x, y, 101);
+          if (soil > 0.92) {
+            r *= 0.86;
+            g *= 0.8;
+            b *= 0.68;
+          }
+          const grain = (n - 0.5) * 12;
           r += grain;
           g += grain * 1.05;
           b += grain * 0.85;
@@ -12513,35 +12661,68 @@ function paintOrganicBreakup(id, w, h, d) {
       const i = (y * w + x) * 4;
       const mac = texFbm(x, y, 27);
       const mid = texFbm(x * 2, y * 2, 44);
-      const rutLane = 0.22 + texFbm(x * 0.35, y * 0.12, 41) * 0.38;
-      const rutLaneB = 0.52 + texFbm(x * 0.28 + 9, y * 0.1, 43) * 0.32;
-      const rut = Math.min(Math.abs(u - rutLane), Math.abs(u - rutLaneB));
+      const fine = texFbm(x * 5, y * 5, 61);
+      const macro = texFbm(x * 0.18, y * 0.18, 19);
+      const rutLane = 0.18 + texFbm(x * 0.35, y * 0.12, 41) * 0.42;
+      const rutLaneB = 0.48 + texFbm(x * 0.28 + 9, y * 0.1, 43) * 0.36;
+      const rutLaneC = 0.34 + texFbm(x * 0.22 + 3, y * 0.15, 47) * 0.28;
+      const rut = Math.min(
+        Math.abs(u - rutLane),
+        Math.abs(u - rutLaneB),
+        Math.abs(u - rutLaneC)
+      );
       let r = d[i];
       let g = d[i + 1];
       let b = d[i + 2];
-      const shade = 0.82 + mac * 0.28 + (mid - 0.5) * 0.16;
+      // Wide shade swing + hue drift so soft roads stop reading as stamped cloth.
+      const shade =
+        0.72 + mac * 0.38 + (mid - 0.5) * 0.22 + (macro - 0.5) * 0.18 + (fine - 0.5) * 0.08;
       r *= shade;
-      g *= shade * (0.97 + mac * 0.05);
-      b *= shade * (0.94 + mid * 0.06);
-      if (rut < 0.07) {
-        const k = 1 - rut / 0.07;
-        r -= k * 18;
-        g -= k * 12;
-        b -= k * 8;
+      g *= shade * (0.94 + mac * 0.08 + (macro - 0.5) * 0.04);
+      b *= shade * (0.9 + mid * 0.08 + (fine - 0.5) * 0.03);
+      if (rut < 0.09) {
+        const k = 1 - rut / 0.09;
+        r -= k * 26;
+        g -= k * 18;
+        b -= k * 12;
       }
       if (id === "mud" || id === "dirt") {
         const pocket = texFbm(x >> 1, y >> 2, 9);
-        if (pocket > 0.78) {
-          const k = (pocket - 0.78) / 0.22;
-          r *= 1 - k * 0.22;
-          g *= 1 - k * 0.16;
-          b *= 1 - k * 0.1;
+        if (pocket > 0.7) {
+          const k = (pocket - 0.7) / 0.3;
+          r *= 1 - k * 0.3;
+          g *= 1 - k * 0.22;
+          b *= 1 - k * 0.14;
+        }
+        const clay = texFbm(x >> 2, y >> 1, 13);
+        if (clay > 0.82) {
+          const k = (clay - 0.82) / 0.18;
+          r = r * (1 - k * 0.25) + (168 + mac * 30) * k * 0.25;
+          g = g * (1 - k * 0.25) + (128 + mid * 24) * k * 0.25;
+          b = b * (1 - k * 0.25) + (88 + fine * 18) * k * 0.25;
         }
       }
-      if (id === "gravel" && texHash(x, y, 101) > 0.93) {
-        r += 28;
-        g += 22;
-        b += 14;
+      if (id === "sand") {
+        const dune = texFbm(x * 0.4, y * 0.15, 33);
+        r *= 0.9 + dune * 0.16;
+        g *= 0.92 + dune * 0.12;
+        b *= 0.94 + dune * 0.08;
+        if (texHash(x, y, 107) > 0.96) {
+          r *= 0.72;
+          g *= 0.7;
+          b *= 0.62;
+        }
+      }
+      if (id === "gravel") {
+        if (texHash(x, y, 101) > 0.9) {
+          r += 36;
+          g += 28;
+          b += 18;
+        } else if (texHash(x, y, 103) > 0.94) {
+          r *= 0.7;
+          g *= 0.68;
+          b *= 0.62;
+        }
       }
       d[i] = Math.max(0, Math.min(255, r));
       d[i + 1] = Math.max(0, Math.min(255, g));
@@ -12734,7 +12915,7 @@ function roadNormalFor(id) {
   if (!VISUAL.realisticArcade) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `v6|t${tier}|${key}`;
+  const cacheKey = `v7|t${tier}|${key}`;
   const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -12752,7 +12933,7 @@ function roadNormalFor(id) {
 function roadTextureFor(id) {
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `v6|t${tier}|${key}`;
+  const cacheKey = `v7|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -12805,7 +12986,7 @@ function skirtTextureFor(scenery) {
       ? scenery
       : "forest";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `skirt|v6|t${tier}|${kind}`;
+  const cacheKey = `skirt|v7|t${tier}|${kind}`;
   const hit = SKIRT_TEX.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
@@ -12839,7 +13020,7 @@ function skirtNormalFor(scenery) {
       ? scenery
       : "forest";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `skirtN|v4|t${tier}|${kind}`;
+  const cacheKey = `skirtN|v5|t${tier}|${kind}`;
   const hit = SKIRT_NORM.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
@@ -12863,7 +13044,7 @@ function roadAoFor(id) {
   if (!VISUAL.realisticArcade || (VISUAL.tier || 0) < 3) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 3;
-  const cacheKey = `v6|t${tier}|${key}`;
+  const cacheKey = `v7|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -12906,7 +13087,7 @@ function roadRoughFor(id) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `rough|v4|t${tier}|${key}`;
+  const cacheKey = `rough|v5|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, (VISUAL.textureScale || 1) * 0.5);
@@ -12931,9 +13112,9 @@ function roadRoughFor(id) {
             : 0.78;
   for (let i = 0; i < img.data.length; i += 4) {
     const lum = (img.data[i] + img.data[i + 1] + img.data[i + 2]) / (3 * 255);
-    // Specular flecks on bright aggregate; darker ruts stay rough.
-    let r = base + (1 - lum) * 0.45 + (lum - 0.5) * 0.12;
-    r = Math.max(0.08, Math.min(0.98, r));
+    // Specular flecks on bright aggregate; darker ruts stay rough — wider swing.
+    let r = base + (1 - lum) * 0.58 + (lum - 0.5) * 0.18;
+    r = Math.max(0.06, Math.min(0.99, r));
     const v = (r * 255) | 0;
     img.data[i] = v;
     img.data[i + 1] = v;
@@ -12971,7 +13152,7 @@ function landRoughnessMap(scenery, span) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `land-rough|v4|t${tier}|${kind}`;
+  const cacheKey = `land-rough|v5|t${tier}|${kind}`;
   const hit = LAND_ROUGH.get(cacheKey);
   if (hit) {
     const map = hit.clone();
@@ -12994,13 +13175,13 @@ function landRoughnessMap(scenery, span) {
   const base = kind === "desert" ? 0.86 : kind === "mountain" ? 0.7 : kind === "lakeside" ? 0.76 : 0.88;
   for (let i = 0; i < img.data.length; i += 4) {
     const lum = (img.data[i] + img.data[i + 1] + img.data[i + 2]) / (3 * 255);
-    let r = base + (0.5 - lum) * 0.38;
-    // Visual Pass V4 — darker albedo → wetter (lower roughness); mountain rock flecks harder.
+    let r = base + (0.5 - lum) * 0.52;
+    // Darker albedo → wetter (lower roughness); mountain rock flecks harder.
     if (kind === "lakeside" || kind === "desert") {
-      if (lum < 0.42) r -= 0.12;
+      if (lum < 0.42) r -= 0.16;
     }
-    if (kind === "mountain" && lum > 0.62) r += 0.1;
-    r = Math.max(0.18, Math.min(0.98, r));
+    if (kind === "mountain" && lum > 0.62) r += 0.14;
+    r = Math.max(0.12, Math.min(0.98, r));
     const v = (r * 255) | 0;
     img.data[i] = v;
     img.data[i + 1] = v;

@@ -47,7 +47,8 @@ export class Hud {
     this.bodyWrap = document.getElementById("cluster-body");
     if (this.bodyWrap) this.bodyWrap.hidden = true;
     if (this.gripWrap) this.gripWrap.hidden = !this._debugHud;
-    if (this.clusterSurface) this.clusterSurface.hidden = !this._debugHud;
+    // Surface stays visible on chase cluster — friends need to read sand vs tarmac.
+    if (this.clusterSurface) this.clusterSurface.hidden = false;
     if (this.slideBadge) this.slideBadge.hidden = true;
     this._mphShown = 0;
     this._rpmShown = 0;
@@ -184,13 +185,15 @@ export class Hud {
 
     if (this.slideBadge) {
       const slide = clamp01(s.slidePct != null ? s.slidePct : 0);
-      const show = this._debugHud && (slide > 0.2 || !!s.drifting);
+      // Player-facing: show when sideways so slide/land feedback sells arcade weight.
+      const show = slide > 0.22 || !!s.drifting;
       if (this.slideBadge.hidden === show) this.slideBadge.hidden = !show;
       const hot = slide > 0.55 ? "1" : "0";
       if (this.slideBadge.dataset.hot !== hot) this.slideBadge.dataset.hot = hot;
     }
 
     if (this.bodyWrap) this.bodyWrap.hidden = true;
+    if (this.clusterSurface) this.clusterSurface.hidden = false;
 
     if (!this._chase) return;
     const mph = Math.max(0, kmh * KMH_TO_MPH);

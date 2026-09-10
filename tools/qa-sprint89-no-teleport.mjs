@@ -108,11 +108,11 @@ check(
   "Safari throw has a long land pad before the climb",
   /rise: 5\.2, lip: 8, gap: 26, drop: 3\.6, land: 52/.test(courses)
 );
-check("game + AI import vehicle.js?v=93+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 93);
-check("AI imports vehicle.js?v=93+", Number((ai.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 93);
+check("game + AI import vehicle.js?v=159+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 93);
+check("AI imports vehicle.js?v=159+", Number((ai.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 93);
 check("game imports collide.js?v=38+", Number((game.match(/collide\.js\?v=(\d+)/) || [])[1]) >= 38);
-check("game imports track.js?v=189+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 189);
-check("game imports courses.js?v=62+", Number((game.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 62);
+check("game imports track.js?v=353+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 189);
+check("game imports courses.js?v=86+", Number((game.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 62);
 check("cache-bust chain", cacheOk && Number(gameV) >= 429, `main=${mainV} game=${gameV}`);
 
 console.log(

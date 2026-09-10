@@ -207,9 +207,9 @@ check(
   sweepA ? `${sweepA.text}` : "null"
 );
 
-check("game imports track.js?v=196+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 196);
+check("game imports track.js?v=353+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 196);
 check("game imports engine.js?v=56+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 56);
-check("game imports codriver.js?v=35+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 35);
+check("game imports codriver.js?v=45+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 35);
 check(
   "countdown VO must end before pace notes",
   /armCountVo/.test(engine) &&
@@ -223,7 +223,7 @@ check(
   /paceNotesAllowed/.test(driver) && /_heldNote/.test(driver) && /fromHold/.test(driver)
 );
 check("finish countGo does not re-arm the start-grid gate", /if \(!armed\) return/.test(engine));
-check("engine imports soundtrack.js?v=135+", Number((engine.match(/soundtrack\.js\?v=(\d+)/) || [])[1]) >= 135);
+check("engine imports soundtrack.js?v=353+", Number((engine.match(/soundtrack\.js\?v=(\d+)/) || [])[1]) >= 135);
 check("engine still wires SkidVoice", /SkidVoice/.test(engine) && /this\.skid\.setState/.test(engine));
 check("skid gravel pan from driftAngle", /StereoPanner|createStereoPanner/.test(read("js/audio/skid.js")) && /signedYaw|driftAngle/.test(read("js/audio/skid.js")));
 check("per-course DISC_MIX in soundtrack", /DISC_MIX/.test(read("js/audio/soundtrack.js")));

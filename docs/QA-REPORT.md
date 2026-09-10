@@ -1,5 +1,286 @@
 # QA report — quality-control pass
 
+## Hero-only engine soften + rival mute (2026-09-09)
+
+**Player moment:** Desert practice, medium chase. Floor it — cabin engine is thicker / less whistle; pack cars stay visually loud but **silent** on exhaust (player hero beds only). Tire scrape and finish cheer from the friend impress pass are unchanged.
+
+**Why this sprint (not V8 downloads):** Two sample-acquisition agents failed with zero progress. Shipping a code-only mute + bassier hero mix beats waiting on network packs.
+
+**Shipped:**
+1. **Rival engine / exhaust hard mute** — single `PowertrainVoice` for the player; `RallyAudio.updateRivalEngines()` is a no-op; race loop calls it with `null` so no pack beds can sneak in (`engine.js?v=74`, `game.js?v=799`). Confirmed: `ai.js` has no audio hooks.
+2. **Bassier / less shrill hero** — lower scream `highVol`, later highMix open, tighter powertrain + shared SFX low-pass, stronger air cut (−5.8 dB @ 3.8 kHz), reduced presence / whistle, slightly lower `rateMul` (`powertrain.js?v=30`).
+3. **Acquisition gap (documented, not filled):** open-source **V8 / multi-car engine sample pack** remains missing — no network download this sprint. Current beds stay the licensed Celica / Delta / Stratos MP3s in `assets/sfx/` (see ATTRIBUTION.txt).
+
+**Proof:** `node tools/qa-static-audit.mjs` (PASS · 20)
+
+**Boot:** `main.js?v=799` · `game.js?v=799` · `engine.js?v=74` · `powertrain.js?v=30` · `skid.js?v=10` · `audio/crowd.js?v=6` (untouched tire/finish paths)
+
+**Human gate:** Hard-refresh → Desert practice. WOT should sound fuller, not piercing. Drive past rivals — no pack engine beds. First sand scrape + finish cheer still present.
+
+**Still blocking (honest):** Open-source V8 sample pack acquisition; Forest fern billboard / tunnel geology; absolute 60 fps not claimed; headed Chrome probes SKIP here.
+
+---
+
+## Finish grandstand densify — local Kenney + seated banks (2026-09-09)
+
+**Player moment:** Crossing the checkered finish — both banks read as packed stands (not a thin start-line strip). Start gallery stays reasonable.
+
+**Shipped:** `_addGrandstandCrowds` finish tip: alongSpan 32, 6 rows × 14 seats, dual Kenney modules/side, scaleMul 1.28, outward ribbon retries so both sides fill. Start unchanged (18 / 4×9 / 1 module). `maxPoses` raised so finish seats are not clipped. No external HQ GLB download.
+
+**Docs:** `ASSET-ACQUISITION-MANIFEST.md` **GRANDSTAND_HERO** = PARTIAL (Kenney) / HQ filled stand MISSING.
+
+**Proof:** `node tools/qa-static-audit.mjs` PASS
+
+**Boot:** `main.js?v=799` · `game.js?v=799` · `track.js?v=356` · `crowd.js?v=34` · `prop-kit.js?v=45` (unchanged assets)
+
+**Still open:** HQ CC0 PBR grandstand acquisition (see manifest). Do not call Kenney PASS.
+
+---
+
+## Friend impress pass — tires, pack, finish, HUD (2026-09-09)
+
+**Player moment:** 10-minute friend demo. Championship Desert, Automatic. First sand corner scrapes in the cabin; pack cars hold distinct grooves and stay in the fight; chase cluster shows SURFACE + SLIDE; finish corridor swells into a cheer spike as the checkered row approaches.
+
+**Why “pretty fun” was not yet impressive (after feel pass `?v=794`):**
+- Tire beds still spoke late / quiet — sand slides and asphalt squeal did not sell the first corner.
+- Pack pace / lines still samey (`lineBias` ±0.48 m, tight skill band, soft rubber band).
+- Finish flags shipped earlier, but crowd beds stayed flat through the gantry and muted instantly on result.
+- Chase cluster hid SURFACE (debug-only) and SLIDE — new players got no readable tire/surface cue.
+
+**Shipped (4 player-visible changes — no `track.js` / `vehicle.js` architecture rewrite):**
+1. **Tire / slide beds** — earlier yaw/slip speak; louder gravel/sand scrape + asphalt squeal; stronger door pan (`skid.js?v=10`).
+2. **Alive pack** — wider skill floor/ceiling, firmer rubber band, per-rival attack pace, wider `lineBias` / apex / mistakes (`config.js` AI + `ai.js?v=192`).
+3. **Finish crowd event** — approach hype in last ~140 m; `finishCrowdBurst` before loop fade; mute deferred so the cheer lands (`crowd.js?v=6`, `engine.js?v=73`).
+4. **HUD clarity** — SURFACE always on chase cluster; SLIDE badge when sideways; stronger surface typography (`hud.js?v=39`, `game.css?v=46`).
+
+**Proof:** `node tools/qa-static-audit.mjs` (PASS)
+
+**Boot:** `main.js?v=796` · `game.js?v=796` · `config.js?v=233` · `engine.js?v=73` · `skid.js?v=10` · `crowd.js?v=6` · `ai.js?v=192` · `hud.js?v=39` · `css/game.css?v=46` · `vehicle.js?v=159` (import cache only — no handling rewrite)
+
+**Human gate / friend script:** Hard-refresh → Championship → Celica Automatic → Desert. Notice GO (from feel pass), first sand right scrape + SLIDE badge, pack cars on different lines, finish cheer + checkered row.
+
+**Still blocking (honest):** No rival engine voices; Forest fern billboard / tunnel geology; absolute 60 fps not claimed; headed Chrome probes SKIP here.
+
+---
+
+## Arcade feel pass — weight, sand, GO, engine (2026-09-09)
+
+**Player moment:** 2-minute Desert practice, medium chase. Brake into the first easy right — nose dives and the look target pitches. Floor it — look pushes down the road, launch hits harder. Safari land / wall glance punch the lens and pad. Sand rotates under brake instead of stopping like tarmac. GO flashes with a short FOV/shake. Engine beds are less shrill at high load.
+
+**Why it was not fun / not “arcade realistic” (code evidence):**
+- Medium chase muted mass: `speedLookAheadScale: 0`, `landKickMul: 0.22`, `shakeMul: 0.22` / `shakeAmp: 0.1`, then `_feelPad` crushed land shake under `0.14 * shakeMul` (~3 cm chatter). Brake/accel pitch muls were ~0.03 / 0.01.
+- Wall / rival hits never fed camera shake — only audio sparks.
+- Soft sand stopped too much (`brakeHold` 0.22) vs the AM3 “brake begins the slide” brief.
+- Shared SFX LP sat at 9800 Hz with hot scream layers (`highVol` 0.66–0.76) — harsh cabin noise.
+- Auto box was already retuned this day (`vehicle.js?v=158`) — left alone.
+
+**Shipped (feel only — no `track.js` / `vehicle.js` architecture rewrite):**
+1. **Medium camera weight/speed** — look-ahead rush 0.62; brake/accel pitch 0.078 / 0.042; land kick 0.82; shake 0.78 / amp 0.58; still **no** continuous FOV zoom-out (car size stays put).
+2. **Impact / landing pad** — land + wall/car impulses survive the soft chatter cap; glued chase always applies shake; stronger rumble / FOV kick.
+3. **Desert sand + attack→slide→recover** — sand brakeHold/Yaw/driftEase; `launchBoost` 1.88, `slideExitBoost` 1.68, `trailBrakeYaw` 1.08, `throttleSlide` / `powerSlidePitch`, recovery assist; readable mesh dive/squat.
+4. **GO punch** + **engine soften** (powertrain scream/LP + shared SFX LP 7200 + −3.6 dB air cut).
+
+**Proof:** `node tools/qa-static-audit.mjs` (PASS · 21) · `node tools/qa-medium-camera.mjs` (PASS)
+
+**Boot:** `main.js?v=794` · `game.js?v=794` · `config.js?v=232` · `engine.js?v=72` · `powertrain.js?v=29` · `vehicle.js?v=158` (unchanged architecture) · `ai.js?v=191`
+
+**Human gate:** Hard-refresh → Desert practice → Automatic. 3-2-1-GO should kick the lens. Brake into the first right — attitude + pitch. Hit a Safari lip and land — pad punch. Floor it on sand — longer slide, earlier catch. Engine should sound fuller, less whistle.
+
+**Still blocking (honest):** Forest fern billboard / tunnel portal geology; no rival engine voices in the mix; AI pack still can feel samey; absolute 60 fps not claimed; headed Chrome probes SKIP here.
+
+---
+
+## Arcade automatic transmission retune (2026-09-09)
+
+**Player moment:** Automatic Celica/Delta — light cruise upshifts early; WOT still hangs near redline; brake into a hairpin dumps gears decisively; mid-throttle hills no longer sit stuck in a tall gear.
+
+**Cause:** Late thresholds (`upCoast` 0.68, `coastDownRpm` 3400, kick only above 55% throttle), long cool timers (90 ms up), and a **throttle dead zone** (22–55%) with no downshift. Upshifts could also fire on throttle shut when RPM was still high.
+
+**Shipped:** `HANDLING.auto` retune + `_autoShift` logic: require throttle for upshifts; earlier light-throttle / later WOT blend (`th^1.35`); kick from 38% throttle; coast/sag/brake floors raised; shorter cools; mid-throttle sag path. Shared Vehicle path (player + AI).
+
+| Constant | Before | After |
+|---|---|---|
+| `upCoast` / `upWot` | 0.68 / 0.955 | 0.56 / 0.93 |
+| `kickDownRpm` / kick throttle | 4800 / 0.55 | 5200 / 0.38 |
+| `brakeDownMin`–`Max` | 5000–6400 | 5600–7000 |
+| `coastDownRpm` | 3400 | 4200 |
+| `coolUp` / `coolDown` / `coolBrake` | 0.09 / 0.055 / 0.04 | 0.05 / 0.035 / 0.025 |
+| New | — | `upMinThrottle` 0.1, `sagDownRpm` 3900, `coastThrottle` 0.28, `hardDumpRpm` 5200 |
+
+**Proof:** `node tools/qa-static-audit.mjs` (PASS · 21)
+
+**Boot:** `main.js?v=793` · `game.js?v=793` · `ai.js?v=191` · `vehicle.js?v=158` · `config.js?v=231`
+
+**Human gate:** Hard-refresh → Automatic. Ease onto throttle (early upshifts); floor it (hold near redline); brake into a hairpin (multi-gear dump); partial throttle uphill (kick/sag downshift).
+
+---
+
+## Finish-line checkered cloth row (2026-09-09)
+
+**Player moment:** Cross / approach the finish gantry. No awkward overhead checkered blob. Ten independently waving checkered flags line the finish corridor.
+
+**Cause:** `_dressGantry` hung a flat vinyl START/FINISH banner plane over the ribbon (still read as a blob at chase distance). Finish only planted two synced checkered cloth poles (same wind phase).
+
+**Shipped:**
+- FINISH skips the overhead `stage-banner` plane; keeps steel gantry + painted deck stripe
+- `_plantFinishCheckerRow` plants **10** checkered Verlet cloth flags (5 along-track slots × left/right verge)
+- `flag-cloth.js` per-flag `seed` / `phase` / `gustPhase` / `turbPhase` / `windMul` / `dirBias` / `dampMul` so neighbours never sync-flap
+- START still plants a red cloth pair; no `Track.query` / `vehicle.js` rewrite
+
+**Proof:** `node tools/qa-cloth-flags.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=793` · `game.js?v=793` · `track.js?v=353` · `flag-cloth.js?v=4`
+
+**Human gate:** Hard-refresh → practice any stage → spawn near finish. Ten checkered flags should wave differently; no white/checkered card floating over the arch.
+
+---
+
+## Hero car lacquer + reflective windows (2026-09-09)
+
+**Player moment:** Medium chase / garage orbit. Body paint reads wet clearcoat; windshield and side glass catch sky and trees hard — still see-through in POV.
+
+**Cause:** Race glass only got a small `envMapIntensity` bump; lacquer clearcoat was soft (~0.07 roughness, ~1.4 coat env). IBL glass tint was ~1.0× so panes stayed dull outdoors.
+
+**Shipped:** `applyRaceWindowMaterial` (Physical clearcoat glass, env ~3.1 / coat ~3.6); stronger race paint clearcoat; `glass()` / `paint()` defaults; `applyEnvMap` glass ×2.2–2.55 + paint/chrome floors; `VISUAL.carEnvIntensity` 1.32.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=792` · `game.js?v=792` · `celica.js?v=205` · `pbr.js?v=53` · `config.js?v=230`
+
+**Human gate:** Hard-refresh → race. Orbit the car: panes should mirror the sky; lacquer should look wetter. C into POV — still readable through the windshield.
+
+---
+
+## Organic / UE5 texture breakup (2026-09-09)
+
+**Player moment:** Chase or stop on Desert / Forest / Mountain / Lakeside. Road and land sheets read as mottled soil/sand/rock — not wallpaper tiles. Soft surfaces show wandering ruts, pockets, and hue drift; shoulders pick up the same blotch language.
+
+**Cause:** Canvas paint and world-XZ projection were too gentle; Forest photo maps had mild vertex tint only; terrain/skirt shaders skipped blotch so land looked flatter than the ribbon.
+
+**Shipped:** Stronger `paintOrganicBreakup` + fbm land albedo; Forest/non-Forest `organicRoadTint` swing; GLSL blotch with hue drift + dual-scale mix; blotch armed on terrain/skirt; wider roughness from albedo. Texture cache keys `v7` / `rough|v5` / `land-albedo-v5` / shader `road-organic-v5` / `terrain-proj-v2`.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-road-micro.mjs`
+
+**Boot:** `main.js?v=789` · `game.js?v=789` · `track.js?v=353` · `pbr.js?v=53` · `celica.js?v=205` · `ai.js?v=186` · `rain.js?v=12` · `forest-tunnel.js?v=5`
+
+**Human gate:** Hard-refresh. Drive 30 s on each stage — look at verge + road at rest; seams should not read as repeating stamps.
+
+---
+
+## POV driver arms / hands on wheel (2026-09-09)
+
+**Player moment:** C-key cockpit. Dark suit sleeves enter the bottom of the FOV; gloved hands grip 9/3 on the rim and turn with the wheel.
+
+**Cause:** POV had a spinning rim and gauges but no driver body cues — the cabin felt empty.
+
+**Shipped:** Procedural gloves parented to `steerSpin`; fixed shoulders + sleeve stretch each frame in `cockpit-anim.js`; show/hide with `setCockpitView` only (no chase cam arms).
+
+**Proof:** `node tools/qa-pov-steer.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=786` · `game.js?v=786` · `celica.js?v=205` · `cockpit-anim.js?v=5` · `ai.js?v=185`
+
+**Human gate:** Hard-refresh → race → C for POV → steer left/right; hands must rotate with the rim; exit POV and arms must vanish.
+
+---
+
+## AAA menus / title / attract presentation (2026-09-09)
+
+**Player moment:** Boot splash → PRESS START → SELECT MODE hub with readable cards over the live showroom. Car / course / pause / result use the same cinema panel language. Attract camera cycles hero shots. Hovering a car previews it on the pad.
+
+**Cause:** Flat green button stacks, skipped SELECT MODE, turntable-only title cam — read as a debug shell next to the emblem splash.
+
+**Shipped:** Cinema `ui-panel` / `ui-card` system; mode hub restored; car preview on focus/hover; cinematic `_titleCam` shot reel; clearer back navigation; boot smoke expects menu hub.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
+
+**Boot:** `main.js?v=784` · `game.js?v=784` · `css/game.css?v=45` · `hud.js?v=38`
+
+**Human gate:** Hard-refresh. Emblem + attract tag. Start → mode cards with showroom visible. Championship → car cards; hover swaps pad car.
+
+---
+
+## Soft-road 3D tire ruts + trails (2026-09-09)
+
+
+**Player moment:** Desert sand / Forest dirt / mud / gravel. Behind the car, two tire trenches with berm lips cut into the road; dusty trails linger. Throttle, brake, slide, and wheelspin dig deeper. Physics height follows the deform field so the chassis settles into its own tracks.
+
+**Cause:** Prior ruts were shallow (~5–11 cm), coarse cells, slow accumulation, and mesh only followed a sparse field — trails barely read in chase.
+
+**Shipped:** Deeper surface caps (mud ~18 cm); 0.22 m cells; fast stamp accumulate; live trench profile on the 3D mesh; TireMarks dig from throttle/brake/spin; stronger soft sink in `SURFACES`; longer darker trail quads.
+
+**Proof:** `node tools/qa-soft-ruts.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=783` · `game.js?v=783` · `effects.js?v=79` · `surface-deform.js?v=6` · `track.js?v=353` · `config.js?v=228`
+
+**Human gate:** Hard-refresh. Desert — drive 50 m and look back: twin sand trenches + berms. Forest mud — darker, deeper dig on brake/slide.
+
+---
+
+## Wheel dust / sand / mud spray — visible physics particles (2026-09-09)
+
+
+**Player moment:** Soft-surface race (Desert sand, Forest dirt/gravel/mud). Rear and front tires kick readable grit and plume that fall under gravity, inherit chassis velocity / wheel spin / slip, and bounce or stick on the road.
+
+**Cause:** Prior wake was rear-only, emission ~40/s total (near-invisible), `uMaxPx` 14, and could be hidden when `glslCustom` was false.
+
+**Shipped:** 4-wheel emit (rear-biased); denser surface profiles; larger sprites; ground bounce/stick; unload + velY coupling; Desert/Forest dustStrength up; always-visible Points.
+
+**Proof:** `node tools/qa-sprint27-env.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=782` · `game.js?v=782` · `effects.js?v=79` · `config.js?v=227`
+
+**Human gate:** Hard-refresh. Desert — slide or accelerate hard; sand plume off the rears. Forest dirt — brown grit. Mud sections — dark clumps that drop fast.
+
+---
+
+## Rival pack — independent calm race lines (2026-09-09)
+
+
+**Player moment:** Championship pack. Rivals hold similar but distinct grooves — out-in-out without thrashing lanes every time someone is ahead.
+
+**Cause:** Rival-vs-rival “same groove” was ~3.15 m (almost the whole road), so every car ahead triggered hard dodge. Fast avoid blend + stacked pass-side + continuous line wander made the pack look chaotic.
+
+**Shipped:** Per-rival `lineBias` / `apexStyle`; quieter wander; groove overlap ~1.15 m for AI; softer/slower dodge; settle back to personal line in clear air.
+
+**Proof:** `node tools/qa-sprint64-line.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=781` · `game.js?v=781` · `ai.js?v=184` · `config.js?v=226`
+
+**Human gate:** Hard-refresh. Start a championship race — pack fans across the ribbon and corners without constant weave.
+
+---
+
+## Mountain POV rain — aperture fit + live dynamics + wipe (2026-09-09)
+
+
+**Player moment:** Stage 3 POV. Beads sit on the windshield aperture only — not over the roof or rearview. Brake / slide / yaw move the beads. Wipers are Celica-scale, sweep a real path, and clear rubber-width trails.
+
+**Shipped:** inset hull rain geo with top cut + `alphaTest`; mirror-band spawn/paint clip; dynamics from `_axDrive` / yaw / brake / throttle / pitch; correct blade length & cowl pivots; destination-out wipe paths; better droplet paint + world streaks.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=779` · `game.js?v=779` · `celica.js?v=205` · `rain.js?v=11`
+
+**Human gate:** Mountain `?rain=1` → C. Mirror stays clean. Brake throws beads up the glass. Wipers cut dry arcs.
+
+---
+
+## Post double-exposure ghost — kill SSGI + stale bloom (2026-09-09)
+
+**Player moment:** Any chase / race present. The image is one clean frame — not a soft semi-transparent copy sitting on top of the real render.
+
+**Cause:** Phase R.2 half-res SSGI samples scene colour and **adds** it back in the composite (default strength 0.2) — a soft double of the whole frame. Lock-30 also reused a prior bloom blur field, which left translucent highlight ghosts.
+
+**Shipped:** `VISUAL.ssgi = false` / `ssgiStrength = 0`. Bloom always rebakes each present. If SSGI is re-enabled later, composite only uses a bake from this present (never a stale colour RT).
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=778` · `game.js?v=778` · `config.js?v=224` · `postfx.js?v=37`
+
+**Human gate:** Hard-refresh. Drive Desert medium cam — no milky second image over the road/car.
+
+---
+
 ## Ship v777 — 24h session to Pages (2026-09-09)
 
 **Player moment:** Live github.io build after this push. Hard-refresh `?v=777`.
@@ -14,7 +295,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint76-perf.mjs` (cadence gates)
 
-**Boot:** `main.js?v=777` · `game.js?v=777` · `celica.js?v=199` · `rain.js?v=10` · `postfx.js?v=34` · `occlusion-fade.js?v=20` · `config.js?v=223` · `ai.js?v=183` · `track.js?v=346`
+**Boot:** `main.js?v=777` · `game.js?v=777` · `celica.js?v=205` · `rain.js?v=10` · `postfx.js?v=37` · `occlusion-fade.js?v=22` · `config.js?v=223` · `ai.js?v=183` · `track.js?v=353`
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard-refresh `?v=777`
 
@@ -34,7 +315,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=777` · `game.js?v=777` · `config.js?v=223` · `postfx.js?v=34` · `occlusion-fade.js?v=20` · `celica.js?v=199` · `rain.js?v=10` · `ai.js?v=183` · `track.js?v=346`
+**Boot:** `main.js?v=777` · `game.js?v=777` · `config.js?v=223` · `postfx.js?v=37` · `occlusion-fade.js?v=22` · `celica.js?v=205` · `rain.js?v=10` · `ai.js?v=183` · `track.js?v=353`
 
 **Human gate:** Hard-refresh, C to medium/far on any stage. Cars stay opaque. Drive past a pack car on your nose — it stays solid (may briefly occlude you).
 
@@ -54,7 +335,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
 
-**Boot:** `main.js?v=773` · `game.js?v=773` · `collide.js?v=55` · `vehicle.js?v=154` · `ai.js?v=181` · `track.js?v=345` · `effects.js?v=75` · `postfx.js?v=32`
+**Boot:** `main.js?v=773` · `game.js?v=773` · `collide.js?v=55` · `vehicle.js?v=159` · `ai.js?v=181` · `track.js?v=353` · `effects.js?v=79` · `postfx.js?v=37`
 
 **Human gate:** Hard-refresh, Desert championship. If 60 is not held, FPS readout should sit near 30 without a potato look. POV mirror may update at present Hz (not 60 while the world is 30).
 
@@ -70,7 +351,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static`
 
-**Boot:** `main.js?v=772` · `game.js?v=772` · `celica.js?v=197` · `ai.js?v=180`
+**Boot:** `main.js?v=772` · `game.js?v=772` · `celica.js?v=205` · `ai.js?v=180`
 
 **Human gate:** hard-refresh title. Side-on: glass follows the door cut, not a card in front of the pillar.
 
@@ -84,7 +365,7 @@
 - **Road-edge pinball** — `collide.js?v=54`: glance kills a share of closing speed and feeds along-nose; correction passes 1–5 are position-only; shoulder dumps outward speed into along-track (`PLAYER_SHOULDER_SCRAPE`), not 0.2 inward bounce; env push 0.58 → 0.24 m. No `vehicle.js` rewrite.
 - **Hero tree materials** — island trees are one mesh + 3 materials; `splitHeroTreeMesh` slices groups so leaves keep foliage PBR. Kenney `tree_*` no longer parse on Forest/Mountain kit. HTTP-prefetch 8 hero GLBs when Forest/Mountain is queued.
 - **Asset gate** — `FOREST_TREE_LARGE` / `FOREST_TREE_MEDIUM` HAVE + PASS (`qa-asset-quality` exit 0). Far LOD still Sketchfab cards.
-- **In-flight merge:** title nose/glass (`celica.js?v=196`), lock-30 light layers, GO-lock (`vehicle.js?v=153` import only), SSGI/gpu-lod, Desert 1k maps — left in tree, not re-implemented.
+- **In-flight merge:** title nose/glass (`celica.js?v=205`), lock-30 light layers, GO-lock (`vehicle.js?v=159` import only), SSGI/gpu-lod, Desert 1k maps — left in tree, not re-implemented.
 
 **48h already shipped (verified, not re-done):** tire grit, Forest tunnel length, Desert Safari spacing, Mountain reverse-at-GO, world-XZ PBR, lock-30 (do not restore 16 outdoor point lights).
 
@@ -106,7 +387,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-asset-quality.mjs`
 
-**Boot:** `main.js?v=771` · `game.js?v=771` · `collide.js?v=54` · `vehicle.js?v=153` · `ai.js?v=179` (shared vehicle) · `prop-kit.js?v=43` · `track.js?v=344` · `celica.js?v=196`
+**Boot:** `main.js?v=771` · `game.js?v=771` · `collide.js?v=54` · `vehicle.js?v=159` · `ai.js?v=179` (shared vehicle) · `prop-kit.js?v=45` · `track.js?v=353` · `celica.js?v=205`
 
 **Human gate:** Desert drift onto the verge — scrape along, do not bounce back onto tarmac. Forest 12 m — bark and leaves are different materials. Title orbit — painted nose, smooth side glass.
 
@@ -129,7 +410,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=771` · `game.js?v=771` · `vehicle.js?v=153` · `celica.js?v=196` · `ai.js?v=179` (shared vehicle/celica)
+**Boot:** `main.js?v=771` · `game.js?v=771` · `vehicle.js?v=159` · `celica.js?v=205` · `ai.js?v=179` (shared vehicle/celica)
 
 **Human gate:** hard-refresh title. Network: no `gt4.glb` / `sunflowers` / `kloppenheim` until a race that needs them. Pad still shows the Celica. PRESS START → car buttons unlock from rival LODs without a 7 MB hitch.
 
@@ -148,7 +429,7 @@
 
 **Proof:** `node tools/qa-asset-quality.mjs` PASS · `node tools/qa-static-audit.mjs` PASS
 
-**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
+**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=353` · `prop-kit.js?v=45` · `config.js?v=222` · `lighting-rig.js?v=23` · `desert-pbr.js?v=53`
 
 **Human gate:** Forest stop-and-look at 5/10/20/30 m — two trees must not read as faceted pack trunks. Desert start — sand/dirt/tarmac photographic, not canvas grain.
 
@@ -171,7 +452,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=770` · `game.js?v=770` · `vehicle.js?v=152` · `celica.js?v=196` · `ai.js?v=178` (shared vehicle/celica)
+**Boot:** `main.js?v=770` · `game.js?v=770` · `vehicle.js?v=159` · `celica.js?v=205` · `ai.js?v=178` (shared vehicle/celica)
 
 **Human gate:** hard-refresh title. Network: no `gt4.glb` / `sunflowers` / `kloppenheim` until a race that needs them. Pad still shows the Celica. PRESS START → car buttons unlock from rival LODs without a 7 MB hitch.
 
@@ -181,7 +462,7 @@
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard-refresh `?v=770`
 
-**This push:** grit, Forest tunnel, Desert jumps, lights-out lock, lock-30 light layers, projected PBR, title nose/glass, Forest hero trees + Desert 1k maps, shoulder scrape (not pinball). `prop-kit` one instance. `collide.js?v=53` / `vehicle.js?v=152` shared.
+**This push:** grit, Forest tunnel, Desert jumps, lights-out lock, lock-30 light layers, projected PBR, title nose/glass, Forest hero trees + Desert 1k maps, shoulder scrape (not pinball). `prop-kit` one instance. `collide.js?v=53` / `vehicle.js?v=159` shared.
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
@@ -200,7 +481,7 @@
 
 **Proof:** `node tools/qa-asset-quality.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=343` · `prop-kit.js?v=42` · `config.js?v=222` · `lighting-rig.js?v=21` · `desert-pbr.js?v=1`
+**Boot:** `main.js?v=770` · `game.js?v=770` · `track.js?v=353` · `prop-kit.js?v=45` · `config.js?v=222` · `lighting-rig.js?v=23` · `desert-pbr.js?v=53`
 
 **Human gate:** Forest stop-and-look at 5/10/20/30 m — two trees must not read as faceted pack trunks. Desert start — sand/dirt/tarmac photographic, not canvas grain.
 
@@ -220,7 +501,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=771` · `game.js?v=771` · `postfx.js?v=31` · `renderer-factory.js?v=5` · `track.js?v=344` · `gpu-lod.js?v=1`
+**Boot:** `main.js?v=771` · `game.js?v=771` · `postfx.js?v=37` · `renderer-factory.js?v=5` · `track.js?v=353` · `gpu-lod.js?v=1`
 
 **Verify:** default URL (WebGL + SSGI + importance LOD). `?webgpu=1` — console `[Phase R.2] renderer=webgl2 three=r170`. `?webgpu=native` — `renderer=webgpu` if `navigator.gpu` works; post off. `?webgpu=0` forces classic WebGL.
 
@@ -237,7 +518,7 @@
 
 **Not in this push:** `hd-src` / Kenney backups (not live). Road-edge pinball follow-up still open.
 
-**Boot:** `main.js?v=766` · `game.js?v=766` · `prop-kit.js?v=42` (one instance) · `track.js?v=341` · `celica.js?v=196` · `vehicle.js?v=151`
+**Boot:** `main.js?v=766` · `game.js?v=766` · `prop-kit.js?v=45` (one instance) · `track.js?v=353` · `celica.js?v=205` · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
@@ -260,7 +541,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-sprint84-title-showroom.mjs --static` PASS. Headed title screenshot **SKIP** in this Cursor host (Chrome.app TransformProcessType abort; IDE browser tab unavailable).
 
-**Boot:** `main.js?v=766` · `game.js?v=766` · `celica.js?v=196` · `ai.js?v=178` (shared celica) · `pbr.js?v=49` · `track.js?v=340` · `forest-tunnel.js?v=4` · `rain.js?v=8`
+**Boot:** `main.js?v=766` · `game.js?v=766` · `celica.js?v=205` · `ai.js?v=178` (shared celica) · `pbr.js?v=53` · `track.js?v=353` · `forest-tunnel.js?v=4` · `rain.js?v=8`
 
 **Human gate:** hard-refresh `http://127.0.0.1:8765/` title. Nose-on: bumper/grille/hood vents are painted, not black holes. Orbit: left and right side glass are one smooth reflective pane each. Delta/Stratos share the dress path.
 
@@ -279,7 +560,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-go-launch.mjs` PASS (static contracts). Headed Mountain GO **SKIP** in this Cursor host (Chrome.app TransformProcessType abort). Run `RALLY_QA_ALLOW_CHROME=1 node tools/qa-go-launch.mjs` from Terminal.app for the live probe.
 
-**Boot:** `main.js?v=763` · `game.js?v=763` · `vehicle.js?v=151` · `ai.js?v=177` (shared vehicle)
+**Boot:** `main.js?v=763` · `game.js?v=763` · `vehicle.js?v=159` · `ai.js?v=177` (shared vehicle)
 
 **Human gate:** Mountain practice + championship Stage 3. Hold accelerate through 3-2-1. At GO the car must only go forward. Repeat Desert / Forest / Lakeside Time Attack.
 
@@ -302,7 +583,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`. Headed Windows 5 fps **not measured here**. Frame probe if the host allows.
 
-**Boot:** `main.js?v=764` · `game.js?v=764` · `lighting-rig.js?v=20` · `perf-tier.js?v=52` · `postfx.js?v=29` · `sky.js?v=46` · `renderer-factory.js?v=3` · `capabilities.js?v=2`
+**Boot:** `main.js?v=764` · `game.js?v=764` · `lighting-rig.js?v=23` · `perf-tier.js?v=52` · `postfx.js?v=37` · `sky.js?v=48` · `renderer-factory.js?v=3` · `capabilities.js?v=2`
 
 **Human gate:** Windows iGPU Desert start, medium chase. HUD should settle near 30, not 5. Shadows and grade still on. Tunnel mouth still lit, no shader pop.
 
@@ -319,7 +600,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-go-launch.mjs`
 
-**Boot:** `main.js?v=762` · `game.js?v=762` · `vehicle.js?v=151` · `ai.js?v=177` (shared vehicle)
+**Boot:** `main.js?v=762` · `game.js?v=762` · `vehicle.js?v=159` · `ai.js?v=177` (shared vehicle)
 
 **Human gate:** Mountain practice + championship Stage 3. Hold accelerate through 3-2-1. At GO the car must only go forward. Repeat Desert / Forest / Lakeside Time Attack.
 
@@ -343,7 +624,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-road-micro.mjs` · `node tools/qa-asset-quality.mjs` (exit 1 Forest REJECT expected)
 
-**Boot:** `main.js?v=763` · `game.js?v=763` · `pbr.js?v=48` · `track.js?v=339` · `forest-tunnel.js?v=3` · `celica.js?v=195` · `ai.js?v=177` · `rain.js?v=7`
+**Boot:** `main.js?v=763` · `game.js?v=763` · `pbr.js?v=53` · `track.js?v=353` · `forest-tunnel.js?v=3` · `celica.js?v=205` · `ai.js?v=177` · `rain.js?v=7`
 
 **Human gate:** Desert start, medium chase — sand grain unique under the car, not bars. Forest dirt should not wallpaper every 2 m; tarmac/cobble stay distinct.
 
@@ -365,7 +646,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-jump-feel.mjs` PASS · `node tools/qa-jump-launch-energy.mjs` PASS · `node tools/qa-sprint74-jump-air.mjs` PASS · `node tools/qa-sprint68-jump-land.mjs` PASS (static; headed SKIP — no Chrome)
 
-**Boot:** `main.js?v=761` · `game.js?v=761` · `courses.js?v=85` · `desert-definition.js?v=8` · `jump.js?v=32` (unchanged)
+**Boot:** `main.js?v=761` · `game.js?v=761` · `courses.js?v=86` · `desert-definition.js?v=9` · `jump.js?v=34` (unchanged)
 
 **Human gate:** Desert practice, medium chase. First jump flies and lands. A beat of sand. Second jump is its own event. Brake-in-air still drops the nose.
 
@@ -384,7 +665,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS (Forest ~2233 m, 1 tunnel) · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-desert-tunnel-mouth.mjs` PASS (static) · headed Forest practice **SKIP** (Chrome blocked in Cursor agent host; IDE browser tab unavailable)
 
-**Boot:** `main.js?v=758` · `game.js?v=758` · `courses.js?v=85` · `forest-definition.js?v=8` · `track.js?v=338` · `forest-tunnel.js?v=2`
+**Boot:** `main.js?v=758` · `game.js?v=758` · `courses.js?v=86` · `forest-definition.js?v=9` · `track.js?v=353` · `forest-tunnel.js?v=2`
 
 **Human gate:** Forest practice, medium chase, drive the tunnel. It should feel almost twice as long. Walls/ceiling/floor joins stay closed — no sky or woods through the lining.
 
@@ -405,7 +686,7 @@
 
 **Proof:** `node tools/qa-sprint27-env.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=755` · `game.js?v=755` · `effects.js?v=74`
+**Boot:** `main.js?v=755` · `game.js?v=755` · `effects.js?v=79`
 
 **Human gate:** Desert start, medium chase, throttle + a slide. Small tan grit behind the rears. Forest dirt is browner. Lakeside tarmac must throw nothing.
 
@@ -425,7 +706,7 @@
 
 **Proof:** `node tools/qa-road-micro.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=751` · `game.js?v=751` · `track.js?v=337` · `pbr.js?v=47` · `road-micro.js?v=10` · `vehicle.js?v=150` · `celica.js?v=194` · `ai.js?v=175` · `rain.js?v=6`
+**Boot:** `main.js?v=751` · `game.js?v=751` · `track.js?v=353` · `pbr.js?v=53` · `road-micro.js?v=12` · `vehicle.js?v=159` · `celica.js?v=205` · `ai.js?v=175` · `rain.js?v=6`
 
 **Human gate:** Desert start, medium chase. Road grain should look unique under the car, not repeating bars. Forest dirt should not wallpaper every 2 m.
 
@@ -445,7 +726,7 @@
 
 **Proof:** `node tools/qa-sprint63-plant.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=749` · `game.js?v=749` · `celica.js?v=192` · `vehicle.js?v=149` · `ai.js?v=173`
+**Boot:** `main.js?v=749` · `game.js?v=749` · `celica.js?v=205` · `vehicle.js?v=159` · `ai.js?v=173`
 
 **Human gate:** Start grid / first 100 m in medium chase. Tires should look planted on asphalt; floor the throttle and confirm the hull does not trampoline.
 
@@ -465,7 +746,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=745` · `game.js?v=745` · `celica.js?v=188` · `ai.js?v=169` · `rain.js?v=4`
+**Boot:** `main.js?v=745` · `game.js?v=745` · `celica.js?v=205` · `ai.js?v=169` · `rain.js?v=4`
 
 **Human gate:** Mountain (or `?rain=1`) → C for POV. Parked: beads creep down. Throttle: streaks climb. Wipers cut a clean path.
 
@@ -484,7 +765,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-rival-jitter.mjs` · `node tools/qa-phys-authority.mjs`
 
-**Boot:** `main.js?v=742` · `game.js?v=742` · `vehicle.js?v=148` · `ai.js?v=166`
+**Boot:** `main.js?v=742` · `game.js?v=742` · `vehicle.js?v=159` · `ai.js?v=166`
 
 **Human gate:** Desert or Forest start — full throttle in medium chase. Body should look heavy and smooth; rivals the same.
 
@@ -503,7 +784,7 @@
 
 **Proof:** `node tools/qa-world-geometry.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=741` · `game.js?v=741` · `track.js?v=335` · `courses.js?v=82` · `forest-definition.js?v=7` · `forest-pbr.js?v=2`
+**Boot:** `main.js?v=741` · `game.js?v=741` · `track.js?v=353` · `courses.js?v=86` · `forest-definition.js?v=9` · `forest-pbr.js?v=53`
 
 **Human gate:** Championship Stage 2 — from the start you can see the dirt vs grass; kerbs mark the edge at speed.
 
@@ -524,7 +805,7 @@
 
 **Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=740` · `game.js?v=740` · `track.js?v=334`
+**Boot:** `main.js?v=740` · `game.js?v=740` · `track.js?v=353`
 
 **Human gate:** Championship Stage 2 — start to hairpin. Nothing in the driven lane; verge trees stay in the woods.
 
@@ -543,7 +824,7 @@
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=739` · `game.js?v=739` · `track.js?v=333`
+**Boot:** `main.js?v=739` · `game.js?v=739` · `track.js?v=353`
 
 **Human gate:** Desert / Forest — slide a wheel onto the verge at 40–80 km/h; chassis stays on the dirt, no asphalt/shoulder z-fight.
 
@@ -590,7 +871,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=737` · `game.js?v=737` · `celica.js?v=185` · `pbr.js?v=45` · `config.js?v=220`
+**Boot:** `main.js?v=737` · `game.js?v=737` · `celica.js?v=205` · `pbr.js?v=53` · `config.js?v=220`
 
 **Human gate:** hard-refresh the title — windshield and all four side/rear panes are mirrors; no broken triangles in the apertures; C-key POV glass on a stage still see-through.
 
@@ -632,7 +913,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-garage-cars.mjs` PASS
 
-**Boot:** `main.js?v=730` · `game.js?v=730` · `celica.js?v=179` · `ai.js?v=165`
+**Boot:** `main.js?v=730` · `game.js?v=730` · `celica.js?v=205` · `ai.js?v=165`
 
 **Human gate:** C on all three garage cars — wheel/gauges left, mirror right and smaller, driving still readable.
 
@@ -668,7 +949,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `qa-static-audit` PASS · `qa-validate` PASS · `qa-world-geometry` PASS · `qa-env-clip` PASS · `qa-desert-tunnel-mouth` PASS. Headed Forest interior: Chrome harness unavailable in this pass (SKIP).
 
-**Boot:** `main.js?v=728` · `game.js?v=728` · `track.js?v=332` · `forest-tunnel.js?v=1` · `celica.js?v=177` (shared with `ai.js`) · `vehicle.js?v=147` (shared)
+**Boot:** `main.js?v=728` · `game.js?v=728` · `track.js?v=353` · `forest-tunnel.js?v=1` · `celica.js?v=205` (shared with `ai.js`) · `vehicle.js?v=159` (shared)
 
 ---
 ## Organic roads + Mountain rain / POV wipers (2026-09-06)
@@ -688,20 +969,20 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-garage-cars.mjs` PASS
 
-**Boot:** `main.js?v=727` · `game.js?v=727` · `track.js?v=332` · `pbr.js?v=40` · `celica.js?v=177` · `ai.js?v=163` · `engine.js?v=71` · `rain.js?v=1` · `forest-pbr.js?v=1`
+**Boot:** `main.js?v=727` · `game.js?v=727` · `track.js?v=353` · `pbr.js?v=53` · `celica.js?v=205` · `ai.js?v=163` · `engine.js?v=71` · `rain.js?v=1` · `forest-pbr.js?v=53`
 
 ---
 ## Ship v727 → GitHub Pages (2026-09-06)
 
 **Player moment:** hard-refresh the public build and get the last 48h of local work — Forest PBR ground, hero rocks/logs, cloth flags, Mountain rain/wipers, countdown VO hold, camera/lighting/particles, and race polish — not the stale v676 Pages tree.
 
-**Shipped this push:** working-tree session on `cursor/saturn-rally-scaffold` merged to `main` for `.github/workflows/pages.yml`. Boot chain `index → main.js?v=727 → game.js?v=727`. `game.js` / `ai.js` share `vehicle.js?v=147` and `celica.js?v=177`. `game.js` / `celica.js` / `track.js` / `rain.js` share `pbr.js?v=40`. Mountain rain is live (`StageWeather` in the race present).
+**Shipped this push:** working-tree session on `cursor/saturn-rally-scaffold` merged to `main` for `.github/workflows/pages.yml`. Boot chain `index → main.js?v=727 → game.js?v=727`. `game.js` / `ai.js` share `vehicle.js?v=159` and `celica.js?v=205`. `game.js` / `celica.js` / `track.js` / `rain.js` share `pbr.js?v=53`. Mountain rain is live (`StageWeather` in the race present).
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` PASS · `node tools/qa-env-clip.mjs` PASS · `node tools/qa-garage-cars.mjs` PASS.
 
 **Still PARTIAL (honest):** Forest hero trees remain REJECT (`qa-asset-quality` exit 1 — do not fake PASS). Forest tunnel is the existing clean tube + rock-face mouths, not a new geology set. `forest_hero_fern` is still a 4-plane billboard.
 
-**Boot:** `main.js?v=727` · `game.js?v=727` · `track.js?v=331` · `celica.js?v=177` · `ai.js?v=162` · `rain.js?v=1`
+**Boot:** `main.js?v=727` · `game.js?v=727` · `track.js?v=353` · `celica.js?v=205` · `ai.js?v=162` · `rain.js?v=1`
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard refresh `?v=727`
 
@@ -723,7 +1004,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-env-clip.mjs` PASS (headed SKIP) · `node tools/qa-desert-tunnel-mouth.mjs` PASS (headed SKIP) · `node tools/qa-garage-cars.mjs` PASS · `node tools/qa-cloth-flags.mjs` PASS (free verts move, hoist pinned, desert wind > forest). Chrome harness blocked under Cursor (no GUI Chrome).
 
-**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=330` · `flag-cloth.js?v=2`
+**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=353` · `flag-cloth.js?v=4`
 
 ---
 ## Rear-tire roost — physics spray on soft surfaces (2026-09-06)
@@ -753,7 +1034,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Limits:** Points sprites, not meshed clods. Ground kill uses spawn height + strided re-query (not a full collider). Grass still throws a little. Rival roost is a silhouette, not player-quality.
 
-**Boot:** `main.js?v=724` · `game.js?v=724` · `effects.js?v=70` · `vehicle.js?v=147` (unchanged) · `config.js?v=218`
+**Boot:** `main.js?v=724` · `game.js?v=724` · `effects.js?v=79` · `vehicle.js?v=159` (unchanged) · `config.js?v=218`
 
 ---
 ## Finish-line white blob — Kenney gantry + unlit checkers (2026-09-06)
@@ -771,7 +1052,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-env-clip.mjs` PASS (static; headed Chrome blocked under Cursor)
 
-**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=330`
+**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=353`
 
 **Human gate:** hard-refresh, practice Desert or Forest, spawn ~20 m before the gantry. Steel arch + red FINISH band, no white blob.
 
@@ -794,7 +1075,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS (celica singleton `?v=175`) · `node tools/qa-validate.mjs` PASS · `node tools/qa-garage-cars.mjs` PASS
 
-**Boot:** `main.js?v=723` · `game.js?v=723` · `celica.js?v=175` (game + ai) · `ai.js?v=162` · `pbr.js?v=39` unchanged
+**Boot:** `main.js?v=723` · `game.js?v=723` · `celica.js?v=205` (game + ai) · `ai.js?v=162` · `pbr.js?v=53` unchanged
 
 ---
 ## Start / finish cloth flags — CPU Verlet wind (2026-09-06)
@@ -814,7 +1095,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` GREEN · `node tools/qa-env-clip.mjs` PASS (headed SKIP) · `node tools/qa-desert-tunnel-mouth.mjs` PASS (headed SKIP) · `node tools/qa-garage-cars.mjs` PASS · `node tools/qa-cloth-flags.mjs` PASS (free verts move, hoist pinned, desert wind > forest). Chrome harness blocked under Cursor (no GUI Chrome).
 
-**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=330` · `flag-cloth.js?v=2`
+**Boot:** `main.js?v=724` · `game.js?v=724` · `track.js?v=353` · `flag-cloth.js?v=4`
 
 ---
 ## Start-grid navigator hold — countdown VO + 2 s (2026-09-06)
@@ -832,20 +1113,20 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-sprint67-pace-vo.mjs` PASS · `node tools/qa-sprint81-countdown-vo.mjs` PASS
 
-**Boot:** `main.js?v=723` · `game.js?v=723` · `engine.js?v=70` · `codriver.js?v=44`
+**Boot:** `main.js?v=723` · `game.js?v=723` · `engine.js?v=70` · `codriver.js?v=45`
 
 ---
 ## Ship v723 → GitHub Pages (2026-09-06)
 
 **Player moment:** hard-refresh the public build and get the last 48h of local work — Forest PBR ground, hero rocks/logs, cloth start/finish flags, countdown VO hold, camera/lighting/particles, and race polish — not the stale v676 Pages tree.
 
-**Shipped this push:** working-tree session on `cursor/saturn-rally-scaffold` merged to `main` for `.github/workflows/pages.yml`. Boot chain `index → main.js?v=723 → game.js?v=723`. `game.js` / `ai.js` share `vehicle.js?v=147` and `celica.js?v=175`. `game.js` / `celica.js` share `pbr.js?v=39`.
+**Shipped this push:** working-tree session on `cursor/saturn-rally-scaffold` merged to `main` for `.github/workflows/pages.yml`. Boot chain `index → main.js?v=723 → game.js?v=723`. `game.js` / `ai.js` share `vehicle.js?v=159` and `celica.js?v=205`. `game.js` / `celica.js` share `pbr.js?v=53`.
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `node tools/qa-validate.mjs` PASS · `node tools/qa-world-geometry.mjs` PASS · `node tools/qa-env-clip.mjs` PASS · `node tools/qa-garage-cars.mjs` PASS.
 
 **Still PARTIAL (honest):** Forest hero trees remain REJECT (`qa-asset-quality` exit 1 — do not fake PASS). Forest tunnel is the existing clean tube + rock-face mouths, not a new geology set. `forest_hero_fern` is still a 4-plane billboard.
 
-**Boot:** `main.js?v=723` · `game.js?v=723` · `track.js?v=330` · `celica.js?v=175` · `ai.js?v=162`
+**Boot:** `main.js?v=723` · `game.js?v=723` · `track.js?v=353` · `celica.js?v=205` · `ai.js?v=162`
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ · hard refresh `?v=723`
 
@@ -870,7 +1151,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Residual:** Desert/Mountain/Lakeside canvas albedo can still look bright under the new key. `pbr.js` cinema `WORLD_ENV` (1.72) still multiplies terrain IBL — left alone (parallel celica work). HDR skyboxes are bright photos. Night/tunnel darker than outdoor by existing shade blend.
 
-**Boot:** `main.js?v=723` · `game.js?v=723` · `config.js?v=218` (all importers). `pbr.js?v=39` / `lighting-rig.js?v=19` / `postfx.js?v=28` unchanged.
+**Boot:** `main.js?v=723` · `game.js?v=723` · `config.js?v=218` (all importers). `pbr.js?v=53` / `lighting-rig.js?v=23` / `postfx.js?v=37` unchanged.
 
 ---
 ## Forest 0–30 m photo ground — dirt/gravel/floor PBR (2026-09-06)
@@ -892,7 +1173,7 @@ Title splash glass is opaque mirrored clearcoat. Default medium chase follows tr
 
 **Proof:** `node tools/qa-asset-quality.mjs` (expect INCOMPLETE / exit 1 — trees) · `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-garage-cars.mjs`
 
-**Boot:** `main.js?v=714` · `game.js?v=714` · `track.js?v=326` · `forest-pbr.js?v=1`
+**Boot:** `main.js?v=714` · `game.js?v=714` · `track.js?v=353` · `forest-pbr.js?v=53`
 
 ---
 ## Photorealism audit — no generator edit (2026-09-06)
@@ -957,9 +1238,9 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-garage-cars.mjs`
 
-**Boot:** `main.js?v=713` · `game.js?v=713` · `track.js?v=325` · `prop-kit.js?v=41`
+**Boot:** `main.js?v=713` · `game.js?v=713` · `track.js?v=353` · `prop-kit.js?v=45`
 
-**Human gate:** Forest — stop, orbit, inspect rocks/logs/ferns at 5 / 10 / 20 / 30 m, then drive 30–70 m/s. Trees at that distance will still look low-poly. Headed check: hero rocks/ferns instance with albedo+normal; `forest_hero_log` needed a retry plant (too many tunnel/keep-out misses) in `track.js?v=325`.
+**Human gate:** Forest — stop, orbit, inspect rocks/logs/ferns at 5 / 10 / 20 / 30 m, then drive 30–70 m/s. Trees at that distance will still look low-poly. Headed check: hero rocks/ferns instance with albedo+normal; `forest_hero_log` needed a retry plant (too many tunnel/keep-out misses) in `track.js?v=353`.
 
 ---
 ## Forest 0–50 m environment pass — shoulder, groves, pack rocks (2026-09-06)
@@ -974,7 +1255,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-garage-cars.mjs`
 
-**Boot:** `main.js?v=711` · `game.js?v=711` · `track.js?v=323` · `prop-kit.js?v=40` · `config.js?v=217` · `vehicle.js?v=147`
+**Boot:** `main.js?v=711` · `game.js?v=711` · `track.js?v=353` · `prop-kit.js?v=45` · `config.js?v=217` · `vehicle.js?v=159`
 
 **Human gate:** Forest at 30–70 m/s — inspect ~50 m of racing line: shoulder breakup, grove vs glade, grounded rocks, no float/bury, no drive-corridor clip. Desert should be unchanged except cache-bust.
 
@@ -989,7 +1270,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-medium-camera.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=710` · `game.js?v=710` · `config.js?v=217` · `vehicle.js?v=147`
+**Boot:** `main.js?v=710` · `game.js?v=710` · `config.js?v=217` · `vehicle.js?v=159`
 
 **Human gate:** Desert / Forest / Mountain / Lakeside — hairpin, crest, gravel straight, hard brake, landing, tunnel. C-key POV and far must still be the old cameras.
 
@@ -1004,7 +1285,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-grip-envelope.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-desert-tunnel-mouth.mjs`
 
-**Boot:** `main.js?v=709` · `game.js?v=709` · `vehicle.js?v=146` · `jump.js?v=31` · `config.js?v=216` · `ai.js?v=159`
+**Boot:** `main.js?v=709` · `game.js?v=709` · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=216` · `ai.js?v=159`
 
 **Human gate:** Physics Lab `?physlab=1` — identical gravel corner at low / medium / high speed; brake-in vs throttle-out; catch the slide. Jump launcher is PATCH 3+.
 
@@ -1019,7 +1300,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-jump-launch-energy.mjs` · `node tools/qa-jump-feel.mjs` · `node tools/qa-jump-variability.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=707` · `game.js?v=707` · `vehicle.js?v=145` · `jump.js?v=30` · `config.js?v=215` · `ai.js?v=158`
+**Boot:** `main.js?v=707` · `game.js?v=707` · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=215` · `ai.js?v=158`
 
 ---
 ## Ballistic jumps — speed × lip, not a trampoline (2026-09-06)
@@ -1032,7 +1313,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-jump-feel.mjs` · `node tools/qa-jump-variability.mjs` · `node tools/qa-static-audit.mjs`
 
-**Boot:** `main.js?v=705` · `game.js?v=705` · `vehicle.js?v=144` · `jump.js?v=29` · `config.js?v=214` · `ai.js?v=156`
+**Boot:** `main.js?v=705` · `game.js?v=705` · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=214` · `ai.js?v=156`
 
 ---
 ## Title-screen side windows — inner GLB panes (2026-09-06)
@@ -1045,7 +1326,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · headed title screenshot
 
-**Boot:** `main.js?v=702` · `game.js?v=702` · `celica.js?v=169` · `ai.js?v=154`
+**Boot:** `main.js?v=702` · `game.js?v=702` · `celica.js?v=205` · `ai.js?v=154`
 
 ---
 ## Deep-bore readability — cave follow-spot (2026-09-06)
@@ -1058,7 +1339,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` (lighting gate rejects `caveInt >= 42`)
 
-**Boot:** `main.js?v=699` · `game.js?v=699` · `config.js?v=213` · `lighting-rig.js?v=17`
+**Boot:** `main.js?v=699` · `game.js?v=699` · `config.js?v=213` · `lighting-rig.js?v=23`
 
 **Human gate (not claimed here):** Forest deep bore — road and Celica readable; approach/mouth/exit still clean; outdoor restored.
 
@@ -1073,7 +1354,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` (lighting + compile-gate)
 
-**Boot:** `main.js?v=698` · `game.js?v=698` · `lighting-rig.js?v=16` · `ai.js?v=152` · `celica.js?v=167`
+**Boot:** `main.js?v=698` · `game.js?v=698` · `lighting-rig.js?v=23` · `ai.js?v=152` · `celica.js?v=205`
 
 **Human gate (not claimed here):** 3-2-1 no flash; outdoor→tunnel smooth darken; tunnel→outdoor smooth recovery, no near-black frame.
 
@@ -1088,7 +1369,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-garage-cars.mjs`
 
-**Boot:** `main.js?v=697` · `game.js?v=697` · `ai.js?v=152` · `celica.js?v=167`
+**Boot:** `main.js?v=697` · `game.js?v=697` · `ai.js?v=152` · `celica.js?v=205`
 
 **No FPS claim.** Next: lighting continuity (countdown → GO → tunnel), not another perf pass.
 
@@ -1099,7 +1380,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Cause:** `Opponent._drive` built `{ steer, throttle, brake, handbrake, shiftUp, shiftDown }` inline for `Vehicle.step`. `step()` copies those fields synchronously and does not retain the object.
 
-**Shipped:** each rival mutates `this._input`. Handling, probes, and rival count unchanged. `vehicle.js?v=142` / `celica.js?v=167` still matched.
+**Shipped:** each rival mutates `this._input`. Handling, probes, and rival count unchanged. `vehicle.js?v=159` / `celica.js?v=205` still matched.
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-garage-cars.mjs`
 
@@ -1133,7 +1414,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs` · `node tools/qa-garage-cars.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint40-telemetry.mjs`
 
-**Boot:** `main.js?v=694` · `game.js?v=694` · `ghost.js?v=2` · `celica.js?v=167` · `vehicle.js?v=142` · `ai.js?v=151`
+**Boot:** `main.js?v=694` · `game.js?v=694` · `ghost.js?v=2` · `celica.js?v=205` · `vehicle.js?v=159` · `ai.js?v=151`
 
 ---
 ## Hotfix — rival tires planted on the road (2026-09-05)
@@ -1146,7 +1427,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-garage-cars.mjs` · `node tools/qa-car-scale.mjs`
 
-**Boot:** `main.js?v=693` · `game.js?v=693` · `celica.js?v=167` · `vehicle.js?v=142` · `ai.js?v=151`
+**Boot:** `main.js?v=693` · `game.js?v=693` · `celica.js?v=205` · `vehicle.js?v=159` · `ai.js?v=151`
 
 ---
 ## Hotfix — Stage 2 Forest tunnel look + clip (2026-09-05)
@@ -1159,7 +1440,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-world-geometry.mjs`
 
-**Boot:** `main.js?v=690` · `game.js?v=690` · `track.js?v=317`
+**Boot:** `main.js?v=690` · `game.js?v=690` · `track.js?v=353`
 
 ---
 ## Hotfix — shoulders match stage land (2026-09-05)
@@ -1172,7 +1453,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-world-geometry.mjs`
 
-**Boot:** `main.js?v=692` · `game.js?v=692` · `track.js?v=319`
+**Boot:** `main.js?v=692` · `game.js?v=692` · `track.js?v=353`
 
 ---
 ## Hotfix — off-road no longer parks the car (2026-09-05)
@@ -1185,7 +1466,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-sprint26-driving.mjs` · `node tools/qa-sprint22-runoff.mjs`
 
-**Boot:** `main.js?v=683` · `game.js?v=683` · `collide.js?v=52` · `vehicle.js?v=141` · `ai.js?v=150`
+**Boot:** `main.js?v=683` · `game.js?v=683` · `collide.js?v=52` · `vehicle.js?v=159` · `ai.js?v=150`
 
 ---
 ## Default chase height +10% lock (2026-09-05)
@@ -1203,7 +1484,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** closer Saturn haze (desert yellow 48–360 m, forest green 32–240 m, mountain cool 55–380 m); paler sand ribbon; zebras on the opening right and the VLER finale; closer forest corridor; brick-red Mountain walls; start-town already on Desert.
 
-**Boot:** `main.js?v=681` · `config.js?v=211` · `track.js?v=310`
+**Boot:** `main.js?v=681` · `config.js?v=211` · `track.js?v=353`
 
 ---
 ## Stage overhaul — Saturn Rally 1995 maps (2026-09-05)
@@ -1216,20 +1497,20 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-world-geometry.mjs` · `node tools/qa-validate.mjs`
 
-**Boot:** `main.js?v=680` · `courses.js?v=79` · `track.js?v=309`
+**Boot:** `main.js?v=680` · `courses.js?v=86` · `track.js?v=353`
 
 ---
 ## Hotfix — clip through env geometry (2026-09-05)
 
 **Player report:** car clips through environmental geometry (tunnel lining, roadside props, airborne hops).
 
-**Cause:** (1) `glanceObstacles` / tunnel clamp ran only while `onGround`, so a hop punched rock; (2) tunnel clamp used ribbon-centre lateral, so a yawed OBB corner entered lining while the origin was still on paint; (3) desert gallery + lakeside barriers were visual-only; (4) `ai.js` loaded `vehicle.js?v=136` while `game.js` loaded `v=138` — two Vehicle classes.
+**Cause:** (1) `glanceObstacles` / tunnel clamp ran only while `onGround`, so a hop punched rock; (2) tunnel clamp used ribbon-centre lateral, so a yawed OBB corner entered lining while the origin was still on paint; (3) desert gallery + lakeside barriers were visual-only; (4) `ai.js` loaded `vehicle.js?v=159` while `game.js` loaded `v=138` — two Vehicle classes.
 
-**Shipped:** env collision every tick (air + ground); chassis-corner tunnel extents; 0.28 m TOI sweep; desert gallery / lakeside barrier colliders; game↔AI share `vehicle.js?v=139`. Short props skip when the chassis is already above them.
+**Shipped:** env collision every tick (air + ground); chassis-corner tunnel extents; 0.28 m TOI sweep; desert gallery / lakeside barrier colliders; game↔AI share `vehicle.js?v=159`. Short props skip when the chassis is already above them.
 
 **Proof:** `node tools/qa-env-clip.mjs` (static) · `node tools/qa-garage-cars.mjs` · `node tools/qa-desert-tunnel-mouth.mjs`
 
-**Boot:** `main.js?v=679` · `game.js?v=679` · `track.js?v=308` · `collide.js?v=51` · `vehicle.js?v=140` · `ai.js?v=149` · `config.js?v=210`
+**Boot:** `main.js?v=679` · `game.js?v=679` · `track.js?v=353` · `collide.js?v=51` · `vehicle.js?v=159` · `ai.js?v=149` · `config.js?v=210`
 
 ---
 ## Hotfix — broken shoulder holes (2026-09-05)
@@ -1240,7 +1521,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** per-point smoothed reach L/R; shared endpoint verts; long skirts use two rings; outer lip seats into land; apron hues match land floor hexes.
 
-**Boot:** `main.js?v=670` · `track.js?v=304`
+**Boot:** `main.js?v=670` · `track.js?v=353`
 
 ---
 ## Hotfix — Stage 1 dark after tunnel (2026-09-05)
@@ -1251,7 +1532,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** desert open-sky ambient/hemi/fill/exposure; tunnel ambient nearer outdoor; warmer bore fog; ease-out exit shade + faster exit blend; soft sun floor / snap outdoor blend.
 
-**Boot:** `main.js?v=668` · `config.js?v=209` · `lighting-rig.js?v=13` · `track.js?v=303`
+**Boot:** `main.js?v=668` · `config.js?v=209` · `lighting-rig.js?v=23` · `track.js?v=353`
 
 ---
 ## Hotfix — orange desert shoulders (2026-09-05)
@@ -1262,7 +1543,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** desert shoulders use land sand hues; light edge blend only; skirt grain v4 matches land albedo beige.
 
-**Boot:** `main.js?v=667` · `game.js?v=667` · `track.js?v=302`
+**Boot:** `main.js?v=667` · `game.js?v=667` · `track.js?v=353`
 
 ---
 ## Hotfix — Desert tunnel mouth blocked + wall clip (2026-09-05)
@@ -1275,7 +1556,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs`
 
-**Boot:** `main.js?v=666` · `game.js?v=666` · `track.js?v=301` · `collide.js?v=49` · `vehicle.js?v=137`
+**Boot:** `main.js?v=666` · `game.js?v=666` · `track.js?v=353` · `collide.js?v=49` · `vehicle.js?v=159`
 
 ---
 ## Hotfix — medium cam locks behind car (2026-09-05)
@@ -1308,7 +1589,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** thick bore lining segments + rib bands + higher-res groove map; wall faces densified and aligned to lining inset (0.42 m); firmer wall push + more penetration passes; hard bore lateral clamp (no soft runoff through rock).
 
-**Boot:** `main.js?v=663` · `track.js?v=300` · `collide.js?v=48`
+**Boot:** `main.js?v=663` · `track.js?v=353` · `collide.js?v=48`
 
 ---
 ## Hotfix — race hangs / lags on M1 Pro (2026-09-04)
@@ -1319,7 +1600,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** block next-stage builds during live race (result/loading own warmup); `prewarmAlongCourse` + settle compile drain under load overlay; countdown skip-frames drain into scratch RT; pin softScaleMin at 1 (no mid-race resize); soft-PCF shadowEvery 2 (same map size); reuse prefetch Set + mirror clear + crowd audio bags; longer stream lookahead.
 
-**Boot:** `main.js?v=662` · `game.js?v=662` · `track.js?v=299` · `config.js?v=206` · `perf-tier.js?v=51`
+**Boot:** `main.js?v=662` · `game.js?v=662` · `track.js?v=353` · `config.js?v=206` · `perf-tier.js?v=51`
 
 ---
 ## Hotfix — blue flash ×3 at stage start (2026-09-04)
@@ -1330,7 +1611,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** skip stream compile during countdown/freeze; compile into a 4×4 scratch RT; restore mirror clearColor; dark `#game-view` / `#crt` fallbacks (title keeps blue).
 
-**Boot:** `main.js?v=660` · `css/game.css?v=44` · `track.js?v=298`
+**Boot:** `main.js?v=660` · `css/game.css?v=44` · `track.js?v=353`
 
 ---
 ## Hotfix — realistic biped audience (2026-09-04)
@@ -1341,7 +1622,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** regenerated `crowd_atlas.png` (skin gradients, fabric weave, face panels); rebuilt all 12 `character-*.glb` with tapered limbs, head/jaw/nose/ears/hair/shoes + cheer arms; kit asset `?v=18`.
 
-**Boot:** `main.js?v=658` · `prop-kit.js?v=32` · `crowd.js?v=22` · `track.js?v=296`
+**Boot:** `main.js?v=658` · `prop-kit.js?v=45` · `crowd.js?v=22` · `track.js?v=353`
 
 ---
 ## Hotfix — medium chase L/R sway (2026-09-04)
@@ -1363,7 +1644,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** `applyWheelPose` subtracts `x·tan(roll)` so tread stays on the deck under lean; tire plant sink 4 cm; `TIRE_PLANT` 4.5 cm; `GROUND_HOVER_MAX` 8 mm.
 
-**Boot:** `main.js?v=655` · `celica.js?v=162` · `vehicle.js?v=135`
+**Boot:** `main.js?v=655` · `celica.js?v=205` · `vehicle.js?v=159`
 
 ---
 ## Hotfix — shoulder clip while sliding off (2026-09-04)
@@ -1374,7 +1655,7 @@ Sources under `assets/props/hd-src/polyhaven/`. Runtime GLBs `assets/props/fores
 
 **Shipped:** `Track._shoulderPlantHeight` mirrors skirt reach / `skirtDrop` / 0.38 slope; `query` plants on that ramp until past the skirt, then land.
 
-**Boot:** `main.js?v=654` · `track.js?v=294`
+**Boot:** `main.js?v=654` · `track.js?v=353`
 
 ---
 ## Hotfix — off-road plant + road shoulders (2026-09-04)
@@ -1565,7 +1846,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 | `qa-validate` / `qa-static-audit` / `qa-world-geometry` / `qa-am3-handling` / `qa-sprint70-camera` | PASS |
 | Headed worldvalidate | run after boot (Forest recommended) |
 
-**Boot:** `main.js?v=634` · `track.js?v=289` · `config.js?v=198`
+**Boot:** `main.js?v=634` · `track.js?v=353` · `config.js?v=198`
 
 ---
 
@@ -1585,7 +1866,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 
 **Shipped:** `forestCardForTree` → far LOD + HD backdrop use pack atlas cards; `_treePackCardPoses`; forest/mountain micro-clusters (4–9 m siblings); desert cactus clumps; `VISUAL.veg` density table; anti-clone pack palette; `STREAM.lodNear` 148. Clearance / trench / mouth untouched.
 
-**Boot:** `main.js?v=632` · `track.js?v=288` · `config.js?v=197` · `prop-kit.js?v=30`
+**Boot:** `main.js?v=632` · `track.js?v=353` · `config.js?v=197` · `prop-kit.js?v=45`
 
 **Must not:** V6 lighting · WebGPU · track rewrite · loosening float/bury tols.
 
@@ -1606,7 +1887,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 
 **Shipped:** far mound/spine/mass/knoll amp; desert windward/lee; mountain mid-rise + biome fold; lakeside shore lip; `landMapTiles` span/15; per-scenery land normals; crest/scree tint; roughness wet/rock flecks. Trench / mouth / overlapBed contracts untouched.
 
-**Boot:** `main.js?v=631` · `track.js?v=287`
+**Boot:** `main.js?v=631` · `track.js?v=353`
 
 **Must not:** V5 veg · WebGPU · track rewrite · loosening float/bury tols.
 
@@ -1626,7 +1907,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 | Road mats | albedo + normal + roughnessMap; sand/gravel roughness 0.90 / 0.76 |
 | Skirt | grain map + normal + UVs (DoubleSide apron) |
 
-**Shipped:** `paintSurface` / `paintEdgeErosion`; `paintSkirtGrain` + `worldSkirtMaterial(map)`; shoulder/ribbon tint contrast; `road-micro` soft amp + gravel corrugation; `ROAD_ROUGH` spread. Cache `main.js?v=630` · `track.js?v=286`.
+**Shipped:** `paintSurface` / `paintEdgeErosion`; `paintSkirtGrain` + `worldSkirtMaterial(map)`; shoulder/ribbon tint contrast; `road-micro` soft amp + gravel corrugation; `ROAD_ROUGH` spread. Cache `main.js?v=630` · `track.js?v=353`.
 
 **Must not:** track rewrite · WebGPU · V4+ without “Begin Visual Pass V4”.
 
@@ -1646,7 +1927,7 @@ If A+B+C all PASS → authorize Next Three (AI surface skill → PerformanceDire
 | Clearcoat probe | Celica / Delta / Stratos `createPlayerCar` → MeshPhysical paint (cc=1) |
 | Dirt | `js/cars/car-dirt.js` bound after race IBL; soils on mud/sand/dirt; washes on tarmac |
 
-**Shipped:** `dressPlayerCarRace` (safe Standard→Physical, paint-name + Stratos `wire_*` CAD body); `car-dirt.js`; `HANDLING.wheelTravelVisual` 1.52; cache `main.js?v=628` / `celica.js?v=156`.
+**Shipped:** `dressPlayerCarRace` (safe Standard→Physical, paint-name + Stratos `wire_*` CAD body); `car-dirt.js`; `HANDLING.wheelTravelVisual` 1.52; cache `main.js?v=628` / `celica.js?v=205`.
 
 **Must not:** WebGPU cutover · track rewrite · V3+ without “Begin Visual Pass V3”.
 
@@ -1751,7 +2032,7 @@ absent), and then every button silently does nothing.
 ```
 FAIL  step: no boot-error panel shown
       Uncaught SyntaxError: missing ) after argument list
-      http://127.0.0.1:62616/js/gfx/pbr.js?v=4:184
+      http://127.0.0.1:62616/js/gfx/pbr.js?v=53:184
 ```
 
 **Status:** the file was rewritten at 15:08:20 local, about 30 seconds after the
@@ -2273,11 +2554,11 @@ derives its countdown budget from the frame rate it actually observes.
 |-------------|--------|
 | **`VISUAL.tier` ≥ 3** in `config.js` | **Done** (`tier: 3`) |
 | **Per-stage `horizonGlow` / `horizonStrength` / `dustStrength`** | **Done** (desert, forest, mountain, lakeside, title) |
-| **Sky shader** — `uHorizonGlow`, `uDust`, sharper sun disc | **Done** (`sky.js?v=6`) |
+| **Sky shader** — `uHorizonGlow`, `uDust`, sharper sun disc | **Done** (`sky.js?v=48`) |
 | **`paintLandAlbedo`** — pebble/ripple/scree/moss/wet patches | **Done** (EA1) |
 | **`paintSurface`** — tarmac aggregate/oil/wear, gravel chips, mud gloss | **Done** (EA1) |
 | **`roadAoFor`** — procedural cavity map on ribbons | **Done** (LE1 integration) |
-| **Tier-3 IBL bump** on road/terrain materials | **Done** (`pbr.js?v=11`) |
+| **Tier-3 IBL bump** on road/terrain materials | **Done** (`pbr.js?v=53`) |
 | **Mountain opaque mass removed** (stage 3 visibility) | **Done** (Sprint 13 prep) |
 | `tools/qa-sprint13-visual.mjs` | **Done** — **8/8 PASS** |
 
@@ -2296,9 +2577,9 @@ derives its countdown budget from the frame rate it actually observes.
 | Deliverable | Status |
 |-------------|--------|
 | **`VISUAL.tier` ≥ 4** in `config.js` | **Done** (`tier: 4`) |
-| **`aerialPerspective`** — vertex fade toward stage fog | **Done** (`_applyAerialPerspective` in `track.js?v=120`) |
+| **`aerialPerspective`** — vertex fade toward stage fog | **Done** (`_applyAerialPerspective` in `track.js?v=353`) |
 | **`heroLandmarks`** — desert arch, forest cedars, lakeside pier | **Done** (`_addHeroLandmarks`) |
-| **Tier-4 water** — ripple caustics + higher env | **Done** (`pbr.js?v=12`, `water-ripple-t4`) |
+| **Tier-4 water** — ripple caustics + higher env | **Done** (`pbr.js?v=53`, `water-ripple-t4`) |
 | **World IBL bump** at tier 4 | **Done** (`WORLD_ENV` 1.2) |
 | `tools/qa-sprint14-visual.mjs` | **Done** |
 
@@ -2350,7 +2631,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 # Sprint 17 — Chase-cam readability tier 6 (19 Aug 2026)
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=215`** · `track.js?v=123` · `hud.js?v=19` · `css/game.css?v=15` · `config.js?v=76` · `occlusion-fade.js?v=2`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=215`** · `track.js?v=353` · `hud.js?v=19` · `css/game.css?v=15` · `config.js?v=76` · `occlusion-fade.js?v=22`
 
 **Charter:** Push visual tier to 6 — chase-cam occlusion fade for tunnels/cliffs, stronger tunnel material read, HUD punch — while keeping Sprint 12–15 gates green.
 
@@ -2373,7 +2654,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 # Sprint 18 — Championship integrity + Stratos hero (20 Aug 2026)
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=216`** · `celica.js?v=82`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=216`** · `celica.js?v=205`
 
 **Charter:** Close acceptance criterion #5 PARTIAL (I-1 / I-2) and replace the 1.2k-tri Stratos stub with a readable original hero mesh. Sketchfab CC BY was not on disk — Blender rebuild instead of commercial 3dmodels.org.
 
@@ -2395,7 +2676,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 # Sprint 19 — Arcade sense of speed (20 Aug 2026)
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=218`** · `config.js?v=78` · `vehicle.js?v=43` · `engine.js?v=44`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=218`** · `config.js?v=78` · `vehicle.js?v=159` · `engine.js?v=44`
 
 **Charter:** Car felt sluggish with no racing urgency — punch acceleration/top end and sell speed through chase FOV + cabin rush.
 
@@ -2416,7 +2697,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 # Sprint 20 — Highly realistic level design tier 7 (20 Aug 2026)
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=219`** · `config.js?v=79` · `track.js?v=125` · `pbr.js?v=15` · `sky.js?v=7`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=219`** · `config.js?v=79` · `track.js?v=353` · `pbr.js?v=53` · `sky.js?v=48`
 
 **Charter:** Stages must read as real rally places — denser terrain, richer biomes, trackside verge detail, photographic stage light — without reintroducing tunnel overdraw or mountain mass.
 
@@ -2448,7 +2729,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint21-props.mjs` → PASS · `node tools/qa-boot-smoke.mjs` → **16/16**
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=228`** · `track.js?v=132` · `crowd.js?v=4` · `prop-kit.js?v=5` · `trees.js?v=25`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=228`** · `track.js?v=353` · `crowd.js?v=4` · `prop-kit.js?v=45` · `trees.js?v=43`
 
 ---
 
@@ -2468,7 +2749,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint22-runoff.mjs` → PASS · boot smoke **16/16** (clean console)
 
-**Cache bust:** `?v=228` · `collide.js?v=29` · `vehicle.js?v=45` · `track.js?v=132` · `crowd.js?v=4` · `engine.js` crowd import `?v=2`
+**Cache bust:** `?v=228` · `collide.js?v=29` · `vehicle.js?v=159` · `track.js?v=353` · `crowd.js?v=4` · `engine.js` crowd import `?v=2`
 
 **Still human-only:** drive off Desert verge then deep reset; pass Lakeside crowd at speed for Doppler; checklist §6 contact feel.
 
@@ -2490,7 +2771,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint23-photoreal.mjs` → PASS · boot smoke **16/16**
 
-**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=230`** · `config.js?v=83` · `postfx.js?v=2` · `pbr.js?v=16` · `sky.js?v=8` · `input.js?v=35`
+**Cache bust:** `index.html` / `main.js` / `game.js` **`?v=230`** · `config.js?v=83` · `postfx.js?v=37` · `pbr.js?v=53` · `sky.js?v=48` · `input.js?v=35`
 
 **Still human-only:** headed GPU drive on all four stages; Desert tunnel overdraw; checklist §2–3. True photogrammetry albedo packs are a later asset drop if desired.
 
@@ -2534,7 +2815,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint25-ue5.mjs` → PASS · boot smoke **16/16** · s23/s24 still PASS
 
-**Cache bust:** `?v=231` · `config.js?v=84` · `pbr.js?v=17` · `postfx.js?v=3` · `track.js?v=134`
+**Cache bust:** `?v=231` · `config.js?v=84` · `pbr.js?v=53` · `postfx.js?v=37` · `track.js?v=353`
 
 **Honest scope:** This is UE5-*inspired* Three.js PBR (clearcoat, roughness maps, physical lights, ACES + grain) — not Nanite/Lumen/hardware RT. Authored photo albedo packs remain a later asset drop.
 
@@ -2555,7 +2836,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint26-driving.mjs` → PASS · `qa-sprint22-runoff` PASS · boot smoke **16/16** · championship grid PASS · live probe: place-1 grid exclusive (player 16 m, AI 29 m+) · throttle-only 14 s → **15th** (14 rivals ahead)
 
-**Cache bust:** `?v=232` · `config.js?v=85` · `collide.js?v=30` · `vehicle.js?v=46` · `ai.js?v=80`
+**Cache bust:** `?v=232` · `config.js?v=85` · `collide.js?v=30` · `vehicle.js?v=159` · `ai.js?v=80`
 
 **Still human-only:** full championship drive feel on sand/gravel after hard refresh; confirm stage 2/3/4 cars already on grid during 3-2-1.
 
@@ -2575,7 +2856,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Live probe:** forest/mountain/lakeside → `onRoad=0`, `landPoke=0` colliders.
 
-**Cache bust:** `?v=233` · `track.js?v=135`
+**Cache bust:** `?v=233` · `track.js?v=353`
 
 ---
 
@@ -2592,7 +2873,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Live probe:** embed car in largest near-road collider → after 4 steps `dist >= need` on desert/forest/mountain/lakeside.
 
-**Cache bust:** `?v=234` · `track.js?v=136` · `collide.js?v=31` · `vehicle.js?v=47`
+**Cache bust:** `?v=234` · `track.js?v=353` · `collide.js?v=31` · `vehicle.js?v=159`
 
 ---
 
@@ -2611,7 +2892,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint27-env.mjs` → PASS
 
-**Cache bust:** `?v=247` · `config.js?v=94` · `effects.js?v=47` · `sky.js?v=9` · `game.js?v=541`
+**Cache bust:** `?v=247` · `config.js?v=94` · `effects.js?v=79` · `sky.js?v=48` · `game.js?v=541`
 
 **Still human-only:** Desert chase cam plume volume at speed; Forest canopy sky read; Lakeside mist band vs fog.
 
@@ -2626,7 +2907,7 @@ derives its countdown budget from the frame rate it actually observes.
 | Verge ferns/bushes/logs + desert scrub HD | code path |
 | Lakeside far shore autumn trees HD | code path |
 
-**Cache:** `?v=273` · `track.js?v=149` · `prop-kit.js?v=11`
+**Cache:** `?v=273` · `track.js?v=353` · `prop-kit.js?v=45`
 
 ---
 
@@ -2647,7 +2928,7 @@ derives its countdown budget from the frame rate it actually observes.
 
 **Automated:** `node tools/qa-sprint28-launch.mjs` → PASS (re-verified 23 Aug 2026 after Sprint 27 stack)
 
-**Cache bust (live):** `?v=273` · `config.js?v=102` · `vehicle.js?v=59` · `game.js?v=541`
+**Cache bust (live):** `?v=273` · `config.js?v=102` · `vehicle.js?v=159` · `game.js?v=541`
 
 **Still human-only:** 0→100 feel on Desert sand vs Forest gravel; Stratos 2WD wheelspin on loose launch.
 
@@ -2665,7 +2946,7 @@ derives its countdown budget from the frame rate it actually observes.
 | `tools/qa-sprint32-desert-finale.mjs` | **PASS** |
 | `tools/qa-desert-bridge-portal.mjs` (0 invaders, land bed, car spawn) | **PASS** |
 
-**Cache:** `?v=280` · `track.js?v=152`
+**Cache:** `?v=280` · `track.js?v=353`
 
 **Still human-only:** Visual read of the mouth at chase-cam distance on a live Desert drive.
 
@@ -2684,7 +2965,7 @@ derives its countdown budget from the frame rate it actually observes.
 | Post composite highlight shoulder (`highlightRolloff`) | **Done** |
 | `tools/qa-sprint32-pbr.mjs` | **PASS** |
 
-**Cache:** `?v=304` · `config.js?v=118` · `lighting-rig.js?v=1` · `postfx.js?v=6` · `pbr.js?v=19`
+**Cache:** `?v=304` · `config.js?v=118` · `lighting-rig.js?v=23` · `postfx.js?v=37` · `pbr.js?v=53`
 
 **Perf:** No extra shadow pass; adaptive post (`adaptFloorMs` 33.3) unchanged. Sky rim is one DirectionalLight with `castShadow=false`.
 
@@ -2705,7 +2986,7 @@ derives its countdown budget from the frame rate it actually observes.
 | Subtle `carBump` on rival contact | **Done** |
 | `tools/qa-garage-cars.mjs` | **PASS** |
 
-**Cache:** `?v=305` · `celica.js?v=96` · `config.js?v=119`
+**Cache:** `?v=305` · `celica.js?v=205` · `config.js?v=119`
 
 ---
 
@@ -2724,7 +3005,7 @@ derives its countdown budget from the frame rate it actually observes.
 | **SLIDE HUD badge** (`#cluster-slide`, `slideBadge` in hud.js) | **Done** |
 | `tools/qa-sprint33-drift.mjs` | **PASS** |
 
-**Cache:** `?v=310` · `config.js?v=119` · `vehicle.js?v=66` · `hud.js?v=26`
+**Cache:** `?v=310` · `config.js?v=119` · `vehicle.js?v=159` · `hud.js?v=26`
 
 **Still human-only:** Desert Act 5 bowl + linked gravel hairpins feel drive.
 
@@ -2774,7 +3055,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint32-desert-finale.mjs` | **PASS** |
 | `tools/qa-desert-bridge-portal.mjs` | **Blocked** (Chrome load timeout in this session — static gate PASS) |
 
-**Cache:** `?v=292` · `track.js?v=155`
+**Cache:** `?v=292` · `track.js?v=353`
 
 **Still human-only:** Live drive under Desert arch; Forest finale; Mountain full lap for residual visual clip.
 
@@ -2795,7 +3076,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint30-realism.mjs` | **PASS** |
 | Regression: s23 photoreal + s25 UE5 | **PASS** |
 
-**Cache:** `?v=293` · `config.js?v=115` · `track.js?v=156` · `pbr.js?v=18` · `sky.js?v=13` · `postfx.js?v=5`
+**Cache:** `?v=293` · `config.js?v=115` · `track.js?v=353` · `pbr.js?v=53` · `sky.js?v=48` · `postfx.js?v=37`
 
 **Still human-only:** 2-minute Desert + Mountain drive for ACES exposure feel and texture read at chase cam.
 
@@ -2812,7 +3093,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Oversized `Light_Front` hides **material** so nested emitters still draw | **Done** |
 | `tools/qa-delta-lights.mjs` | **PASS** |
 
-**Cache:** `?v=295` · `celica.js?v=93`
+**Cache:** `?v=295` · `celica.js?v=205`
 
 **Still human-only:** Garage / practice with Delta headlights on — confirm no floating polygons.
 
@@ -2833,7 +3114,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Sprint 33 power-slide sustain | **Regression PASS** |
 | `tools/qa-sprint31-drift.mjs` | **PASS** |
 
-**Cache:** `?v=296` · `config.js?v=116` · `vehicle.js?v=64` · `hud.js?v=25` · `game.css?v=19`
+**Cache:** `?v=296` · `config.js?v=116` · `vehicle.js?v=159` · `hud.js?v=25` · `game.css?v=19`
 
 **Still human-only:** Desert Act 5 trail-brake hairpin; Forest gravel power-slide; Mountain tarmac limit catch.
 
@@ -2853,7 +3134,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | **39** | iGPU perf tier drops DPR/bloom under load | `qa-sprint39-perf.mjs` |
 | **40** | Longer Act 8 stages; Time Attack ghost; telemetry export | `qa-sprint40-telemetry.mjs` |
 
-**Cache:** `?v=320` · `config.js?v=122` · `vehicle.js?v=67`
+**Cache:** `?v=320` · `config.js?v=122` · `vehicle.js?v=159`
 
 **Still human-only:** headed iGPU matrix; staff ghost JSON; mocap BVH; online ghost server; photogrammetry capture.
 
@@ -2874,7 +3155,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint19-speed.mjs` | **PASS** (no FOV/speed regression) |
 | `tools/qa-static-audit.mjs` | **PASS** (config unified at `?v=123`) |
 
-**Cache:** `main.js?v=541` · `game.js?v=541` · `config.js?v=125` · `celica.js?v=109` · `ai.js?v=98` · `cockpit-anim.js?v=3`
+**Cache:** `main.js?v=541` · `game.js?v=541` · `config.js?v=125` · `celica.js?v=205` · `ai.js?v=98` · `cockpit-anim.js?v=3`
 
 **Medium chase (23 Aug 2026):** `back` 3.18 → 3.98 (+25%), `height` 1.24 → 1.80 (+45%). Default chase sits further off the bumper and higher so the car is not filling the lower third.
 
@@ -2901,7 +3182,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-static-audit.mjs` | **run this sprint** |
 | `tools/qa-sprint26-solid.mjs` | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=336`** · `track.js?v=164`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=336`** · `track.js?v=353`
 
 **Still human-only:** one full Mountain lap for residual visual clip at jumps / village cobbles.
 
@@ -2923,7 +3204,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `_ax` (load transfer) blended once per 60 Hz frame, frozen during tire substeps | **Done** |
 | `tools/qa-sprint28-launch.mjs` contracts for the above | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=339`** · `vehicle.js?v=69` · `ai.js?v=99`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=339`** · `vehicle.js?v=159` · `ai.js?v=99`
 
 **Still human-only (closed Sprint 41):** 10-second dead-stop launch — hull shimmer persisted after this sprint; see Sprint 41.
 
@@ -2968,7 +3249,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint28-launch.mjs` contracts | **run this sprint** |
 | `tools/qa-launch-stable.mjs` live throttle probe | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=343`** · `vehicle.js?v=71` · `ai.js?v=101`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=343`** · `vehicle.js?v=159` · `ai.js?v=101`
 
 **Still human-only:** one 10-second launch in the headed game to confirm the mesh looks like a rigid body.
 
@@ -2988,7 +3269,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Cockpit anim sets `rotation.z` on that pivot (same as the procedural torus) | **Done** |
 | `tools/qa-pov-steer.mjs` static + title-car live | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=344`** · `celica.js?v=110` · `cockpit-anim.js?v=4` · `ai.js?v=102`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=344`** · `celica.js?v=205` · `cockpit-anim.js?v=4` · `ai.js?v=102`
 
 **Still human-only:** one headed POV lock-to-lock to confirm the spokes turn in the wheel plane.
 
@@ -3010,7 +3291,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Speedo MPH 0–140, tach ×1000 to 9, overdamped springs | **Done** |
 | `tools/qa-pov-gauges.mjs` static + title-car live | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=345`** · `celica.js?v=111` · `ai.js?v=103`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=345`** · `celica.js?v=205` · `ai.js?v=103`
 
 **Still human-only:** headed C into POV at rest (needles on 0) then a short pull to confirm both climb clockwise.
 
@@ -3031,7 +3312,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Hide GLB interior rearview; wing mirrors stay | **Done** |
 | `tools/qa-pov-mirror.mjs` static + live RT luma | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=346`** · `celica.js?v=112` · `ai.js?v=104`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=346`** · `celica.js?v=205` · `ai.js?v=104`
 
 **Still human-only:** headed C into POV on Desert — confirm the glass shows the start grid / road behind, not black.
 
@@ -3053,7 +3334,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Chase cluster fades instead of `display:none` pop | **Done** |
 | `tools/qa-cam-blend.mjs` static + live step probe | **run this sprint** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=347`** · `config.js?v=127` · `celica.js?v=113` · `ai.js?v=105` · `css/game.css?v=24`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=347`** · `config.js?v=127` · `celica.js?v=205` · `ai.js?v=105` · `css/game.css?v=24`
 
 **Still human-only:** headed C cycle on Desert (POV → medium → far) while rolling — confirm the lens eases and never hitch-stops.
 
@@ -3077,7 +3358,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-desert-clip.mjs` static + headed corridor probe | **PASS** — in-lane land −0.72 m over 104 stations; verge −0.72 m; 351 colliders off the lane |
 | `tools/qa-env-clip.mjs` Mountain regression | **PASS** — in-lane −0.78 m over 85 stations |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=348`** · `track.js?v=165`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=348`** · `track.js?v=353`
 
 **Still human-only:** 2-minute Desert drive — opening straights, gravel snakes, Bowl — confirm no sand on the painted lane and no chassis through rocks.
 
@@ -3099,7 +3380,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Conservative AABB portal scrub; rubble only on pier caps | **Done** |
 | `tools/qa-desert-bridge-portal.mjs` + `qa-sprint32-desert-finale.mjs` | **PASS** — openH 12.8, hole 16 m deep, 0 invaders, 0 car-envelope hits, land −0.95 m, car on deck |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=349`** · `track.js?v=166`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=349`** · `track.js?v=353`
 
 **Still human-only:** headed Desert drive through the arch — confirm empty sky/shadow under the lintel, no roof-through-rock.
 
@@ -3125,7 +3406,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `tools/qa-sprint32-desert-finale.mjs` + `qa-static-audit.mjs` | **PASS** |
 | `tools/qa-desert-bridge-portal.mjs` | **PASS** — 0 invaders, 0 car-envelope hits, land −0.95 m, car on deck |
 
-**Cache:** `index.html` / `main.js` **`?v=351`** · `track.js?v=168`
+**Cache:** `index.html` / `main.js` **`?v=351`** · `track.js?v=353`
 
 **Still human-only:** 2-minute drive of a Forest or Mountain hairpin — confirm the inside line is tarmac and the chassis does not sink into a bank.
 
@@ -3182,7 +3463,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Desert tunnel: one slab per segment on the mesh inner face (`half + 0.25`) | **Done** |
 | `glanceObstacles` uses car OBB vs the plane (not a circle in the rock) | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=354`** · `track.js?v=170` · `collide.js?v=33`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=354`** · `track.js?v=353` · `collide.js?v=33`
 
 **Proof:** `node tools/qa-sprint26-solid.mjs` · `node tools/qa-sprint32-desert-finale.mjs`
 
@@ -3205,7 +3486,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Same path for `loadCarGltf` and `loadRivalGltf` | **Done** |
 | `lengthM` 4.36 kept as the ST target | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=355`** · `celica.js?v=114`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=355`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-car-scale.mjs` · `node tools/qa-focus-scale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3226,7 +3507,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Deck filter + direct plant for AI (no max-step slew) | **Done** |
 | Cheap `_axleRoadCheap` probes kept | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=356`** · `vehicle.js?v=73` · `ai.js?v=107`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=356`** · `vehicle.js?v=159` · `ai.js?v=107`
 
 **Proof:** `node tools/qa-sprint28-launch.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3247,7 +3528,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Rearview capture camera behind the bumper (`mirrorCamZ`) | **Done** |
 | Linear SRGB RT + NoToneMapping; glass on driver-facing +Z | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=357`** · `celica.js?v=115`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=357`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-pov-gauges.mjs` · `node tools/qa-pov-mirror.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3269,7 +3550,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `renderer.compile` + 2 dummy shadowed presents under overlay | **Done** |
 | Countdown skips post/DPR adapt; forces shadow updates | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=358`** · `track.js?v=172` · `config.js?v=128`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=358`** · `track.js?v=353` · `config.js?v=128`
 
 **Proof:** `node tools/qa-sprint34-preload.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3313,7 +3594,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Title / menu keep the LOD; race calls `_promotePlayerCar` | **Done** |
 | Full garage load still runs after the attract car is up | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=362`** · `celica.js?v=116`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=362`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint34-preload.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3333,7 +3614,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Horizon treeline uses card impostors | **Done** |
 | Far rival shadow casters culled | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=364`** · `config.js?v=129` · `track.js?v=173` · `trees.js?v=31`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=364`** · `config.js?v=129` · `track.js?v=353` · `trees.js?v=43`
 
 **Proof:** `node tools/qa-sprint59-lod.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint34-preload.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3355,7 +3636,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Shadow atlas never shrinks | **Done** |
 | `setCockpitView` early-out + POV warm by mesh uuid | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=366`** · `celica.js?v=117`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=366`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-sprint60-smooth.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-sprint59-lod.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint34-preload.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3377,7 +3658,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | IBL `worldEnvIntensity` / `carEnvIntensity` above 1.0 | **Done** |
 | Tunnel `ambientFloor` / retain raised | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=368`** · `config.js?v=131` · `lighting-rig.js?v=5` · `postfx.js?v=12` · `sky.js?v=17`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=368`** · `config.js?v=131` · `lighting-rig.js?v=23` · `postfx.js?v=37` · `sky.js?v=48`
 
 **Proof:** `node tools/qa-sprint61-lighting.mjs` · `node tools/qa-sprint60-smooth.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-sprint59-lod.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint34-preload.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3400,7 +3681,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Road `polygonOffset` −4/−8, `renderOrder` 2 | **Done** |
 | `ROAD_VERGE` 8.2 m + GLB strip 5.8 / forest 8.6 | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=369`** · `track.js?v=174`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=369`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-sprint59-lod.mjs` · `node tools/qa-sprint61-lighting.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3422,7 +3703,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Visual pitch 16/s with snap on real grades | **Done** |
 | Ground mesh pitch follow 8/s → 24/s | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=370`** · `vehicle.js?v=74`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=370`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint63-plant.mjs` · `node tools/qa-sprint61-lighting.mjs` · `node tools/qa-sprint60-smooth.mjs` · `node tools/qa-sprint59-lod.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3471,7 +3752,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Solid pack for mirror, then ghost for chase | **Done** |
 | Player mesh excluded from the fade pack | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=373`** · `track.js?v=176` · `occlusion-fade.js?v=8`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=373`** · `track.js?v=353` · `occlusion-fade.js?v=22`
 
 **Proof:** `node tools/qa-sprint65-rival-fade.mjs` · `node tools/qa-sprint64-line.mjs` · `node tools/qa-sprint63-plant.mjs` · `node tools/qa-sprint32-desert-finale.mjs` · `node tools/qa-sprint17-visual.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3495,7 +3776,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Rival sidestep + `_aiPassT` | **Done** |
 | AI-AI pack resolve unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=374`** · `collide.js?v=34` · `vehicle.js?v=75` · `ai.js?v=110`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=374`** · `collide.js?v=34` · `vehicle.js?v=159` · `ai.js?v=110`
 
 **Proof:** `node tools/qa-sprint66-player-bump.mjs` · `node tools/qa-sprint64-line.mjs` · `node tools/qa-sprint63-plant.mjs` · `node tools/qa-sprint65-rival-fade.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3519,7 +3800,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Human VO clips in `assets/sfx/nav/` | **Done** |
 | TTS removed from the race path | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=376`** · `track.js?v=178` · `engine.js?v=50` · `codriver.js?v=31` · `bank.js?v=2` · `pace-call.mjs?v=1`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=376`** · `track.js?v=353` · `engine.js?v=50` · `codriver.js?v=45` · `bank.js?v=2` · `pace-call.mjs?v=1`
 
 **Proof:** `node tools/qa-sprint67-pace-vo.mjs` · `node tools/qa-sprint36-pace.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3544,7 +3825,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `_clampToRoadDeck` after `_stepAir` (player + AI) | **Done** |
 | Sprint 63 `TIRE_PLANT` 0.014 unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=383`** · `vehicle.js?v=77`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=383`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint63-plant.mjs`
 
@@ -3568,7 +3849,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `setSkyQuality` follows integrated GPU tier | **Done** |
 | No handling/weather; fog/sun/IBL path unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=382`** · `sky.js?v=22`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=382`** · `sky.js?v=48`
 
 **Proof:** `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3595,7 +3876,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Smootherstep C-key blend; no dispose-on-switch | **Done** |
 | LHD cabin FOV 76 + binnacle hood + boot `_cabinFill` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=379`** · `config.js?v=132` · `celica.js?v=118`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=379`** · `config.js?v=132` · `celica.js?v=205`
 
 **Proof:** `node tools/qa-sprint70-camera.mjs` · `node tools/qa-pov-mirror.mjs` · `node tools/qa-cam-blend.mjs` · `node tools/qa-sprint37-camera.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3619,7 +3900,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Chase look-into-slide (`CAMERA.slideLook`) | **Done** |
 | Dust + skid sell the slide | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=385`** · `config.js?v=134` · `vehicle.js?v=77` · `celica.js?v=119`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=385`** · `config.js?v=134` · `vehicle.js?v=159` · `celica.js?v=205`
 
 **Proof:** `node tools/qa-sprint71-garage.mjs` · `node tools/qa-garage-cars.mjs` · `node tools/qa-sprint33-drift.mjs` · `node tools/qa-car-scale.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3647,7 +3928,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Grounded deck plant (wheels on road) | **Done** |
 | `TIRE_PLANT` 0.014 unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=386`** · `vehicle.js?v=78` · `collide.js?v=35`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=386`** · `vehicle.js?v=159` · `collide.js?v=35`
 
 **Proof:** `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint63-plant.mjs`
 
@@ -3674,7 +3955,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Celica planted / Delta snappy / Stratos loose | **Done** |
 | `TIRE_PLANT` 0.014 unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=390`** · `config.js?v=135` · `vehicle.js?v=80`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=390`** · `config.js?v=135` · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint73-gta-phys.mjs` · `node tools/qa-sprint33-drift.mjs` · `node tools/qa-sprint31-drift.mjs` · `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint38-physics.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -3701,7 +3982,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | `launchHeightScale` 0.28 | **Done** |
 | Clip-through guards kept | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=391`** · `vehicle.js?v=80` · `jump.js?v=12` · `config.js?v=135`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=391`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=135`
 
 **Proof:** `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint63-plant.mjs`
 
@@ -3728,7 +4009,7 @@ See Sprint 33 section above — SLIDE badge closed this iteration.
 | Phone starts on `low` quality tier | **Done** |
 | `TIRE_PLANT` 0.014 unchanged | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=396`** · `vehicle.js?v=83` · `track.js?v=180` · `collide.js?v=37` · `perf-tier.js?v=6` · `input.js?v=39`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=396`** · `vehicle.js?v=159` · `track.js?v=353` · `collide.js?v=37` · `perf-tier.js?v=6` · `input.js?v=39`
 
 **Proof:** `node tools/qa-sprint75-glitch.mjs` live Chrome pump (24 Aug 23:54Z):
 
@@ -3760,7 +4041,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `_guardDrive` y-warp | **Done** |
 | `_separateOverlappingRibbon` flyover | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=400`** · `vehicle.js?v=84` · `track.js?v=180` · `collide.js?v=37`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=400`** · `vehicle.js?v=159` · `track.js?v=353` · `collide.js?v=37`
 
 **Proof:** `node tools/qa-sprint75-glitch.mjs --static` · `node tools/qa-sprint72-road-lock.mjs`
 
@@ -3798,7 +4079,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `TIRE_PLANT` 0.014 / `FIXED_DT` 1/60 / no RNG | **Done** |
 | Sprint 72 road-lock + 74 jumps | **Untouched** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=399`** · `config.js?v=137` · `vehicle.js?v=84` · `jump.js?v=13` · `surfaces.js?v=46`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=399`** · `config.js?v=137` · `vehicle.js?v=159` · `jump.js?v=34` · `surfaces.js?v=57`
 
 **Proof:** `node tools/qa-sprint75-gta-rival.mjs` · `node tools/qa-sprint73-gta-phys.mjs` · `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint72-road-lock.mjs`
 
@@ -3833,7 +4114,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Sprint 69 volume preserved: 6×2 cinema, 4×1 low, Worley off on low/min | **Done** |
 | Sprint 58–61 LOD, 63 plant, 64 line, 65 fade, 66 bump, 67 VO, 68 land | **Untouched** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=394`** · `perf-tier.js?v=6` · `sky.js?v=22` unchanged. Several agents bumped the boot version concurrently during this sprint — Release should re-check that `index.html` and `js/main.js` still agree before pushing (`node tools/qa-sprint76-perf.mjs` asserts it).
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=394`** · `perf-tier.js?v=6` · `sky.js?v=48` unchanged. Several agents bumped the boot version concurrently during this sprint — Release should re-check that `index.html` and `js/main.js` still agree before pushing (`node tools/qa-sprint76-perf.mjs` asserts it).
 
 **Proof:** `node tools/qa-sprint72-perf.mjs` — 46 checks, including six that **drive the live ladder** rather than grep for it: a locked 60 stays on high, one 1100 ms stall does not degrade the stage, sustained 40 ms drops to min inside 30 frames, steady 20 ms settles once and stops moving, a recovered machine climbs back one tier at a time. Regression: `qa-sprint60-smooth` · `qa-sprint69-clouds` · `qa-sprint39-perf` · `qa-sprint58-title-lod` · `qa-sprint59-lod` · `qa-sprint63-plant` · `qa-static-audit` all pass.
 
@@ -3927,7 +4208,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Y-warp is downward-only | **Done** |
 | Headed probe: jump 2 @ 32 m/s must not tunnel jump 3 | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=405`** · `vehicle.js?v=85`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=405`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -3950,7 +4231,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `_snapPitchToRoad(axles)` on land | **Done** |
 | Headed probe: post-land ΔY in [-3 cm, +8 cm] | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=407`** · `vehicle.js?v=86`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=407`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint63-plant.mjs` · `node tools/qa-sprint75-glitch.mjs --static` · `node tools/qa-sprint72-road-lock.mjs`
 
@@ -3999,7 +4280,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Void rescue `_plantOnRibbon` if the car drops under the mesh | **Done** |
 | Chase camera never follows the car under the stage | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=409`** · `vehicle.js?v=88`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=409`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4026,7 +4307,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Axle probes take land `hintDist`; reject 7 m flyover snaps | **Done** |
 | Headed probe: jump 3 → tunnel climb on deck | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=410`** · `vehicle.js?v=89` · `track.js?v=181` · `ai.js?v=113`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=410`** · `vehicle.js?v=159` · `track.js?v=353` · `ai.js?v=113`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4048,7 +4329,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Instant boot (no 1.6s / 1.8s delays) | **Done** |
 | Overlay is a vignette, not a dark slab | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=415`** · `config.js?v=141` · `celica.js?v=121` · `css/game.css?v=29`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=415`** · `config.js?v=141` · `celica.js?v=205` · `css/game.css?v=29`
 
 **Proof:** `node tools/qa-sprint84-title-showroom.mjs` · `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint77-boot.mjs`
 
@@ -4072,7 +4353,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `_preferSolidRoad` takes land when the car is not over the hole | **Done** |
 | Headed probe: pit progress + tunnel XZ cannot void | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=416`** · `vehicle.js?v=90` · `track.js?v=182` · `ai.js?v=114`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=416`** · `vehicle.js?v=159` · `track.js?v=353` · `ai.js?v=114`
 
 **Proof:** `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4096,7 +4377,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `CLOUD_BUDGET` 16/12/8/6 + `maxCloudViewSteps: 16` | **Done** |
 | `filmGrain: 0` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=422`** · `sky.js?v=23` · `perf-tier.js?v=7` · `config.js?v=142` · `postfx.js?v=13`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=422`** · `sky.js?v=48` · `perf-tier.js?v=7` · `config.js?v=142` · `postfx.js?v=37`
 
 **Proof:** `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint76-perf.mjs` · `node tools/qa-sprint30-realism.mjs`
 
@@ -4119,7 +4400,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Kenney rock GLBs on the title pad | **Done** |
 | Deferred IBL + 1024 title shadows | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=423`** · `config.js?v=143` · `engine.js?v=52` · `soundtrack.js?v=133` · `prop-kit.js?v=19` · `hud.js?v=28`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=423`** · `config.js?v=143` · `engine.js?v=52` · `soundtrack.js?v=353` · `prop-kit.js?v=45` · `hud.js?v=28`
 
 **Proof:** `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-sprint69-clouds.mjs`
 
@@ -4142,7 +4423,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `_beginRace` yields before SFX / `_startRace` | **Done** |
 | Championship car pick is one `_beginRace` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=425`** · `track.js?v=185` · `hud.js?v=29`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=425`** · `track.js?v=353` · `hud.js?v=29`
 
 **Proof:** `node tools/qa-sprint88-car-pick.mjs` · `node tools/qa-sprint77-boot.mjs` · `node tools/qa-boot-smoke.mjs`
 
@@ -4166,7 +4447,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Rock-bridge drive-through stays empty | **Done** |
 | Y floor at the car, not at a warped progress | **PARTIAL** — floor stayed on pit-pad Y |
 
-**Cache (this pass, stale):** `?v=426` · `vehicle.js?v=91` · `track.js?v=186`
+**Cache (this pass, stale):** `?v=426` · `vehicle.js?v=159` · `track.js?v=353`
 
 **Still human-only:** Closed by sprint 90.
 
@@ -4187,7 +4468,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Tunnel magnet requires XZ in the tube | **Done** |
 | Jump 3 land + flat is long enough for a fast throw | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=427`** · `vehicle.js?v=92` · `track.js?v=187` · `courses.js?v=62` · `ai.js` vehicle import 92
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=427`** · `vehicle.js?v=159` · `track.js?v=353` · `courses.js?v=86` · `ai.js` vehicle import 92
 
 **Proof:** `node tools/qa-sprint89-no-teleport.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4209,7 +4490,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | One call per turn and per jump | **Done** |
 | Sweeper is silent after the first line | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=428`** · `engine.js?v=54` · `codriver.js?v=32` · `track.js?v=188` · `pace-call.mjs?v=2`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=428`** · `engine.js?v=54` · `codriver.js?v=45` · `track.js?v=353` · `pace-call.mjs?v=2`
 
 **Proof:** `node tools/qa-sprint67-pace-vo.mjs`
 
@@ -4233,7 +4514,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Unstick cannot teleport toward the tunnel | **Done** |
 | Jump 3 climb corridor stays a land floor | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=429`** · `vehicle.js?v=93` · `track.js?v=189` · `ai.js` vehicle import 93
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=429`** · `vehicle.js?v=159` · `track.js?v=353` · `ai.js` vehicle import 93
 
 **Proof:** `node tools/qa-sprint89-no-teleport.mjs` · `node tools/qa-sprint68-jump-land.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4257,7 +4538,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Rock/cactus/canopy drive strip matches GLB radius | **Done** |
 | Colliders that touch paint are dropped | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=430`** · `track.js?v=190`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=430`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
 
@@ -4280,7 +4561,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Cinema 16×2 raymarch; linear cloud lighting into ACES | **Done** |
 | Stage lights: stronger key, weaker fill, lower sun | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=433`** · `sky.js?v=25` · `config.js?v=144`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=433`** · `sky.js?v=48` · `config.js?v=144`
 
 **Proof:** `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint30-realism.mjs` · `node tools/qa-sprint76-perf.mjs`
 
@@ -4303,7 +4584,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | `prepareRivalLods` overlaps the track build; no full garage on car pick | **Done** |
 | Start-grid compile only; 2048 settle atlas; medium start tier | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=434`** · `track.js?v=191` · `prop-kit.js?v=20` · `celica.js?v=122` · `crowd.js?v=11`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=434`** · `track.js?v=353` · `prop-kit.js?v=45` · `celica.js?v=205` · `crowd.js?v=11`
 
 **Proof:** `node tools/qa-sprint95-load.mjs` · `node tools/qa-sprint88-car-pick.mjs` · `node tools/qa-sprint77-boot.mjs` · `node tools/qa-boot-smoke.mjs`
 
@@ -4326,7 +4607,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | BODY cluster bar + BODYWORK flash at tier 3 | **Done** |
 | DCC pipeline catalogs all car folders + GLB stats | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=435`** · `damage.js?v=2` · `effects.js?v=55` · `collide.js?v=39` · `vehicle.js?v=94` · `hud.js?v=30` · `codriver.js?v=33` · `css/game.css?v=30` · unified `config.js?v=144`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=435`** · `damage.js?v=2` · `effects.js?v=79` · `collide.js?v=39` · `vehicle.js?v=159` · `hud.js?v=30` · `codriver.js?v=45` · `css/game.css?v=30` · unified `config.js?v=144`
 
 **Proof:** `node tools/qa-sprint35-damage.mjs` · `node tools/qa-sprint35-40-matrix.mjs`
 
@@ -4347,7 +4628,7 @@ Also: `node tools/qa-sprint72-road-lock.mjs` · `node tools/qa-sprint76-perf.mjs
 | Car screen starts the garage warm on entry | **Done** |
 | `prepareCelica` reports per-chassis readiness | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=436`** · `celica.js?v=124`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=436`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-boot-smoke.mjs` — 16/16, 0 page errors, selectable cars 1/3 → **2/3** on a 1.3 fps software rasteriser; countdown wall-clock 42.0 s → 27.5 s.
 
@@ -4408,7 +4689,7 @@ fires at *display* refresh. On this 120 Hz ProMotion panel it reported p50 8.9 m
 cadence and tier first, and its verdict grades consistency — a steady 30 passes,
 an uneven 46 fails.
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=440`** · `perf-tier.js?v=9` · `celica.js?v=125` · `damage.js?v=3` · `config.js?v=144`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=440`** · `perf-tier.js?v=9` · `celica.js?v=205` · `damage.js?v=3` · `config.js?v=144`
 
 **Proof:** `node tools/qa-sprint76-perf.mjs` (20 checks, incl. 7 new cadence-lock checks) · `node tools/qa-boot-smoke.mjs` (16/16, 0 page errors) · `node tools/qa-frame-probe.mjs` · `node tools/qa-perf-attribute.mjs` (new)
 
@@ -4550,7 +4831,7 @@ item 2 stays open and still needs a quiet machine.
 exist so the next person gets many timed samples per minute instead of one
 5-minute sample, and can separate "slow build" from "wedged main thread".
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=441`** · `collide.js?v=40` · `track.js?v=193`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=441`** · `collide.js?v=40` · `track.js?v=353`
 
 **Still human-only:** hard-refresh `?v=441`, drive Desert and confirm the landing
 after the third jump now runs straight into the tunnel with no warp, no freeze
@@ -4798,7 +5079,7 @@ the painted deck was metres above — same location every run.
 | All Desert jumps stay on deck | **Verified** — `qa-sprint68-jump-land.mjs` max under 0 m |
 | Static glitch gates (swept segment + NaN vel) | **Verified** — `qa-sprint75-glitch.mjs --static` |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=98`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint68-jump-land.mjs`
 
@@ -4840,7 +5121,7 @@ downward collision normal, and not a physics/mesh split (`playerMesh` is
 | Mesh vs physics transform | **Not the bug** — same `drawPose` Vector3 |
 | Desert jump 3 → tunnel (1400 m) | **Verified** — 0 teleport, 0 clip, 0 NaN, **0 guard** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=98` · `ai.js?v=118`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=446`** · `vehicle.js?v=159` · `ai.js?v=118`
 
 **Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4877,7 +5158,7 @@ Recovery clears linear and angular velocity, then plants on the last checkpoint.
 | Mesh cannot overwrite physics | **Done** — `drawPose` only |
 | Checkpoint is the net, not the collider | **Done** — after sweep |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=448`** · `vehicle.js?v=99` · `ai.js?v=119`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=448`** · `vehicle.js?v=159` · `ai.js?v=119`
 
 **Proof:** `node tools/qa-desert-jump3.mjs` (0.2 s hitch at the jump-3 gap, 1400 m, 0 guard) ·
 `node tools/qa-jump3-sweep.mjs --quick` (45/58 m/s, lat 0/6, hitch at gap, sink=0) ·
@@ -4924,7 +5205,7 @@ the jump.
 | Restore is saved transform, not `track.sample(checkpoint)` | **Done** |
 | Velocity reset only on recovery | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=449`** · `vehicle.js?v=100` · `ai.js?v=120`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=449`** · `vehicle.js?v=159` · `ai.js?v=120`
 
 **Proof:** `node tools/qa-desert-jump3.mjs` · `node tools/qa-sprint75-glitch.mjs --static`
 
@@ -4964,7 +5245,7 @@ suppressed, and `NoToneMapping`. Cluster sits just in front of the dash box.
 | Mirror RT still linear, captured behind the bumper | **Done** |
 | Gauges face the seat, MPH 0–140 / 9k tach | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=451`** · `celica.js?v=126` · `pbr.js?v=25`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=451`** · `celica.js?v=205` · `pbr.js?v=53`
 
 **Proof:** `node tools/qa-pov-mirror.mjs` · `node tools/qa-pov-gauges.mjs`
 
@@ -4992,7 +5273,7 @@ on the lens AABB.
 | Glass opacity 0.94 when braking | **Done** |
 | Glow origin is lens AABB | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=453`** · `celica.js?v=128` · `ai.js?v=122`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=453`** · `celica.js?v=205` · `ai.js?v=122`
 
 **Proof:** `node tools/qa-brake-lamps.mjs`
 
@@ -5017,7 +5298,7 @@ opaque, and clears the double millimetre scale so the body is car-sized.
 | Four spinning/steering hubs | **Done** |
 | No dummy lamp boxes on painted CAD lights | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=458`** · `celica.js?v=133` · `ai.js?v=127`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=458`** · `celica.js?v=205` · `ai.js?v=127`
 
 **Proof:** `node tools/qa-stratos-starter.mjs`
 
@@ -5037,7 +5318,7 @@ opaque, and clears the double millimetre scale so the body is car-sized.
 | Horizon cactus rings use `cactus_tall` only | **Done** |
 | Real twig-ball tumbleweeds, max two rolling at once | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=459`** · `track.js?v=195` · `prop-kit.js?v=22` · `crowd.js?v=12`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=459`** · `track.js?v=353` · `prop-kit.js?v=45` · `crowd.js?v=12`
 
 **Proof:** `node tools/qa-sprint-desert-tumble.mjs`
 
@@ -5072,7 +5353,7 @@ opaque, and clears the double millimetre scale so the body is car-sized.
 | Tail-first bounce vs nose-plant scrub | **Done** |
 | Fujimoto lift still cuts height vs flat-out | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=460`** · `vehicle.js?v=101` · `jump.js?v=15` · `config.js?v=145` · `ai.js?v=128`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=460`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=145` · `ai.js?v=128`
 
 **Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs`
 
@@ -5095,7 +5376,7 @@ opaque, and clears the double millimetre scale so the body is car-sized.
 | Teaching 30° / −28° stay easy L then R | **Done** |
 | Desert bowl −165° and linked ±148° are hairpin | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=461`** · `track.js?v=196` · `pace-call.mjs?v=3` · `engine.js?v=55` · `codriver.js?v=34` · nav clips `?v=3`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=461`** · `track.js?v=353` · `pace-call.mjs?v=3` · `engine.js?v=55` · `codriver.js?v=45` · nav clips `?v=3`
 
 **Proof:** `node tools/qa-sprint67-pace-vo.mjs`
 
@@ -5118,7 +5399,7 @@ opaque, and clears the double millimetre scale so the body is car-sized.
 | Screen-space crevice AO | **Done** |
 | Stage fog / aerial depth | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=468`** · `config.js?v=148` · `postfx.js?v=16` · `lighting-rig.js?v=7`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=468`** · `config.js?v=148` · `postfx.js?v=37` · `lighting-rig.js?v=23`
 
 **Proof:** `node tools/qa-sprint61-lighting.mjs` · `node tools/qa-sprint25-ue5.mjs`
 
@@ -5201,7 +5482,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Clearance guard so fold arms stay driveable | **Done** |
 | In-lane / verge wash contracts still hold | **Done** (qa-desert-clip / qa-env-clip) |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=206`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-boot-smoke.mjs`
 
@@ -5225,7 +5506,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Absolute land clamp under nearest deck | **Done** |
 | Env-clip bed = nearest `roadY` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=206`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=478`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs`
 
@@ -5248,7 +5529,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Wider air pitch/roll / lip grain | **Done** |
 | Road plant / clip guards retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=479`** · `vehicle.js?v=103` · `jump.js?v=17` · `config.js?v=149`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=479`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=149`
 
 **Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint68-jump-land.mjs`
 
@@ -5273,7 +5554,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Fail-loud corridor assert (strict flag) | **Done** |
 | Runtime env∩car invariant | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=480`** · `track.js?v=207` · `collide.js?v=42` · `vehicle.js?v=104`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=480`** · `track.js?v=353` · `collide.js?v=42` · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
 
@@ -5296,7 +5577,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Remove stacked second glance | **Done** |
 | Keep corridor scrub / OBB sweep | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=481`** · `collide.js?v=43` · `vehicle.js?v=105`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=481`** · `collide.js?v=43` · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-sprint26-solid.mjs` · `node tools/qa-env-clip.mjs` · `node tools/qa-jump-variability.mjs`
 
@@ -5320,7 +5601,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Deep-embed → last-safe XZ | **Done** |
 | `tools/qa-phys-authority.mjs` | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=482`** · `collide.js?v=44` · `vehicle.js?v=106`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=482`** · `collide.js?v=44` · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-phys-authority.mjs` · `node tools/qa-sprint26-solid.mjs` · `node tools/qa-env-clip.mjs`
 
@@ -5341,7 +5622,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Stronger player head beams in tunnel | **Done** |
 | Lens emissive readable | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=483`** · `config.js?v=150` · `celica.js?v=135`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=483`** · `config.js?v=150` · `celica.js?v=205`
 
 **Proof:** code contract — `TUNNEL.headBeam >= 1000` · `setHeadlights(..., { tunnelBoost })`
 
@@ -5363,7 +5644,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | `ROAD_COLLIDER_CLEAR` 3.8 m | **Done** |
 | Scrub / assert retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=484`** · `track.js?v=208`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=484`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-desert-clip.mjs`
 
@@ -5375,9 +5656,9 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 
 **Player moment:** Drive any stage on paint. No env solid in the 3.8 m roadway corridor. Championship / practice actually reaches the grid (rivals spawn).
 
-**Cause:** Corridor gate was in place but headed proof was blocked — `ai.js` imported `celica.js?v=134` while `game.js` used `?v=136`, so ES modules created **two garage singletons**. LOD warm filled one; `createRivalCar` read the empty other and threw. Desert boot never finished → corridor probes timed out.
+**Cause:** Corridor gate was in place but headed proof was blocked — `ai.js` imported `celica.js?v=205` while `game.js` used `?v=136`, so ES modules created **two garage singletons**. LOD warm filled one; `createRivalCar` read the empty other and threw. Desert boot never finished → corridor probes timed out.
 
-**Fix:** Align `ai.js` → `celica.js?v=136` / `config.js?v=150`. `_bump` still refuses corridor invasion (optional precomputed `knownOver`). `prepareCar` no longer nulls a warm template after a failed hero re-parse. Cache bump `track.js?v=209`.
+**Fix:** Align `ai.js` → `celica.js?v=205` / `config.js?v=150`. `_bump` still refuses corridor invasion (optional precomputed `knownOver`). `prepareCar` no longer nulls a warm template after a failed hero re-parse. Cache bump `track.js?v=353`.
 
 | Item | State |
 |---|---|
@@ -5386,7 +5667,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Desert headed: 334 colliders clear of corridor | **PASS** |
 | All-course env-clip headed | **PASS** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=485`** · `track.js?v=209` · `celica.js?v=136` · `ai.js?v=130`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=485`** · `track.js?v=353` · `celica.js?v=205` · `ai.js?v=130`
 
 **Proof:** `node tools/qa-desert-clip.mjs` **PASS** · `node tools/qa-env-clip.mjs` **PASS** (desert/forest/mountain/lakeside; 0 corridor solids)
 
@@ -5409,7 +5690,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Mesh-sized colliders near road | **Done** |
 | Stronger embedded resolve | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=486`** · `track.js?v=210` · `collide.js?v=45`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=486`** · `track.js?v=353` · `collide.js?v=45`
 
 **Proof:** `node tools/qa-desert-clip.mjs` **PASS** · `node tools/qa-env-clip.mjs` static **PASS**
 
@@ -5434,7 +5715,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | SELECT MODE UI readable, car visible | **Done** |
 | Race / tunnel / chase cam | **Untouched** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=470`** · `config.js?v=148` · `sky.js?v=28` · `pbr.js?v=27` · `postfx.js?v=16` · `game.css?v=34`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=470`** · `config.js?v=148` · `sky.js?v=48` · `pbr.js?v=53` · `postfx.js?v=37` · `game.css?v=34`
 
 **Proof:** `node tools/qa-sprint84-title-showroom.mjs` **PASS** (wet pad, IBL, CubeCamera, showroom post, cloudCover 0.5). Boot smoke: title → SELECT MODE → championship → Desert race **PASS**; practice reload Enter timed out at 5s (cold-boot flake under heavier showroom — not a SELECT MODE wash).
 
@@ -5458,7 +5739,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | PBR tunnel exterior materials | **Done** |
 | Static desert-clip contracts | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=489`** · `track.js?v=211`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=489`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` static **PASS**
 
@@ -5481,7 +5762,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Post-tunnel mud land wash | **Done** |
 | Static + headed mud-band probe | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=490`** · `track.js?v=212`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=490`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-mud-1747.mjs` · `node tools/qa-env-clip.mjs` static
 
@@ -5504,7 +5785,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Mouth blocks pushed away from lane | **Done** |
 | Drift berm colliders after lane strip | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=491`** · `track.js?v=213`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=491`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-bridge-2437.mjs` · `node tools/qa-desert-bridge-portal.mjs` static
 
@@ -5527,7 +5808,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Portal embankment world scrub | **Done** |
 | Re-scrub colliders after instance pass | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=492`** · `track.js?v=214`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=492`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-mud-1737.mjs` · `node tools/qa-desert-mud-1747.mjs` static
 
@@ -5567,7 +5848,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Surface-aware spring + landing | **Done** |
 | Ramp climb → throw energy | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=494`** · `vehicle.js?v=108` · `track.js?v=216` · `config.js?v=152` · `road-micro.js?v=1`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=494`** · `vehicle.js?v=159` · `track.js?v=353` · `config.js?v=152` · `road-micro.js?v=12`
 
 **Proof:** `node tools/qa-sprint38-realism.mjs` **PASS**
 
@@ -5589,7 +5870,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Crowd realism overhaul | **Done** |
 | Safari PBR animals | **Done** |
 
-**Cache:** `index.html` / `main.js` **`?v=495`** · `track.js?v=217` · `crowd.js?v=14` · `sky.js?v=29` · `config.js?v=153`
+**Cache:** `index.html` / `main.js` **`?v=495`** · `track.js?v=353` · `crowd.js?v=14` · `sky.js?v=48` · `config.js?v=153`
 
 ---
 
@@ -5608,7 +5889,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | M1 Pro high tier default | **Done** |
 | 12-step medium / 16-step high cumulus | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=496`** · `vehicle.js?v=109` · `config.js?v=154` · `sky.js?v=30` · `game.js` imports bumped
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=496`** · `vehicle.js?v=159` · `config.js?v=154` · `sky.js?v=48` · `game.js` imports bumped
 
 **Proof:** `node tools/qa-sprint39-perf.mjs` **PASS** · `node tools/qa-sprint34-preload.mjs` **PASS** · `node tools/qa-boot-smoke.mjs` **intermittent** in headless (PRESS START hittability / countdown timing under SwiftShader load — sprint gates 39+34 pass; verify in headed Chrome on M1)
 
@@ -5628,7 +5909,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Mud-act band covers 1737 m exit | **Done** |
 | Wider land wash on hairpin exit | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=497`** · `track.js?v=218`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=497`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-mud-1737.mjs` **PASS** · `node tools/qa-desert-mud-1747.mjs` static **PASS**
 
@@ -5650,7 +5931,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Bridge corner keepout scrub | **Done** |
 | Underpass groundHeight on-paint guard | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=498`** · `track.js?v=219`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=498`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-bridge-2437.mjs` **PASS**
 
@@ -5697,7 +5978,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Variety by impact / surface / air time | **Done** |
 | Road plant / no bury retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `vehicle.js?v=110` · `jump.js?v=19` · `config.js?v=155`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=155`
 
 **Proof:** `node tools/qa-jump-variability.mjs` · `node tools/qa-sprint74-jump-air.mjs` · `node tools/qa-sprint68-jump-land.mjs` (static PASS; headed flaky on boot wait)
 
@@ -5744,7 +6025,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Mountain floating road closed | **Done** |
 | Title attract budget (Sprint 500) | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `config.js?v=155` · `track.js?v=220`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=502`** · `config.js?v=155` · `track.js?v=353`
 
 **Proof:** `node tools/qa-sprint500-feel.mjs` · `node tools/qa-countdown-present.mjs` · `node tools/qa-title-perf.mjs` · `node tools/qa-static-audit.mjs`
 
@@ -5767,7 +6048,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Stream rear scenery into RT | **Done** |
 | Linear capture / HUD glass path retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=504`** · `config.js?v=156` · `celica.js?v=138`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=504`** · `config.js?v=156` · `celica.js?v=205`
 
 **Proof:** `node tools/qa-pov-mirror.mjs` · `node tools/qa-sprint70-camera.mjs` · `node tools/qa-sprint76-perf.mjs`
 
@@ -5789,7 +6070,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Wheel occludes gauge edges | **Done** |
 | Mirror HUD unaffected | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=505`** · `celica.js?v=139`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=505`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-pov-gauges.mjs`
 
@@ -5812,7 +6093,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Rock-bridge outer masses planted | **Done** |
 | Drift berm plant | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=506`** · `track.js?v=221`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=506`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` (static PASS)
 
@@ -5832,7 +6113,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Cliff / talus / mist | **Done** |
 | Clear of drive corridor | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=507`** · `track.js?v=222` · `pbr.js?v=29` · `courses.js?v=66`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=507`** · `track.js?v=353` · `pbr.js?v=53` · `courses.js?v=86`
 
 **Proof:** `node tools/qa-forest-waterfall.mjs`
 
@@ -5857,7 +6138,7 @@ must not get a hillside on their asphalt. Ribbon refuse stays floors.
 | Bridge mouth frames to land | **Done** |
 | Corridor clear retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=510`** · `track.js?v=223`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=510`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` · `node tools/qa-env-clip.mjs`
 
@@ -5973,7 +6254,7 @@ node tools/qa-forest-waterfall.mjs
 | Mute / SFX volume respected | **Done** |
 | Attribution (no new binary) | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=513`** · `vehicle.js?v=111` · `engine.js?v=57`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=513`** · `vehicle.js?v=159` · `engine.js?v=57`
 
 **Proof:**
 ```bash
@@ -6009,7 +6290,7 @@ node tools/qa-jump-variability.mjs
 
 **Honest limit:** Still the in-repo densified low-poly biped pack (~4k body verts) — not photogrammetry / MetaHumans. Diversity is silhouette + atlas UV + tint + anim within that kit.
 
-**Cache (current tree):** `index.html` / `main.js` / `game.js` **`?v=517`** · `track.js?v=228` · `crowd.js?v=16` · `prop-kit.js?v=27` · GLB `?v=16`
+**Cache (current tree):** `index.html` / `main.js` / `game.js` **`?v=517`** · `track.js?v=353` · `crowd.js?v=16` · `prop-kit.js?v=45` · GLB `?v=16`
 
 **Proof:** `node tools/qa-crowd-glb.mjs` **PASS** (12 kinds, 160 poses, 0 on-road, 5 cheer styles, grandstand elevated seats)
 
@@ -6033,7 +6314,7 @@ node tools/qa-jump-variability.mjs
 | 5 unique cheer animations + rates | **Done** |
 | Roadway stay-clear | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=514`** · `track.js?v=226` · `crowd.js?v=16`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=514`** · `track.js?v=353` · `crowd.js?v=16`
 
 **Proof:** `node tools/qa-crowd-glb.mjs`
 
@@ -6104,7 +6385,7 @@ node tools/qa-jump-variability.mjs
 | Waterfall landmark retained | **Done** |
 | Stage clock retune | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=516`** · `courses.js?v=67` · `track.js?v=227` · `config.js?v=159`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=516`** · `courses.js?v=86` · `track.js?v=353` · `config.js?v=159`
 
 **Proof:** static forest layout gate (len≥1650, 2 CP, mud pins, autumn+waterfall subtitle) · `node tools/qa-forest-waterfall.mjs` **PASS** · boot smoke title visible (PRESS START hittable flake unrelated)
 
@@ -6133,7 +6414,7 @@ node tools/qa-jump-variability.mjs
 | Sweep + landmark berms | **Done** |
 | Corridor keepouts retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=519`** · `track.js?v=230`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=519`** · `track.js?v=353`
 
 **Proof:**
 ```bash
@@ -6167,7 +6448,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Lens flare | **Done** |
 | Realistic sky colors | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=520`** · `sky.js?v=32` · `config.js?v=160`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=520`** · `sky.js?v=48` · `config.js?v=160`
 
 **Proof:** `node tools/qa-sky-fluffy.mjs` **PASS**
 
@@ -6188,7 +6469,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Airborne momentum keep | **Done** |
 | Soft attitude trim retained | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=522`** · `vehicle.js?v=112` · `jump.js?v=20` · `config.js?v=160`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=522`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=160`
 
 **Proof:** `node tools/qa-jump-variability.mjs` **PASS**
 
@@ -6210,7 +6491,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Mouth embankment densify | **Done** |
 | Post-scrub bury (no cap drop) | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=523`** · `track.js?v=231`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=523`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-desert-clip.mjs` **PASS** (ridge lift 22.2 m; 13/19 portal meshes buried below deck)
 
@@ -6232,7 +6513,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Underpass land trench | **Cut** |
 | Approach still driveable | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=524`** · `track.js?v=232`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=524`** · `track.js?v=353`
 
 **Proof:** `node tools/qa-sprint32-desert-finale.mjs` **PASS** · `node tools/qa-desert-bridge-2437.mjs` **PASS** · `node tools/qa-desert-bridge-portal.mjs` **PASS** (0 bridge meshes / groups; approach driveable)
 
@@ -6256,7 +6537,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Cloud light steps 3 → 2 | **Done** |
 | Cinema tier 13 / ACES / postFx | **Kept** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=525`** · `config.js?v=161` · `track.js?v=233` · `pbr.js?v=30` · `postfx.js?v=18` · `sky.js?v=33` · lighting-rig → config 161
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=525`** · `config.js?v=161` · `track.js?v=353` · `pbr.js?v=53` · `postfx.js?v=37` · `sky.js?v=48` · lighting-rig → config 161
 
 **Proof:** `node tools/qa-sprint24-perf.mjs` **PASS** · `node tools/qa-sprint76-perf.mjs` **PASS** · `node tools/qa-sprint39-perf.mjs` **PASS** · `node tools/qa-sky-fluffy.mjs` **PASS**
 
@@ -6278,7 +6559,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Spin axis from tire AABB | **Done** |
 | Player + rival pose path | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=526`** · `celica.js?v=140` · `ai.js` → celica 140
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=526`** · `celica.js?v=205` · `ai.js` → celica 140
 
 **Proof:** `node tools/qa-wheel-spin.mjs` **PASS** (Delta Wheel_0–3 all spin axis `x` after scrap detach)
 
@@ -6301,7 +6582,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | Catch = switch countersteer | **Done** |
 | Novice-quick steer rack | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=527`** · `config.js?v=162` · `vehicle.js?v=113` · `surfaces.js?v=50`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=527`** · `config.js?v=162` · `vehicle.js?v=159` · `surfaces.js?v=57`
 
 **Proof:** `node tools/qa-am3-handling.mjs` **PASS** · `node tools/qa-sprint31-drift.mjs` **PASS** · `node tools/qa-sprint33-drift.mjs` **PASS**
 
@@ -6324,7 +6605,7 @@ node tools/qa-desert-mud-1737.mjs        # PASS
 | No stage build on title/menu | **Done** |
 | Menu clicks stay instant | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=528`** · `config.js?v=163` · `celica.js?v=141` · `ai.js?v=133`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=528`** · `config.js?v=163` · `celica.js?v=205` · `ai.js?v=133`
 
 **Proof:**
 ```bash
@@ -6352,7 +6633,7 @@ node tools/qa-boot-smoke.mjs
 | Rival sync alpha = 1 | **Done** |
 | AI deck chatter off + softer cheap filt | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=529`** · `collide.js?v=46` · `vehicle.js?v=114` · `ai.js?v=134`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=529`** · `collide.js?v=46` · `vehicle.js?v=159` · `ai.js?v=134`
 
 **Proof:**
 ```bash
@@ -6401,7 +6682,7 @@ node tools/qa-sprint66-player-bump.mjs
 | Buried / tilted / clustered poses | **Done** |
 | No sphere dunes | **Kept** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=531`** · `prop-kit.js?v=28`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=531`** · `prop-kit.js?v=45`
 
 **Proof:** `node tools/qa-sprint84-title-showroom.mjs --static`
 
@@ -6413,7 +6694,7 @@ node tools/qa-sprint66-player-bump.mjs
 
 **Player moment:** Hard-refresh the live build and get one coherent module graph — no split `config`/`surfaces`/`pbr`/`prop-kit` instances that silently break rivals or handling.
 
-**Fix:** Align every importer to `config.js?v=163`, `surfaces.js?v=50`, `pbr.js?v=30`, `prop-kit.js?v=28`. Update Sprint 39/77 QA gates to match intentional title/menu budget (no `Track.create` on attract; rival LOD warm). Boot chain **`?v=534`**.
+**Fix:** Align every importer to `config.js?v=163`, `surfaces.js?v=57`, `pbr.js?v=53`, `prop-kit.js?v=45`. Update Sprint 39/77 QA gates to match intentional title/menu budget (no `Track.create` on attract; rival LOD warm). Boot chain **`?v=534`**.
 
 | Item | State |
 |---|---|
@@ -6449,7 +6730,7 @@ node tools/qa-sprint39-perf.mjs
 | Lower cabin dash + gauges | **Done** |
 | FOV 80 | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=535`** · `celica.js?v=143` · `config.js?v=164`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=535`** · `celica.js?v=205` · `config.js?v=164`
 
 **Proof:** `node tools/qa-pov-gauges.mjs` (static) · `node tools/qa-static-audit.mjs`
 
@@ -6476,7 +6757,7 @@ node tools/qa-sprint39-perf.mjs
 | Mac starts medium | **Done** |
 | Cloud / stream cuts | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=541`** · `config.js?v=541` · `perf-tier.js?v=541` · `sky.js?v=541`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=541`** · `config.js?v=541` · `perf-tier.js?v=541` · `sky.js?v=48`
 
 **Proof:**
 ```bash
@@ -6502,7 +6783,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | No throttle nose-up | **Done** |
 | Flat ribbon snaps pitch | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=542`** · `vehicle.js?v=117` · `config.js?v=167`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=542`** · `vehicle.js?v=159` · `config.js?v=167`
 
 **Proof:** `node tools/qa-planted-pitch.mjs`
 
@@ -6524,7 +6805,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Hide-cache rebuild | **Done** |
 | Eye under roof / look down | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=543`** · `celica.js?v=144`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=543`** · `celica.js?v=205`
 
 **Proof:** `node tools/qa-pov-roof-clear.mjs`
 
@@ -6545,7 +6826,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | No land-squash nose-up | **Done** |
 | Flat hard-level | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=544`** · `vehicle.js?v=118`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=544`** · `vehicle.js?v=159`
 
 **Proof:** `node tools/qa-planted-pitch.mjs`
 
@@ -6571,7 +6852,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Soft air inertia | **Done** |
 | Land weight + cam | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=545`** · `vehicle.js?v=119` · `jump.js?v=22` · `config.js?v=168`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=545`** · `vehicle.js?v=159` · `jump.js?v=34` · `config.js?v=168`
 
 **Proof:** `node tools/qa-jump-feel.mjs` · `node tools/qa-jump-variability.mjs` · `node tools/qa-planted-pitch.mjs`
 
@@ -6652,7 +6933,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Sun / atmosphere / stage key | **Done** |
 | Budget bounded (≤16×3) | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=548`** · `sky.js?v=37` · `config.js?v=170` · `perf-tier.js?v=43`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=548`** · `sky.js?v=48` · `config.js?v=170` · `perf-tier.js?v=43`
 
 **Proof:** `node tools/qa-sky-fluffy.mjs` · `node tools/qa-sprint69-clouds.mjs` · `node tools/qa-sprint39-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
 
@@ -6676,7 +6957,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Volumetric clouds removed | **Done** |
 | Realistic HDR skybox | **Done** |
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=549`** · `sky.js?v=38` · `perf-tier.js?v=44`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=549`** · `sky.js?v=48` · `perf-tier.js?v=44`
 
 **Proof:** `node tools/qa-sky-skybox.mjs` · `node tools/qa-sprint39-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
 
@@ -6710,7 +6991,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs`
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=572`** · `track.js?v=248`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=572`** · `track.js?v=353`
 
 ---
 
@@ -6727,7 +7008,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=573`** · `track.js?v=249` · `courses.js?v=69`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=573`** · `track.js?v=353` · `courses.js?v=86`
 
 ---
 ### Sprint v579 — Tunnel mouth full overhaul (rock-cut portal)
@@ -6744,7 +7025,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · mountain-only probe shows open aperture to sky; full portal builds mass+throat+plug
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=579`** · `track.js?v=262`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=579`** · `track.js?v=353`
 
 ---
 ### Sprint v580 — AM3 documentary audio + surface contrast
@@ -6786,7 +7067,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Perf risk:** Low — same dust pool (no count bump); emission caps unchanged; cliff is existing mesh with vertex-colour retune only.
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `effects.js?v=60` · `track.js?v=263` · `sky.js?v=39` · `lighting-rig.js?v=10`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `effects.js?v=79` · `track.js?v=353` · `sky.js?v=48` · `lighting-rig.js?v=23`
 
 ---
 ### Sprint v581 — AM3 Audio (co-driver maybe + course beds)
@@ -6806,7 +7087,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-sprint67-pace-vo.mjs` · headphones on Desert long sweep · timeout for result sting
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `engine.js?v=62` · `codriver.js?v=38` · `soundtrack.js?v=135` · `pace-call.mjs?v=4` · `track.js?v=263` · nav clips `?v=5` · `skid.js?v=7`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `engine.js?v=62` · `codriver.js?v=45` · `soundtrack.js?v=353` · `pace-call.mjs?v=4` · `track.js?v=353` · nav clips `?v=5` · `skid.js?v=7`
 
 ---
 ### Sprint v581 — AM3 Gameplay
@@ -6833,7 +7114,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Risks:** Flat-out crests punish harder (`worstScrub` 0.58) — may feel harsh on multi-jump sequences until human stopwatch. Wall keep 0.62 can preserve speed into a second scrape if the barrier is long.
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `vehicle.js?v=125` · `jump.js?v=24` · `collide.js?v=47` · `surfaces.js?v=51` · `effects.js?v=61` · `track.js?v=264`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=581`** · `config.js?v=183` · `vehicle.js?v=159` · `jump.js?v=34` · `collide.js?v=47` · `surfaces.js?v=57` · `effects.js?v=79` · `track.js?v=353`
 
 ---
 ### Sprint v581 — AM3 Environment (course identity)
@@ -6859,7 +7140,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 5. Mountain first hairpin — tall rock cutting across the inside apex.
 6. Lakeside — rust/gold floor and canopy, not summer green.
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=582`** · `courses.js?v=70` · `track.js?v=266` · `prop-kit.js?v=29` · `trees.js?v=38` · `road-micro.js?v=4` · `surface-deform.js?v=2` · `crowd.js?v=18`
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=582`** · `courses.js?v=86` · `track.js?v=353` · `prop-kit.js?v=45` · `trees.js?v=43` · `road-micro.js?v=12` · `surface-deform.js?v=2` · `crowd.js?v=18`
 
 **Proof:** `node tools/qa-static-audit.mjs` · hard-refresh `?v=582` · drive Desert Act 6 + Safari gallery · Forest corridor→glade · Mountain first hairpin · Lakeside shore trees
 
@@ -6880,7 +7161,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-sprint67-pace-vo.mjs`
 
-**Cache:** `index.html` / `main.js` / `game.js` **`?v=583`** · `config.js?v=183` · `engine.js?v=63` · `soundtrack.js?v=136` · `pbr.js?v=32` (celica+game)
+**Cache:** `index.html` / `main.js` / `game.js` **`?v=583`** · `config.js?v=183` · `engine.js?v=63` · `soundtrack.js?v=353` · `pbr.js?v=53` (celica+game)
 
 **Public:** https://jordanz00.github.io/rally-championship-2026/ (deploys from `main`)
 
@@ -6898,7 +7179,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=585` · `track.js?v=268`
+**Cache:** `?v=585` · `track.js?v=353`
 
 ---
 | 56–57 | Settle / title hitch | Deferred `_warmCarMeshes` after PRESS START |
@@ -6907,7 +7188,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `qa-sprint58-title-lod` · `qa-sprint59-lod` · `qa-sprint60-smooth` · `qa-pov-mirror` · `qa-sprint39-perf` · `qa-jump-feel`
 
-**Cache:** `?v=568` · `config.js?v=179` · `vehicle.js?v=124`
+**Cache:** `?v=568` · `config.js?v=179` · `vehicle.js?v=159`
 
 ---
 
@@ -6924,7 +7205,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Load-sensitive Pacejka + camber thrust | **Done** | `combinedTire(..., camber)`; FZ0 load sens |
 | Load-dependent rolling radius → kappa | **Done** | Rf/Rr from compress |
 | AM3 slide tools preserved | **Done** | `node tools/qa-am3-handling.mjs` PASS |
-| Cache / static | **Done** | boot `?v=590` · `config.js?v=186` · `vehicle.js?v=127` · static audit PASS |
+| Cache / static | **Done** | boot `?v=590` · `config.js?v=186` · `vehicle.js?v=159` · static audit PASS |
 
 ---
 
@@ -6942,7 +7223,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=591` · `config.js?v=187` · `effects.js?v=62` · `surface-deform.js?v=3` · `track.js?v=270`
+**Cache:** `?v=591` · `config.js?v=187` · `effects.js?v=79` · `surface-deform.js?v=3` · `track.js?v=353`
 
 ---
 ### Sprint v592 — Perf: batch GPU uploads, kill deform GC (keep fidelity)
@@ -6962,7 +7243,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs`
 
-**Cache:** `?v=592` · `surface-deform.js?v=4` · `effects.js?v=63` · `crowd.js?v=19` · `occlusion-fade.js?v=14` · `track.js?v=271`
+**Cache:** `?v=592` · `surface-deform.js?v=4` · `effects.js?v=79` · `crowd.js?v=19` · `occlusion-fade.js?v=22` · `track.js?v=353`
 
 ---
 ### Sprint v593 — Title car glass + glossy showroom
@@ -6980,7 +7261,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=593` · `celica.js?v=150` · `pbr.js?v=34` · `config.js?v=188`
+**Cache:** `?v=593` · `celica.js?v=205` · `pbr.js?v=53` · `config.js?v=188`
 
 ---
 ### Sprint v594 — Tunnel bore continuity + clean mouth (no clip)
@@ -7001,7 +7282,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-desert-tunnel-mouth.mjs` · `node tools/qa-sprint30-tunnel.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=594` · `track.js?v=272`
+**Cache:** `?v=594` · `track.js?v=353`
 
 
 ### Sprint v595–596 — Smooth screen fades + load bar
@@ -7037,7 +7318,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-sky-skybox.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=598` · `sky.js?v=40` · `track.js?v=273` · `config.js?v=189`
+**Cache:** `?v=598` · `sky.js?v=48` · `track.js?v=353` · `config.js?v=189`
 
 ### Sprint v599–600 — Phase 1: vehicle feel + camera springs + PerformanceMonitor
 
@@ -7053,7 +7334,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-sprint70-camera.mjs`
 
-**Cache:** `?v=600` · `config.js?v=191` · `vehicle.js?v=128` · `camera-spring.js?v=1` · `performance-monitor.js?v=1`
+**Cache:** `?v=600` · `config.js?v=191` · `vehicle.js?v=159` · `camera-spring.js?v=1` · `performance-monitor.js?v=1`
 
 **Phase 1 exit:** awaiting human 10-second car-identity drive + Desert hairpin/jump. Do not auto-start Phase 2.
 
@@ -7072,7 +7353,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-static-audit.mjs` PASS · `RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs` → title→menu→cars→Desert countdown PASS (SwiftShader race handover still 0 fps / budget — pre-existing headless limit)
 
-**Cache:** `?v=605` · `renderer-factory.js?v=2` · `postfx.js?v=23` · `effects.js?v=64` · `occlusion-fade.js?v=15` · `track.js?v=274` · `performance-monitor.js?v=2`
+**Cache:** `?v=605` · `renderer-factory.js?v=2` · `postfx.js?v=37` · `effects.js?v=79` · `occlusion-fade.js?v=22` · `track.js?v=353` · `performance-monitor.js?v=2`
 
 ### Sprint v606 — Sega Rally feel dial (AM3 handling pass)
 
@@ -7088,7 +7369,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-am3-handling.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `?v=607` · `config.js?v=191` · `vehicle.js?v=129` · `jump.js?v=25` · `physics-debug.js?v=1` · `input.js?v=42`
+**Cache:** `?v=607` · `config.js?v=191` · `vehicle.js?v=159` · `jump.js?v=34` · `physics-debug.js?v=8` · `input.js?v=42`
 
 **Tune next (human drive):** If too slippery → raise `ARCADE_ASSIST.recoveryAssist` / lower `tireSlideSoft`. If too grippy → raise `tireSlideSoft` / `powerSlidePitch`. If twitchy → lower `yawAssist`.
 
@@ -7106,7 +7387,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-validate.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-static-audit.mjs`
 
-**Cache:** `main.js?v=613` · `config.js?v=192` · `vehicle.js?v=130` · `courses.js?v=74` · `physics-debug.js?v=2`
+**Cache:** `main.js?v=613` · `config.js?v=192` · `vehicle.js?v=159` · `courses.js?v=86` · `physics-debug.js?v=8`
 
 **How to use:** Practice → PHYS LAB with `?physlab=1` (or press F8 in-race). Scrub dials; drive the sequence; only then commit HANDLING defaults.
 
@@ -7128,7 +7409,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 
 **Proof:** `node tools/qa-validate.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-am3-handling.mjs`
 
-**Cache:** `main.js?v=615` · `courses.js?v=75` · `track.js?v=277` · `tunnel-volume.js?v=3` · `world-geometry-validator.js?v=3` · `celica.js?v=151` · `config.js?v=193` · `hud.js?v=34`
+**Cache:** `main.js?v=615` · `courses.js?v=86` · `track.js?v=353` · `tunnel-volume.js?v=3` · `world-geometry-validator.js?v=3` · `celica.js?v=205` · `config.js?v=193` · `hud.js?v=34`
 
 **Headed:** hard-refresh `?worldvalidate=1` on Desert / Forest / Mountain / Lakeside — expect GREEN badge bottom-left.
 
@@ -7147,7 +7428,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 | Headed GREEN: desert · forest · mountain · lakeside | **PASS** |
 
 **Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-headed-worldvalidate.mjs` → PASS  
-**Cache:** `main.js?v=619` · `track.js?v=281` · `world-geometry-validator.js?v=5`
+**Cache:** `main.js?v=619` · `track.js?v=353` · `world-geometry-validator.js?v=5`
 
 **Next (Director sequence):** Begin Visual Pass V1 · or Begin performance baseline.
 
@@ -7174,7 +7455,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 - Perfect horseshoe/portal mesh seal is portal-geometry polish, not heightmap conformity.
 
 **Proof:** headed Cursor browser `?worldvalidate=1` all four stages · `node tools/qa-validate.mjs` · `qa-static-audit` · `qa-am3-handling` · `qa-world-geometry`  
-**Cache:** `main.js?v=622` · `game.js?v=622` · `track.js?v=284` · `world-geometry-validator.js?v=6`
+**Cache:** `main.js?v=622` · `game.js?v=622` · `track.js?v=353` · `world-geometry-validator.js?v=6`
 
 **Next approval phrase:** Begin Visual Pass V1
 
@@ -7195,7 +7476,7 @@ node tools/qa-frame-probe.mjs --seconds=8
 **Color-management contract:** albedo SRGB · HDR LinearSRGB · output SRGB · tone ACES · exposure authored per stage · AA = canvas MSAA when post off, else capped DPR (no FXAA stack).
 
 **Proof:** headed Cursor browser · `qa-validate` · `qa-static-audit` · `qa-am3-handling` · `qa-world-geometry`  
-**Cache:** `main.js?v=623` · `config.js?v=194` · `lighting-rig.js?v=11` · `postfx.js?v=24` · `game.js?v=623`
+**Cache:** `main.js?v=623` · `config.js?v=194` · `lighting-rig.js?v=23` · `postfx.js?v=37` · `game.js?v=623`
 
 **Next approval phrase:** Begin Visual Pass V2
 

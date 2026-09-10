@@ -19,7 +19,7 @@
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=44" />
+    <link rel="stylesheet" href="css/game.css?v=46" />
     <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
@@ -64,8 +64,8 @@
           window.game._leaveTitle();
           return;
         }
-        // Engine not ready yet — Arcade First Boot lands on SELECT CAR (championship).
-        rallyShow("screen-cars");
+        // Engine not ready yet — land on SELECT MODE hub.
+        rallyShow("screen-menu");
       }
       window.addEventListener(
         "pointerdown",
@@ -164,6 +164,7 @@
           <h1 class="sr-a11y">Rally Championship 2026</h1>
 
           <div class="sr-push-wrap">
+            <p class="sr-attract-tag">ATTRACT · SHOWROOM LIVE</p>
             <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
             <p class="press sr-input-hint">ENTER · SPACE · TAP</p>
             <p class="sr-credit">
@@ -187,50 +188,125 @@
       </section>
       <pre id="boot-error" hidden></pre>
 
-      <section id="screen-menu" class="screen">
-        <h2>SELECT MODE</h2>
-        <button data-menu="championship">CHAMPIONSHIP</button>
-        <button data-menu="timeattack">TIME ATTACK</button>
-        <button data-menu="practice">PRACTICE</button>
-        <button data-menu="controls">CONTROLS</button>
+      <section id="screen-menu" class="screen screen-ui">
+        <div class="ui-panel">
+          <p class="ui-eyebrow">Rally Championship 2026</p>
+          <h2 class="ui-title">SELECT MODE</h2>
+          <p class="ui-lead">Pick how you want to race. The showroom stays live behind you.</p>
+          <div class="ui-cards" role="list">
+            <button type="button" class="ui-card" data-menu="championship" role="listitem">
+              <span class="ui-card-kicker">Full season</span>
+              <span class="ui-card-title">CHAMPIONSHIP</span>
+              <span class="ui-card-copy">Four stages · grid start · beat the pack</span>
+            </button>
+            <button type="button" class="ui-card" data-menu="timeattack" role="listitem">
+              <span class="ui-card-kicker">Solo clock</span>
+              <span class="ui-card-title">TIME ATTACK</span>
+              <span class="ui-card-copy">One stage · chase your best time</span>
+            </button>
+            <button type="button" class="ui-card" data-menu="practice" role="listitem">
+              <span class="ui-card-kicker">Free drive</span>
+              <span class="ui-card-title">PRACTICE</span>
+              <span class="ui-card-copy">Any stage · learn lines without pressure</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="controls" role="listitem">
+              <span class="ui-card-kicker">Input</span>
+              <span class="ui-card-title">CONTROLS</span>
+              <span class="ui-card-copy">Keyboard · gamepad · phone</span>
+            </button>
+          </div>
+        </div>
       </section>
 
-      <section id="screen-cars" class="screen">
-        <h2>SELECT CAR</h2>
-        <p class="hint">Championship · Desert first — SPACE handbrake · T AT/MT</p>
-        <button data-car="celica">CELICA GT-FOUR</button>
-        <button data-car="delta">DELTA HF</button>
-        <button data-car="stratos">STRATOS HF</button>
-        <button data-menu="modes" class="ghost">MODES</button>
-        <button data-menu="back" class="ghost">BACK</button>
+      <section id="screen-cars" class="screen screen-ui">
+        <div class="ui-panel">
+          <p class="ui-eyebrow" id="cars-mode-label">Championship</p>
+          <h2 class="ui-title">SELECT CAR</h2>
+          <p class="ui-lead hint" id="cars-hint">Hover a car to preview it on the pad. Confirm to lock it in.</p>
+          <div class="ui-cards" role="list">
+            <button type="button" class="ui-card" data-car="celica" role="listitem">
+              <span class="ui-card-kicker">Balanced</span>
+              <span class="ui-card-title">CELICA GT-FOUR</span>
+              <span class="ui-card-copy">All-rounder · grip + power · desert ready</span>
+            </button>
+            <button type="button" class="ui-card" data-car="delta" role="listitem">
+              <span class="ui-card-kicker">Agile</span>
+              <span class="ui-card-title">DELTA HF</span>
+              <span class="ui-card-copy">Sharp turn-in · forest rhythm · late brake</span>
+            </button>
+            <button type="button" class="ui-card" data-car="stratos" role="listitem">
+              <span class="ui-card-kicker">Wild</span>
+              <span class="ui-card-title">STRATOS HF</span>
+              <span class="ui-card-copy">Light · slide happy · reward commitment</span>
+            </button>
+          </div>
+          <div class="ui-actions">
+            <button type="button" data-menu="modes" class="ghost ui-ghost">← MODES</button>
+            <button type="button" data-menu="back" class="ghost ui-ghost">BACK</button>
+          </div>
+        </div>
       </section>
 
-      <section id="screen-courses" class="screen">
-        <h2>SELECT COURSE</h2>
-        <button data-course="desert">DESERT  ·  FAST  ·  OPEN  ·  JUMPS</button>
-        <button data-course="forest">FOREST  ·  RHYTHM  ·  TIGHT  ·  DIRT</button>
-        <button data-course="mountain">MOUNTAIN  ·  COMMITMENT  ·  ELEVATION  ·  DANGER</button>
-        <button data-course="lakeside" hidden>LAKESIDE  ·  FLOW  ·  SPEED  ·  SHOWCASE</button>
-        <button data-course="physlab" class="dev-only">PHYS LAB  ·  TORTURE  ·  HANDLING</button>
-        <button data-menu="back" class="ghost">BACK</button>
+      <section id="screen-courses" class="screen screen-ui">
+        <div class="ui-panel">
+          <p class="ui-eyebrow">Stage select</p>
+          <h2 class="ui-title">SELECT COURSE</h2>
+          <p class="ui-lead">Choose the rally stage. Pack and surfaces change with the biome.</p>
+          <div class="ui-cards" role="list">
+            <button type="button" class="ui-card ui-card-desert" data-course="desert" role="listitem">
+              <span class="ui-card-kicker">Stage 1</span>
+              <span class="ui-card-title">DESERT</span>
+              <span class="ui-card-copy">Fast · open · jumps · sand</span>
+            </button>
+            <button type="button" class="ui-card ui-card-forest" data-course="forest" role="listitem">
+              <span class="ui-card-kicker">Stage 2</span>
+              <span class="ui-card-title">FOREST</span>
+              <span class="ui-card-copy">Rhythm · tight · dirt · tunnel</span>
+            </button>
+            <button type="button" class="ui-card ui-card-mountain" data-course="mountain" role="listitem">
+              <span class="ui-card-kicker">Stage 3</span>
+              <span class="ui-card-title">MOUNTAIN</span>
+              <span class="ui-card-copy">Commitment · elevation · tarmac</span>
+            </button>
+            <button type="button" class="ui-card ui-card-lakeside" data-course="lakeside" hidden role="listitem">
+              <span class="ui-card-kicker">Unlock</span>
+              <span class="ui-card-title">LAKESIDE</span>
+              <span class="ui-card-copy">Flow · speed · showcase</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet dev-only" data-course="physlab" role="listitem">
+              <span class="ui-card-kicker">Dev</span>
+              <span class="ui-card-title">PHYS LAB</span>
+              <span class="ui-card-copy">Torture · handling · F8</span>
+            </button>
+          </div>
+          <div class="ui-actions">
+            <button type="button" data-menu="back" class="ghost ui-ghost">← BACK</button>
+          </div>
+        </div>
       </section>
 
-      <section id="screen-controls" class="screen">
-        <h2>CONTROLS</h2>
-        <ul>
-          <li>W / ↑  ACCEL</li>
-          <li>S / ↓  BRAKE</li>
-          <li>A D / ← →  STEER</li>
-          <li>SPACE  HANDBRAKE DRIFT</li>
-          <li>Q  DOWNSHIFT DRIFT  ·  E  UPSHIFT</li>
-          <li>T  AUTO / MANUAL</li>
-          <li>C  CAMERA  POV / MEDIUM / FAR  ·  R  RESET  ·  P  PAUSE</li>
-          <li>GAMEPAD  STICK + TRIGGERS</li>
-          <li>PHONE  GAS / BRAKE / HB on the right</li>
-          <li>PHONE  STEER pad on the left, or TILT the handset like a wheel</li>
-        </ul>
-        <p class="hint">AM3: ease the wheel — snapping opposite lock kills speed. Manual: Q while turning drifts (no brake). Auto: trail-brake and steer. Jumps: lift before the crest, then brake in the air to drop the nose. Ride the bank.</p>
-        <button data-menu="back">BACK</button>
+      <section id="screen-controls" class="screen screen-ui">
+        <div class="ui-panel ui-panel-wide">
+          <p class="ui-eyebrow">How to drive</p>
+          <h2 class="ui-title">CONTROLS</h2>
+          <p class="ui-lead">Arcade rally — readable inputs, physical slides.</p>
+          <ul class="ui-controls">
+            <li><kbd>W</kbd> / <kbd>↑</kbd> <span>Accelerate</span></li>
+            <li><kbd>S</kbd> / <kbd>↓</kbd> <span>Brake</span></li>
+            <li><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> <span>Steer</span></li>
+            <li><kbd>SPACE</kbd> <span>Handbrake drift</span></li>
+            <li><kbd>Q</kbd> <kbd>E</kbd> <span>Downshift / upshift</span></li>
+            <li><kbd>T</kbd> <span>Auto / Manual</span></li>
+            <li><kbd>C</kbd> <span>Camera POV · Medium · Far</span></li>
+            <li><kbd>R</kbd> <span>Reset</span> · <kbd>P</kbd> <span>Pause</span></li>
+            <li><span class="ui-ctrl-label">Gamepad</span> <span>Stick + triggers</span></li>
+            <li><span class="ui-ctrl-label">Phone</span> <span>Gas / brake / HB · steer pad or tilt</span></li>
+          </ul>
+          <p class="hint ui-tip">Ease the wheel on opposite lock. Trail-brake into corners. Lift before crests, then nose-down in the air.</p>
+          <div class="ui-actions">
+            <button type="button" data-menu="back" class="ghost ui-ghost">← BACK</button>
+          </div>
+        </div>
       </section>
 
       <section id="screen-hud" class="screen hud">
@@ -315,39 +391,67 @@
         </div>
       </div>
 
-      <section id="screen-paused" class="screen">
-        <h2>PAUSED</h2>
-        <p class="pause-distance">
-          <span class="label">DISTANCE</span>
-          <strong id="pause-distance">0 m</strong>
-        </p>
-        <div class="vol-stack">
-          <label class="vol-row">
-            <span>MUSIC <strong id="vol-music-val">100</strong></span>
-            <input id="vol-music" type="range" min="0" max="100" step="1" value="100" aria-label="Music volume" />
-          </label>
-          <label class="vol-row">
-            <span>SFX <strong id="vol-sfx-val">100</strong></span>
-            <input id="vol-sfx" type="range" min="0" max="100" step="1" value="100" aria-label="Sound effects volume" />
-          </label>
-          <label class="vol-row">
-            <span>NAVIGATOR <strong id="vol-nav-val">100</strong></span>
-            <input id="vol-nav" type="range" min="0" max="100" step="1" value="100" aria-label="Navigator volume" />
-          </label>
+      <section id="screen-paused" class="screen screen-ui">
+        <div class="ui-panel">
+          <p class="ui-eyebrow">Race held</p>
+          <h2 class="ui-title">PAUSED</h2>
+          <p class="pause-distance">
+            <span class="label">DISTANCE</span>
+            <strong id="pause-distance">0 m</strong>
+          </p>
+          <div class="vol-stack">
+            <label class="vol-row">
+              <span>MUSIC <strong id="vol-music-val">100</strong></span>
+              <input id="vol-music" type="range" min="0" max="100" step="1" value="100" aria-label="Music volume" />
+            </label>
+            <label class="vol-row">
+              <span>SFX <strong id="vol-sfx-val">100</strong></span>
+              <input id="vol-sfx" type="range" min="0" max="100" step="1" value="100" aria-label="Sound effects volume" />
+            </label>
+            <label class="vol-row">
+              <span>NAVIGATOR <strong id="vol-nav-val">100</strong></span>
+              <input id="vol-nav" type="range" min="0" max="100" step="1" value="100" aria-label="Navigator volume" />
+            </label>
+          </div>
+          <div class="ui-cards ui-cards-compact" role="list">
+            <button type="button" class="ui-card" data-menu="resume" role="listitem">
+              <span class="ui-card-title">RESUME</span>
+              <span class="ui-card-copy">Back to the stage</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="retry" role="listitem">
+              <span class="ui-card-title">RESTART</span>
+              <span class="ui-card-copy">Same stage · same car</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="title" role="listitem">
+              <span class="ui-card-title">TITLE</span>
+              <span class="ui-card-copy">Leave the race</span>
+            </button>
+          </div>
         </div>
-        <button data-menu="resume">RESUME</button>
-        <button data-menu="retry">RESTART</button>
-        <button data-menu="title">TITLE</button>
       </section>
 
-      <section id="screen-result" class="screen">
-        <h2>RESULT</h2>
-        <p id="result-headline" class="result-headline"></p>
-        <ul id="result-detail" class="result-detail"></ul>
-        <p id="result-copy" hidden aria-hidden="true"></p>
-        <button id="result-next" data-menu="next">NEXT STAGE</button>
-        <button data-menu="retry">RETRY</button>
-        <button data-menu="title">TITLE</button>
+      <section id="screen-result" class="screen screen-ui">
+        <div class="ui-panel">
+          <p class="ui-eyebrow">Stage complete</p>
+          <h2 class="ui-title">RESULT</h2>
+          <p id="result-headline" class="result-headline"></p>
+          <ul id="result-detail" class="result-detail"></ul>
+          <p id="result-copy" hidden aria-hidden="true"></p>
+          <div class="ui-cards ui-cards-compact" role="list">
+            <button type="button" class="ui-card" id="result-next" data-menu="next" role="listitem">
+              <span class="ui-card-title">NEXT STAGE</span>
+              <span class="ui-card-copy">Keep the championship rolling</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="retry" role="listitem">
+              <span class="ui-card-title">RETRY</span>
+              <span class="ui-card-copy">Run it again</span>
+            </button>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="title" role="listitem">
+              <span class="ui-card-title">TITLE</span>
+              <span class="ui-card-copy">Back to attract</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       <section id="screen-loading" class="screen" aria-live="polite" aria-busy="true">
@@ -367,6 +471,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=777"></script>
+    <script type="module" src="js/main.js?v=799"></script>
   </body>
 </html>

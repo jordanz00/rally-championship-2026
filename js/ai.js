@@ -2,11 +2,11 @@
  * Opponent AI — rivals that read the stage instead of following a rail.
  *
  * WHO THIS IS FOR: championship pack behavior.
- * WHAT IT DOES: each rival owns a lane on the ribbon, reads curvature at two
- *   look-ahead horizons, works out the corner speed the SURFACE AHEAD will
- *   actually support, brakes for it (trail-braking on the way in), catches its
- *   own slides with a human reaction lag, makes occasional small mistakes, and
- *   yields to the player rather than through them.
+ * WHAT IT DOES: each rival owns a stable personal groove on the ribbon (similar
+ *   racing line, not a shared rail), reads curvature at two look-ahead horizons,
+ *   brakes for surface-aware corner speed, catches slides with human lag, makes
+ *   occasional small mistakes, and yields to the player rather than through them.
+ *   Traffic dodge is local and slow — pack cars do not thrash lanes every frame.
  * HOW IT CONNECTS: game.js steps every Opponent with the full vehicle pack.
  *
  * DESIGN RULES (docs/AM3-RESEARCH.md §2, §3)
@@ -22,24 +22,28 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=154";
-import { getSurface } from "./physics/surfaces.js?v=55";
-import { AI, CARS } from "./config.js?v=223";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=199";
+import { Vehicle } from "./physics/vehicle.js?v=159";
+import { getSurface } from "./physics/surfaces.js?v=57";
+import { AI, CARS } from "./config.js?v=233";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=205";
 
 const G = 9.81;
 
 /**
- * Lateral slots in metres (track +X / right). Tight enough that a slide still
- * lands on asphalt — ±2.8 m plus an apex used to pin rivals on the painted edge.
+ * Preferred grooves (m, track +X / right). Spaced so pack cars start on
+ * distinct lines instead of fighting one shared centre strip.
  */
 const LANES = [
-  -1.4, -1.05, -0.7, -0.35, 0.05, 0.4, 0.75, 1.1, 1.35, -1.2, -0.5, 0.25, 0.95, -0.15,
+  -1.2, -0.9, -0.55, -0.25, 0.1, 0.4, 0.7, 1.0, 1.25, -1.05, -0.7, -0.05, 0.55, 0.85,
 ];
 /** Chassis-to-edge keep-out (m). Car half-width ~1.0 plus a slide buffer. */
 const LINE_EDGE = 2.2;
 /** Peak apex offset as a fraction of the on-road half-width. */
-const LINE_APEX_FRAC = 0.58;
+const LINE_APEX_FRAC = 0.52;
+/** Rival-vs-rival: only dodge when truly overlapping this many metres of lane. */
+const GROOVE_RIVAL = 1.15;
+/** Player berth is wider — championship must never be lost to a shunt. */
+const GROOVE_PLAYER = 2.45;
 
 /**
  * Deterministic per-rival noise. Same rival and same sample index always gives
@@ -117,25 +121,27 @@ function safeHalfWidth(width, spd) {
  * @param {number} width ribbon width
  * @param {number} spd m/s
  * @param {boolean} onTarmac
+ * @param {number} [apexStyle=1] per-driver apex commitment (0.8..1.2)
  */
-function racingLat(lane, d1, d2, curve, lineScale, lineNoise, width, spd, onTarmac) {
+function racingLat(lane, d1, d2, curve, lineScale, lineNoise, width, spd, onTarmac, apexStyle = 1) {
   const half = safeHalfWidth(width, spd);
   const laneCap = Math.min(half * 0.68, 1.28);
   let lat = clamp(lane, -laneCap, laneCap);
   const turn = Math.sign(d1 !== 0 ? d1 : d2);
-  if (turn !== 0 && curve > 0.07) {
+  const style = clamp(apexStyle, 0.75, 1.25);
+  if (turn !== 0 && curve > 0.08) {
     const kIn = Math.abs(d1);
     const kOut = Math.abs(d2);
     const apex = Math.min(
       half * LINE_APEX_FRAC,
-      (onTarmac ? 0.52 : 0.36) + curve * 1.05 * lineScale
-    );
-    const inMix = clamp((kIn - 0.06) / 0.5, 0, 1);
+      (onTarmac ? 0.46 : 0.32) + curve * 0.88 * lineScale
+    ) * style;
+    const inMix = clamp((kIn - 0.06) / 0.55, 0, 1);
     const unwinding = kOut < kIn * 0.7 && kIn > 0.1;
-    if (unwinding) lat += turn * apex * 0.3;
+    if (unwinding) lat += turn * apex * 0.22;
     else {
-      lat += turn * (1 - inMix) * apex * 0.48;
-      lat -= turn * inMix * apex;
+      lat += turn * (1 - inMix) * apex * 0.38;
+      lat -= turn * inMix * apex * 0.92;
     }
   }
   lat += lineNoise;
@@ -193,16 +199,25 @@ export class Opponent {
     /**
      * How close to the theoretical corner limit this rival aims. Sprint 26:
      * front of the field sits over 1.0 so a committed AI lap beats throttle-only.
+     * Friend-impress: per-rival attack bias so mid-pack pace is not identical.
      */
-    this.pace = 0.92 + this.skill * 0.2;
+    const attack = 0.96 + (hashNoise(index + 53, 9) + 1) * 0.06;
+    this.pace = (0.9 + this.skill * 0.22) * (index === 0 ? 1.04 : attack);
     /** Reaction speed when the car steps out, 1/s. Slower rivals flail more. */
-    this.reflex = 6.5 + this.skill * 7;
+    this.reflex = 6.2 + this.skill * 7.4;
     /** How much opposite lock they feed in per radian of slide. */
-    this.catchGain = 0.4 + this.skill * 0.55;
+    this.catchGain = 0.38 + this.skill * 0.58;
     /** Some drivers flick the handbrake into hairpins, some do not. */
-    this.flicks = hashNoise(index + 91, 3) > -0.15;
+    this.flicks = hashNoise(index + 91, 3) > -0.22;
     /** Personal trail-braking taste. */
-    this.trail = AI.trailBrake * (0.7 + (hashNoise(index + 17, 5) + 1) * 0.35);
+    this.trail = AI.trailBrake * (0.65 + (hashNoise(index + 17, 5) + 1) * 0.4);
+    /**
+     * Stable personal groove — similar racing line, not the same rail.
+     * lineBias: permanent lateral offset (m). apexStyle: how hard they cut in.
+     * Wider bias / apex than the calm-pack pass so friends see distinct drivers.
+     */
+    this.lineBias = hashNoise(index * 19 + 3, 11) * 0.72;
+    this.apexStyle = 0.74 + (hashNoise(index + 41, 7) + 1) * 0.28;
 
     this.chassisId = rivalChassisForIndex(index);
     this.vehicle = new Vehicle(CARS[this.chassisId] || CARS.celica, { lowDetail: true });
@@ -282,44 +297,48 @@ export class Opponent {
     const lineScale = onTarmac ? AI.proLineTarmac || 1.12 : AI.proLineLoose || 0.88;
 
     const brakeErr = this._brakeWander.step(dt, 1 / Math.max(1, AI.mistakeInterval));
-    const lineErr = this._lineWander.step(dt, 0.24);
-    const mistakeScale = this.index === 0 ? 0.62 : 1 - this.skill * 0.22;
+    // Slow, small line wander — personality comes from lineBias / apexStyle, not thrash.
+    const lineErr = this._lineWander.step(dt, AI.lineWanderRate || 0.07);
+    const mistakeScale = this.index === 0 ? 0.55 : 1 - this.skill * 0.28;
 
-    // Racing line: out-in-out inside a speed-aware envelope so a slide still
-    // lands on asphalt. Old math pinned ±2.8 m lanes plus a 1.4 m apex to the
-    // painted edge, then traffic shoved them the rest of the way off.
+    // Racing line: out-in-out on a personal groove. Traffic may nudge briefly;
+    // continuous wander stays tiny so the pack reads as drivers, not pinballs.
     const half = safeHalfWidth(q.width, spd);
+    const homeLane = this.lane + this.lineBias;
     const lineLat = racingLat(
-      this.lane,
+      homeLane,
       d1,
       d2,
       curve,
       lineScale,
-      lineErr * (AI.mistakeSize || 0.22) * 0.85 * mistakeScale,
+      lineErr * (AI.mistakeSize || 0.14) * (AI.lineWanderAmp || 0.35) * mistakeScale,
       q.width,
       spd,
-      onTarmac
+      onTarmac,
+      this.apexStyle
     );
 
     // Grip where they will be BRAKING, not where they are now.
     const surfNear = getSurface(near.surface || q.surface);
     const surfFar = getSurface(far.surface || near.surface || q.surface);
 
-    const traffic = this._readTraffic(pack, v, track, q, dt);
-    // Collision resolver may have tagged a pass lane — hold it briefly.
+    const traffic = this._readTraffic(pack, v, track, q, dt, homeLane);
+    // Collision resolver may have tagged a pass lane — hold it briefly, softly.
     if (v._aiPassT > 0) {
       this._passSide = v._aiPassSide || this._passSide || 1;
-      this._avoid = this._passSide * 1.45;
+      this._avoid = this._passSide * 0.85;
       v._aiPassT -= dt;
     }
-    const dodgeAuth = traffic.aheadClose ? 1.35 : 1.1;
+    const dodgeAuth = traffic.aheadClose ? 1.08 : 0.92;
     const dodge = clamp(
-      this._avoid * dodgeAuth + this._passSide * 0.7,
-      -half * 0.58,
-      half * 0.58
+      this._avoid * dodgeAuth + this._passSide * 0.35,
+      -half * 0.42,
+      half * 0.42
     );
+    // Own the personal groove: dodge is a temporary nudge, not a new home.
     const lat = clamp(lineLat + dodge, -half, half);
     v._aiLat = q.lateral;
+    v._aiHomeLat = homeLane;
 
     // Steering: aim at a point on the chosen line, blended with the local
     // heading so hairpins are followed rather than cut.
@@ -399,16 +418,22 @@ export class Opponent {
     // Unstick: slow + someone close ahead → force a pass and dig in throttle.
     if (spd < 7 && traffic.aheadClose) {
       this._jamT += dt;
-      if (this._jamT > 0.35) {
-        this._passSide = this._passSide || (this.index % 2 === 0 ? 1 : -1);
-        this._avoid = this._passSide * 1.25;
-        throttle = Math.max(throttle, 0.92);
-        brake = Math.min(brake, 0.08);
+      if (this._jamT > 0.45) {
+        // Prefer the side that opens toward this driver's home groove.
+        const prefer = homeLane >= q.lateral ? 1 : -1;
+        this._passSide = this._passSide || prefer;
+        this._avoid = this._passSide * 0.9;
+        throttle = Math.max(throttle, 0.88);
+        brake = Math.min(brake, 0.1);
       }
     } else {
       this._jamT = Math.max(0, this._jamT - dt * 1.5);
-      if (this._jamT < 0.05) this._passSide *= 0.92;
-      if (Math.abs(this._passSide) < 0.08) this._passSide = 0;
+      if (this._jamT < 0.05) this._passSide *= 0.88;
+      if (Math.abs(this._passSide) < 0.06) this._passSide = 0;
+      // Clear air — settle back onto the personal line instead of holding a dodge.
+      if (!traffic.playerBlock) {
+        this._avoid *= Math.exp(-1.8 * dt);
+      }
     }
 
     // Rubber band: a whisper, and only while they are on the throttle. Anything
@@ -429,12 +454,12 @@ export class Opponent {
     // and the countersteer term below simply erased it — a rival that slid wide
     // could never get back on the line. It still tapers with speed so they are
     // smooth on fast sections rather than darting.
-    const gain = 2.45 / (1 + spd * 0.011);
-    let steerCmd = clamp(err * gain, -0.9, 0.9);
+    const gain = 2.05 / (1 + spd * 0.013);
+    let steerCmd = clamp(err * gain, -0.85, 0.85);
     if (Math.abs(this._driftSeen) > 0.08) {
-      steerCmd = clamp(steerCmd - this._driftSeen * this.catchGain, -0.85, 0.85);
+      steerCmd = clamp(steerCmd - this._driftSeen * this.catchGain, -0.8, 0.8);
     }
-    this._steer += (steerCmd - this._steer) * (1 - Math.exp(-8 * dt));
+    this._steer += (steerCmd - this._steer) * (1 - Math.exp(-6.2 * dt));
 
     // Lift when the angle has got away from them. A rival that stays flat while
     // sideways sustains its own slide, scrubs its speed off and never recovers,
@@ -472,12 +497,13 @@ export class Opponent {
    * cannot be lost to a shunt, so a rival's job around the player is to be an
    * obstacle you can lean on, never one that puts you in the scenery.
    *
-   * Rival-vs-rival: DO NOT stack brake. Prefer a lane change and keep rolling —
-   * hard brakes behind other AI caused the mid-road log-jam.
+   * Rival-vs-rival: only dodge when grooves actually overlap. A 3 m "same groove"
+   * made every car ahead look like a blocker and the pack thrashed lanes.
    *
+   * @param {number} homeLane this driver's preferred lateral (m)
    * @returns {{lift:number, brake:number, playerBlock:boolean, aheadClose:boolean, minThrottle:number, maxBrake:number}}
    */
-  _readTraffic(pack, v, track, q, dt) {
+  _readTraffic(pack, v, track, q, dt, homeLane = 0) {
     let lift = 1;
     let brakeFor = 0;
     let avoid = 0;
@@ -496,15 +522,14 @@ export class Opponent {
       const dist = Math.hypot(dx, dz);
       const dProg = (o.progress || 0) - v.progress;
 
-      // Rival-vs-rival: look farther and move over early so they never form a
-      // mid-road bounce pile. Player still gets a wider berth.
-      const look = isPlayer ? 18 : 28;
+      // Rival-vs-rival: look ahead, but only move when sharing a real lane.
+      const look = isPlayer ? 18 : 24;
       if (dProg > 0.35 && dProg < look) {
         const oLat =
           o._aiLat != null
             ? o._aiLat
             : track.query(o.position.x, o.position.z, this._qOther, o.progress).lateral;
-        const groove = isPlayer ? 2.9 : 3.15;
+        const groove = isPlayer ? GROOVE_PLAYER : GROOVE_RIVAL;
         const sameGroove = Math.abs(oLat - q.lateral) < groove;
         if (sameGroove) {
           const close = 1 - dProg / look;
@@ -513,27 +538,29 @@ export class Opponent {
             lift = Math.min(lift, 0.14 + dProg / 22);
             if (dProg < 9) brakeFor = Math.max(brakeFor, 0.2 + close * 0.48);
             if (dProg < 5.5) brakeFor = Math.max(brakeFor, 0.55);
-            avoid += (q.lateral >= oLat ? 1 : -1) * close * 0.7 * respect;
+            avoid += (q.lateral >= oLat ? 1 : -1) * close * 0.55 * respect;
           } else {
-            // Rival ahead in our groove: commit to a lane early, barely lift.
-            aheadClose = aheadClose || dProg < 14;
-            const side = q.lateral >= oLat ? 1 : -1;
-            avoid += side * (0.95 + close * 1.25);
-            lift = Math.min(lift, 0.82 + dProg / 50);
-            if (dProg < 4.5) {
-              brakeFor = Math.max(brakeFor, 0.08 + close * 0.12);
-              maxBrake = Math.max(maxBrake, 0.2);
+            // Commit toward free space near our home groove — not random flip-flop.
+            aheadClose = aheadClose || dProg < 12;
+            const towardHome = homeLane >= oLat ? 1 : -1;
+            const sideAway = q.lateral >= oLat ? 1 : -1;
+            const side = Math.abs(homeLane - oLat) > 0.35 ? towardHome : sideAway;
+            avoid += side * (0.55 + close * 0.7);
+            lift = Math.min(lift, 0.88 + dProg / 55);
+            if (dProg < 3.8) {
+              brakeFor = Math.max(brakeFor, 0.06 + close * 0.1);
+              maxBrake = Math.max(maxBrake, 0.18);
             }
-            minThrottle = Math.min(minThrottle, 0.52);
+            minThrottle = Math.min(minThrottle, 0.55);
           }
-        } else if (!isPlayer && dProg < 12 && dist < 11) {
-          // Nearby rival, different lane — ease and hold spacing.
-          lift = Math.min(lift, 0.92);
-          avoid += (q.lateral >= oLat ? 0.35 : -0.35) * (1 - dProg / 12);
+        } else if (!isPlayer && dProg < 10 && dist < 9) {
+          // Nearby but already on a different line — tiny spacing nudge only.
+          lift = Math.min(lift, 0.96);
+          avoid += (q.lateral >= oLat ? 0.18 : -0.18) * (1 - dProg / 10);
         }
       }
 
-      const near = isPlayer ? 6.8 * respect : 7.2;
+      const near = isPlayer ? 6.8 * respect : 6.4;
       if (dist < near && dist > 0.04) {
         const fx = Math.sin(v.yaw);
         const fz = Math.cos(v.yaw);
@@ -541,26 +568,26 @@ export class Opponent {
         const rz = -Math.sin(v.yaw);
         const along = dx * fx + dz * fz;
         const right = dx * rx + dz * rz;
-        if (along > -1.2 && along < (isPlayer ? 5.8 * respect : 5.5)) {
-          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.95 * respect : 1.45);
-          if (along > 0.2 && dist < (isPlayer ? 4.8 * respect : 4.4)) {
+        if (along > -1.2 && along < (isPlayer ? 5.8 * respect : 4.8)) {
+          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.85 * respect : 0.75);
+          if (along > 0.2 && dist < (isPlayer ? 4.8 * respect : 3.9)) {
             if (isPlayer) {
               playerBlock = true;
               lift = Math.min(lift, 0.18);
               brakeFor = Math.max(brakeFor, 0.34);
             } else {
               aheadClose = true;
-              lift = Math.min(lift, 0.85);
-              // Prefer move-over over brake — brake caused the bounce pile.
-              avoid += (right > 0 ? -1 : 1) * 0.85;
-              minThrottle = Math.min(minThrottle, 0.55);
+              lift = Math.min(lift, 0.9);
+              avoid += (right > 0 ? -1 : 1) * 0.45;
+              minThrottle = Math.min(minThrottle, 0.58);
             }
           }
         }
       }
     }
 
-    this._avoid += (clamp(avoid, -1.85, 1.85) - this._avoid) * (1 - Math.exp(-8.5 * dt));
+    // Slow blend — fast avoid tracking made the pack look drunk.
+    this._avoid += (clamp(avoid, -1.05, 1.05) - this._avoid) * (1 - Math.exp(-3.4 * dt));
     return { lift, brake: brakeFor, playerBlock, aheadClose, minThrottle, maxBrake };
   }
 

@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=223";
+import { VISUAL } from "../config.js?v=233";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const BRIGHT_FRAG = /* glsl */ `
@@ -505,8 +505,9 @@ export class PhotoRealPost {
     r.clear();
     r.render(scene, camera);
 
-    // Reuse AO/SSGI/bloom only when the lens is nearly still. A stale half-res
-    // field trails moving car paint and reads as ghosting in medium/far chase.
+    // AO may skip when the lens is still. Bloom always rebakes — a stale blur
+    // field is a soft copy of last frame's highlights (reads as ghosting).
+    // SSGI stays off via VISUAL.ssgi; if re-enabled, never composite a stale bake.
     const camMoved = this._postCamMoved(camera);
     this._aoTick = (this._aoTick || 0) + 1;
     const aoEvery = lock30 || titlePad ? 3 : 2;
@@ -518,7 +519,6 @@ export class PhotoRealPost {
       this._aoWarmed = true;
     }
 
-    // Lumen-like SSGI: half-res colour bounce. Motion always rebakes.
     this._ssgiTick = (this._ssgiTick || 0) + 1;
     const giEvery = lock30 || titlePad ? 3 : 2;
     const refreshGi =
@@ -553,22 +553,18 @@ export class PhotoRealPost {
       return;
     }
 
+    // Always refresh bloom — skipping left a translucent highlight ghost.
     this._bloomTick = (this._bloomTick || 0) + 1;
-    const refreshBloom =
-      !this._bloomWarmed || camMoved || !lock30 || this._bloomTick % 2 === 1;
-    if (refreshBloom) {
-      this._blit(this.sceneRT.texture, this.brightRT, this._brightMat);
+    this._blit(this.sceneRT.texture, this.brightRT, this._brightMat);
+    const texel = this._blurMat.uniforms.texel;
+    texel.value.set(1 / this.blurA.width, 1 / this.blurA.height);
+    this._blurMat.uniforms.direction.value.set(1, 0);
+    this._blit(this.brightRT.texture, this.blurA, this._blurMat);
+    this._blurMat.uniforms.direction.value.set(0, 1);
+    this._blit(this.blurA.texture, this.blurB, this._blurMat);
+    this._bloomWarmed = true;
 
-      const texel = this._blurMat.uniforms.texel;
-      texel.value.set(1 / this.blurA.width, 1 / this.blurA.height);
-      this._blurMat.uniforms.direction.value.set(1, 0);
-      this._blit(this.brightRT.texture, this.blurA, this._blurMat);
-      this._blurMat.uniforms.direction.value.set(0, 1);
-      this._blit(this.blurA.texture, this.blurB, this._blurMat);
-      this._bloomWarmed = true;
-    }
-
-    if (camMoved || refreshAo || refreshGi || refreshBloom) {
+    if (camMoved || refreshAo || refreshGi) {
       this._postCamPos.copy(camera.position);
       this._postCamQuat.copy(camera.quaternion);
     }
@@ -576,14 +572,17 @@ export class PhotoRealPost {
     const bloomAmt = titlePad
       ? 0.18
       : (VISUAL.bloomStrength ?? 0.28) * (q === "high" ? 1 : 0.85);
-    const giComp = useSsgi
-      ? giAmt * (titlePad ? 0.55 : q === "high" ? 1 : 0.85)
-      : 0;
+    // Only composite SSGI from a bake this present — never a prior frame's colour field.
+    const giComp =
+      useSsgi && refreshGi
+        ? giAmt * (titlePad ? 0.55 : q === "high" ? 1 : 0.85)
+        : 0;
     this._compMat.uniforms.tDiffuse.value = this.sceneRT.texture;
     this._compMat.uniforms.tBloom.value = this.blurB.texture;
     this._compMat.uniforms.tAO.value = useAo ? this.aoRT.texture : this._whiteTex;
     if (this._compMat.uniforms.tSSGI) {
-      this._compMat.uniforms.tSSGI.value = useSsgi ? this.ssgiRT.texture : this._blackTex;
+      this._compMat.uniforms.tSSGI.value =
+        useSsgi && refreshGi ? this.ssgiRT.texture : this._blackTex;
     }
     this._compMat.uniforms.bloomStrength.value = bloomAmt;
     this._compMat.uniforms.aoStrength.value = useAo ? VISUAL.aoStrength ?? 0.55 : 0;

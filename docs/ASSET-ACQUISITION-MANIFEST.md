@@ -96,6 +96,27 @@ light multiply, not the albedo. Still a heightmap. Do not call this a scanned fo
 
 ---
 
+## Trackside (finish hero — not Forest Phase 1)
+
+### GRANDSTAND_HERO — PARTIAL / MISSING HQ
+
+```
+Have (runtime): Kenney CC0 `grandstand` / `grandstand_covered` via prop-kit
+  (height scale ~4.6 / 5.4 m). Finish densifies locally: dual modules/side,
+  longer alongSpan, 6×14 seated banks vs start 4×9 — still Kenney mesh.
+Gap: CC0/CC-BY PBR filled grandstand (albedo+normal+rough, seated deck readable
+  at 5–30 m chase/medium cam). Kenney alone is not PASS for hero finish.
+Status: PARTIAL (Kenney + denser finish crowd) — HQ filled stand MISSING.
+Do not replace Kenney with box/primitive bleachers.
+Candidates (license-check before ship; do not claim PASS until on disk + gate):
+  - OpenGameArt “bleachers” / stadium seating packs (CC0 or CC-BY + ATTRIBUTION)
+  - BlendSwap CC0 grandstand / stadium bleacher searches
+    https://www.blendswap.com/search?q=grandstand
+    https://www.blendswap.com/search?q=bleachers
+  - OpenGameArt search: https://opengameart.org/art-search-advanced?keys=bleachers
+Not downloaded this pass — local densify + this gap row is the ship.
+```
+
 ## Later stages (do not start)
 
 Desert / Mountain / Lakeside libraries wait until Forest Phase 1 trees pass the stop-and-look test.
