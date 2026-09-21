@@ -3,7 +3,9 @@
  *
  * WHO THIS IS FOR: anyone wiring controls.
  * WHAT IT DOES: samples WASD/arrows, analog stick, triggers, and handbrake each
- *   frame and publishes a bounded InputState.
+ *   frame and publishes a bounded InputState. DualShock / DualSense over
+ *   Bluetooth is scanned in every gamepad slot (not only index 0) with both
+ *   Standard Gamepad and Sony HID layouts.
  * HOW IT CONNECTS: GameLoop reads InputState; vehicle consumes steer/throttle/brake.
  *   On phones TouchControls.sample() fills the same axes when no key/pad is live.
  *
@@ -70,6 +72,13 @@ export class Input {
     this._padCamWas = false;
     this._padUpWas = false;
     this._padDownWas = false;
+    this._padConfirmWas = false;
+    this._padBackWas = false;
+    this._padPauseWas = false;
+    /** Last Gamepad.index from `gamepadconnected` — DualShock BT is often not slot 0. */
+    this._padIndex = -1;
+    /** Detected analog trigger axes (Sony HID rests at -1). */
+    this._padTrigAxes = null;
 
     this._keys = new Set();
     this._edge = new Set();
@@ -80,11 +89,26 @@ export class Input {
     this._padCamEdge = false;
     this._padUpEdge = false;
     this._padDownEdge = false;
+    this._padConfirmEdge = false;
+    this._padBackEdge = false;
+    this._padPauseEdge = false;
     this._touch = null;
 
     window.addEventListener("keydown", (e) => this._onKey(e, true));
     window.addEventListener("keyup", (e) => this._onKey(e, false));
     window.addEventListener("blur", () => this._release());
+    window.addEventListener("gamepadconnected", (e) => {
+      if (!e || !e.gamepad) return;
+      this._padIndex = e.gamepad.index;
+      this._padTrigAxes = null;
+    });
+    window.addEventListener("gamepaddisconnected", (e) => {
+      if (!e || !e.gamepad) return;
+      if (e.gamepad.index === this._padIndex) {
+        this._padIndex = -1;
+        this._padTrigAxes = null;
+      }
+    });
     // A hidden tab stops delivering keyup, which used to leave the throttle
     // pinned when you came back.
     document.addEventListener("visibilitychange", () => {
@@ -181,15 +205,19 @@ export class Input {
     this.shiftDown =
       this._pressed("q") || this._pressed("keyq") || this._pressed("control") || this._padDownEdge;
     this.camera = this._pressed("c") || this._pressed("v") || this._padCamEdge;
-    this.pause = this._pressed("p") || this._pressed("escape");
+    this.pause = this._pressed("p") || this._pressed("escape") || this._padPauseEdge;
     this.transToggle = this._pressed("t");
-    this.confirm = this._pressed("enter") || this._pressed(" ") || this._pressed("space");
-    this.back = this._pressed("escape") || this._pressed("backspace");
+    this.confirm =
+      this._pressed("enter") || this._pressed(" ") || this._pressed("space") || this._padConfirmEdge;
+    this.back = this._pressed("escape") || this._pressed("backspace") || this._padBackEdge;
     this.reset = this._pressed("r");
 
     const usingKeys = keyTarget !== 0 || keyGas || keyBrake || keyHand;
     const usingPad =
-      Math.abs(this._padSteer) > 0.06 || this._padThrottle > 0.04 || this._padBrake > 0.04;
+      Math.abs(this._padSteer) > 0.06 ||
+      this._padThrottle > 0.04 ||
+      this._padBrake > 0.04 ||
+      this._padHandbrake > 0.04;
     const touch = this._touch && typeof this._touch.sample === "function" ? this._touch.sample() : null;
     if (touch && touch.active && !usingKeys && !usingPad) {
       this.steer = bounded(touch.steer, -1, 1);
@@ -224,26 +252,139 @@ export class Input {
     this._edge.clear();
   }
 
-  _readGamepad() {
+  /**
+   * Live pad. DualShock over Bluetooth is often not `pads[0]` — rumble already
+   * walked every slot; driving used to ignore those extra indices, so the
+   * controller vibrated and did nothing else.
+   * @returns {Gamepad | null}
+   */
+  _pickGamepad() {
     const pads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : null;
-    const gp = pads && pads.length ? pads[0] : null;
-    if (!gp || !gp.connected || !gp.axes || !gp.buttons) {
-      this._padSteer = 0;
-      this._padThrottle = 0;
-      this._padBrake = 0;
-      this._padHandbrake = 0;
-      this._padCamEdge = false;
-      this._padCamWas = false;
-      this._padUpEdge = false;
-      this._padUpWas = false;
-      this._padDownEdge = false;
-      this._padDownWas = false;
+    if (!pads || !pads.length) return null;
+    const preferred = this._padIndex >= 0 ? pads[this._padIndex] : null;
+    if (this._padLooksDriveable(preferred)) return preferred;
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i];
+      if (!this._padLooksDriveable(p)) continue;
+      let score = p.buttons.length + p.axes.length;
+      if (p.mapping === "standard") score += 24;
+      if (p.vibrationActuator) score += 8;
+      if (this._isSonyPad(p)) score += 12;
+      if (score > bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * @param {Gamepad | null | undefined} gp
+   * @returns {boolean}
+   */
+  _padLooksDriveable(gp) {
+    return !!(
+      gp &&
+      gp.connected &&
+      gp.axes &&
+      gp.axes.length >= 2 &&
+      gp.buttons &&
+      gp.buttons.length >= 6
+    );
+  }
+
+  /**
+   * DualShock / DualSense / generic Sony HID, including empty `mapping`.
+   * @param {Gamepad} gp
+   */
+  _isSonyPad(gp) {
+    const id = typeof gp.id === "string" ? gp.id.toLowerCase() : "";
+    return /054c|09cc|0ce6|dualshock|dualsense|playstation|wireless controller|sony/.test(id);
+  }
+
+  /**
+   * Unmapped Sony HID: Square/Cross/Circle/Triangle, not the W3C A/B/X/Y order.
+   * @param {Gamepad} gp
+   */
+  _sonyRawLayout(gp) {
+    return this._isSonyPad(gp) && gp.mapping !== "standard";
+  }
+
+  /**
+   * Sony analog triggers rest at -1 and travel to +1. Sticks rest at 0 — never
+   * convert those or a centred stick becomes half throttle.
+   * @param {Gamepad} gp
+   * @returns {{ l: number | null, r: number | null }}
+   */
+  _triggerAxes(gp) {
+    const prev = this._padTrigAxes;
+    if (
+      prev &&
+      prev.index === gp.index &&
+      prev.id === gp.id &&
+      (prev.l != null || prev.r != null)
+    ) {
+      return prev;
+    }
+    const found = [];
+    const n = Math.min(gp.axes.length, 6);
+    for (let i = 2; i < n; i++) {
+      const a = gp.axes[i];
+      if (typeof a === "number" && Number.isFinite(a) && a < -0.82) found.push(i);
+    }
+    const rec = {
+      id: gp.id,
+      index: gp.index,
+      l: found.length >= 2 ? found[0] : null,
+      r: found.length >= 2 ? found[1] : found.length === 1 ? found[0] : null,
+    };
+    this._padTrigAxes = rec;
+    return rec;
+  }
+
+  /**
+   * @param {number} a axis in [-1, 1], Sony trigger rest = -1
+   */
+  _axisAsTrigger(a) {
+    return bounded((a + 1) * 0.5, 0, 1);
+  }
+
+  _clearPad() {
+    this._padSteer = 0;
+    this._padThrottle = 0;
+    this._padBrake = 0;
+    this._padHandbrake = 0;
+    this._padCamEdge = false;
+    this._padCamWas = false;
+    this._padUpEdge = false;
+    this._padUpWas = false;
+    this._padDownEdge = false;
+    this._padDownWas = false;
+    this._padConfirmEdge = false;
+    this._padConfirmWas = false;
+    this._padBackEdge = false;
+    this._padBackWas = false;
+    this._padPauseEdge = false;
+    this._padPauseWas = false;
+  }
+
+  _readGamepad() {
+    const gp = this._pickGamepad();
+    if (!gp) {
+      this._clearPad();
       return;
     }
 
     let sx = bounded(gp.axes[0], -1, 1);
     if (Math.abs(sx) < STICK_DEAD) {
-      sx = 0;
+      // D-pad when the stick is centred (Bluetooth DS4 often prefers the hat).
+      const dLeft = this._down(gp, 14) || this._down(gp, 16);
+      const dRight = this._down(gp, 15) || this._down(gp, 17);
+      if (dLeft && !dRight) sx = -1;
+      else if (dRight && !dLeft) sx = 1;
+      else sx = 0;
     } else {
       // Mild curve — keep mid-stick linear enough for accurate corrections / flicks.
       const mag = Math.min(1, (Math.abs(sx) - STICK_DEAD) / (1 - STICK_DEAD));
@@ -251,17 +392,40 @@ export class Input {
     }
     this._padSteer = bounded(-sx, -1, 1);
 
-    const rt = this._button(gp, 7);
-    const lt = this._button(gp, 6);
+    const trig = this._triggerAxes(gp);
+    let rt = this._button(gp, 7);
+    let lt = this._button(gp, 6);
+    if (trig.r != null && trig.r < gp.axes.length) {
+      rt = Math.max(rt, this._axisAsTrigger(bounded(gp.axes[trig.r], -1, 1)));
+    }
+    if (trig.l != null && trig.l < gp.axes.length) {
+      lt = Math.max(lt, this._axisAsTrigger(bounded(gp.axes[trig.l], -1, 1)));
+    }
     this._padThrottle = rt > TRIGGER_DEAD ? rt : 0;
     this._padBrake = lt > TRIGGER_DEAD ? lt : 0;
-    if (this._down(gp, 0)) this._padThrottle = 1;
-    if (this._down(gp, 1)) this._padBrake = 1;
-    this._padHandbrake = this._down(gp, 2) ? 1 : 0;
+
+    const sonyRaw = this._sonyRawLayout(gp);
+    // Standard Gamepad: 0=A/Cross gas, 1=B/Circle brake, 2=X/Square handbrake.
+    // Sony HID: 0=Square, 1=Cross, 2=Circle, 3=Triangle — Cross is gas.
+    const faceGas = sonyRaw ? 1 : 0;
+    const faceBrake = sonyRaw ? 2 : 1;
+    const faceHand = sonyRaw ? 0 : 2;
+    if (this._down(gp, faceGas)) this._padThrottle = 1;
+    if (this._down(gp, faceBrake)) this._padBrake = 1;
+    this._padHandbrake = this._down(gp, faceHand) || this._down(gp, 10) ? 1 : 0;
 
     const padCam = this._down(gp, 3) || this._down(gp, 8);
     this._padCamEdge = padCam && !this._padCamWas;
     this._padCamWas = padCam;
+    const padConfirm = this._down(gp, faceGas);
+    this._padConfirmEdge = padConfirm && !this._padConfirmWas;
+    this._padConfirmWas = padConfirm;
+    const padBack = this._down(gp, faceBrake);
+    this._padBackEdge = padBack && !this._padBackWas;
+    this._padBackWas = padBack;
+    const padPause = this._down(gp, 9);
+    this._padPauseEdge = padPause && !this._padPauseWas;
+    this._padPauseWas = padPause;
     // Shoulder buttons are the manual gearbox: RB up, LB down (into neutral).
     const padUp = this._down(gp, 5);
     const padDown = this._down(gp, 4);

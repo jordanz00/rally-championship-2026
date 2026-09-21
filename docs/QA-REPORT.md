@@ -1,5 +1,433 @@
 # QA report — quality-control pass
 
+## Android Pixel UA smoke (2026-09-21)
+
+**Ask:** run a test on Android and confirm it works.
+
+**Scope honesty:** no physical Android handset or emulator was attached to this machine (`adb` absent). Proof is Chrome headless-shell with a **Pixel 7 Android Mobile UA**, 412×915 touch viewport, boot 824.
+
+**Result: PASS**
+
+| Check | Result |
+|---|---|
+| Engine + WebGL | ok (`webgl`, canvas 370×823) |
+| White tab | none — `body=rgb(5,7,5)`, `crt.is-title` |
+| Phone path | `body.is-mobile`, touch on, `dprScale=0.62`, `lowPower` + `preferLock30` |
+| Boot error | none |
+| PRESS START → SELECT MODE | ok (`screen-menu`) |
+
+**Artifacts:** `tools/qa-out/android-smoke-title.jpg` · `tools/qa-out/android-smoke-after-start.jpg`  
+**Command:** `CHROME_PATH=…/chrome-headless-shell RALLY_QA_ALLOW_CHROME=1 node tools/qa-android-smoke.mjs`
+
+**Human gate (still required):** open the same URL in Android Chrome on a real phone (not Instagram/Facebook). Title must not be white; SELECT MODE must show.
+
+---
+
+## Android all-phone hardening (2026-09-21)
+
+**Ask:** verify and optimize so the game runs nicely on any Android phone.
+
+**Findings:** boot white-screen traps from earlier today were still armed. New risks after the Vmax / env work: (1) dual `?v=` imports loaded the same module twice (memory tax on phones). (2) `wantHiMaps()` followed VISUAL.tier 13 on phones → mid-race 2k uploads on Adreno/Mali. (3) `lockRaceQuality` kept cinema shadows even when phones started on `low`. (4) weak Android (≤4 GB / ≤4 cores) still opened on `low` instead of `min`.
+
+**Shipped:** aligned singleton versions. Phones never stream 2k ground maps. Weak Android starts on `min`. Phone present path honours low/min (no desktop cinema lock). Android caps pixels (~0.9M), DPR, and shadow atlas at boot; preferLock30 armed.
+
+**Proof:** `node tools/qa-mobile-controls.mjs` · `node tools/qa-pbr-stream.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=824`
+
+**Human gate:** Android Chrome (not Instagram/Facebook). Title + PUSH START dark, not white. Race holds ~30–60 without hitching into a white frame. Low-end phones may look softer; they must stay playable.
+
+---
+
+## Engine cruise / Vmax (2026-09-21)
+
+**Player report:** top speed arrives too easily, and the engine sounds stressed when you hold it there.
+
+**Cause:** 4th was too short. At the stated ceiling the driveline was already past redline, so WOT pinned the limiter. Aero was soft (`aeroDrag` 0.28) and high-speed drive still had 82% torque, so the car rushed that wall.
+
+**Shipped:** overdrive 4th (Celica/Delta 0.70, Stratos 0.66). Auto upshifts at 82% redline. Aero 0.44 plus a high-speed torque fade. Torque falls off after 7k so hanging on the limiter does not make more speed. Load bed stays chesty in the cruise band.
+
+**Proof:** `node tools/qa-engine-cruise.mjs`
+
+**Boot:** `main.js?v=823` · `game.js?v=823` · `vehicle.js?v=166` · `config.js?v=239`
+
+**Human gate:** hard refresh, long straight, floor it. 1–3 should still punch. 4th should pull for a while around 6k, not scream at the limiter — and the last km/h should be a fight.
+
+---
+
+## Lights-out launch hitch (2026-09-21)
+
+**Player report:** after countdown, accelerating is jerky and glitchy — the car hitchs on the first throttle.
+
+**Cause:** GO paid three costs on one beat. (1) 2k ground maps swapped into live materials (mipmap GPU upload) as you floored it. (2) Present skip on high-Hz panels doubled physics into the next shown frame, so launchBoost lurched. (3) Countdown left `_camSnap` on, then a 3.4° FOV punch + shake on the first race chase frame.
+
+**Shipped:** hold 2k uploads from "3" until ~1.5 s after GO. Present every frame through launch. Clear camera snap; softer GO kick. Idle-step the pack under the load overlay so the first race tick is warm.
+
+**Proof:** `node tools/qa-go-launch.mjs` · `node tools/qa-pbr-stream.mjs`
+
+**Boot:** `main.js?v=822` · `game.js?v=822` · `track.js?v=366` · `pbr-stream.js?v=2`
+
+**Human gate:** hard refresh, championship or practice. Hold throttle through 3-2-1. At GO the car should pull clean — no stutter, no camera pop.
+
+---
+
+## Android white screen at launch (2026-09-21)
+
+**Player report:** friend launched on an Android phone → blank white screen. Works on iPhone. Must boot on any phone and any computer.
+
+**Cause:** two Android Chrome compositor/layout traps. (1) Title hid the WebGL canvas with `opacity: 0` (`:has(#screen-title.active)`). Opacity on a live WebGL layer whites out the whole tab on many Adreno/Mali drivers; iOS Safari composites it. (2) `body.is-mobile { position: fixed }` plus `html { overflow: hidden }` collapsed the document to 0 height. The first `high-performance` WebGL context also often fails on Android with no retry.
+
+**Shipped:** HTML title paints dark immediately (inline CSS, `#crt.is-title`, no `:has` required). WebGL host stays opaque. Body is not `position: fixed`. Renderer retries default / low-power / no-AA. Phones skip the cinema post stack at boot. Errors sit on a fixed red panel. In-app browsers get a timeout message instead of a white tab.
+
+**Proof:** `node tools/qa-mobile-controls.mjs`
+
+**Boot:** `main.js?v=821` · `game.js?v=821` · `css/game.css?v=48` · `hud.js?v=41` · `renderer-factory.js?v=6`
+
+**Human gate:** open the same link in Android Chrome (not Instagram/Facebook). Red emblem + PUSH START must appear. If 3D fails, a red error panel — never white.
+
+---
+
+## Arcade power-slides + DualShock Bluetooth (2026-09-21)
+
+**Player report:** want easy arcade/sim power slides that keep speed; PS4 DualShock 4 Bluetooth rumbled but did not drive.
+
+**Cause:** (1) driving sampled only `pads[0]` while rumble walked every slot — Bluetooth DualShock is often not index 0, and unmapped Sony HID puts Cross on button 1 with L2/R2 as −1…+1 axes. (2) Slide exit boost armed too late; aero + TC scrubbed speed mid-slide.
+
+**Shipped:** any connected pad; Standard Gamepad plus Sony HID (Cross gas, analog triggers, D-pad). Mid-slide drive keep, aero cut, lateral→forward convert, easier pitch-in, snappier catch. Handbrake still initiates; throttle holds speed.
+
+**Proof:** `node tools/qa-gamepad.mjs` · `node tools/qa-am3-handling.mjs` · `node tools/qa-sprint33-drift.mjs`
+
+**Boot:** `main.js?v=820` · `game.js?v=820` · `vehicle.js?v=165` · `config.js?v=238` · `input.js?v=43`
+
+**Human gate:** hard refresh. DualShock: R2 throttle, stick steer, Square handbrake, Cross also gas. Gravel: throttle + steer should pitch the tail and keep speed; opposite lock catches.
+
+---
+
+## High-res textures without the wait (2026-09-15)
+
+**Player report:** want very high quality textures, but not a long load.
+
+**Cause:** `prepareDesertPbr` / `prepareForestPbr` awaited every 1k map (diff+nor+rough) before the mesh. No 2k files. Title did not prefetch Desert albedo.
+
+**Shipped:** boot waits only on 1k color. Normals/roughness then 2k swap into the same Three Source (live materials sharpen). Title prefetches Desert 1k albedo. 2k skipped below visual tier 8.
+
+**Proof:** `node tools/qa-pbr-stream.mjs`
+
+**Boot:** `main.js?v=819` · `game.js?v=819` · `track.js?v=365` · `desert-pbr.js?v=56` · `forest-pbr.js?v=56` · `pbr-stream.js?v=1`
+
+**Human gate:** hard refresh, start Desert. Load bar should leave “ground photos” quickly. Road looks photographic at GO and gets sharper over the first seconds.
+
+---
+
+## Automatic gearbox (2026-09-15)
+
+**Player report:** automatic shifting is poor; want realistic shifts.
+
+**Cause:** the box dumped 2–3 gears in 25 ms, used engine RPM (so wheelspin false-shifted), and had no clutch. Light brake at cruise sat below a 5600 RPM floor and panic-downshifted.
+
+**Shipped:** sequential only. Next-gear RPM from road speed must land in the powerband (no overrev, no bog). Clutch torque-cut ~120–150 ms; 160–200 ms between shifts. Light brake holds a tall gear; WOT still waits near redline.
+
+**Proof:** `node tools/qa-am3-handling.mjs`
+
+**Boot:** `main.js?v=818` · `game.js?v=818` · `vehicle.js?v=164` · `config.js?v=237`
+
+**Human gate:** Automatic. Ease onto throttle (1–2–3 with a pause). Floor it (hold near redline). Brake from speed (4→3→2 one at a time, tach catches). Hairpin still reaches a low gear by the apex.
+
+---
+
+## Throaty exhaust note (2026-09-15)
+
+**Player report:** want a throaty, realistic engine and exhaust.
+
+**Cause:** last mix killed the toy layers but left a thin loop. Cabin high-pass at 72–95 Hz also ate the 80–250 Hz chest.
+
+**Shipped:** octave-down copy of the same licensed load bed into a 520 Hz throat path; lowshelf + 175–240 Hz peak + 320–445 Hz note; mild saturator; rasp shelf cut. Engine now rides the impact bus (26 Hz HP) so the throat survives.
+
+**Proof:** `node tools/qa-powertrain.mjs`
+
+**Boot:** `main.js?v=817` · `game.js?v=817` · `engine.js?v=76` · `powertrain.js?v=32`
+
+**Human gate:** hard refresh, idle should burble in the chest; WOT should growl, not scream.
+
+---
+
+## Engine / exhaust voice (2026-09-15)
+
+**Player report:** engine and exhaust sounds are unpleasant.
+
+**Cause:** recorded beds were buried under a synth cylinder pulse, turbo kettle whistle, helium-pitched scream loop, bright presence EQ, and loud BOV/crackle.
+
+**Shipped:** idle/load recordings only. Compressed playback (redline growl, not chipmunk). Pulse, whistle, scream, and crackle off. Quieter lift and shift. Darker cabin EQ.
+
+**Proof:** `node tools/qa-powertrain.mjs`
+
+**Boot:** `main.js?v=816` · `game.js?v=816` · `engine.js?v=75` · `powertrain.js?v=31`
+
+**Human gate:** hard refresh, start a stage, listen at idle then WOT then lift. Should read as a recorded rally car, not a toy motor.
+
+---
+
+## Desert start-grid hitch (2026-09-15)
+
+**Player report:** major glitching at the start of Stage 1.
+
+**Cause:** settle loaded an 820 m disc then GO snapped to ~410 m fog + flipped tree LOD facing in one frame. Forced lock-30 at settle added judder. Shader compile rode that dump.
+
+**Shipped:** settle radius capped to fog+90 m; stream/LOD hold ~2.5 s after freeze; no forced 30 Hz at lights-out.
+
+**Boot:** `main.js?v=815` · `game.js?v=815` · `track.js?v=364`
+
+---
+
+## Load + plant + rival shadows (2026-09-15)
+
+**Player report:** stage load too slow; env props hover; rival cars look airborne; shadows sit under empty air.
+
+**Cause:** ground PBR maps loaded one-by-one with a 14 s miss timeout. GLB rocks/bushes used `gy + offset` on already-grounded meshes. Rival plant used axle scrap below the tread, which lifted the body. Shadow `normalBias` 4 cm opened a tire gap.
+
+**Shipped:** parallel texture fetch (2.5 s cap, skip AO). Instance plant snaps floating grounded GLBs into land. Rival contact plant ignores under-tread scrap + 12 mm sink. Shadow normal bias capped at 16 mm; contact blob 12 mm.
+
+**Boot:** `main.js?v=814` · `game.js?v=814` · `track.js?v=363` · `celica.js?v=210` · `lighting-rig.js?v=25`
+
+---
+
+## Gauge accuracy — km/h + driveline tach (2026-09-10)
+
+**Player moment:** Chase dials and POV binnacle agree with the digital `km/h` readout. Tach follows gearbox × wheel speed; it does not invent high revs on light throttle.
+
+**Cause:** Analog faces were MPH 0–140 while the HUD digit was km/h — same physics looked “wrong.” Engine RPM also floored at a throttle flare above driveline RPM.
+
+**Shipped:**
+1. Chase + POV speedos are **km/h 0–280** (same unit as digital).
+2. Needles track faster so dial ≈ digit.
+3. In-gear tach follows driven RPM; flare only on real wheelspin.
+4. `speedKmh()` uses ground-plane velocity.
+
+**Proof:** `node tools/qa-pov-gauges.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=813` · `hud.js?v=40` · `celica.js?v=209` · `vehicle.js?v=163`
+
+**Human gate:** Medium chase — digit and dial show the same km/h. Lift throttle in gear — tach drops with speed, not stuck high.
+
+---
+
+## POV racing gloves + lock-30 realism (2026-09-10)
+
+**Player moment:** Press C into POV. Hands on the wheel read as gloved racing grips (fingers around the rim, suit sleeves from the shoulders), not box mittens. Race present stays on an even 30 Hz so photographic quality does not ride judder.
+
+**Cause:** POV driver was three boxes + stretched cylinders. Cadence could free-run toward ~46 fps mush while chasing 60.
+
+**Shipped:**
+1. `pov-driver.js` — articulated racing-glove hands (palm, 4×3 phalanges, thumb, knuckle pads, leather/stitch maps) + two-bone suit sleeves.
+2. `cockpit-anim.js` — shoulder→elbow→wrist IK so sleeves track gloves as the wheel turns.
+3. `GFX.forceLock30AtSettle: true` — clean 30 Hz present from race settle; `lockRaceQuality` keeps visual tier (no fidelity dump).
+
+**Cost:** POV-only meshes/shared geos; inactive in chase. Lock-30 is present cadence, not a quality ladder drop.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=812` · `celica.js?v=208` · `pov-driver.js?v=1` · `cockpit-anim.js?v=6` · `config.js?v=236`
+
+**Human gate:** Practice → C for POV. Gloves wrap the rim; sleeves bend at elbows; hard refresh. Frame cadence should feel even (~30), not stuttery mid-40s.
+
+---
+
+## Organic road / seamless shoulder (2026-09-10)
+
+**Player moment:** Any stage, medium chase — road and verge read as continuous ground (no painted wallpaper, no hard kerb colour seam). Clipping the shoulder costs a hair of pace (~1–2.5%), not a parking brake; apron has a shallow dropoff.
+
+**Cause:** Canvas road maps tiled evenly; ribbon edge verts stayed road-hue against land apron; shader blotch was mild; verge floor raised `speedScale` without a readable early-shoulder tax.
+
+**Shipped:**
+1. Stronger `paintOrganicBreakup` (soft + light tarmac mottling) + wider `paintEdgeErosion` feather; texture cache `v8`.
+2. Road edge verts blend ~40% toward biome apron; softer skirt pack darkening; shallow long skirt (`SKIRT_SLOPE` 0.12).
+3. Stronger projected blotch / multi-scale UV mix (`road-organic-v6`, `terrain/skirt-proj-v3`).
+4. Hair shoulder `speedScale` ×0.988→0.975 after soft-surface runoff floor.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=811` · `track.js?v=362` · `pbr.js?v=54` · `vehicle.js?v=162`
+
+**Human gate:** Forest dirt — soil blotches, verge continuous with land, no polygon lip. Clip shoulder: slight slow only. Mountain tarmac — subtle wear, not stamped asphalt cloth.
+
+---
+
+## Wheel dust spray — visible physics grit (2026-09-10)
+
+**Player moment:** Desert sand / Forest dirt / mud / gravel, medium chase. Rear (and front) tires kick a readable plume that trails the car, arcs under gravity, and settles. Slides throw more sideways; throttle/wheelspin throws more aft.
+
+**Cause:** Spray was emitting but nearly invisible — point size ~9 px at chase distance (`uScale` 520 / tiny metres), `depthTest` buried contact grit in the road, frustum cull clipped the trailing plume, and fog wiped alpha.
+
+**Shipped:**
+1. Chase-scale particles (`size` ~0.5–1.55 m, `uScale` 1180, `uMaxPx` 110).
+2. `depthTest: false` + `frustumCulled: false` so the wake stays on screen.
+3. Stronger kick/lift, chassis-velocity inherit, longer life, softer fog on grit.
+4. Ground bounce / skitter / mud stick kept — physics still drives the arc.
+
+**Proof:** `node tools/qa-sprint27-env.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=810` · `effects.js?v=81`
+
+**Human gate:** Desert practice, medium chase, floor it then slide. Tan grit must clearly kick off the rears. Forest dirt browner; mud darker/heavier. Tarmac stays clean.
+
+---
+
+## Tire trails — dual-layer realism (2026-09-10)
+
+**Player moment:** Soft stages (Desert sand, Forest dirt/mud/gravel) and Mountain tarmac. Look back after 40–80 m: twin compressed tracks with dusty lips (soft) or dark rubber scrub (hard). Slide / brake / wheelspin digs deeper 3D trenches with berms.
+
+**Cause:** Trails were single flat-color quads with linear fade; soft colors read as painted strips; hard skids needed high scrub; 3D ruts were shallow and soft-edged.
+
+**Shipped:**
+1. Dual-layer marks — dusty outer lip + darker compressed/rubber center.
+2. Surface-tuned center/lip hues, longer life, denser player soft stamps, grit shader.
+3. Decals settle into the deform field; ease-out fade keeps tracks readable longer.
+4. Deeper/sharper `WheelDeformField` + stronger berms (`surface-deform.js?v=7`).
+
+**Proof:** `node tools/qa-soft-ruts.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=809` · `effects.js?v=80` · `surface-deform.js?v=7` · `track.js?v=361`
+
+**Human gate:** Desert — drive and look back: twin sand trenches + berms, not yellow tape. Forest mud — darker dig on brake. Mountain — lock/scrub leaves rubber, not nothing.
+
+---
+
+## Splash hero — no black-then-texture flash (2026-09-10)
+
+**Player moment:** Boot / PRESS START. The attract Celica must never appear as a black shell that then “textures in.” Pad fades in already lacquered.
+
+**Cause:** Title clearcoat/chrome mounts immediately, while PMREM IBL is delayed (`iblDelayMs` 900). Without an env map, metal/lacquer reads black until bake completes. `#game-view` was also fully opaque on splash from frame one.
+
+**Shipped:**
+1. Mount title LOD invisible; reveal only via `_revealTitleShowroom` after `_onTitleIblReady`.
+2. `renderer.initTexture` on albedo/PBR maps before first visible present.
+3. CSS: `#game-view` opacity 0 on title until `.showroom-live`; soft fade-in.
+4. Timed fallback if PMREM stalls so PRESS START is never stuck on empty CRT forever.
+
+**Proof:** `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=808` · `game.css?v=47`
+
+**Human gate:** Hard-refresh splash. Car should appear once, fully painted — no black flash.
+
+---
+
+## Start-line accel glitch — GO guards live (2026-09-10)
+
+**Player moment:** Every stage. Floor it at 3-2-1-GO. The player car must leave cleanly forward — no chassis judder, lateral fling, or yank-back while accelerating off the grid.
+
+**Cause:** `spawn()` armed `_glitchIgnore = 8`, but countdown never calls `Vehicle.step`, so those frames burned at GO with `_guardXZ` / bury skipped. Wall glances (up to 1.2 m/tick) and env-embed restore-to-grid fought throttle. `freezeLaunch` did not clear the ignore flag.
+
+**Shipped:**
+1. `freezeLaunch()` zeros `_glitchIgnore`, clears env-deep flags, pins `_deckFilt` to settled Y.
+2. `_guardDrive` still runs XZ / NaN / bury during any remaining soft grace (only soft progress-warp is skipped).
+3. During `_launchHold` + throttle, skip env-embed teleport back to the lights-out stash.
+4. `collide.js` soft-caps player wall/env push while `_launchHold` is armed (0.08 / 0.06 m).
+
+**Proof:** `node tools/qa-go-launch.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=807` · `vehicle.js?v=161` · `collide.js?v=56`
+
+**Human gate:** Hard-refresh → Practice Desert / Forest / Mountain / Lakeside. Hold accel through countdown. At GO the Celica must only go forward, no start-line stutter.
+
+---
+
+## Forest tunnel — longer multi-turn dark bore (2026-09-10)
+
+**Player moment:** Stage 2 Forest. After the VLEL, enter a long rock tunnel with several bends. Approach rock face is sealed (no woods through the walls). Inside is dark — headlights punch the cabin.
+
+**Shipped:**
+1. Bore lengthened with ML / MR / EL / tight R + long exit straight (~500 m vs ~230 m).
+2. Thicker swept tube + deep double mouth collars + denser boulder flanks (see-through approach fix).
+3. `TUNNEL_FOREST` — low cave/wall fill, dark fog; stronger head beams via `tunnelLightingFor("forest")`.
+4. Sparse dim sconces; darker bore PBR.
+
+**Proof:** `node tools/qa-static-audit.mjs` · `node tools/qa-validate.mjs`
+
+**Boot:** `main.js?v=806` · `config.js?v=235` · `forest-definition.js?v=11` · `forest-tunnel.js?v=6` · `track.js?v=360` · `celica.js?v=207`
+
+**Human gate:** Forest practice → tunnel. Approach should read as solid rock. Inside: dark, headlights bright, several turns before exit light.
+
+---
+
+## Mountain POV rain — accel climb + real wipers (2026-09-10)
+
+**Player moment:** Stage 3 Mountain, POV (C). Floor it — windshield beads streak **up** the glass. Wipers read as tandem arm+blade on the cowl, sized to the aperture.
+
+**Cause:** Droplet climb used `−ax` (decel) and a weak throttle term, so acceleration looked like gravity-down. Wipers were short parallel boxes (blade capped ~0.48 m) without a proper arm/joint.
+
+**Shipped:** Accel/throttle/ram-air climb (−v); rebuilt pivots with boss + arm + articulated blade/rubber sized to `gw/gh`; wider sweep (`wiperFar` 1.26).
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=805` · `game.js?v=805` · `celica.js?v=206` · `rain.js?v=14` · `ai.js?v=206` (shared celica)
+
+**Human gate:** Mountain or `?rain=1` → C. Parked: beads creep down. Throttle: streaks climb. Wipers clear full arcs.
+
+---
+
+## Crowd T-pose fix — arm split on non-indexed meshes (2026-09-10)
+
+**Player moment:** Start/finish grandstand audience — arms hang and cheer instead of frozen T-pose.
+
+**Cause:** `normalizeForMerge` runs `toNonIndexed()`, then `splitCrowdCharacter` required a geometry index and returned null arms. Quaternius `crowd-body` GLBs have no named arm meshes, so every spectator stayed in bind T-pose.
+
+**Shipped:** Non-indexed triangle walk + height-relative arm bands; bake hang-down from T-pose after shoulder pivot; slightly softer arm rest. Cache `?v=803`.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=804` · `game.js?v=804` · `track.js?v=359` · `prop-kit.js?v=47` · `crowd.js?v=36`
+
+**Human gate:** Hard-refresh → Desert start stands — arms at sides / waving, not crucifix.
+
+---
+
+## Proper grandstands + seated audiences (2026-09-10)
+
+**Player moment:** Start grid and finish checkered corridor — covered Kenney stands on both banks with people sitting *in* the decks (not floating on the verge beside empty modules). Forest no longer truncates the finish bank. Mountain gets start/finish stands (no mid-stage gallery).
+
+**Shipped:**
+1. `_addGrandstandCrowds` plants seats per module relative to stand center (rows climb back from the track; scale matches ~5.4 m Kenney footprint).
+2. Start upgraded to 5×11 covered; finish dual modules 6×12 each side; forced verge plant if ribbon clear fails.
+3. `maxPoses` raised (Forest was 120 — clipping the hero bank). Mountain loads character GLBs for stands only.
+4. `kindsForScenery("mountain")` includes `CROWD_ALL`.
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=802` · `game.js?v=802` · `track.js?v=358` · `crowd.js?v=35` · `prop-kit.js?v=46`
+
+**Still open:** HQ CC0 PBR filled grandstand (`GRANDSTAND_HERO`) — Kenney remains PARTIAL.
+
+**Human gate:** Hard-refresh → Desert start — filled covered stand both sides. Drive to finish — dual modules packed with seated crowd facing the ribbon.
+
+---
+
+## Finish checkers 5+5 every stage (2026-09-10)
+
+**Player moment:** Cross any stage finish — five checkered cloth poles on each verge, always.
+
+**Shipped:** `_plantFinishCheckerRow` forced verge fallback so clearance/tunnel skips cannot drop below 5 per side. Gates already run on every stage via `_addStageGates`.
+
+**Proof:** `node tools/qa-cloth-flags.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=801` · `track.js?v=357`
+
+---
+
+## Long medium drifts + rival slides (2026-09-10)
+
+**Player moment:** Desert / Forest Automatic. Longer medium arcs invite held handbrake power slides. E-brake + throttle keeps speed. Rivals are slower and flick into slides on loose mediums.
+
+**Shipped:** Longer Desert/Forest mediums & sweepers; `handbrakeDriveKeep` + softer HB torque/bleed; slower AI skill/pace; medium-corner HB + throttle power-slides for flick rivals.
+
+**Proof:** `node tools/qa-static-audit.mjs` — PASS (21)
+
+**Boot:** `main.js?v=800` · `game.js?v=800` · `config.js?v=234` · `vehicle.js?v=160` · `ai.js?v=193` · `courses.js?v=87` · desert/forest defs `?v=10`
+
+**Human gate:** Hard-refresh → Desert. First three rights should hold a slide without dying to a stop. Pack should look slower and sideways into mediums.
+
+---
+
 ## Hero-only engine soften + rival mute (2026-09-09)
 
 **Player moment:** Desert practice, medium chase. Floor it — cabin engine is thicker / less whistle; pack cars stay visually loud but **silent** on exhaust (player hero beds only). Tire scrape and finish cheer from the friend impress pass are unchanged.

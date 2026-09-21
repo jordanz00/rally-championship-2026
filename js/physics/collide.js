@@ -497,13 +497,19 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
   nz /= nLen;
   const wall = !!opts.wall;
   const applyVel = opts.vel !== false;
-  const cap = wall
+  let cap = wall
     ? v.ai
       ? AI_WALL_PUSH
       : PLAYER_WALL_PUSH
     : v.ai
       ? AI_ENV_PUSH
       : PLAYER_ENV_PUSH;
+  // Lights-out: a full 1.2 m wall shove per tick fought throttle and looked
+  // like a chassis glitch at every stage start. Scrape out; do not fling.
+  if (!v.ai && v._launchHold > 0) {
+    const launchCap = wall ? 0.08 : 0.06;
+    if (cap > launchCap) cap = launchCap;
+  }
   const push = Math.min(overlap + CONTACT_SLOP, cap) * (pass === 0 ? 1 : 0.9);
   v.position.x += nx * push;
   v.position.z += nz * push;

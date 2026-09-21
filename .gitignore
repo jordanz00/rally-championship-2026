@@ -11,6 +11,17 @@ node_modules/
 *.pem
 *.key
 
+# Local QA browsers / screenshots (not ship assets)
+chrome-headless-shell/
+tools/qa-out/
+tools/__pycache__/
+**/__pycache__/
+
+# Local asset dumps / backups — not runtime
+assets/props/_kenney_backup/
+assets/props/_lowpoly_backup/
+assets/props/hd-src/
+
 # Quaternius Universal Base Characters — source zip/extract (CC0; rebuild via tools/build-crowd-from-quaternius.py)
 assets/props/hd-src/quaternius/*.zip
 assets/props/hd-src/quaternius/extracted/

@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { probeCapabilities, publishRenderCaps, classifyGpuRenderer } from "./capabilities.js?v=2";
+import { probeCapabilities, publishRenderCaps, classifyGpuRenderer } from "./capabilities.js?v=3";
 import { setRenderCaps } from "./render-caps.js?v=1";
 
 /**
@@ -60,6 +60,77 @@ function patchRendererCompat(renderer) {
  */
 function isNativeWebGPU(renderer) {
   return !!(renderer && renderer.backend && renderer.backend.isWebGPUBackend);
+}
+
+/**
+ * Phones and coarse pointers should not request a discrete-GPU context.
+ * Android Chrome often fails `powerPreference: "high-performance"` and paints white.
+ */
+function preferSafeGl() {
+  try {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+    if (/Android|iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return true;
+    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * Create a WebGLRenderer, retrying with safer options when the first context
+ * fails. Android Chrome often rejects `high-performance` or WebGL2-only.
+ * @param {{ antialias?: boolean, alpha?: boolean, powerPreference?: string }} opts
+ * @returns {object}
+ */
+function createWebGLRendererSafe(opts) {
+  const Ctor = THREE.WebGLRenderer;
+  if (typeof Ctor !== "function") return null;
+  const safe = preferSafeGl();
+  const attempts = [
+    {
+      antialias: safe ? false : opts.antialias !== false,
+      alpha: opts.alpha === true,
+      powerPreference: safe ? "default" : opts.powerPreference || "high-performance",
+      failIfMajorPerformanceCaveat: false,
+    },
+    {
+      antialias: false,
+      alpha: false,
+      powerPreference: "default",
+      failIfMajorPerformanceCaveat: false,
+    },
+    {
+      antialias: false,
+      alpha: false,
+      powerPreference: "low-power",
+      failIfMajorPerformanceCaveat: false,
+    },
+  ];
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const renderer = new Ctor(attempts[i]);
+      const gl = typeof renderer.getContext === "function" ? renderer.getContext() : null;
+      if (gl && typeof gl.isContextLost === "function" && gl.isContextLost()) {
+        if (typeof renderer.dispose === "function") renderer.dispose();
+        lastErr = new Error("WebGL context lost immediately");
+        continue;
+      }
+      if (!gl) {
+        if (typeof renderer.dispose === "function") renderer.dispose();
+        lastErr = new Error("WebGL getContext returned null");
+        continue;
+      }
+      return renderer;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (lastErr) throw lastErr;
+  return null;
 }
 
 /**
@@ -175,15 +246,19 @@ export async function createGameRenderer(opts = {}) {
   }
 
   if (!renderer && typeof THREE.WebGLRenderer === "function") {
-    renderer = new THREE.WebGLRenderer({
-      antialias,
-      alpha,
-      powerPreference,
-    });
-    api = "webgl";
-    glslCustom = true;
-    isWebGPURenderer = false;
-    if (!fallbackReason) fallbackReason = CanWebGPU ? "webgl-renderer" : "legacy-three";
+    try {
+      renderer = createWebGLRendererSafe({ antialias, alpha, powerPreference });
+    } catch (err) {
+      console.warn("WebGLRenderer init failed", err);
+      fallbackReason = "webgl-init-failed";
+      renderer = null;
+    }
+    if (renderer) {
+      api = "webgl";
+      glslCustom = true;
+      isWebGPURenderer = false;
+      if (!fallbackReason) fallbackReason = CanWebGPU ? "webgl-renderer" : "legacy-three";
+    }
   }
 
   if (!renderer) {

@@ -59,8 +59,11 @@ Jump landing thumps
   dedicated impact bus that bypasses the cabin surface high-pass so the
   plant stays audible. No new third-party land binary was added.
 
-Powertrain live layers (no new binary)
-  js/audio/powertrain.js layers the licensed idle/load/lift beds with a
-  high-RPM scream pass of the load loop, cylinder-rate pulse, turbo whistle
-  (Celica / Delta), gear-shift overrun chirp, and dynamic EQ. Still the same
-  CC BY-SA / CC0 recordings above — synthesis only.
+Powertrain mix (no new binary)
+  js/audio/powertrain.js plays the licensed idle/load beds with compressed
+  playback-rate tracking plus an octave-down copy of the same load bed
+  (chest / throat, 80–250 Hz) and mild WaveShaper saturation of that
+  recording. Synth cylinder pulse, turbo kettle, helium scream, and
+  overrun crackle stay off. Engine bus bypasses the cabin surface
+  high-pass so the throat is not filtered out. Same CC BY-SA / CC0
+  recordings above.

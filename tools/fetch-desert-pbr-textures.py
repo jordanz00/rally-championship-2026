@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download Poly Haven CC0 1k PBR textures for Desert road / sand / rock."""
+"""Download Poly Haven CC0 1k + 2k PBR textures for Desert road / sand / rock."""
 
 from __future__ import annotations
 
@@ -26,6 +26,12 @@ MAPS = [
     ("nor_gl", "nor_gl"),
     ("Rough", "rough"),
     ("AO", "ao"),
+]
+# Runtime streams 2k after 1k albedo. Skip AO at 2k (boot already dropped AO).
+HI_MAPS = [
+    ("Diffuse", "diff"),
+    ("nor_gl", "nor_gl"),
+    ("Rough", "rough"),
 ]
 
 
@@ -58,6 +64,14 @@ def main() -> None:
                 print(f"  skip {api_name}")
                 continue
             dest = OUT / f"{stem}_{suffix}_1k.jpg"
+            download(url, dest)
+        for api_name, suffix in HI_MAPS:
+            block = ((meta.get(api_name) or {}).get("2k") or {}).get("jpg") or {}
+            url = block.get("url")
+            if not url:
+                print(f"  skip 2k {api_name}")
+                continue
+            dest = OUT / f"{stem}_{suffix}_2k.jpg"
             download(url, dest)
 
 

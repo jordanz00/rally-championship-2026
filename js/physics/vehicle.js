@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=233";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=57";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=55";
-import { JumpModel } from "./jump.js?v=34";
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=12";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=239";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
+import { bounceOffRoad, glanceObstacles } from "./collide.js?v=56";
+import { JumpModel } from "./jump.js?v=35";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -373,11 +373,13 @@ function engineTorque(rpm, throttle, peakPowerKw = BASE_PEAK_KW) {
   const r = clamp(rpm, 800, 7800);
   let tq = 240;
   // Fat low/mid meat — arcade punch out of hairpins and drift exits.
+  // Sprint 28: fatter low-RPM meat (hairpin / slide exit). Cruise lives 5–6.4k.
   if (r < 2200) tq = 230 + (r - 800) * 0.085;
   else if (r < 3800) tq = 349 + (r - 2200) * 0.042;
   else if (r < 5200) tq = 416 - (r - 3800) * 0.008;
   else if (r < 6400) tq = 405 - (r - 5200) * 0.018;
-  else tq = 383 - (r - 6400) * 0.055;
+  else if (r < 7000) tq = 383 - (r - 6400) * 0.08;
+  else tq = 335 - (r - 7000) * 0.18;
   const scale = Math.max(0.5, (peakPowerKw || BASE_PEAK_KW) / BASE_PEAK_KW);
   return tq * throttle * scale;
 }
@@ -434,6 +436,8 @@ export class Vehicle {
     this.autoTrans = spec.autoTrans !== false;
     /** Seconds remaining before the automatic may shift again. */
     this._autoCool = 0;
+    /** Seconds of clutch torque-cut after a shift. */
+    this._clutch = 0;
     this.wheelSpin = [0, 0, 0, 0];
     this._prevX = 0;
     this._prevY = 0.7;
@@ -679,6 +683,7 @@ export class Vehicle {
     this.gear = 1;
     this.rpm = this.spec.idleRpm;
     this._autoCool = 0;
+    this._clutch = 0;
     this._still = 0;
     this._rearSlide = false;
     this._frontSlide = false;
@@ -753,6 +758,10 @@ export class Vehicle {
    * Call after spawn, after load-time collide, and the instant GO fires.
    * Countdown does not step physics, so any Δv left here becomes the first
    * race frame — that was the stage-3 reverse shove.
+   *
+   * Also clears `_glitchIgnore`. Spawn arms 8 grace frames, but countdown
+   * never steps, so those frames used to burn at GO with `_guardXZ` skipped
+   * — a 1.2 m wall shove was legal while the player floored it.
    */
   freezeLaunch() {
     this.velocity.set(0, 0, 0);
@@ -766,7 +775,13 @@ export class Vehicle {
     this._ay = 0;
     this._climbVel = 0;
     this._groundVy = 0;
+    this._glitchIgnore = 0;
+    this._envDeep = false;
+    this._envIntersect = false;
     this._launchHold = LAUNCH_HOLD_S;
+    // Pin the plant filter to the settled deck so the first GO steps do not
+    // chase a stale spawn Y and read as a throttle trampoline.
+    if (Number.isFinite(this.position.y)) this._deckFilt = this.position.y;
     this._capturePrev();
     this._stashGoodPose(true);
     this.drawPose(1);
@@ -917,6 +932,8 @@ export class Vehicle {
     const surface = this._feelSurface(frontProbe, rearProbe, dt, splitAxle);
     // Player verge: keep a usable top speed. Grass/sand tables were a second
     // parking brake on top of runoff drag — a cut should cost pace, not stop you.
+    // First metres of shoulder: hair slowdown only (~1–2.5%), applied after the
+    // soft-surface floor so it still reads when clipping the apron.
     if (!this.ai && this._q) {
       const extra = Math.abs(this._q.lateral || 0) - (this._q.width || 10) * 0.5;
       if (extra > 0.25) {
@@ -924,6 +941,10 @@ export class Vehicle {
         surface.speedScale = Math.max(surface.speedScale, lerp(0.96, 0.9, t));
         surface.roll = Math.min(surface.roll, lerp(0.02, 0.032, t));
         surface.sink = Math.min(surface.sink || 0, lerp(0.018, 0.036, t));
+      }
+      if (extra > 0.08) {
+        const hair = clamp(extra / 2.4, 0, 1);
+        surface.speedScale *= lerp(0.988, 0.975, hair);
       }
     }
     this.surfaceId = surface.id;
@@ -1115,22 +1136,29 @@ export class Vehicle {
     if (this._envDeep && this._hasGoodPose) {
       // Impossible state: still deep in a solid after TOI + correction.
       // Restore last validated XZ — never a hard-coded map coordinate.
-      this._noteGlitch("env-embed", {
-        x: this.position.x,
-        z: this.position.z,
-        speed: this.speed,
-        goodProgress: this._goodProgress,
-      });
-      const spd = Math.hypot(this.velocity.x, this.velocity.z);
-      this.position.x = this._goodX;
-      this.position.z = this._goodZ;
-      this.yaw = this._goodYaw;
-      const fx = Math.sin(this.yaw);
-      const fz = Math.cos(this.yaw);
-      this.velocity.x = fx * spd * 0.88;
-      this.velocity.z = fz * spd * 0.88;
-      this._envDeep = false;
-      this._envIntersect = false;
+      // During lights-out, do NOT yank back to the grid stash: that fought
+      // throttle and read as a start-line glitch on every stage.
+      if (this._launchHold > 0 && this.throttle > 0.12 && this.brake < 0.25) {
+        this._envDeep = false;
+        this._envIntersect = false;
+      } else {
+        this._noteGlitch("env-embed", {
+          x: this.position.x,
+          z: this.position.z,
+          speed: this.speed,
+          goodProgress: this._goodProgress,
+        });
+        const spd = Math.hypot(this.velocity.x, this.velocity.z);
+        this.position.x = this._goodX;
+        this.position.z = this._goodZ;
+        this.yaw = this._goodYaw;
+        const fx = Math.sin(this.yaw);
+        const fz = Math.cos(this.yaw);
+        this.velocity.x = fx * spd * 0.88;
+        this.velocity.z = fz * spd * 0.88;
+        this._envDeep = false;
+        this._envIntersect = false;
+      }
     } else if (this._envIntersect) {
       this._noteGlitch("env-intersect", {
         x: this.position.x,
@@ -1204,16 +1232,20 @@ export class Vehicle {
    */
   _shiftGearbox(input, steerIn) {
     if (this.autoTrans) return;
-    const s = this.spec;
+    if ((this._clutch || 0) > 0) return;
     const top = this._topGear();
-    if (input.shiftUp) this.gear = clamp(this.gear + 1, 0, top);
+    if (input.shiftUp) {
+      this.gear = clamp(this.gear + 1, 0, top);
+      this._clutch = ((HANDLING && HANDLING.auto && HANDLING.auto.clutchUp) || 0.15) * 0.72;
+      return;
+    }
     if (!input.shiftDown || this.gear <= 0) return;
     this.gear -= 1;
+    this._clutch = (HANDLING && HANDLING.auto && HANDLING.auto.clutchDown) || 0.12;
     if (this.gear === 0) {
       // Into neutral: nothing to blip, the engine just drops to idle.
       return;
     }
-    this.rpm = clamp(this.rpm + 1100, s.idleRpm, s.redline);
     this._applyGearDriftKick(steerIn, 1);
   }
 
@@ -2525,16 +2557,21 @@ export class Vehicle {
    * @param {number} dt
    */
   _guardDrive(track, prevProgress, prevY, dt) {
-    if (this._glitchIgnore > 0) {
-      this._glitchIgnore -= 1;
-      return;
-    }
+    // Grace frames (spawn settle) still police XZ / bury / NaN. Skipping the
+    // whole guard let wall/env shoves teleport the car for 8 GO frames after
+    // countdown — spawn armed ignore, countdown never decremented it.
+    const softGrace = this._glitchIgnore > 0;
+    if (softGrace) this._glitchIgnore -= 1;
     if (!this._isFinitePose()) {
       this._noteGlitch("nan-pose", {});
       this._restoreCheckpoint(track);
       return;
     }
     if (this._guardXZ(track, dt)) return;
+    if (softGrace) {
+      this._neverFallThrough(track);
+      return;
+    }
     const len = track && track.length ? track.length : 0;
     const along = this._alongDelta(prevProgress, this.progress, len);
     const maxAlong = this._ribbonStepMax(dt);
@@ -3518,8 +3555,8 @@ export class Vehicle {
     // Brake → front bite / light rear. Throttle → rear squat / light nose.
     // Coast (pedals off) keeps the existing `_ax` authority — not a second sim.
     const pedalBlend = HANDLING.pedalLoadBlend != null ? HANDLING.pedalLoadBlend : 0.34;
-    const pedal = clamp(this.throttle + this.brake + hb * 0.6, 0, 1);
-    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - hb * 0.4) * G;
+    const pedal = clamp(this.throttle + this.brake + hb * 0.35, 0, 1);
+    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - hb * 0.14) * G;
     const axLoad = this._ax + (axIntent - this._ax) * pedalBlend * pedal;
     const dLong = ((m * axLoad * s.cgHeight) / L) * wtMul;
     // Suspension compression feeds axle load (travel − = hub into arch).
@@ -3564,14 +3601,14 @@ export class Vehicle {
     const jumpGrip = this.jump.gripScale();
     const split = ctx.axleSplit;
     const hbEnter = HANDLING.handbrakeEnter != null ? HANDLING.handbrakeEnter : 0.12;
-    const loose = ease >= 0.84;
+    const loose = ease >= 0.8;
     // Throttle + steer on loose = power-slide intent (arcade initiation without e-brake).
     const slideIntent =
       loose &&
       hb < hbEnter + 0.04 &&
-      this.throttle > 0.045 &&
-      Math.abs(st) > 0.028 &&
-      Math.abs(vx) > 3.4;
+      this.throttle > 0.035 &&
+      Math.abs(st) > 0.022 &&
+      Math.abs(vx) > 2.8;
 
     // AM3 headline: brake on tarmac and you stop; brake on mud and you begin a
     // power slide. brakeYaw decides which of those two the pedal does here.
@@ -3657,13 +3694,17 @@ export class Vehicle {
     const inGear = ratio > 1e-6;
     const tqEng = engineTorque(this.rpm, this.throttle, s.peakPowerKw);
     let tqDrive = inGear ? tqEng * ratio * 0.88 : 0;
+    if ((this._clutch || 0) > 0) tqDrive *= 0.1;
     const omegaLim = inGear ? (s.redline * 2 * Math.PI) / (60 * ratio) : 1e6;
     if (this.omegaR > omegaLim && tqDrive > 0) tqDrive *= 0.12;
+    const red = s.redline || 7600;
+    const limN = clamp((this.rpm - red * 0.86) / (red * 0.14), 0, 1);
+    if (limN > 0 && tqDrive > 0) tqDrive *= lerp(1, 0.22, limN * limN);
     const top = (s.maxSpeedKmh / 3.6) * Math.max(0.7, surface.speedScale);
     const spdN = clamp(Math.abs(vx) / Math.max(10, top), 0, 1);
-    // Sprint 19: was lerp(..., 0.48) — killed top-end punch before maxSpeed.
-    // Sprint 28: stronger low-speed drive asymptote; aero + soft clamp still own Vmax.
-    tqDrive *= lerp(1.48, 0.82, spdN * spdN);
+    // Low-speed punch stays; the last stretch to Vmax is aero + this fade,
+    // so 4th works in the band instead of dragging the limiter.
+    tqDrive *= lerp(1.44, 0.34, spdN * spdN);
 
     // Dead-stop + mid-corner launch: extra drive that fades by launchFadeKmh.
     if (this.throttle > 0.08 && HANDLING.launchBoost > 1) {
@@ -3672,17 +3713,29 @@ export class Vehicle {
       tqDrive *= lerp(HANDLING.launchBoost, 1, launchN * launchN);
     }
 
-    // Arcade exit punch — throttle out of a yaw slide surges forward.
-    if (this.throttle > 0.18 && HANDLING.slideExitBoost > 1) {
-      const yawNeed = HANDLING.slideExitAngle != null ? HANDLING.slideExitAngle : 0.14;
-      const yawAmt = clamp(Math.abs(this.driftAngle || 0) / Math.max(0.06, yawNeed), 0, 1);
-      const slipAmt = clamp(Math.abs(vy) / 6.5, 0, 1);
-      const slideAmt = Math.max(yawAmt, slipAmt);
-      if (slideAmt > 0.12) {
+    // Arcade keep-speed — throttle in a yaw slide must pull, not bleed.
+    const yawNeed = HANDLING.slideExitAngle != null ? HANDLING.slideExitAngle : 0.14;
+    const yawAmt = clamp(Math.abs(this.driftAngle || 0) / Math.max(0.05, yawNeed), 0, 1);
+    const slipAmtDrive = clamp(Math.abs(vy) / 5.2, 0, 1);
+    const slideKeepAmt = Math.max(
+      yawAmt,
+      slipAmtDrive,
+      slideIntent || hb > hbEnter ? clamp(Math.abs(st) * 1.4 * this.throttle, 0, 1) * 0.7 : 0
+    );
+    const slidingDrive =
+      slideIntent ||
+      hb > hbEnter ||
+      Math.abs(vy) > 2.15 ||
+      Math.abs(this.driftAngle || 0) > 0.1;
+    if (this.throttle > 0.12 && slidingDrive && slideKeepAmt > 0.1) {
+      if (HANDLING.slideExitBoost > 1) {
         const fadeKmh = Math.max(80, HANDLING.slideExitFadeKmh || 175);
         const fadeN = clamp((Math.abs(vx) * 3.6) / fadeKmh, 0, 1);
-        const exitMul = lerp(HANDLING.slideExitBoost, 1.08, fadeN * fadeN);
-        tqDrive *= lerp(1, exitMul, slideAmt * this.throttle);
+        const exitMul = lerp(HANDLING.slideExitBoost, 1.14, fadeN * fadeN);
+        tqDrive *= lerp(1, exitMul, slideKeepAmt * this.throttle);
+      }
+      if (HANDLING.slideDriveKeep > 1) {
+        tqDrive *= lerp(1, HANDLING.slideDriveKeep, slideKeepAmt * this.throttle * 0.82);
       }
     }
 
@@ -3715,7 +3768,7 @@ export class Vehicle {
     // can spin the rears. Smooth quadratic cut — a linear gain of 8 was a
     // bang-bang oscillator with Pacejka and shoved the hull fore-aft.
     const kSoft = twoWd ? 0.12 : 0.085;
-    const tcMul = slideIntent || hb > hbEnter ? 0.12 : 1;
+    const tcMul = slideIntent || hb > hbEnter || slideKeepAmt > 0.2 ? 0.06 : 1;
     if (hb < 0.08) {
       if (tqR > 0) {
         const over = Math.max(0, kappaR - kSoft);
@@ -3747,8 +3800,12 @@ export class Vehicle {
       }
     }
     tqBrakeF *= sign(this.omegaF || vx);
+    // With throttle held, scrub less so a power slide keeps speed.
+    const hbDriveKeep = HANDLING.handbrakeDriveKeep != null ? HANDLING.handbrakeDriveKeep : 0.75;
+    const hbTqScale = 1 - clamp(this.throttle, 0, 1) * hbDriveKeep;
     tqBrakeR =
-      tqBrakeR * sign(this.omegaR || vx) + hb * HANDLING.handbrakeTorque * sign(this.omegaR || vx);
+      tqBrakeR * sign(this.omegaR || vx) +
+      hb * HANDLING.handbrakeTorque * hbTqScale * sign(this.omegaR || vx);
 
     const driveI =
       s.driveInertia != null ? s.driveInertia : HANDLING.driveInertia != null ? HANDLING.driveInertia : 1;
@@ -3763,7 +3820,11 @@ export class Vehicle {
     const sinS = Math.sin(st);
     const Fx = front.fx * cosS - front.fy * sinS + rear.fx;
 
-    const aero = 0.5 * RHO * s.aeroDrag * FRONTAL_A * vx * Math.abs(vx);
+    let aero = 0.5 * RHO * s.aeroDrag * FRONTAL_A * vx * Math.abs(vx);
+    if (this.throttle > 0.12 && slidingDrive && slideKeepAmt > 0.12) {
+      const aeroCut = HANDLING.slideAeroCut != null ? HANDLING.slideAeroCut : 0.45;
+      aero *= lerp(1, aeroCut, slideKeepAmt * this.throttle);
+    }
     let rollRes = (surface.roll + (surface.sink || 0) * 0.4) * m * G * sign(vx);
     let coastN =
       inGear && this.throttle < 0.05
@@ -3990,8 +4051,8 @@ export class Vehicle {
     // Arcade pitch-in: throttle + steer builds attitude so a powerslide reads
     // exaggerated without needing the handbrake every corner.
     const pitch = HANDLING.powerSlidePitch != null ? HANDLING.powerSlidePitch : 1.35;
-    if (slideIntent && Math.abs(vy) < 8.5) {
-      vy += Math.sign(st) * this.throttle * pitch * (0.72 + Math.abs(vx) * 0.036) * dt;
+    if (slideIntent && Math.abs(vy) < 10.5) {
+      vy += Math.sign(st) * this.throttle * pitch * (0.88 + Math.abs(vx) * 0.042) * dt;
     }
     if (!hbSlide && powerSlide && Math.abs(vx) > 4) {
       const steerDir = Math.sign(st) || sign(vy) || 0;
@@ -4032,6 +4093,11 @@ export class Vehicle {
       vy *= Math.exp(-recAsst * counter * (0.55 + snap * 0.25) * dt);
     }
     vx += vy * r * dt;
+    // Arcade keep-speed: throttle in a slide feeds lateral energy forward.
+    if (this.throttle > 0.14 && Math.abs(vy) > 1.1 && Math.abs(vx) > 4) {
+      const conv = HANDLING.slideSpeedConvert != null ? HANDLING.slideSpeedConvert : 0.55;
+      vx += Math.sign(vx || 1) * Math.abs(vy) * conv * this.throttle * dt;
+    }
 
     this._rearSlide =
       hbSlide || slideIntent || Math.abs(vy) > 0.65 || Math.abs(kappaR) > 0.14 || shock > 0.28;
@@ -4137,18 +4203,26 @@ export class Vehicle {
   _updateEngine(dt, omegaDrive) {
     const s = this.spec;
     const ratio = this._gearRatio();
+    if ((this._clutch || 0) > 0) this._clutch = Math.max(0, this._clutch - dt);
     if (ratio <= 1e-6) {
+      // Neutral — free-rev toward throttle demand.
       const target = s.idleRpm + this.throttle * (s.redline - s.idleRpm) * 0.92;
-      this.rpm += (target - this.rpm) * Math.min(1, 9 * dt);
+      this.rpm += (target - this.rpm) * Math.min(1, 10 * dt);
     } else {
+      // In gear: tach follows driveline. Clutch window slews slower so the
+      // shift reads as a mechanical catch, not an instant ratio snap.
       const drivenRpm = (Math.abs(omegaDrive) * ratio * 60) / (Math.PI * 2);
-      if (this.throttle > 0.06) {
-        const flare = s.idleRpm + this.throttle * (s.redline - s.idleRpm) * 0.22;
-        const target = Math.max(drivenRpm, flare);
-        this.rpm += (clamp(target, s.idleRpm, s.redline) - this.rpm) * Math.min(1, 11 * dt);
-      } else {
-        this.rpm += (Math.max(s.idleRpm, drivenRpm) - this.rpm) * Math.min(1, 7 * dt);
+      let target = Math.max(s.idleRpm, drivenRpm);
+      if (this.throttle > 0.08) {
+        const demand = s.idleRpm + this.throttle * (s.redline - s.idleRpm) * 0.88;
+        if (drivenRpm < demand * 0.82) {
+          const slip = clamp(1 - drivenRpm / Math.max(800, demand), 0, 1);
+          target = lerp(drivenRpm, Math.min(demand, s.redline), slip * 0.55);
+          target = Math.max(s.idleRpm, target);
+        }
       }
+      const follow = this._clutch > 0 ? 7 : 16;
+      this.rpm += (clamp(target, s.idleRpm, s.redline) - this.rpm) * Math.min(1, follow * dt);
     }
     this.rpm = clamp(this.rpm, s.idleRpm, s.redline);
 
@@ -4160,9 +4234,22 @@ export class Vehicle {
   }
 
   /**
-   * Race-fun automatic: early upshifts under light throttle, hold near redline
-   * on WOT, dump gears fast under brake / coast, and kick-down when RPM sags.
-   * Arcade-first (docs/SEGA_RALLY_DRIVING_MODEL.md) — snappy, never economy-lazy.
+   * Road-speed RPM that `gear` would show if the clutch were locked.
+   * Uses ground speed, not spinning wheels, so wheelspin cannot false-upshift.
+   * @param {number} gear
+   */
+  _groundRpm(gear) {
+    const s = this.spec;
+    const g = s.gears[gear];
+    if (!g) return s.idleRpm;
+    const v = Math.hypot(this.velocity.x, this.velocity.z);
+    const omega = v / Math.max(0.2, s.wheelRadius);
+    return (omega * g * s.finalDrive * 60) / (Math.PI * 2);
+  }
+
+  /**
+   * Sequential automatic: one gear, clutch pause, next-gear RPM must land
+   * in the powerband. Arcade-first (docs/SEGA_RALLY_DRIVING_MODEL.md).
    *
    * @param {number} dt
    */
@@ -4174,80 +4261,73 @@ export class Vehicle {
     if (this.gear < 1) this.gear = 1;
 
     this._autoCool = Math.max(0, (this._autoCool || 0) - dt);
-    if (this._autoCool > 0) return;
+    if (this._autoCool > 0 || this._clutch > 0) return;
 
     const th = this.throttle;
     const br = Math.max(this.brake, this.handbrake * 0.9);
-    const rpm = this.rpm;
-    const upMinTh = A.upMinThrottle != null ? A.upMinThrottle : 0.1;
-    const kickTh = A.kickThrottle != null ? A.kickThrottle : 0.38;
-    const coastTh = A.coastThrottle != null ? A.coastThrottle : 0.28;
+    const roadRpm = this._groundRpm(this.gear);
+    const upMinTh = A.upMinThrottle != null ? A.upMinThrottle : 0.12;
+    const kickTh = A.kickThrottle != null ? A.kickThrottle : 0.62;
+    const coastTh = A.coastThrottle != null ? A.coastThrottle : 0.16;
+    const minNext = A.upMinNextRpm != null ? A.upMinNextRpm : 2600;
+    const maxDown = red * (A.downMaxRpm != null ? A.downMaxRpm : 0.88);
 
-    // Upshift RPM rises with throttle — light throttle early, WOT holds pull.
-    // th^1.35 keeps partial throttle closer to the early (ease) end.
     const upRpm = lerp(
-      red * (A.upCoast != null ? A.upCoast : 0.56),
-      red * (A.upWot != null ? A.upWot : 0.93),
-      clamp(Math.pow(th, 1.35), 0, 1)
+      red * (A.upCoast != null ? A.upCoast : 0.58),
+      red * (A.upWot != null ? A.upWot : 0.9),
+      clamp(Math.pow(th, 1.25), 0, 1)
     );
-    // Require throttle so lift-off / coast cannot upshift into a tall gear.
-    if (this.gear < top && th > upMinTh && br < 0.16 && rpm >= upRpm) {
-      this.gear += 1;
-      this._autoCool = A.coolUp != null ? A.coolUp : 0.05;
-      return;
+
+    if (this.gear < top && th > upMinTh && br < 0.2 && roadRpm >= upRpm) {
+      const nextRpm = this._groundRpm(this.gear + 1);
+      if (nextRpm >= minNext && nextRpm < red * 0.96) {
+        this.gear += 1;
+        this._clutch = A.clutchUp != null ? A.clutchUp : 0.15;
+        this._autoCool = A.coolUp != null ? A.coolUp : 0.2;
+        return;
+      }
     }
 
     if (this.gear <= 1) return;
 
-    const kickRpm = A.kickDownRpm != null ? A.kickDownRpm : 5200;
+    const prevRpm = this._groundRpm(this.gear - 1);
+    if (prevRpm > maxDown) return;
+
+    const kickRpm = A.kickDownRpm != null ? A.kickDownRpm : 3600;
     const brakeFloor = lerp(
-      A.brakeDownMin != null ? A.brakeDownMin : 5600,
-      A.brakeDownMax != null ? A.brakeDownMax : 7000,
+      A.brakeDownMin != null ? A.brakeDownMin : 3200,
+      A.brakeDownMax != null ? A.brakeDownMax : 4600,
       clamp(br, 0, 1)
     );
-    const coastRpm = A.coastDownRpm != null ? A.coastDownRpm : 4200;
-    const sagRpm = A.sagDownRpm != null ? A.sagDownRpm : 3900;
-    const hardDumpRpm = A.hardDumpRpm != null ? A.hardDumpRpm : 5200;
+    const coastRpm = A.coastDownRpm != null ? A.coastDownRpm : 2600;
+    const sagRpm = A.sagDownRpm != null ? A.sagDownRpm : 2800;
 
-    let drops = 0;
-    if (br > 0.08 && rpm < brakeFloor) {
-      // Hard brake into a hairpin: skip gears so the next throttle pull bites.
-      if (br > 0.7 && rpm < hardDumpRpm) drops = Math.min(3, this.gear - 1);
-      else if (br > 0.35) drops = Math.min(2, this.gear - 1);
-      else drops = 1;
-    } else if (th >= kickTh && rpm < kickRpm) {
-      // Kick-down — keep the engine in the meat under throttle.
-      drops = rpm < kickRpm * 0.7 && this.gear > 2 ? 2 : 1;
-    } else if (th < coastTh && br < 0.1 && rpm < coastRpm) {
-      drops = 1;
-    } else if (th >= coastTh && th < kickTh && br < 0.1 && rpm < sagRpm) {
-      // Partial throttle + sagging RPM (hill / tall gear) — was a dead zone.
-      drops = 1;
-    }
+    let drop = false;
+    if (br > 0.1 && roadRpm < brakeFloor) drop = true;
+    else if (th >= kickTh && roadRpm < kickRpm) drop = true;
+    else if (th < coastTh && br < 0.1 && roadRpm < coastRpm) drop = true;
+    else if (th >= coastTh && th < kickTh && br < 0.1 && roadRpm < sagRpm) drop = true;
 
-    if (drops <= 0) return;
-    const next = Math.max(1, this.gear - drops);
-    if (next >= this.gear) return;
-    const steps = this.gear - next;
-    this.gear = next;
-    // Blip so the next gear feels loaded, not soggy.
-    this.rpm = clamp(this.rpm + 900 * steps, s.idleRpm, red);
+    if (!drop) return;
+    this.gear -= 1;
+    this._clutch = A.clutchDown != null ? A.clutchDown : 0.12;
     // Brake/kick-down while turning = Sakamoto gear-drift (auto players get it too).
     if (br > 0.12 || Math.abs(this.steer) > 0.1) {
-      this._applyGearDriftKick(this.steer, steps);
+      this._applyGearDriftKick(this.steer, 1);
     }
     this._autoCool =
       br > 0.12
         ? A.coolBrake != null
           ? A.coolBrake
-          : 0.025
+          : 0.13
         : A.coolDown != null
           ? A.coolDown
-          : 0.035;
+          : 0.16;
   }
 
   speedKmh() {
-    return this.speed * 3.6;
+    // Ground-plane speed only — matches what the wheels / world cover.
+    return Math.hypot(this.velocity.x, this.velocity.z) * 3.6;
   }
 
   /** 0..1 lateral slide intensity for expert HUD / camera. */

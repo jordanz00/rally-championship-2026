@@ -102,7 +102,8 @@ export function classifyGpuRenderer(renderer) {
     /Intel|UHD Graphics|Iris|HD Graphics|Radeon Graphics|Vega \d|Adreno|Mali/i.test(gpu);
   // Privacy-stripped Windows boxes often hide the renderer string — treat as
   // low-power so lock-30 arms immediately instead of free-running at ~5 fps.
-  const lowPower = !discrete && (integrated || (windows && !gpu) || software);
+  const android = /Android/i.test(ua);
+  const lowPower = !discrete && (integrated || android || (windows && !gpu) || software);
   return {
     gpu,
     windows,

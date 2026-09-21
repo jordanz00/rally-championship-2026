@@ -3,13 +3,14 @@
  *
  * WHO THIS IS FOR: overlay DOM in index.html.
  * WHAT IT DOES: updates speed, gear, position, timer, surface, and draws
- *   MPH / RPM gauges in medium and far camera views.
+ *   km/h / RPM gauges in medium and far camera views (same units as digital HUD).
  */
 
-const KMH_TO_MPH = 0.621371;
 /** Sweep from 7:30 to 4:30 (canvas radians, 0 = 3 o’clock). */
 const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
+/** Face scale — covers Celica/Delta/Stratos Vmax without pegging early. */
+const SPEED_DIAL_MAX_KMH = 280;
 
 export class Hud {
   constructor() {
@@ -50,15 +51,15 @@ export class Hud {
     // Surface stays visible on chase cluster — friends need to read sand vs tarmac.
     if (this.clusterSurface) this.clusterSurface.hidden = false;
     if (this.slideBadge) this.slideBadge.hidden = true;
-    this._mphShown = 0;
+    this._speedShown = 0;
     this._rpmShown = 0;
     this._chase = false;
     this.mphDial = new AnalogDial(document.getElementById("gauge-mph"), {
-      label: "MPH",
-      max: 140,
-      major: 20,
-      minor: 10,
-      redFrom: 120,
+      label: "km/h",
+      max: SPEED_DIAL_MAX_KMH,
+      major: 40,
+      minor: 20,
+      redFrom: 240,
     });
     this.rpmDial = new AnalogDial(document.getElementById("gauge-rpm"), {
       label: "×1000",
@@ -196,12 +197,14 @@ export class Hud {
     if (this.clusterSurface) this.clusterSurface.hidden = false;
 
     if (!this._chase) return;
-    const mph = Math.max(0, kmh * KMH_TO_MPH);
+    const kmhShown = Math.max(0, kmh);
     const dt = s.dt > 0 ? s.dt : 1 / 60;
-    this._mphShown += (mph - this._mphShown) * (1 - Math.exp(-15 * dt));
-    this._rpmShown += (rpm - this._rpmShown) * (1 - Math.exp(-20 * dt));
+    // Track digital readout closely — laggy needles read as "wrong speed".
+    this._speedShown += (kmhShown - this._speedShown) * (1 - Math.exp(-28 * dt));
+    this._rpmShown += (rpm - this._rpmShown) * (1 - Math.exp(-32 * dt));
     this.rpmDial.setRedFrom(redline / 1000);
-    this.mphDial.draw(this._mphShown, Math.round(mph));
+    const speedRead = Math.round(kmhShown);
+    this.mphDial.draw(this._speedShown, speedRead);
     this.rpmDial.draw(this._rpmShown / 1000, Math.round(this._rpmShown));
   }
 
@@ -631,6 +634,8 @@ function applyScreen(id) {
   document.querySelectorAll(".screen").forEach((el) => {
     el.classList.toggle("active", el.id === id);
   });
+  const crt = document.getElementById("crt");
+  if (crt) crt.classList.toggle("is-title", id === "screen-title");
 }
 
 function curtainEl() {

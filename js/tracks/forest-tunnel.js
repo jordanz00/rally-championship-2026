@@ -12,9 +12,9 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { armProjectedMaps } from "../gfx/pbr.js?v=53";
+import { armProjectedMaps } from "../gfx/pbr.js?v=55";
+import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=4";
 
-const ASSET_V = "1";
 const TEX_BASE = "assets/env/forest";
 /** Poly Haven boulder_01 tile size (metres) — unique UVs, not one stretch. */
 const TILE_M = 2.0;
@@ -24,7 +24,7 @@ let prepared = false;
 let rockSet = null;
 
 /**
- * Load Forest tunnel rock maps (Poly Haven boulder_01 1k, CC0).
+ * Boot tunnel albedo; nor / ARM / 2k stream in behind the load bar.
  * @returns {Promise<void>}
  */
 export async function prepareForestTunnelPbr() {
@@ -32,11 +32,7 @@ export async function prepareForestTunnelPbr() {
   prepared = true;
   if (typeof document === "undefined" || typeof Image === "undefined") return;
   const loader = new THREE.TextureLoader();
-  const map = await loadTex(loader, `${TEX_BASE}/tunnel_rock_diff_1k.jpg`, true);
-  if (!map) return;
-  const normalMap = await loadTex(loader, `${TEX_BASE}/tunnel_rock_nor_gl_1k.jpg`, false);
-  const armMap = await loadTex(loader, `${TEX_BASE}/tunnel_rock_arm_1k.jpg`, false);
-  rockSet = { map, normalMap, armMap };
+  rockSet = await bootTunnelSet(loader, TEX_BASE);
 }
 
 /**
@@ -46,23 +42,23 @@ export async function prepareForestTunnelPbr() {
  */
 export function createForestTunnelMaterial(kind) {
   const bore = kind === "bore";
-  const map = rockSet && rockSet.map ? cloneMap(rockSet.map) : null;
-  const normalMap = rockSet && rockSet.normalMap ? cloneMap(rockSet.normalMap) : null;
-  const arm = rockSet && rockSet.armMap ? cloneMap(rockSet.armMap) : null;
+  const map = rockSet && rockSet.map ? cloneTracked(rockSet.map) : null;
+  const normalMap = rockSet && rockSet.normalMap ? cloneTracked(rockSet.normalMap) : null;
+  const arm = rockSet && rockSet.armMap ? cloneTracked(rockSet.armMap) : null;
   const mat = new THREE.MeshStandardMaterial({
-    color: map ? 0xc8c2b6 : bore ? 0x6a6860 : 0x7a7468,
+    color: map ? (bore ? 0x6a655c : 0xb0a898) : bore ? 0x2e2c28 : 0x5a564c,
     map,
     normalMap,
-    normalScale: normalMap ? new THREE.Vector2(bore ? 0.95 : 1.22, bore ? 0.95 : 1.22) : undefined,
+    normalScale: normalMap ? new THREE.Vector2(bore ? 1.05 : 1.22, bore ? 1.05 : 1.22) : undefined,
     aoMap: arm,
     roughnessMap: arm,
     metalnessMap: arm,
     bumpMap: arm,
-    bumpScale: bore ? 0.55 : 0.78,
-    aoMapIntensity: arm ? 0.88 : 1,
-    roughness: bore ? 0.88 : 0.92,
-    metalness: 0.04,
-    envMapIntensity: bore ? 0.22 : 0.18,
+    bumpScale: bore ? 0.7 : 0.88,
+    aoMapIntensity: arm ? (bore ? 1.05 : 0.92) : 1,
+    roughness: bore ? 0.96 : 0.92,
+    metalness: 0.02,
+    envMapIntensity: bore ? 0.06 : 0.14,
     side: THREE.FrontSide,
     flatShading: false,
     fog: true,
@@ -91,12 +87,12 @@ export function createForestTunnelMaterial(kind) {
 export function buildForestTunnelTubeGeometry(pts, start, end, spec) {
   const clearHalf = spec.clearHalf;
   const openH = spec.openH;
-  const thick = spec.thick != null ? spec.thick : 2.45;
+  const thick = spec.thick != null ? spec.thick : 3.8;
   const tile = spec.tileMeters != null ? spec.tileMeters : TILE_M;
   const frames = densifyFrames(pts, start, end);
   // Toes tuck under the deck; longitudinal caps seal wall/floor so the
   // chase camera cannot see sky or terrain through the lining.
-  const inner = horseshoeProfile(clearHalf, openH, -2.35, 6, 24, 1.35);
+  const inner = horseshoeProfile(clearHalf, openH, -2.55, 8, 28, 1.55);
   const outer = offsetProfile(inner, thick);
   return sweepTube(frames, inner, outer, tile);
 }
@@ -110,12 +106,12 @@ export function buildForestTunnelTubeGeometry(pts, start, end, spec) {
  * @returns {THREE.BufferGeometry}
  */
 export function buildForestMouthCollarGeometry(spec, depth) {
-  const hole = spec.clearHalf + 0.22;
+  const hole = spec.clearHalf + 0.18;
   const openH = spec.openH;
-  const thick = Math.max(5.4, hole * 0.72);
-  const inner = horseshoeProfile(hole, openH + 0.15, -2.45, 6, 24, 1.35);
+  const thick = Math.max(7.2, hole * 0.95);
+  const inner = horseshoeProfile(hole, openH + 0.2, -2.65, 8, 28, 1.55);
   const outer = offsetProfile(inner, thick);
-  displaceProfile(outer, 1.15, 0.55);
+  displaceProfile(outer, 1.45, 0.55);
   const frames = [
     { x: 0, y: 0, z: 0, heading: 0, nx: 1, nz: 0, dist: 0 },
     { x: 0, y: 0, z: depth, heading: 0, nx: 1, nz: 0, dist: depth },
@@ -143,14 +139,20 @@ export function forestMouthBoulderPoses(ctx) {
   const fz = Math.cos(p.heading);
   const bags = { a: [], b: [] };
     const spots = [
-    [1, 11.6, 2.2, 9.4, "a"],
-    [-1, 11.8, 2.6, 8.8, "b"],
-    [1, 14.4, 5.4, 11.8, "b"],
-    [-1, 14.8, 5.8, 11.2, "a"],
-    [1, 12.4, -1.8, 8.6, "a"],
-    [-1, 12.6, -2.0, 8.2, "b"],
-    [1, 17.2, 8.5, 13.8, "a"],
-    [-1, 17.6, 9.0, 13.0, "b"],
+    [1, 10.8, 1.6, 11.2, "a"],
+    [-1, 11.0, 1.8, 10.8, "b"],
+    [1, 12.2, 3.8, 12.4, "b"],
+    [-1, 12.6, 4.0, 12.0, "a"],
+    [1, 14.8, 6.2, 13.6, "a"],
+    [-1, 15.2, 6.6, 13.2, "b"],
+    [1, 11.6, -2.4, 10.4, "b"],
+    [-1, 11.8, -2.6, 10.0, "a"],
+    [1, 16.8, 9.2, 15.0, "a"],
+    [-1, 17.2, 9.6, 14.4, "b"],
+    [1, 19.4, 4.5, 14.8, "b"],
+    [-1, 19.8, 5.0, 14.2, "a"],
+    [1, 13.4, 0.4, 11.6, "a"],
+    [-1, 13.8, 0.6, 11.2, "b"],
   ];
   for (let i = 0; i < spots.length; i++) {
     const side = spots[i][0];
@@ -158,7 +160,7 @@ export function forestMouthBoulderPoses(ctx) {
     const along = spots[i][2];
     const tall = spots[i][3];
     const bag = spots[i][4];
-    if (lat < clearHalf + 3.4) continue;
+    if (lat < clearHalf + 2.8) continue;
     const x = p.x + p.nx * side * lat + fx * outward * along;
     const z = p.z + p.nz * side * lat + fz * outward * along;
     if (inDrive && inDrive(x, z)) continue;
@@ -222,54 +224,6 @@ export function plantForestMouthBoulders(group, bags, geos, mats) {
 }
 
 /**
- * @param {THREE.TextureLoader} loader
- * @param {string} url
- * @param {boolean} srgb
- * @returns {Promise<THREE.Texture|null>}
- */
-function loadTex(loader, url, srgb) {
-  const href = `${url}?v=${ASSET_V}`;
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (tex) => {
-      if (settled) return;
-      settled = true;
-      resolve(tex);
-    };
-    const timer = setTimeout(() => finish(null), 14000);
-    loader.load(
-      href,
-      (tex) => {
-        clearTimeout(timer);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.anisotropy = 4;
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        tex.needsUpdate = true;
-        finish(tex);
-      },
-      undefined,
-      () => {
-        clearTimeout(timer);
-        finish(null);
-      }
-    );
-  });
-}
-
-/**
- * @param {THREE.Texture} tex
- * @returns {THREE.Texture}
- */
-function cloneMap(tex) {
-  const copy = tex.clone();
-  copy.wrapS = THREE.RepeatWrapping;
-  copy.wrapT = THREE.RepeatWrapping;
-  copy.needsUpdate = true;
-  return copy;
-}
-
-/**
  * Extra frames on heading kinks so the tube follows the 46 m Forest curve.
  * @param {Array<{x:number,y:number,z:number,heading:number,nx:number,nz:number,dist:number,width:number}>} pts
  * @param {number} start
@@ -285,7 +239,7 @@ function densifyFrames(pts, start, end) {
     let dh = q.heading - p.heading;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
-    const steps = Math.abs(dh) > 0.05 ? 3 : Math.abs(dh) > 0.022 ? 2 : Math.abs(dh) > 0.01 ? 1 : 0;
+    const steps = Math.abs(dh) > 0.04 ? 4 : Math.abs(dh) > 0.02 ? 3 : Math.abs(dh) > 0.01 ? 2 : Math.abs(dh) > 0.005 ? 1 : 0;
     for (let s = 1; s <= steps; s++) {
       const t = s / (steps + 1);
       let nx = p.nx + (q.nx - p.nx) * t;

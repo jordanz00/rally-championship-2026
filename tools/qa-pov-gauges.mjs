@@ -51,12 +51,13 @@ check(
 );
 
 check(
-  "POV speedo is MPH 0–140 like chase AnalogDial",
-  /POV_SPEED_MAX_MPH = 140/.test(car) &&
-    /KMH_TO_MPH/.test(car) &&
-    /speedKmh \|\| 0\) \* KMH_TO_MPH/.test(car) &&
-    /max:\s*140/.test(hud),
-  "do not keep a km/h 0–250 in-car scale"
+  "POV speedo is km/h 0–280 like chase AnalogDial + digital HUD",
+  /POV_SPEED_MAX_KMH = 280/.test(car) &&
+    /SPEED_DIAL_MAX_KMH = 280/.test(hud) &&
+    /Math\.max\(0, state\.speedKmh \|\| 0\)/.test(car) &&
+    /label:\s*"km\/h"/.test(hud) &&
+    /max:\s*SPEED_DIAL_MAX_KMH/.test(hud),
+  "digital HUD is km/h — dials must not stay on MPH 0–140"
 );
 
 check(
@@ -85,10 +86,9 @@ check(
 
 check(
   "tach spring is overdamped (no idle jitter)",
-  /springNeedle\(root\.userData\._rpmGauge, rpmT, dt, 22, 1\.08\)/.test(car) &&
-    /springNeedle\(root\.userData\._spdGauge, spdT, dt, 14, 1\.12\)/.test(car) &&
+  /springNeedle\(root\.userData\._rpmGauge, rpmT, dt, 34, 1\.12\)/.test(car) &&
+    /springNeedle\(root\.userData\._spdGauge, spdT, dt, 26, 1\.15\)/.test(car) &&
     !/zeta:\s*0\.48/.test(car) &&
-    !/wn:\s*34/.test(car) &&
     !/performance\.now\(\)/.test(car.slice(car.indexOf("function updateCockpit"))),
   "overdamped springs; no performance.now() idle shake on the needles"
 );
@@ -162,15 +162,15 @@ async function live() {
       const rpm = mesh.userData.rpmNeedle;
       const restExpect = -START;
       const halfExpect = -(START + SWEEP * 0.5);
-      g.player.speed = 0;
-      g.player.rpm = 0;
+      g.player.velocity.set(0, 0, 0);
+      g.player.rpm = 950;
       mesh.userData._spdGauge = { x: restExpect, v: 0 };
       mesh.userData._rpmGauge = { x: restExpect, v: 0 };
       g._syncPlayerMesh(1);
       const restZ = spd.rotation.z;
       const restRpmZ = rpm.rotation.z;
-      // 70 MPH → 0.5 of the 140 scale. 4.5k RPM → 0.5 of the 9 scale.
-      g.player.speed = 70 / 2.236936292;
+      // 140 km/h → 0.5 of the 280 scale. 4.5k RPM → 0.5 of the 9 scale.
+      g.player.velocity.set(0, 0, 140 / 3.6);
       g.player.rpm = 4500;
       for (let i = 0; i < 120; i++) g._syncPlayerMesh(1);
       const halfZ = spd.rotation.z;
@@ -192,7 +192,7 @@ async function live() {
         rpmHalfErr: Math.abs(wrap(halfRpmZ - halfExpect)),
         vmax: mesh.userData.gaugeVmax,
         rpmMax: mesh.userData.gaugeRpmMax,
-        mphLabel: true
+        kmhLabel: true
       };
     `);
     check(
@@ -201,15 +201,15 @@ async function live() {
       sample ? `spd Δ=${sample.restErr && sample.restErr.toFixed(3)} rpm Δ=${sample.rpmRestErr && sample.rpmRestErr.toFixed(3)}` : "no sample"
     );
     check(
-      "live 70 mph / 4.5k rpm sit at 12 o'clock",
+      "live 140 km/h / 4.5k rpm sit at 12 o'clock",
       sample && sample.halfErr < 0.12 && sample.rpmHalfErr < 0.12,
       sample
         ? `spd Δ=${sample.halfErr && sample.halfErr.toFixed(3)} rpm Δ=${sample.rpmHalfErr && sample.rpmHalfErr.toFixed(3)} z=${sample.halfZ && sample.halfZ.toFixed(3)}`
         : "no sample"
     );
     check(
-      "live scales are 140 MPH / 9k RPM",
-      sample && sample.vmax === 140 && sample.rpmMax === 9,
+      "live scales are 280 km/h / 9k RPM",
+      sample && sample.vmax === 280 && sample.rpmMax === 9,
       sample ? `vmax=${sample.vmax} rpmMax=${sample.rpmMax}` : "no sample"
     );
   } finally {

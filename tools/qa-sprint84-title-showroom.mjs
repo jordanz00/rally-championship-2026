@@ -73,6 +73,15 @@ check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWo
 check("title pad is wet asphalt with roughness map", /Mesh(?:Physical|Standard)Material/.test(game) && /roughnessMap:\s*asphaltMaps\.roughness/.test(game));
 check("title DPR is showroom-soft", /titleMaxPixelRatio:\s*1\.(?:0|05|1[0-5]|25)/.test(config) && /titleShadowMap:\s*(?:512|1024|1536)/.test(config));
 check("IBL bakes after first presents", /_bakeSkyEnv\("title"\)/.test(game) && /_titleIblReady/.test(game) && /TITLE_SHOWROOM/.test(game) && /iblDelayMs:\s*(?:420|900)/.test(config));
+check(
+  "splash car waits for IBL before showroom-live",
+  /_revealTitleShowroom/.test(game) &&
+    /_warmTitleCarGpu/.test(game) &&
+    /_onTitleIblReady/.test(game) &&
+    /opacity:\s*0/.test(css) &&
+    /showroom-live:has\(#screen-title\.active\)/.test(css),
+  "title must hide #game-view until lacquer + GPU maps are ready"
+);
 check("pad keeps sun.castShadow off", /Pad: no sun atlas/.test(game) && /this\.sun\.castShadow = false/.test(game));
 check("title live cube reflections are wired", /_updateTitleReflections\(\)/.test(game) && /_ensureTitleReflectCam/.test(game) && /if \(onPad\) this\._updateTitleReflections/.test(game));
 check("title overlay is a vignette, not a dark slab", /rgba\(0, 0, 0, 0\.22\)/.test(css) && !/rgba\(5, 7, 5, 0\.62\)/.test(css));

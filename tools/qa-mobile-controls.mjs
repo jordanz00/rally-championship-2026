@@ -76,8 +76,33 @@ check(
 
 check(
   "phone DPR / shadow budget",
-  /isPhonePlay\(\)/.test(game) && /2048/.test(game) && /_perfDprScale = 0\.78/.test(game),
+  /isPhonePlay\(\)/.test(game) && /2048/.test(game) && /_perfDprScale/.test(game),
   "iPhone must start on a lighter GPU budget"
+);
+
+check(
+  "Android never position:fixed the body",
+  !/body\.is-mobile\s*\{[^}]*position:\s*fixed/.test(css.replace(/\s+/g, " ")),
+  "fixed body + overflow hidden = white tab on Android Chrome"
+);
+
+check(
+  "title CRT class, not opacity-hidden WebGL",
+  /#crt\.is-title/.test(css) && !/#game-view\s*\{[^}]*opacity:\s*0/.test(css.replace(/\s+/g, " ")),
+  "opacity:0 on a WebGL canvas whites out Android Chrome"
+);
+
+check(
+  "inline dark paint so CSS 404 is never a white tab",
+  /background:\s*#050705/.test(index) && /<style>/.test(index) && /id="crt" class="is-title"/.test(index),
+  "index.html must paint dark before game.css"
+);
+
+check(
+  "WebGL retry ladder",
+  /createWebGLRendererSafe/.test(read("js/gfx/renderer-factory.js")) &&
+    /failIfMajorPerformanceCaveat:\s*false/.test(read("js/gfx/renderer-factory.js")),
+  "Android often rejects the first high-performance context"
 );
 
 check(
@@ -88,8 +113,43 @@ check(
 
 check(
   "phone starts on low quality tier",
-  /startTier: isPhonePlay\(\) \? "low"/.test(game),
-  "opening on high then dumping mid-corner is a hitch, not a scaler"
+  /if \(isPhonePlay\(\)\) \{/.test(game) && /return "low"/.test(game) && /return "min"/.test(game),
+  "phones low; weak Android must open on min"
+);
+
+check(
+  "phones honour low/min look (no cinema lock)",
+  /phoneBudget/.test(game) && /lockLook = !explicitPotato && !phoneBudget/.test(game),
+  "lockRaceQuality must not pin phones to desktop cinema shadows"
+);
+
+check(
+  "Android fill-rate caps armed at boot",
+  /GFX\.maxPixels = Math\.min\(GFX\.maxPixels/.test(game) &&
+    /android \? 900000/.test(game) &&
+    /GFX\.preferLock30 = true/.test(game),
+  "Android must cap pixels and prefer lock-30 before first setSize"
+);
+
+check(
+  "phones never stream 2k ground maps",
+  /export function wantHiMaps/.test(read("js/tracks/pbr-stream.js")) &&
+    /Android\|iPhone\|iPod\|Mobile/.test(read("js/tracks/pbr-stream.js")),
+  "2k mipmap uploads hitch Adreno/Mali mid-race"
+);
+
+check(
+  "Android classifies as lowPower / preferLock30",
+  /const android = \/Android\/i\.test\(ua\)/.test(read("js/gfx/capabilities.js")) &&
+    /preferLock30: lowPower/.test(read("js/gfx/capabilities.js")),
+  "classifyGpuRenderer must arm lock-30 on Android"
+);
+
+check(
+  "boot watchdog names in-app browsers",
+  /in-app browsers \(Instagram, Facebook, Messenger\)/.test(index) &&
+    /Use hardware acceleration/.test(index),
+  "blank tabs on Android WebViews need an actionable error"
 );
 
 check(

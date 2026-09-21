@@ -11,7 +11,7 @@
  */
 
 import { CdSoundtrack } from "./soundtrack.js?v=353";
-import { PowertrainVoice } from "./powertrain.js?v=30";
+import { PowertrainVoice } from "./powertrain.js?v=33";
 import { SkidVoice } from "./skid.js?v=10";
 import { loadSample, playHit, playClip } from "./bank.js?v=3";
 import { CrowdVoice } from "./crowd.js?v=6";
@@ -248,7 +248,7 @@ export class RallyAudio {
     impactIn.gain.value = 1;
     const impactHp = ctx.createBiquadFilter();
     impactHp.type = "highpass";
-    impactHp.frequency.value = 42;
+    impactHp.frequency.value = 26;
     impactHp.Q.value = 0.55;
     impactIn.connect(impactHp);
     impactHp.connect(lp);
@@ -256,7 +256,9 @@ export class RallyAudio {
     this._reverb = new ReverbZones(ctx, hp);
     this._reverb.connectSource(sfxMerge);
 
-    this.voice = new PowertrainVoice(ctx, sfxMerge);
+    // Engine bypasses the surface high-pass (72–95 Hz) that was eating the
+    // 80–250 Hz exhaust throat. Same body path as landings.
+    this.voice = new PowertrainVoice(ctx, impactIn);
     this.voice.setCar(this._pendingCar);
     this.voice.boot();
     /** Hero cabin only — pack never gets PowertrainVoice beds (see updateRivalEngines). */

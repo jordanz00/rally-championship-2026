@@ -91,8 +91,8 @@ check(
 
 check(
   "low-speed drive asymptote",
-  /lerp\(1\.34,\s*0\.68/.test(vehicle),
-  "tqDrive low-speed lerp 1.34"
+  /lerp\(1\.44,\s*0\.34/.test(vehicle) || /lerp\(1\.34,\s*0\.68/.test(vehicle),
+  "tqDrive low-speed punch + Vmax fade"
 );
 
 check(

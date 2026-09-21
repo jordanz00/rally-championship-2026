@@ -2,8 +2,8 @@
  * Mountain rain — camera streaks, wet road, intermittent POV wipers.
  *
  * WHO THIS IS FOR: the race loop on Mountain (or ?rain=1).
- * WHAT IT DOES: world streaks, wet asphalt, and windshield beads that slide
- *   with live car dynamics (speed, brake, yaw, slide) and die under the blades.
+ * WHAT IT DOES: world streaks, wet asphalt, and windshield beads that climb
+ *   under accel / ram-air (and creep down when parked), dying under the blades.
  * HOW IT CONNECTS: game.js constructs StageWeather once, enables it on
  *   Mountain, and steps after the chase camera. Does not touch Track.query.
  *
@@ -11,12 +11,12 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { setWorldRoadWetness } from "../gfx/pbr.js?v=53";
+import { setWorldRoadWetness } from "../gfx/pbr.js?v=55";
 
 const STREAK_COUNT = 360;
 const DROP_MAX = 260;
 const FALL = new THREE.Vector3(-0.12, -1, 0.04).normalize();
-const WIPER_FAR = 1.12;
+const WIPER_FAR = 1.26;
 const WIPER_PARK = 0.08;
 /** Angular half-width of the rubber (rad) — thick enough to clear a visible path. */
 const BLADE_HALF_W = 0.085;
@@ -321,7 +321,8 @@ export class StageWeather {
   }
 
   /**
-   * Beads respond to gravity, ram-air, brake dive, yaw, and slide in real time.
+   * Beads respond to gravity, ram-air, accel, brake, yaw, and slide in real time.
+   * Canvas: +v = down the glass (toward the cowl). Accel / ram-air → climb (−v).
    * @param {number} dt
    * @param {{
    *   speed:number, slide:number, yawRate:number,
@@ -334,25 +335,28 @@ export class StageWeather {
     const brake = clamp01(dyn.brake || 0);
     const throttle = clamp01(dyn.throttle || 0);
     const ax = dyn.ax || 0;
-    // +vy increases canvas v = down the glass. Brake / forward inertia throws
-    // beads toward the top of the screen (decreasing v).
-    const g = 0.52 + Math.max(-0.12, Math.min(0.18, (dyn.pitch || 0) * 0.35));
-    const climb = aero * aero * 1.15 + throttle * 0.12;
-    const brakeClimb = brake * 0.85 + Math.max(0, -ax) * 0.035;
-    const out = 0.06 + aero * 0.32;
+    const accel = Math.max(0, ax);
+    const decel = Math.max(0, -ax);
+    const g = 0.48 + Math.max(-0.1, Math.min(0.16, (dyn.pitch || 0) * 0.3));
+    // Flooring it / building speed throws beads toward the roof (up the POV glass).
+    const climb =
+      aero * aero * 1.35 +
+      throttle * (0.62 + aero * 0.45) +
+      accel * 0.08 +
+      brake * 0.18;
+    const down = g * (1 - aero * 1.4) + decel * 0.02;
+    const out = 0.06 + aero * 0.32 + throttle * 0.04;
     const yaw = (dyn.slide || 0) * 0.55 + (dyn.yawRate || 0) * 0.09;
     for (let i = this._drops.length - 1; i >= 0; i--) {
       const d = this._drops[i];
       const mass = 0.48 + d.r * 40;
-      const down = g * (1 - aero * 1.25);
-      const up = climb + brakeClimb;
-      d.vy += ((down - up) / mass) * dt;
+      d.vy += ((down - climb) / mass) * dt;
       d.vx += (((d.u - 0.5) * out + yaw) / mass) * dt;
       d.vx *= Math.exp(-2.4 * dt);
-      d.vy *= Math.exp(-1.35 * dt);
-      const vmax = 0.2 + aero * 0.9 + brake * 0.35;
-      if (d.vy > vmax) d.vy = vmax;
-      if (d.vy < -vmax * 0.85) d.vy = -vmax * 0.85;
+      d.vy *= Math.exp(-1.25 * dt);
+      const vmax = 0.22 + aero * 0.95 + throttle * 0.35 + accel * 0.04;
+      if (d.vy > vmax * 0.75) d.vy = vmax * 0.75;
+      if (d.vy < -vmax) d.vy = -vmax;
       if (d.vx > 0.7) d.vx = 0.7;
       if (d.vx < -0.7) d.vx = -0.7;
       d.u += d.vx * dt;

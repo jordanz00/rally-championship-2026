@@ -48,6 +48,7 @@ check("expert counter boost", /expertCounterMul/.test(vehicle));
 check("slideIntent pitch-in", /slideIntent/.test(vehicle) && /FyNet/.test(vehicle));
 check("counterAuthority", /counterAuthority:\s*[23]\.\d+/.test(config));
 check("power slide sustain", /driftBleedMul:\s*0\.0\d+/.test(config));
+check("slide keep-speed", /slideDriveKeep/.test(config) && /slideSpeedConvert/.test(vehicle));
 check("e-brake carry", /handbrakeBleedMul:\s*0\.0\d+/.test(config));
 check("arcade slide ceiling", /maxSlideVel:\s*2\d\.\d/.test(config) || /maxSlideVel:\s*1[7-9]\.\d/.test(config));
 check("ground spring damped", /groundSpringHz:\s*28/.test(config));

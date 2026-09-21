@@ -24,6 +24,11 @@ check("track imports flag-cloth", /flag-cloth\.js\?v=\d+/.test(trackSrc));
 check("gates plant cloth flags", /_plantClothFlags\(start, "START"\)/.test(trackSrc));
 check("finish plants cloth flags", /_plantClothFlags\(finish, "FINISH"\)/.test(trackSrc));
 check("finish plants checker row of 10", /_plantFinishCheckerRow/.test(trackSrc));
+check(
+  "finish forces 5 checkers per verge",
+  /alongSlots\.length/.test(trackSrc) && /Forced verge/.test(trackSrc) && /five poles per verge/.test(trackSrc),
+  "every stage must plant 5+5 even when clearance fails"
+);
 check("finish drops overhead banner blob", /label !== "FINISH"/.test(trackSrc) && /stage-banner/.test(trackSrc));
 check("Kenney gate flags removed", !/flagKind/.test(trackSrc) && !/propGeometry\("flag_checkers"\)/.test(trackSrc));
 check("update ticks cloth", /_tickClothFlags/.test(trackSrc));

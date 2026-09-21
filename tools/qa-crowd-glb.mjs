@@ -32,7 +32,7 @@ async function main() {
   const kit = fs.readFileSync(path.join(ROOT, "js/tracks/prop-kit.js"), "utf8");
   assert(/CROWD_ALL/.test(kit), "prop-kit must load CROWD_ALL (full 12-kind pack)");
   assert(/extractCrowdCharacterParts/.test(kit), "prop-kit must prefer authored body/arm parts");
-  assert(/if \(s === "mountain"\) return MOUNTAIN_NATURE/.test(kit), "mountain must skip crowd GLBs");
+  assert(/if \(s === "mountain"\) return CROWD_ALL\.concat\(MOUNTAIN_NATURE/.test(kit), "mountain loads crowd GLBs for start/finish stands");
 
   const crowdSrc = fs.readFileSync(path.join(ROOT, "js/tracks/crowd.js"), "utf8");
   assert(/character-female-f/.test(crowdSrc) && /character-male-f/.test(crowdSrc), "crowd kinds list incomplete");

@@ -83,18 +83,13 @@ body {
   overflow: hidden;
 }
 
+/* Title CRT colour. `.is-title` is the Android-safe switch — `:has()` is
+   Chrome 105+ / Safari 15.4 and is kept as a fallback only. Never hide the
+   WebGL host with opacity:0: Android Chrome composites that into a blank
+   white tab. The HTML emblem already covers the pad. */
+#crt.is-title,
 #crt:has(#screen-title.active) {
   background: #164e88;
-}
-
-#crt:has(#screen-title.active) #game-view {
-  visibility: visible;
-  opacity: 1;
-}
-
-#crt.showroom-live #game-view,
-#crt:not(:has(#screen-title.active)) #game-view {
-  opacity: 1;
 }
 
 /* Full-viewport black fader — boot reveal + every screen change. */
@@ -117,7 +112,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .fx-curtain,
   .fx-curtain.is-on,
-  #crt:has(#screen-title.active) #game-view,
   #screen-loading .load-shell {
     transition: none !important;
   }
@@ -421,11 +415,11 @@ body {
 }
 
 #boot-error {
-  position: absolute;
-  z-index: 50;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
+  position: fixed;
+  z-index: 99999;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
   max-height: 40vh;
   overflow: auto;
   background: #200;
@@ -433,6 +427,11 @@ body {
   padding: 12px;
   font: 12px/1.4 monospace;
   white-space: pre-wrap;
+  pointer-events: auto;
+}
+
+#boot-error[hidden] {
+  display: none !important;
 }
 
 .screen button,
@@ -1258,11 +1257,11 @@ body {
 }
 
 body.is-mobile {
-  position: fixed;
-  inset: 0;
+  /* Do not pin the document with a fixed body. Android Chrome plus
+     html overflow hidden used to collapse the page to a blank tab. */
   width: 100%;
-  height: 100%;
-  height: 100dvh;
+  min-height: 100%;
+  min-height: 100dvh;
 }
 
 body.is-mobile #crt {

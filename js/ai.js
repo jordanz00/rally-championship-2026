@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=159";
-import { getSurface } from "./physics/surfaces.js?v=57";
-import { AI, CARS } from "./config.js?v=233";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=205";
+import { Vehicle } from "./physics/vehicle.js?v=166";
+import { getSurface } from "./physics/surfaces.js?v=58";
+import { AI, CARS } from "./config.js?v=239";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=212";
 
 const G = 9.81;
 
@@ -201,14 +201,15 @@ export class Opponent {
      * front of the field sits over 1.0 so a committed AI lap beats throttle-only.
      * Friend-impress: per-rival attack bias so mid-pack pace is not identical.
      */
-    const attack = 0.96 + (hashNoise(index + 53, 9) + 1) * 0.06;
-    this.pace = (0.9 + this.skill * 0.22) * (index === 0 ? 1.04 : attack);
+    const attack = 0.9 + (hashNoise(index + 53, 9) + 1) * 0.05;
+    // Slower pack than a committed player — handbrake passes should stick.
+    this.pace = (0.74 + this.skill * 0.16) * (index === 0 ? 0.98 : attack);
     /** Reaction speed when the car steps out, 1/s. Slower rivals flail more. */
-    this.reflex = 6.2 + this.skill * 7.4;
+    this.reflex = 5.4 + this.skill * 6.2;
     /** How much opposite lock they feed in per radian of slide. */
-    this.catchGain = 0.38 + this.skill * 0.58;
-    /** Some drivers flick the handbrake into hairpins, some do not. */
-    this.flicks = hashNoise(index + 91, 3) > -0.22;
+    this.catchGain = 0.28 + this.skill * 0.42;
+    /** Most of the pack flicks the handbrake into medium drifts. */
+    this.flicks = hashNoise(index + 91, 3) > -0.55;
     /** Personal trail-braking taste. */
     this.trail = AI.trailBrake * (0.65 + (hashNoise(index + 17, 5) + 1) * 0.4);
     /**
@@ -401,9 +402,23 @@ export class Opponent {
       throttle *= 0.7;
     }
 
-    // Hairpin flick, for the rivals whose style it is.
-    const tight = Math.abs(d1) > 0.9 && lookNear < 30;
-    if (this.flicks && tight && spd > 8 && spd < 20 && off < -0.7) hb = 0.22;
+    // Handbrake / power-slide: medium arcs + hairpins on loose ground.
+    // Keep throttle so they carry speed like the player, not a parking stop.
+    const absCurve = Math.abs(d1);
+    const hairpinFlick = absCurve > 0.85 && lookNear < 34 && spd > 8 && spd < 28;
+    const mediumSlide =
+      !onTarmac && absCurve > 0.34 && absCurve < 1.05 && spd > 14 && spd < 46 && Math.abs(this._steer) > 0.1;
+    if (this.flicks && off < 0.4) {
+      if (hairpinFlick) {
+        hb = 0.48;
+        throttle = Math.max(throttle, 0.45);
+        brake = Math.min(brake, 0.22);
+      } else if (mediumSlide) {
+        hb = 0.3 + Math.min(0.28, absCurve * 0.22);
+        throttle = Math.max(throttle, 0.64);
+        brake = Math.min(brake, 0.18);
+      }
+    }
 
     throttle *= traffic.lift;
     brake = Math.max(brake, traffic.brake);

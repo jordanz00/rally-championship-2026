@@ -24,20 +24,20 @@ export const DEFORM_SURFACES = new Set(["sand", "dirt", "mud", "gravel"]);
  * Mud digs deepest; gravel chips shallower but still casts a trench.
  */
 const DEPTH_CAP = {
-  sand: 0.145,
-  dirt: 0.118,
-  mud: 0.185,
-  gravel: 0.085,
+  sand: 0.165,
+  dirt: 0.135,
+  mud: 0.21,
+  gravel: 0.1,
 };
 
 /**
  * Compressed / damp tire-track earth — muted browns, not desert-yellow paint.
  */
 const RUT_TINT = {
-  sand: 0x6e5640,
-  dirt: 0x3f3024,
-  mud: 0x221c16,
-  gravel: 0x484440,
+  sand: 0x5c4634,
+  dirt: 0x32261c,
+  mud: 0x181410,
+  gravel: 0x3c3834,
 };
 
 /** Pack ix,iz into one int key — avoids `"ix,iz"` string allocs on the hot path. */
@@ -54,11 +54,12 @@ function cellKey(ix, iz) {
  */
 export function trenchProfile(u) {
   const a = Math.abs(u);
-  if (a < 0.5) return -(0.88 + (1 - a / 0.5) * 0.12);
-  if (a < 0.92) return -0.88 * (1 - (a - 0.5) / 0.42);
-  if (a < 1.22) {
-    const t = 1 - Math.abs(a - 1.05) / 0.22;
-    return 0.62 * Math.max(0, t);
+  // Deeper floor, steeper walls, higher berm lips — reads as a carved tire trench.
+  if (a < 0.48) return -(0.92 + (1 - a / 0.48) * 0.14);
+  if (a < 0.9) return -0.92 * (1 - (a - 0.48) / 0.42);
+  if (a < 1.28) {
+    const t = 1 - Math.abs(a - 1.08) / 0.24;
+    return 0.78 * Math.max(0, t);
   }
   return 0;
 }
@@ -69,7 +70,7 @@ export function trenchProfile(u) {
 export class WheelDeformField {
   constructor() {
     /** Finer than a tire width so left/right tracks stay distinct. */
-    this.cell = 0.22;
+    this.cell = 0.2;
     this.cells = new Map();
     this.berms = new Map();
   }
@@ -153,14 +154,14 @@ export class WheelDeformField {
         const key = cellKey(ix0 + di, iz0 + dj);
         const prev = cells.get(key) || 0;
         // Accumulate quickly so a single pass already reads as a trench.
-        const add = depth * bowl * 0.72;
+        const add = depth * bowl * 0.82;
         const next = Math.min(maxDep, prev + add);
         if (next > prev) cells.set(key, next);
-        if (lt > 0.55 && lt < 1.22) {
-          const berm = depth * 0.95 * Math.max(0, trenchProfile(lt));
+        if (lt > 0.52 && lt < 1.28) {
+          const berm = depth * 1.05 * Math.max(0, trenchProfile(lt));
           if (berm > 0.001) {
             const bp = berms.get(key) || 0;
-            const bermNext = Math.min(maxDep * 0.95, Math.max(bp, berm) + berm * 0.4);
+            const bermNext = Math.min(maxDep * 1.05, Math.max(bp, berm) + berm * 0.48);
             if (bermNext > bp) berms.set(key, bermNext);
           }
         }
@@ -222,17 +223,17 @@ export class WheelDeformField {
 
 /** Lateral trench profile (berm → wall → floor → wall → berm). */
 const RUT_RINGS = [
-  { u: -1.22, shade: 0.95 },
-  { u: -1.05, shade: 1.08 },
-  { u: -0.88, shade: 0.82 },
-  { u: -0.55, shade: 0.58 },
-  { u: -0.22, shade: 0.48 },
-  { u: 0.0, shade: 0.44 },
-  { u: 0.22, shade: 0.48 },
-  { u: 0.55, shade: 0.58 },
-  { u: 0.88, shade: 0.82 },
-  { u: 1.05, shade: 1.08 },
-  { u: 1.22, shade: 0.95 },
+  { u: -1.28, shade: 0.98 },
+  { u: -1.1, shade: 1.14 },
+  { u: -0.9, shade: 0.78 },
+  { u: -0.55, shade: 0.52 },
+  { u: -0.22, shade: 0.42 },
+  { u: 0.0, shade: 0.38 },
+  { u: 0.22, shade: 0.42 },
+  { u: 0.55, shade: 0.52 },
+  { u: 0.9, shade: 0.78 },
+  { u: 1.1, shade: 1.14 },
+  { u: 1.28, shade: 0.98 },
 ];
 
 /**
@@ -367,9 +368,9 @@ export class WheelRutMesh {
       0.5 + slip * 0.65 + drift * 0.7 + throt * 0.25 + brake * 0.3 + digBoost * 0.35 + Math.min(0.3, speed * 0.004)
     );
     /** Immediate visual dig so the trail reads before the height field fills. */
-    const liveDig = Math.max(0.018, cap * pressure * 0.92);
+    const liveDig = Math.max(0.022, cap * pressure * 1.05);
     const field = this.field;
-    const digShade = 0.9 - Math.min(0.28, slip * 0.12 + drift * 0.14 + digBoost * 0.1);
+    const digShade = 0.86 - Math.min(0.32, slip * 0.14 + drift * 0.16 + digBoost * 0.12);
     const rings = RUT_RINGS;
 
     const yAt = (x, z, baseY, u) => {

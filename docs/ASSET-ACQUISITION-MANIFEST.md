@@ -102,11 +102,12 @@ light multiply, not the albedo. Still a heightmap. Do not call this a scanned fo
 
 ```
 Have (runtime): Kenney CC0 `grandstand` / `grandstand_covered` via prop-kit
-  (height scale ~4.6 / 5.4 m). Finish densifies locally: dual modules/side,
-  longer alongSpan, 6×14 seated banks vs start 4×9 — still Kenney mesh.
+  (height scale ~4.6 / 5.4 m). Start/finish plant covered modules with Quaternius
+  audiences seated *inside* each module footprint (rows climb back from the track);
+  finish dual modules/side; Mountain stands-only. Still Kenney mesh.
 Gap: CC0/CC-BY PBR filled grandstand (albedo+normal+rough, seated deck readable
   at 5–30 m chase/medium cam). Kenney alone is not PASS for hero finish.
-Status: PARTIAL (Kenney + denser finish crowd) — HQ filled stand MISSING.
+Status: PARTIAL (Kenney + seated in-module crowd) — HQ filled stand MISSING.
 Do not replace Kenney with box/primitive bleachers.
 Candidates (license-check before ship; do not claim PASS until on disk + gate):
   - OpenGameArt “bleachers” / stadium seating packs (CC0 or CC-BY + ATTRIBUTION)
@@ -114,7 +115,7 @@ Candidates (license-check before ship; do not claim PASS until on disk + gate):
     https://www.blendswap.com/search?q=grandstand
     https://www.blendswap.com/search?q=bleachers
   - OpenGameArt search: https://opengameart.org/art-search-advanced?keys=bleachers
-Not downloaded this pass — local densify + this gap row is the ship.
+Not downloaded this pass — seating fit + density + this gap row is the ship.
 ```
 
 ## Later stages (do not start)

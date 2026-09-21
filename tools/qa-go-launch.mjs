@@ -57,6 +57,17 @@ check(
   "missing launch lock API"
 );
 check(
+  "freezeLaunch clears _glitchIgnore (GO must not skip _guardXZ)",
+  /freezeLaunch\(\)\s*\{[\s\S]*?_glitchIgnore\s*=\s*0/.test(vehicle),
+  "freezeLaunch must zero _glitchIgnore so countdown leftover grace cannot skip XZ guards at GO"
+);
+check(
+  "launch hold soft-caps wall shove in collide.js",
+  /_launchHold\s*>\s*0/.test(read("js/physics/collide.js")) &&
+    /launchCap/.test(read("js/physics/collide.js")),
+  "missing lights-out wall push soft-cap"
+);
+check(
   "LAUNCH_HOLD_S armed",
   /LAUNCH_HOLD_S\s*=\s*0\.\d+/.test(vehicle),
   "missing lights-out window"
@@ -65,6 +76,16 @@ check(
   "game freezes grid after load collide",
   /_freezeGridMotion\(/.test(game) && /_armLightsOut\(/.test(game),
   "game.js missing grid / GO freeze"
+);
+check(
+  "warm pack physics under load overlay",
+  /_warmPackPhysics\(/.test(game) && /holdGpuUploads\(/.test(game),
+  "first GO throttle must not pay cold step + 2k upload"
+);
+check(
+  "present every frame through launch",
+  /mustPresent/.test(game) && /_goPresentHold/.test(game) && /_camSnap = false/.test(game),
+  "skipped presents + camera snap at GO read as a jerky launch"
 );
 const vehGame = (game.match(/vehicle\.js\?v=(\d+)/) || [])[1];
 const vehAi = (ai.match(/vehicle\.js\?v=(\d+)/) || [])[1];
@@ -182,13 +203,15 @@ try {
       const fz = Math.cos(p.yaw);
       p.velocity.x = -fx * 5;
       p.velocity.z = -fz * 5;
+      p._glitchIgnore = 8;
       if (p.freezeLaunch) p.freezeLaunch();
-      return bodyVx(p);
+      return { vx: bodyVx(p), glitchIgnore: p._glitchIgnore };
     })();
 
     return {
       course: g.courseId,
-      leftoverAfterFreeze: leftover,
+      leftoverAfterFreeze: leftover.vx,
+      glitchIgnoreAfterFreeze: leftover.glitchIgnore,
       practice: probe("practice", 8, 0, false),
       p1: probe("champ-p1", 16, -1.1, false),
       p15: probe("champ-p15", 16 + 14 * 13, -1.22, false),
@@ -201,6 +224,11 @@ try {
     "freezeLaunch kills leftover reverse Δv",
     sample && Math.abs(sample.leftoverAfterFreeze) < 0.05,
     `leftover vx=${sample && sample.leftoverAfterFreeze}`
+  );
+  check(
+    "freezeLaunch clears glitchIgnore (guards live at GO)",
+    sample && sample.glitchIgnoreAfterFreeze === 0,
+    `glitchIgnore=${sample && sample.glitchIgnoreAfterFreeze}`
   );
 
   for (const row of [sample.practice, sample.p1, sample.p15, sample.poisoned]) {

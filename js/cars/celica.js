@@ -19,9 +19,10 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=233";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=53";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=239";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=55";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=1";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 
@@ -2146,56 +2147,52 @@ function plantOnContactPatch(root) {
   let minY = Infinity;
   const wheels = root.userData && root.userData.wheels;
   const tmp = new THREE.Box3();
-  const measureTire = (hub) => {
-    if (!hub) return;
-    let tireMin = Infinity;
+  const hubContactY = (hub) => {
+    if (!hub) return Infinity;
+    const ys = [];
     hub.traverse((obj) => {
       if (!obj.isMesh || !obj.visible || !obj.geometry) return;
       if (obj.userData && obj.userData.axleScrap) return;
       const n = `${obj.name || ""} ${matName(obj)}`.toLowerCase();
-      const isTire = /tire|tyre|rubber/.test(n) && !/rim|disc|caliper|brake/.test(n);
-      const isWheelBody = /wheel|tire|tyre/.test(n) && !/rim|disc|caliper|brake|hub.?cap/.test(n);
-      if (!isTire && !isWheelBody) return;
+      if (/axle|helper|scrap|suspension.?arm/.test(n) && !/tire|tyre|rubber/.test(n)) return;
       tmp.setFromObject(obj);
-      if (tmp.min.y < tireMin) tireMin = tmp.min.y;
+      if (Number.isFinite(tmp.min.y)) ys.push(tmp.min.y);
     });
-    if (!Number.isFinite(tireMin)) {
-      hub.traverse((obj) => {
-        if (!obj.isMesh || !obj.visible || !obj.geometry) return;
-        if (obj.userData && obj.userData.axleScrap) return;
-        tmp.setFromObject(obj);
-        if (tmp.min.y < tireMin) tireMin = tmp.min.y;
-      });
-    }
-    if (tireMin < minY) minY = tireMin;
+    if (!ys.length) return Infinity;
+    ys.sort((a, b) => a - b);
+    // Drop the lowest quarter — axle scrap under the tread used to lift the body.
+    const i = Math.min(ys.length - 1, Math.max(0, (ys.length * 0.25) | 0));
+    return ys[i];
   };
   if (Array.isArray(wheels) && wheels.length) {
-    for (let i = 0; i < wheels.length; i++) measureTire(wheels[i]);
+    for (let i = 0; i < wheels.length; i++) {
+      const y = hubContactY(wheels[i]);
+      if (y < minY) minY = y;
+    }
   }
   if (!Number.isFinite(minY)) {
-    const box = new THREE.Box3();
-    let has = false;
-    root.traverse((obj) => {
-      if (!obj.isMesh || !obj.visible || !obj.geometry) return;
-      if (obj.userData && (obj.userData.interior || obj.userData.brake || obj.userData.head)) return;
-      const b = new THREE.Box3().setFromObject(obj);
-      if (!has) {
-        box.copy(b);
-        has = true;
-      } else {
-        box.union(b);
-      }
-    });
-    minY = has ? box.min.y : 0;
+    minY = hubContactY(root);
   }
-  // Visual rubber kisses the contact plane. Physics already embeds TIRE_PLANT.
-  const SINK = 0.004;
+  const SINK = 0.012;
   const delta = -(minY + SINK);
   if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
     const kids = root.children;
     for (let i = 0; i < kids.length; i++) kids[i].position.y += delta;
   }
   root.userData.tirePlantSink = SINK;
+  root.updateMatrixWorld(true);
+  if (Array.isArray(wheels) && wheels.length) {
+    let rubber = Infinity;
+    for (let i = 0; i < wheels.length; i++) {
+      const y = hubContactY(wheels[i]);
+      if (y < rubber) rubber = y;
+    }
+    if (Number.isFinite(rubber) && rubber > 0.006) {
+      const extra = -(rubber + SINK);
+      const kids = root.children;
+      for (let i = 0; i < kids.length; i++) kids[i].position.y += extra;
+    }
+  }
 }
 
 function gameShade(root) {
@@ -4934,19 +4931,20 @@ function attachHeadBeams(root) {
  * Tunnel lamps. `on` may be 0–1 for a fade.
  * @param {THREE.Object3D} root
  * @param {boolean|number} on
- * @param {{tunnelBoost?:number}} [opts] extra beam gain inside the bore
+ * @param {{tunnelBoost?:number, profile?:object}} [opts] extra beam gain / Forest TUNNEL profile
  */
 export function setHeadlights(root, on, opts = {}) {
   if (!root) return;
+  const T = opts.profile || TUNNEL;
   const t = typeof on === "number" ? Math.max(0, Math.min(1, on)) : on ? 1 : 0;
-  const emit = TUNNEL.headEmissive != null ? TUNNEL.headEmissive : 34;
-  const beamInt = TUNNEL.headBeam != null ? TUNNEL.headBeam : 1280;
+  const emit = T.headEmissive != null ? T.headEmissive : 34;
+  const beamInt = T.headBeam != null ? T.headBeam : 1280;
   const boost =
     opts.tunnelBoost != null
       ? opts.tunnelBoost
       : t > 0.55
-        ? TUNNEL.headBeamTunnelBoost != null
-          ? TUNNEL.headBeamTunnelBoost
+        ? T.headBeamTunnelBoost != null
+          ? T.headBeamTunnelBoost
           : 1.35
         : 1;
   const lamps = root.userData.headlights;
@@ -4974,10 +4972,10 @@ export function setHeadlights(root, on, opts = {}) {
     for (let i = 0; i < beams.length; i++) {
       beams[i].intensity = intensity;
       beams[i].visible = true;
-      if (TUNNEL.headBeamDistance != null) beams[i].distance = TUNNEL.headBeamDistance;
-      if (TUNNEL.headBeamAngle != null) beams[i].angle = TUNNEL.headBeamAngle;
-      if (TUNNEL.headBeamPenumbra != null) beams[i].penumbra = TUNNEL.headBeamPenumbra;
-      if (TUNNEL.headBeamDecay != null) beams[i].decay = TUNNEL.headBeamDecay;
+      if (T.headBeamDistance != null) beams[i].distance = T.headBeamDistance;
+      if (T.headBeamAngle != null) beams[i].angle = T.headBeamAngle;
+      if (T.headBeamPenumbra != null) beams[i].penumbra = T.headBeamPenumbra;
+      if (T.headBeamDecay != null) beams[i].decay = T.headBeamDecay;
     }
   }
 }
@@ -4987,10 +4985,10 @@ const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
 /** In-car analog dials (~110 mm) so the needles read at seated FOV. */
 const POV_GAUGE_R = 0.055;
-const POV_SPEED_MAX_MPH = 140;
+/** Same km/h scale as chase HUD + digital readout (covers all garage Vmax). */
+const POV_SPEED_MAX_KMH = 280;
 /** Rearview overlay — 25% smaller than the original 0.32 × 0.082 glass. */
 const POV_MIRROR_SCALE = 0.75;
-const KMH_TO_MPH = 0.621371;
 /** Three.js layer for camera-locked POV HUD (rendered after post, ungraded). */
 export const POV_HUD_LAYER = 1;
 
@@ -5594,7 +5592,7 @@ function inCockpitTree(obj) {
 /**
  * Analog face matching the chase HUD: 0 at 7:30, sweep clockwise to 4:30.
  * @param {"speed"|"rpm"} kind
- * @param {number} maxVal MPH or RPM×1000
+ * @param {number} maxVal km/h or RPM×1000
  * @param {number} [redFrom] redline start on the same scale
  */
 function gaugeFace(kind, maxVal, redFrom) {
@@ -5640,8 +5638,8 @@ function gaugeFace(kind, maxVal, redFrom) {
   }
   g.textAlign = "center";
   g.textBaseline = "middle";
-  const major = kind === "rpm" ? 1 : 20;
-  const minor = kind === "rpm" ? 1 : 10;
+  const major = kind === "rpm" ? 1 : 40;
+  const minor = kind === "rpm" ? 1 : 20;
   const steps = Math.round(maxVal / minor);
   for (let i = 0; i <= steps; i++) {
     const v = i * minor;
@@ -5665,7 +5663,7 @@ function gaugeFace(kind, maxVal, redFrom) {
   }
   g.fillStyle = "rgba(232,228,216,0.62)";
   g.font = "bold 15px sans-serif";
-  g.fillText(kind === "rpm" ? "RPM" : "MPH", cx, cy - r * 0.08);
+  g.fillText(kind === "rpm" ? "RPM" : "km/h", cx, cy - r * 0.08);
   if (kind === "rpm") {
     g.font = "12px sans-serif";
     g.fillStyle = "rgba(232,228,216,0.42)";
@@ -5916,7 +5914,7 @@ function attachCockpit(root) {
 
   const cluster = new THREE.Group();
   cluster.name = "gauge-cluster";
-  const speedDial = makeDial("speed", POV_SPEED_MAX_MPH, 120);
+  const speedDial = makeDial("speed", POV_SPEED_MAX_KMH, 240);
   const rpmDial = makeDial("rpm", rpmMax, rpmRed);
   // Tach left, speedo right — ST205 / chase HUD layout.
   rpmDial.group.position.set(-POV_GAUGE_R * 1.28, 0, 0);
@@ -5982,7 +5980,7 @@ function attachCockpit(root) {
   root.userData.speedNeedle = speedDial.needle;
   root.userData.rpmNeedle = rpmDial.needle;
   if (!root.userData.steerWheel) root.userData.steerWheel = null;
-  root.userData.gaugeVmax = POV_SPEED_MAX_MPH;
+  root.userData.gaugeVmax = POV_SPEED_MAX_KMH;
   root.userData.gaugeRpmMax = rpmMax;
   root.userData._spdGauge = { x: -GAUGE_START, v: 0 };
   root.userData._rpmGauge = { x: -GAUGE_START, v: 0 };
@@ -5993,120 +5991,11 @@ function attachCockpit(root) {
 
 /**
  * POV-only driver arms + gloved hands gripping the rim. Hands ride the steer
- * spin so they turn with the wheel; sleeves stretch from fixed shoulders.
+ * spin so they turn with the wheel; two-bone sleeves track from shoulders.
  * @param {THREE.Object3D} root
  */
 function attachPovDriverArms(root) {
-  if (!root) return;
-  const prev = root.userData.povDriver;
-  if (prev && prev.root && prev.root.parent) prev.root.parent.remove(prev.root);
-  if (prev && prev.shoulders && prev.shoulders.parent) prev.shoulders.parent.remove(prev.shoulders);
-
-  const spin = root.userData.steerSpin || root.userData.steerWheel;
-  const cab = root.userData.cockpit;
-  const rig = root.userData.povRig || buildPovRig(root);
-  if (!spin || !cab || !rig) {
-    root.userData.povDriver = null;
-    return;
-  }
-
-  const suit = cabinMat(0x1a1e28, 0.88, 0.04, 0x12151c);
-  const glove = cabinMat(0x2a241c, 0.92, 0.02, 0x1a1510);
-  const cuff = cabinMat(0x0e1014, 0.75, 0.06, 0x181410);
-
-  let rimR = 0.155;
-  try {
-    const box = new THREE.Box3().setFromObject(spin);
-    if (!box.isEmpty()) {
-      const s = box.getSize(new THREE.Vector3());
-      rimR = THREE.MathUtils.clamp(Math.max(s.x, s.y) * 0.42, 0.12, 0.2);
-    }
-  } catch {
-    /* keep default */
-  }
-
-  const grips = new THREE.Group();
-  grips.name = "pov-driver-grips";
-  grips.userData.povDriver = true;
-
-  /** @param {number} side +1 = driver's left (car +X / screen-left) */
-  function makeHand(side) {
-    const g = new THREE.Group();
-    g.name = side > 0 ? "hand-L" : "hand-R";
-    // Palm sits on the rim at 9 / 3 o'clock in spin-local XY.
-    g.position.set(side * rimR * 0.92, -rimR * 0.02, 0.01);
-    g.rotation.z = side > 0 ? 0.15 : -0.15;
-    g.rotation.x = 0.35;
-    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.028, 0.072), glove);
-    palm.position.set(0, 0, 0);
-    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.016, 0.034), glove);
-    thumb.position.set(side * -0.028, 0.012, 0.01);
-    thumb.rotation.z = side * 0.7;
-    const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.016, 0.028), cuff);
-    knuckle.position.set(0, 0.002, -0.04);
-    g.add(palm, thumb, knuckle);
-    g.userData.wrist = knuckle;
-    return g;
-  }
-
-  const handL = makeHand(1);
-  const handR = makeHand(-1);
-  grips.add(handL, handR);
-  spin.add(grips);
-  markSteerPovLayer(grips);
-
-  const shoulders = new THREE.Group();
-  shoulders.name = "pov-driver-shoulders";
-  shoulders.userData.povDriver = true;
-  // Fixed in cabin — just below / behind the eye so sleeves enter frame at the bottom.
-  const shY = rig.eyeY - 0.28;
-  const shZ = Math.min(rig.eyeZ + 0.02, (root.userData.povWheelZ || rig.eyeZ + 0.35) - 0.22);
-  const shL = new THREE.Object3D();
-  shL.position.set(rig.eyeX + 0.2, shY, shZ - 0.04);
-  const shR = new THREE.Object3D();
-  shR.position.set(rig.eyeX - 0.12, shY, shZ - 0.04);
-  shoulders.add(shL, shR);
-
-  function makeSleeve() {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 1, 8, 1, true), suit);
-    mesh.geometry.translate(0, 0.5, 0);
-    mesh.userData.povDriver = true;
-    mesh.frustumCulled = false;
-    mesh.layers.set(POV_HUD_LAYER);
-    mesh.renderOrder = 7;
-    const mats = [].concat(mesh.material || []);
-    for (let i = 0; i < mats.length; i++) {
-      if (!mats[i]) continue;
-      mats[i].depthTest = true;
-      mats[i].depthWrite = true;
-      mats[i].side = THREE.DoubleSide;
-    }
-    return mesh;
-  }
-
-  const sleeveL = makeSleeve();
-  const sleeveR = makeSleeve();
-  shoulders.add(sleeveL, sleeveR);
-  cab.add(shoulders);
-  markSteerPovLayer(shoulders);
-
-  root.userData.povDriver = {
-    root: grips,
-    shoulders,
-    handL,
-    handR,
-    sleeveL,
-    sleeveR,
-    shoulderL: shL,
-    shoulderR: shR,
-    rimR,
-    _tmpA: new THREE.Vector3(),
-    _tmpB: new THREE.Vector3(),
-    _tmpC: new THREE.Vector3(),
-  };
-  // Start hidden until setCockpitView(true).
-  grips.visible = !!root.userData._cockpitOn;
-  shoulders.visible = !!root.userData._cockpitOn;
+  attachPovDriverHQ(root, { markSteerPovLayer, POV_HUD_LAYER });
 }
 
 /**
@@ -6236,43 +6125,73 @@ function attachPovWeatherGlass(root) {
   weather.add(pane);
 
   const armMat = new THREE.MeshStandardMaterial({
-    color: 0x2e343c,
-    roughness: 0.38,
-    metalness: 0.55,
+    color: 0x3a424c,
+    roughness: 0.34,
+    metalness: 0.62,
   });
   const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0x0a0c10,
-    roughness: 0.9,
-    metalness: 0.04,
+    color: 0x12151a,
+    roughness: 0.88,
+    metalness: 0.06,
   });
-  // Each blade covers most of its half of the aperture (~Celica GT-Four scale).
-  const bladeLen = Math.min(0.48, Math.max(0.34, Math.min(gw * 0.48, gh * 0.95)));
-  const armLen = Math.min(0.16, bladeLen * 0.32);
+  const rubberMat = new THREE.MeshStandardMaterial({
+    color: 0x050608,
+    roughness: 0.95,
+    metalness: 0.02,
+  });
+  // Tandem GT-Four style: pivots on the cowl, arm + blade reach most of the pane.
+  const reach = Math.min(gw * 0.78, Math.hypot(gw * 0.58, gh * 0.98));
+  const armLen = Math.max(0.16, reach * 0.4);
+  const bladeLen = Math.max(0.3, reach * 0.82);
+  const totalLen = armLen * 0.95 + bladeLen;
   const makeArm = (side) => {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? "wiper-L" : "wiper-R";
-    pivot.position.set(side * gw * 0.34, -gh * 0.46, 0.009);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.01, 0.007), armMat);
-    arm.position.set(armLen * 0.5, 0, 0);
+    // Sit on the lower cowl edge, inboard enough that parked blades meet near centre.
+    pivot.position.set(side * gw * 0.26, -gh * 0.48, 0.014);
+
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.014, 12), armMat);
+    boss.rotation.x = Math.PI * 0.5;
+    boss.userData.povHud = true;
+    boss.userData.povWiper = true;
+    markPovHudMesh(boss, 5, { depthTest: false });
+
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.0075, 0.0055), armMat);
+    arm.position.set(armLen * 0.5, 0.001, 0.003);
     arm.userData.povHud = true;
     arm.userData.povWiper = true;
     markPovHudMesh(arm, 5, { depthTest: false });
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.014, 0.008), bladeMat);
-    blade.position.set(bladeLen * 0.52, 0, 0.003);
+
+    // Articulation at the arm tip — blade rides the glass, slightly angled.
+    const joint = new THREE.Group();
+    joint.position.set(armLen * 0.94, 0.001, 0.004);
+    joint.rotation.z = side * 0.1;
+
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.012, 0.004), bladeMat);
+    blade.position.set(bladeLen * 0.5, 0, 0);
     blade.userData.povHud = true;
     blade.userData.povWiper = true;
     markPovHudMesh(blade, 5, { depthTest: false });
-    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.98, 0.006, 0.004), bladeMat);
-    rubber.position.set(bladeLen * 0.52, -0.008, 0.002);
+
+    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.97, 0.0045, 0.0028), rubberMat);
+    rubber.position.set(bladeLen * 0.5, -0.007, 0.001);
     rubber.userData.povHud = true;
     rubber.userData.povWiper = true;
     markPovHudMesh(rubber, 5, { depthTest: false });
-    pivot.add(arm, blade, rubber);
-    // Parked along the cowl; sweep up toward the A-pillar / centre.
-    pivot.rotation.z = side < 0 ? 0.08 : Math.PI - 0.08;
+
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.01, 0.005), bladeMat);
+    tip.position.set(bladeLen - 0.004, 0, 0);
+    tip.userData.povHud = true;
+    tip.userData.povWiper = true;
+    markPovHudMesh(tip, 5, { depthTest: false });
+
+    joint.add(blade, rubber, tip);
+    pivot.add(boss, arm, joint);
+    // Parked along the cowl; sweep up through the aperture.
+    pivot.rotation.z = side < 0 ? 0.1 : Math.PI - 0.1;
     pivot.userData.parkZ = pivot.rotation.z;
-    pivot.userData.bladeLen = bladeLen;
-    pivot.userData.bladeHalfW = 0.028;
+    pivot.userData.bladeLen = totalLen;
+    pivot.userData.bladeHalfW = 0.022;
     pivot.userData.side = side;
     pivot.userData.povHud = true;
     pivot.userData.povWiper = true;
@@ -6288,8 +6207,8 @@ function attachPovWeatherGlass(root) {
   root.userData.povRainTex = tex;
   root.userData.povGlassW = gw;
   root.userData.povGlassH = gh;
-  // Sweep ~65° — covers the aperture without parking mid-glass.
-  root.userData.wiperFar = 1.12;
+  // ~72° sweep — covers the aperture without parking mid-glass.
+  root.userData.wiperFar = 1.26;
   root.userData.wiperL = makeArm(-1);
   root.userData.wiperR = makeArm(1);
 }
@@ -6614,17 +6533,17 @@ function springNeedle(state, target, dt, wn, zeta) {
 export function updateCockpit(root, state) {
   if (!root || !root.userData.speedNeedle) return;
   const dt = Math.max(0.001, Math.min(0.05, state.dt || 1 / 60));
-  const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_MPH;
-  const rpmMax = root.userData.gaugeRpmMax || 8;
-  const mph = Math.max(0, (state.speedKmh || 0) * KMH_TO_MPH);
+  const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_KMH;
+  const rpmMax = root.userData.gaugeRpmMax || 9;
+  const kmh = Math.max(0, state.speedKmh || 0);
   const rpmN = Math.max(0, (state.rpm || 0) / 1000);
-  const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, mph / vmax)));
+  const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, kmh / vmax)));
   const rpmT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1.04, rpmN / rpmMax)));
   if (root.userData.speedNeedle) {
-    root.userData.speedNeedle.rotation.z = springNeedle(root.userData._spdGauge, spdT, dt, 14, 1.12);
+    root.userData.speedNeedle.rotation.z = springNeedle(root.userData._spdGauge, spdT, dt, 26, 1.15);
   }
   if (root.userData.rpmNeedle) {
-    root.userData.rpmNeedle.rotation.z = springNeedle(root.userData._rpmGauge, rpmT, dt, 22, 1.08);
+    root.userData.rpmNeedle.rotation.z = springNeedle(root.userData._rpmGauge, rpmT, dt, 34, 1.12);
   }
 }
 

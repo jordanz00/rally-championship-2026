@@ -127,8 +127,12 @@ export const GFX = {
    * Settle does not force 30 — capable GPUs still free-run at 60 from GO.
    */
   preferLock30: true,
-  /** Do not arm lock-30 during GPU settle; let evidence decide after GO. */
-  forceLock30AtSettle: false,
+  /**
+   * Arm an even 30 Hz present at race settle. Photographic quality stays at the
+   * start tier (lockRaceQuality); cadence is locked so realism never rides a
+   * 46 fps judder band.
+   */
+  forceLock30AtSettle: true,
   /**
    * Once the race present path is armed, never downgrade post / sky / shadow /
    * DPR mid-stage. Tunnel streaming and shader warms spike present cost for a
@@ -755,6 +759,45 @@ export const TUNNEL = {
 };
 
 /**
+ * Forest bore — darker cabin so player headlights own the story.
+ * Desert keeps TUNNEL above; game/lighting pick this when courseId === "forest".
+ */
+export const TUNNEL_FOREST = {
+  ambientFloor: 0.14,
+  hemiRetain: 0.28,
+  fillRetain: 0.12,
+  caveInt: 5.5,
+  caveDistance: 42,
+  caveDecay: 1.35,
+  wallInt: 16,
+  wallDistance: 52,
+  wallDecay: 1.15,
+  wallColor: 0xc8a878,
+  fog: 0x12110f,
+  fogNear: 8,
+  fogFar: 70,
+  exposureBoost: 0.9,
+  headEmissive: 48,
+  headBeam: 1850,
+  headBeamDistance: 190,
+  headBeamAngle: Math.PI / 7.2,
+  headBeamPenumbra: 0.42,
+  headBeamDecay: 0.88,
+  headBeamTunnelBoost: 2.55,
+};
+
+/**
+ * @param {string} [courseId]
+ * @returns {typeof TUNNEL}
+ */
+export function tunnelLightingFor(courseId) {
+  if (courseId === "forest") {
+    return Object.assign({}, TUNNEL, TUNNEL_FOREST);
+  }
+  return TUNNEL;
+}
+
+/**
  * Per-surface tire and chassis response — the headline mechanic.
  *
  * AM3 research: "brake on tarmac and you stop; brake on mud and you begin a
@@ -978,14 +1021,19 @@ export const HANDLING = {
    * Rear lock — arcade e-brake must dump rear µ hard so the tail snaps out
    * into a power slide (initiation), not a gentle scrub.
    */
-  handbrakeTorque: 7200,
+  handbrakeTorque: 5200,
+  /**
+   * While throttle is held during e-brake, keep this fraction of drive vs rear
+   * lock scrub — arcade power-slide carries speed instead of dying to a stop.
+   */
+  handbrakeDriveKeep: 0.9,
   /** Slip ratio where longitudinal force peaks. Brake modulation aims here. */
   peakKappa: 0.11,
   /**
    * Countersteer authority. Opposite lock during a slide must feel like a
    * switch, not a suggestion — this is what turns the slide into a tool.
    */
-  counterAuthority: 3.35,
+  counterAuthority: 3.52,
   /**
    * How hard throttle pushes the slide wider on loose ground (and pulls it
    * straight on hard ground). Scales with the surface driftEase spread, so
@@ -1022,12 +1070,12 @@ export const HANDLING = {
    * powerMul = throttle widens the slide while e-brake is held (power oversteer).
    */
   handbrakeEnter: 0.05,
-  handbrakeBleedMul: 0.022,
+  handbrakeBleedMul: 0.011,
   /** Initiation shove — player finishes the slide (Phase 1: not instant 90°). */
-  handbrakeYawKick: 3.15,
-  handbrakePowerMul: 2.35,
+  handbrakeYawKick: 3.35,
+  handbrakePowerMul: 2.72,
   /** Power-slide sustain without e-brake (throttle + steer sideways). */
-  driftBleedMul: 0.022,
+  driftBleedMul: 0.012,
   /** Lateral grip scale at full slide angle. High enough that a catch still exists. */
   slideGripMul: 0.4,
   /**
@@ -1039,7 +1087,7 @@ export const HANDLING = {
    * Throttle + steer pitch-in on loose ground (no e-brake). Higher = easier
    * to light the rear with power alone — classic arcade power slide.
    */
-  powerSlidePitch: 2.88,
+  powerSlidePitch: 2.96,
   /**
    * Trail-brake rotation. Brake + steer on loose surfaces transfers weight
    * forward and rotates the nose — AM3 "brake into the corner" technique.
@@ -1129,11 +1177,26 @@ export const HANDLING = {
    * Multiplies tqDrive while sideways + on throttle so the car *surges*
    * as you straighten — classic rally power-slide fun.
    */
-  slideExitBoost: 1.68,
+  slideExitBoost: 1.92,
   /** |driftAngle| (rad) where exit boost is fully armed. */
-  slideExitAngle: 0.12,
+  slideExitAngle: 0.08,
   /** Fade exit boost once speed exceeds this (km/h) so top end stays honest. */
-  slideExitFadeKmh: 175,
+  slideExitFadeKmh: 205,
+  /**
+   * Mid-slide drive keep. Multiplies tqDrive while sideways + on throttle so a
+   * power slide carries speed instead of dying to tire scrub.
+   */
+  slideDriveKeep: 1.28,
+  /**
+   * Aero cut while power-sliding on throttle (1 = full drag, 0 = none).
+   * Sideways attitude presents more frontal area — arcade ignores most of that.
+   */
+  slideAeroCut: 0.38,
+  /**
+   * Convert a slice of lateral slip back into forward speed while throttling
+   * (1/s). Classic arcade "the slide is the fast line."
+   */
+  slideSpeedConvert: 0.72,
   /**
    * Chassis stability — follow the axle-plane deck, filter only ribbon noise.
    * Player and AI share the planted hull; rivals still use cheap road probes.
@@ -1163,37 +1226,44 @@ export const HANDLING = {
   /** Landing-squash follow rate (1/s). Accel/brake do not pitch the mesh. */
   squatSmoothRate: 12,
   /**
-   * Arcade automatic — snappy rally fun, not economy cruising.
-   * Early light-throttle upshifts; WOT holds the pull; decisive brake/coast/
-   * kick-down dumps. Binding feel: docs/SEGA_RALLY_DRIVING_MODEL.md (arcade).
+   * Arcade automatic — sequential, speed-aware, with a clutch pause.
+   * One gear at a time. Next-gear RPM must land in the powerband (no overrev,
+   * no bog). Light brake holds a tall gear. WOT upshifts in the working
+   * band so top speed is a long 4th pull, not a limiter scream.
+   * Binding feel: docs/SEGA_RALLY_DRIVING_MODEL.md (arcade, not economy).
    */
   auto: {
-    /** Fraction of redline for WOT upshift (hold the pull, shift before limiter). */
-    upWot: 0.93,
-    /** Light-throttle upshift (fraction of redline) — early for ease of use. */
-    upCoast: 0.56,
+    /** Fraction of redline for WOT upshift (shift in the meat, not on the limiter). */
+    upWot: 0.82,
+    /** Light-throttle upshift (fraction of redline). */
+    upCoast: 0.58,
     /** Min throttle to allow an upshift (blocks coast-upshift hunting). */
-    upMinThrottle: 0.1,
-    /** Kick-down when throttle is open and RPM is below this. */
-    kickDownRpm: 5200,
+    upMinThrottle: 0.12,
+    /** Refuse an upshift if the next gear would land below this RPM. */
+    upMinNextRpm: 2600,
+    /** Kick-down when throttle is open and road RPM is below this. */
+    kickDownRpm: 3600,
     /** Throttle above this uses kick-down instead of coast/sag. */
-    kickThrottle: 0.38,
+    kickThrottle: 0.62,
     /** Brake-downshift floor at light brake (rises with pedal). */
-    brakeDownMin: 5600,
+    brakeDownMin: 3200,
     /** Brake-downshift floor at full brake / handbrake. */
-    brakeDownMax: 7000,
+    brakeDownMax: 4600,
     /** Coasting downshift RPM (throttle shut, no brake). */
-    coastDownRpm: 4200,
+    coastDownRpm: 2600,
     /** Throttle below this counts as coast for downshifts. */
-    coastThrottle: 0.28,
-    /** Mid-throttle sag downshift — closes the old throttle dead zone. */
-    sagDownRpm: 3900,
-    /** Hard-brake multi-gear dump when RPM is below this. */
-    hardDumpRpm: 5200,
-    /** Min seconds between shifts (brake path uses the short cool). */
-    coolUp: 0.05,
-    coolDown: 0.035,
-    coolBrake: 0.025,
+    coastThrottle: 0.16,
+    /** Mid-throttle sag downshift. */
+    sagDownRpm: 2800,
+    /** Next gear must land under this fraction of redline. */
+    downMaxRpm: 0.88,
+    /** Torque-cut window (seconds). */
+    clutchUp: 0.15,
+    clutchDown: 0.12,
+    /** Min seconds between shifts (includes clutch + hysteresis). */
+    coolUp: 0.2,
+    coolDown: 0.16,
+    coolBrake: 0.13,
   },
 };
 
@@ -1221,7 +1291,7 @@ export const ARCADE_ASSIST = {
    */
   yawAssist: 0.24,
   /** Soften lateral velocity when opposite-lock + slip still recoverable. */
-  recoveryAssist: 0.86,
+  recoveryAssist: 0.92,
   /** |vy| (m/s) below which recoveryAssist may help (above = consequence). */
   recoverableSlide: 13.5,
   /** Extra rear grip rebuild while countersteering at mid slip (0–1 scale). */
@@ -1485,16 +1555,17 @@ const CHASSIS = {
   idleRpm: 950,
   /**
    * Index 0 is NEUTRAL (ratio 0), then four forward gears — the Saturn box.
-   * Shorter 1–2 for punchy launches and drift exits; 4th still meets maxSpeed.
+   * Shorter 1–2 for launch punch; close 3rd; overdrive 4th so Vmax sits
+   * in the working band (~6.2k) instead of the limiter.
    */
-  gears: [0, 3.72, 2.18, 1.42, 0.95],
+  gears: [0, 3.72, 2.18, 1.18, 0.7],
   topGear: 4,
   finalDrive: 4.55,
   drivetrain: "4wd",
   torqueSplitFront: 0.48,
   engineBrake: 0.3,
-  /** Less aero wall so mid/exit pull stays strong after a slide. */
-  aeroDrag: 0.28,
+  /** Aero wall owns Vmax — 4th stays in the powerband instead of the limiter. */
+  aeroDrag: 0.44,
   downforce: 0.14,
   /** Soft ceiling (m/s × surface.speedScale). Celica cruises ~255 on tarmac. */
   maxSpeedKmh: 255,
@@ -1563,8 +1634,8 @@ export const CARS = {
     locked: false,
     idleRpm: 1100,
     redline: 7800,
-    /** Taller box than the 4WDs; shorter 1st for launch. */
-    gears: [0, 3.25, 1.95, 1.35, 0.92],
+    /** Taller box than the 4WDs; overdrive 4th so Vmax is a cruise, not a scream. */
+    gears: [0, 3.25, 1.95, 1.14, 0.66],
     engineName: "Dino 2.4 V6",
     turbo: false,
   },
@@ -1830,14 +1901,13 @@ export const CHAMPIONSHIP = {
  */
 export const AI = {
   /**
-   * Pack spread for a 10-minute friend demo: floor stays beatable, ceiling keeps
-   * a front-runner worth chasing. Wider than Sprint 26 so the field reads as
-   * drivers — not a same-pace train — without chaos weave.
+   * Pack is deliberately a beat slower than a committed player so handbrake
+   * slides and exits feel like passing moves, not a same-pace train.
    */
-  skillFloor: 0.86,
-  skillCeiling: 1.08,
+  skillFloor: 0.72,
+  skillCeiling: 0.94,
   /** Corner-entry braking bias. Higher = more trail-braking, later apex. */
-  trailBrake: 0.55,
+  trailBrake: 0.52,
   /** Seconds between a rival's chances to make a small mistake. */
   mistakeInterval: 9.5,
   /** Peak size of a mistake: a late brake, a wide line, a scruffy exit. */
@@ -1847,13 +1917,12 @@ export const AI = {
   /** Scales mistakeSize into metres of continuous line noise. */
   lineWanderAmp: 0.42,
   /**
-   * Catch-up authority, as a fraction of throttle. Still invisible — only when
-   * a rival is behind the player after a mistake. Slightly firmer so the pack
-   * stays in the fight during a friend championship lap.
+   * Catch-up authority, as a fraction of throttle. Softer so slowed rivals
+   * stay beatable after a player slide pass.
    */
-  rubberBand: 0.115,
+  rubberBand: 0.078,
   /** Metres of gap at which the rubber band reaches full (still tiny) effect. */
-  rubberBandRange: 185,
+  rubberBandRange: 200,
   /** Pro line: tighter apex on tarmac, wider on loose surfaces. */
   proLineTarmac: 1.18,
   proLineLoose: 0.82,
@@ -1887,9 +1956,9 @@ export const AI = {
    * driftMinThrottle: they never lift ALL the way, so a slide still gets driven
    *   out rather than dying in the middle of the road.
    */
-  driftTarget: 0.28,
-  driftPanic: 0.45,
-  driftMinThrottle: 0.22,
+  driftTarget: 0.44,
+  driftPanic: 0.55,
+  driftMinThrottle: 0.42,
   /**
    * Corner-speed margin. Sprint 26: rivals lean closer to the limit so a clean
    * AI lap beats a no-steer throttle hold.

@@ -13,12 +13,13 @@ License: assets/props/POLYHAVEN-LICENSE.txt
 https://polyhaven.com/license
 https://creativecommons.org/publicdomain/zero/1.0/
 
-Do not substitute 8k maps at runtime. Hero-zone quality here is photographic
-tiling at ~2 m, not canvas grain and not stretched 15 m repeats.
+Do not substitute 8k maps at runtime. Hero-zone quality is photographic
+tiling at ~2 m. Runtime boots 1k albedo then streams 2k + normals
+(`js/tracks/pbr-stream.js`) so the load bar does not wait on 2k.
 
 Desert stage PBR textures — Poly Haven CC0 1.0
 ----------------------------------------------
-Downloaded at 1k JPG by tools/fetch-desert-pbr-textures.py.
+Downloaded at 1k + 2k JPG by tools/fetch-desert-pbr-textures.py.
 
   aerial_sand      → Desert land / skirt  https://polyhaven.com/a/aerial_sand
   brown_mud_dry    → Desert dirt ribbon   https://polyhaven.com/a/brown_mud_dry

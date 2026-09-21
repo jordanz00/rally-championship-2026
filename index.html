@@ -19,7 +19,18 @@
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
-    <link rel="stylesheet" href="css/game.css?v=46" />
+    <!-- Critical paint — if css/game.css is slow or 404, never a white tab. -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #050705; color: #f4f0e0; }
+      #crt { min-height: 100%; min-height: 100dvh; background: #050705; }
+      #crt.is-title { background: #164e88; }
+      .screen { display: none; }
+      .screen.active { display: flex; flex-direction: column; }
+      #boot-error { position: fixed; z-index: 99999; left: 12px; right: 12px; bottom: 12px; background: #200; color: #fcc; padding: 12px; font: 12px/1.4 monospace; white-space: pre-wrap; }
+      #boot-error[hidden] { display: none !important; }
+      noscript { display: block; padding: 24px; color: #f4f0e0; }
+    </style>
+    <link rel="stylesheet" href="css/game.css?v=48" />
     <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
@@ -55,6 +66,8 @@
         document.querySelectorAll(".screen").forEach(function (el) {
           el.classList.toggle("active", el.id === id);
         });
+        var crt = document.getElementById("crt");
+        if (crt) crt.classList.toggle("is-title", id === "screen-title");
       }
       function rallyLeaveTitle() {
         var title = document.getElementById("screen-title");
@@ -115,8 +128,36 @@
           report("Engine failed during async startup.", String(r && r.stack ? r.stack : r));
         });
         window.setTimeout(function () {
-          if (!window.game) report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct within 8s.");
+          var curtain = document.getElementById("fx-curtain");
+          if (curtain) curtain.classList.remove("is-on");
+          if (!window.game) {
+            report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct within 8s. Try Chrome or Safari — in-app browsers (Instagram, Facebook, Messenger) often block the 3D engine.");
+            return;
+          }
         }, 8000);
+        window.setTimeout(function () {
+          var curtain = document.getElementById("fx-curtain");
+          if (curtain) curtain.classList.remove("is-on");
+          if (!window.game) return;
+          if (window.game.renderer) return;
+          report("3D graphics did not start on this device.", "Open this page in Chrome or Safari (not an in-app browser). On Android, enable Settings → Chrome → Use hardware acceleration.");
+        }, 12000);
+      })();
+
+      // Phone class before modules load — menus need it even if WebGL is slow.
+      (function () {
+        try {
+          var ua = navigator.userAgent || "";
+          var phone = /iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+          var tablet = /iPad|Android(?!.*Mobile)|Tablet|Silk/i.test(ua);
+          var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 980;
+          if (phone || tablet || coarse) {
+            document.documentElement.classList.add("is-phone");
+            document.addEventListener("DOMContentLoaded", function () {
+              document.body.classList.add("is-mobile");
+            });
+          }
+        } catch (e) { /* ignore */ }
       })();
 
       // Boot reveal: first paint is black, then the title fades up. Game.js
@@ -130,24 +171,25 @@
     </script>
   </head>
   <body>
-    <div id="crt">
+    <noscript>Rally Championship 2026 needs JavaScript. Enable it, then reload. Use Chrome or Safari — not an in-app browser.</noscript>
+    <div id="crt" class="is-title">
       <div id="game-view"></div>
       <div class="scanlines"></div>
       <div id="fx-curtain" class="fx-curtain is-on" aria-hidden="true"></div>
 
       <section id="screen-title" class="screen active">
           <div class="sr-emblem" aria-hidden="true">
-            <svg class="sr-emblem-svg" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg" role="img">
+            <svg class="sr-emblem-svg" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img">
               <defs>
                 <path id="sr-arc-top" d="M 52 208 Q 210 78 368 208" fill="none" />
                 <path id="sr-arc-bot" d="M 52 288 Q 210 418 368 288" fill="none" />
               </defs>
               <circle class="sr-red-disc" cx="210" cy="232" r="172" />
               <text class="sr-arc-label sr-arc-label-top">
-                <textPath href="#sr-arc-top" startOffset="50%" text-anchor="middle">RALLY CHAMPIONSHIP</textPath>
+                <textPath href="#sr-arc-top" xlink:href="#sr-arc-top" startOffset="50%" text-anchor="middle">RALLY CHAMPIONSHIP</textPath>
               </text>
               <text class="sr-arc-label sr-arc-label-bot">
-                <textPath href="#sr-arc-bot" startOffset="50%" text-anchor="middle">INTERNATIONAL RALLY</textPath>
+                <textPath href="#sr-arc-bot" xlink:href="#sr-arc-bot" startOffset="50%" text-anchor="middle">INTERNATIONAL RALLY</textPath>
               </text>
             </svg>
 
@@ -186,7 +228,7 @@
             </details>
           </footer>
       </section>
-      <pre id="boot-error" hidden></pre>
+      <pre id="boot-error" hidden style="position:fixed;z-index:99999;left:12px;right:12px;bottom:12px;background:#200;color:#fcc;padding:12px;font:12px/1.4 monospace;white-space:pre-wrap;"></pre>
 
       <section id="screen-menu" class="screen screen-ui">
         <div class="ui-panel">
@@ -471,6 +513,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=799"></script>
+    <script type="module" src="js/main.js?v=824" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

@@ -1,16 +1,16 @@
 /**
- * Desert photoreal PBR — Poly Haven 1k sand / dirt / gravel / tarmac.
+ * Desert photoreal PBR — Poly Haven 1k boot, 2k stream.
  *
  * WHO THIS IS FOR: Track.buildAsync on the Desert stage.
- * WHAT IT DOES: tiled albedo + normal + roughness + AO for the driving ribbon
+ * WHAT IT DOES: tiled albedo + normal + roughness for the driving ribbon
  *   and land plane. World-XZ projection still lives in pbr.js.
- * HOW IT CONNECTS: track.js awaits prepareDesertPbr() before _buildMesh.
- *   Forest keeps forest-pbr.js. Node QA skips the Image load.
+ * HOW IT CONNECTS: track.js awaits prepareDesertPbr() before _buildMesh
+ *   (1k color only). Normals / 2k swap in on the shared texture Source.
  */
 
 import * as THREE from "../../vendor/three.module.js";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=4";
 
-const ASSET_V = "1";
 const BASE = "assets/env/desert";
 
 const TILE_SAND_M = 8.0;
@@ -35,13 +35,7 @@ let tarmacSet = null;
  * @returns {THREE.Texture|null}
  */
 export function cloneDesertMap(tex, rx, ry) {
-  if (!tex) return null;
-  const copy = tex.clone();
-  copy.wrapS = THREE.RepeatWrapping;
-  copy.wrapT = THREE.RepeatWrapping;
-  copy.repeat.set(rx, ry);
-  copy.needsUpdate = true;
-  return copy;
+  return cloneTracked(tex, rx, ry);
 }
 
 /**
@@ -66,6 +60,7 @@ export function desertRoadRepeat(vScale, tileMeters = TILE_DIRT_M, roadWidthM = 
 }
 
 /**
+ * Boot 1k albedo only. Detail / 2k continue in the background.
  * @returns {Promise<void>}
  */
 export async function prepareDesertPbr() {
@@ -74,10 +69,16 @@ export async function prepareDesertPbr() {
   if (typeof document === "undefined" || typeof Image === "undefined") return;
 
   const loader = new THREE.TextureLoader();
-  sandSet = await loadSet(loader, "sand", TILE_SAND_M);
-  dirtSet = await loadSet(loader, "dirt", TILE_DIRT_M);
-  gravelSet = await loadSet(loader, "gravel", TILE_GRAVEL_M);
-  tarmacSet = await loadSet(loader, "tarmac", TILE_TARMAC_M);
+  const [sand, dirt, gravel, tarmac] = await Promise.all([
+    bootPbrSet(loader, { base: BASE, stem: "sand", tileMeters: TILE_SAND_M, tint: "#e8d4a8" }),
+    bootPbrSet(loader, { base: BASE, stem: "dirt", tileMeters: TILE_DIRT_M, tint: "#c4a878" }),
+    bootPbrSet(loader, { base: BASE, stem: "gravel", tileMeters: TILE_GRAVEL_M, tint: "#c8b090" }),
+    bootPbrSet(loader, { base: BASE, stem: "tarmac", tileMeters: TILE_TARMAC_M, tint: "#8a8680" }),
+  ]);
+  sandSet = sand;
+  dirtSet = dirt;
+  gravelSet = gravel;
+  tarmacSet = tarmac;
 }
 
 /**
@@ -104,54 +105,4 @@ export function desertRoadMaps(surfaceId) {
  */
 export function desertLandMaps() {
   return sandSet;
-}
-
-/**
- * @param {THREE.TextureLoader} loader
- * @param {string} stem
- * @param {number} tileMeters
- */
-async function loadSet(loader, stem, tileMeters) {
-  const map = await loadTex(loader, `${BASE}/${stem}_diff_1k.jpg`, true);
-  if (!map) return null;
-  const normalMap = await loadTex(loader, `${BASE}/${stem}_nor_gl_1k.jpg`, false);
-  const roughnessMap = await loadTex(loader, `${BASE}/${stem}_rough_1k.jpg`, false);
-  const aoMap = await loadTex(loader, `${BASE}/${stem}_ao_1k.jpg`, false);
-  return { map, normalMap, roughnessMap, aoMap, tileMeters };
-}
-
-/**
- * @param {THREE.TextureLoader} loader
- * @param {string} url
- * @param {boolean} srgb
- * @returns {Promise<THREE.Texture|null>}
- */
-function loadTex(loader, url, srgb) {
-  const href = `${url}?v=${ASSET_V}`;
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (tex) => {
-      if (settled) return;
-      settled = true;
-      resolve(tex);
-    };
-    const timer = setTimeout(() => finish(null), 14000);
-    loader.load(
-      href,
-      (tex) => {
-        clearTimeout(timer);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.anisotropy = 4;
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        tex.needsUpdate = true;
-        finish(tex);
-      },
-      undefined,
-      () => {
-        clearTimeout(timer);
-        finish(null);
-      }
-    );
-  });
 }

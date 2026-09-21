@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=233";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=239";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -90,19 +90,21 @@ export function applyStageLights(lights, L) {
  * @param {THREE.Vector3} sunDir normalized sun direction
  * @param {number} tunnelBlend 0..1 tunnel shade
  * @param {object} L LIGHTING[courseId]
+ * @param {object} [tunnelCfg] TUNNEL / tunnelLightingFor(courseId)
  */
-export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L) {
+export function updateRaceLightFollow(lights, anchor, sunDir, tunnelBlend, L, tunnelCfg) {
   const p = anchor;
   const d = sunDir;
   const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
+  const TC = tunnelCfg || TUNNEL;
 
   lights.sun.position.set(p.x + d.x * 42, p.y + d.y * 42, p.z + d.z * 42);
   lights.sun.target.position.set(p.x, p.y, p.z);
   lights.sun.target.updateMatrixWorld();
 
-  const hemiKill = 1 - (TUNNEL.hemiRetain != null ? TUNNEL.hemiRetain : 0.48);
-  const fillKill = 1 - (TUNNEL.fillRetain != null ? TUNNEL.fillRetain : 0.22);
-  const ambFloor = TUNNEL.ambientFloor != null ? TUNNEL.ambientFloor : 0.58;
+  const hemiKill = 1 - (TC.hemiRetain != null ? TC.hemiRetain : 0.48);
+  const fillKill = 1 - (TC.fillRetain != null ? TC.fillRetain : 0.22);
+  const ambFloor = TC.ambientFloor != null ? TC.ambientFloor : 0.58;
   const baseSun = L.sunInt != null ? L.sunInt : 2.4;
   const baseFill = L.fillInt != null ? L.fillInt : 0.34;
   const baseHemi = L.hemi != null ? L.hemi : 0.78;
@@ -198,8 +200,10 @@ export function applyShadowQualityContract(sun, opts = {}) {
   if (!sun || !sun.shadow) return;
   const cinema = opts.cinema === true || (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
   sun.shadow.bias = GFX.shadowBias != null ? GFX.shadowBias : cinema ? -0.00018 : -0.00012;
-  sun.shadow.normalBias =
-    GFX.shadowNormalBias != null ? GFX.shadowNormalBias : cinema ? 0.045 : 0.038;
+  sun.shadow.normalBias = Math.min(
+    GFX.shadowNormalBias != null ? GFX.shadowNormalBias : cinema ? 0.045 : 0.038,
+    0.016
+  );
   sun.shadow.radius = GFX.shadowRadius != null ? GFX.shadowRadius : cinema ? 2.6 : 2.2;
   if (sun.shadow.camera) {
     const near = GFX.shadowNear != null ? GFX.shadowNear : 2.5;

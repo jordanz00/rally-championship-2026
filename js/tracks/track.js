@@ -10,10 +10,10 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=233";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=239";
 import { selectLodBand } from "../gfx/gpu-lod.js?v=1";
-import { roadMicroHeight } from "./road-micro.js?v=12";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=6";
+import { roadMicroHeight } from "./road-micro.js?v=13";
+import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=7";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=6";
@@ -23,7 +23,7 @@ import {
   crownGeometry,
   foliageMaterial,
   treeCardKind,
-} from "./trees.js?v=43";
+} from "./trees.js?v=44";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=53";
+} from "../gfx/pbr.js?v=55";
 
 /** Heightmap subdivisions — cinema segs only on ?perf=high (faster default load). */
 function terrainTileSegs() {
@@ -51,8 +51,8 @@ function terrainTileSegs() {
   return STREAM.terrainTileSegs;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=1";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=22";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=45";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=48";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -61,7 +61,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=53";
+} from "./forest-pbr.js?v=59";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -69,7 +69,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=53";
+} from "./desert-pbr.js?v=59";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -77,10 +77,10 @@ import {
   buildForestMouthCollarGeometry,
   forestMouthBoulderPoses,
   plantForestMouthBoulders,
-} from "./forest-tunnel.js?v=5";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=34";
+} from "./forest-tunnel.js?v=11";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=37";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, updateClothFlags } from "./flag-cloth.js?v=4";
+import { createClothFlag, updateClothFlags } from "./flag-cloth.js?v=5";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -172,22 +172,22 @@ const FOREST_TREE_CLEAR = 8.6;
  * Visual + plant shoulder skirt. A steep 0.38 drop made the verge a wall the
  * chassis punched through; keep a shallow grade over a longer run.
  */
-const SKIRT_SLOPE = 0.18;
-const SKIRT_REACH_MAX = 13.5;
-const SKIRT_MID_U = 0.4;
-const SKIRT_MID_DROP = 0.26;
-const SKIRT_PLANT_BIAS = 0.05;
+const SKIRT_SLOPE = 0.12;
+const SKIRT_REACH_MAX = 15.5;
+const SKIRT_MID_U = 0.38;
+const SKIRT_MID_DROP = 0.22;
+const SKIRT_PLANT_BIAS = 0.04;
 
 /**
  * @param {string} scenery
  * @returns {number}
  */
 function skirtBaseReach(scenery) {
-  if (scenery === "desert") return 6.8;
-  if (scenery === "mountain") return 8.5;
-  if (scenery === "forest") return 7.6;
-  if (scenery === "lakeside") return 6.4;
-  return 6.0;
+  if (scenery === "desert") return 8.2;
+  if (scenery === "mountain") return 9.6;
+  if (scenery === "forest") return 8.8;
+  if (scenery === "lakeside") return 7.6;
+  return 7.2;
 }
 
 /**
@@ -221,10 +221,13 @@ function skirtYAlong(clearance, reach, kerbY, outerY, roadH) {
   const midY = kerbY + (outerY - kerbY) * SKIRT_MID_DROP;
   let y;
   if (clearance < midSpan) {
-    const t = clearance / Math.max(1e-4, midSpan);
+    const t0 = clearance / Math.max(1e-4, midSpan);
+    // Smoothstep — no hard kink at the kerb / mid ring.
+    const t = t0 * t0 * (3 - 2 * t0);
     y = kerbY + (midY - kerbY) * t;
   } else {
-    const t = (clearance - midSpan) / Math.max(1e-4, reach - midSpan);
+    const t0 = (clearance - midSpan) / Math.max(1e-4, reach - midSpan);
+    const t = t0 * t0 * (3 - 2 * t0);
     y = midY + (outerY - midY) * t;
   }
   return y + SKIRT_PLANT_BIAS;
@@ -840,8 +843,12 @@ export class Track {
     }
     if (unloadR < loadR + STREAM.hysteresis) unloadR = loadR + STREAM.hysteresis;
     if (opts.settle) {
-      const settleR = STREAM.countdownLoadRadius != null ? STREAM.countdownLoadRadius : 720;
-      loadR = Math.max(loadR, settleR);
+      // Cap to race fog + a little pad. An 820 m disc loads off-axis tiles
+      // that dump the moment GO drops settle → hitch + LOD pop at lights-out.
+      const fogLoad =
+        fogFar > 0 ? Math.max(fogFar * STREAM.loadFogFactor, STREAM.minLoadRadius) : loadR;
+      const settleCap = STREAM.countdownLoadRadius != null ? STREAM.countdownLoadRadius : 720;
+      loadR = Math.max(loadR, Math.min(settleCap, fogLoad + 90));
       unloadR = Math.max(unloadR, loadR + STREAM.hysteresis);
     }
 
@@ -2750,7 +2757,10 @@ export class Track {
         return;
       }
       this._biomeTint(skirtCol, scenery, y, roadY, x, z, { minOver: Math.max(0, (1 - pack) * sl) });
-      if (pack > 0) skirtCol.multiplyScalar(1 - pack * 0.28);
+      // Soft pack: kerb-side verts lean toward the deck so the apron does not
+      // read as a second coloured strip against the ribbon.
+      if (pack > 0.55) skirtCol.multiplyScalar(1 - (pack - 0.55) * 0.12);
+      else if (pack > 0) skirtCol.multiplyScalar(1 - pack * 0.08);
       b.pos.push(x, y, z);
       b.col.push(skirtCol.r, skirtCol.g, skirtCol.b);
       if (b.uv) b.uv.push(uv[0], uv[1]);
@@ -2942,10 +2952,22 @@ export class Track {
       const v1 = q.dist * vScale;
       const tintP = p.tunnel ? 0x7a6e62 : organicRoadTint(blendP.from, blendP.to, blendP.mix, p.x, p.z, scenery);
       const tintQ = q.tunnel ? 0x7a6e62 : organicRoadTint(blendQ.from, blendQ.to, blendQ.mix, q.x, q.z, scenery);
-      const tintPL = p.tunnel ? 0x7a6e62 : organicRoadTint(blendP.from, blendP.to, blendP.mix, e.lx, e.lz, scenery);
-      const tintPR = p.tunnel ? 0x7a6e62 : organicRoadTint(blendP.from, blendP.to, blendP.mix, e.rx, e.rz, scenery);
-      const tintQL = q.tunnel ? 0x7a6e62 : organicRoadTint(blendQ.from, blendQ.to, blendQ.mix, f.lx, f.lz, scenery);
-      const tintQR = q.tunnel ? 0x7a6e62 : organicRoadTint(blendQ.from, blendQ.to, blendQ.mix, f.rx, f.rz, scenery);
+      let tintPL = p.tunnel ? 0x7a6e62 : organicRoadTint(blendP.from, blendP.to, blendP.mix, e.lx, e.lz, scenery);
+      let tintPR = p.tunnel ? 0x7a6e62 : organicRoadTint(blendP.from, blendP.to, blendP.mix, e.rx, e.rz, scenery);
+      let tintQL = q.tunnel ? 0x7a6e62 : organicRoadTint(blendQ.from, blendQ.to, blendQ.mix, f.lx, f.lz, scenery);
+      let tintQR = q.tunnel ? 0x7a6e62 : organicRoadTint(blendQ.from, blendQ.to, blendQ.mix, f.rx, f.rz, scenery);
+      // Pull painted edges toward the land apron so ribbon → skirt is continuous.
+      if (!p.tunnel && !q.tunnel) {
+        const apron = skirtCol;
+        this._biomeTint(apron, scenery, e.yL, p.y, e.lx, e.lz, { minOver: sl * 0.35 });
+        tintPL = mixHex(tintPL, apron.getHex(), 0.4);
+        this._biomeTint(apron, scenery, e.yR, p.y, e.rx, e.rz, { minOver: sl * 0.35 });
+        tintPR = mixHex(tintPR, apron.getHex(), 0.4);
+        this._biomeTint(apron, scenery, f.yL, q.y, f.lx, f.lz, { minOver: sl * 0.35 });
+        tintQL = mixHex(tintQL, apron.getHex(), 0.4);
+        this._biomeTint(apron, scenery, f.yR, q.y, f.rx, f.rz, { minOver: sl * 0.35 });
+        tintQR = mixHex(tintQR, apron.getHex(), 0.4);
+      }
       vert(rb, e.lx, e.yL, e.lz, tintPL, 0, v0);
       vert(rb, e.rx, e.yR, e.rz, tintPR, 1, v0);
       vert(rb, f.lx, f.yL, f.lz, tintQL, 0, v1);
@@ -3566,7 +3588,7 @@ export class Track {
             const s = 0.9 + rng() * 2.1;
             // Keep every boulder off the racing line: radius plus a clear verge.
             if (off - s * 0.7 > half + ROAD_VERGE + 1.2 && this._driveClear(px, pz, Math.max(2.6, s * 0.7))) {
-              rocks.push({ c: chunk, x: px, y: gy + s * 0.18, z: pz, s, rx: rng(), ry: rng() * 6, rz: rng() });
+              rocks.push({ c: chunk, x: px, y: gy - 0.08, z: pz, s, rx: rng(), ry: rng() * 6, rz: rng(), groundY: gy });
               this._bumpNearRoad(px, pz, Math.max(0.7, s * 0.55));
             } else {
               this._plantForestTree(cardBags, px, gy, pz, rng, near, MAQUIS_KINDS, chunk, "mountain");
@@ -3586,7 +3608,7 @@ export class Track {
             forestBush.push({
               c: chunk,
               x: bx,
-              y: shy + sh * 0.35,
+              y: shy - 0.06,
               z: bz,
               sx: 1.5 + rng() * 1.4,
               sy: sh,
@@ -3607,7 +3629,7 @@ export class Track {
             bushes.push({
               c: chunk,
               x: px,
-              y: gy + 0.45,
+              y: gy - 0.06,
               z: pz,
               sx: 0.9 + rng(),
               sy: 0.7 + rng(),
@@ -4912,11 +4934,31 @@ export class Track {
   }
 
   /**
+   * World Y so grounded GLB toes sit in land. Authored hover (gy + 0.45 etc)
+   * was the floating-prop class. Flat decals and overhead boards stay put.
    * @param {THREE.BufferGeometry} geo
-   * @param {THREE.Material} mat
-   * @param {Array<{x:number,y:number,z:number,s?:number,sx?:number,sy?:number,sz?:number,rx?:number,ry?:number,rz?:number,r?:number,g?:number,b?:number}>} poses
-   * @param {{castShadow?:boolean, receiveShadow?:boolean}} [opts]
+   * @param {{x:number,y?:number,z:number,s?:number,sy?:number,groundY?:number}} p
+   * @returns {number}
    */
+  _instancePlantY(geo, p) {
+    const gy = Number.isFinite(p.groundY)
+      ? p.groundY
+      : this._footSceneryY(p.x, p.z, this.scenery);
+    if (!Number.isFinite(gy)) return p.y;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const box = geo.boundingBox;
+    if (!box) return p.y;
+    const spanY = box.max.y - box.min.y;
+    if (spanY < 0.08) return Number.isFinite(p.y) ? p.y : gy + 0.03;
+    const grounded = box.min.y > -0.08 && box.min.y < 0.22;
+    if (grounded) {
+      const authored = Number.isFinite(p.y) ? p.y : gy;
+      if (authored > gy + 0.4) return gy - 0.06;
+      return authored;
+    }
+    return p.y;
+  }
+
   _addInstances(geo, mat, poses, opts) {
     if (!poses.length) return;
     const kept = this._stripLanePoses(poses);
@@ -4955,7 +4997,7 @@ export class Track {
     const tint = new THREE.Color(1, 1, 1);
     for (let i = 0; i < poses.length; i++) {
       const p = poses[i];
-      dummy.position.set(p.x, p.y, p.z);
+      dummy.position.set(p.x, this._instancePlantY(geo, p), p.z);
       dummy.rotation.set(p.rx || 0, p.ry || 0, p.rz || 0);
       const s = p.s || 1;
       const sc = Math.abs(s);
@@ -8551,7 +8593,7 @@ export class Track {
     const WALL_THICK = 3.6;
     const clearHalf = portalSpec.half + LINING_INSET;
     const openH = portalSpec.openH;
-    const tubeSpec = { clearHalf, openH, thick: 2.45, tileMeters: 2 };
+    const tubeSpec = { clearHalf, openH, thick: 3.85, tileMeters: 2 };
     const boreMat = createForestTunnelMaterial("bore");
     const faceMat = createForestTunnelMaterial("face");
     const tubeGeo = buildForestTunnelTubeGeometry(pts, start, end, tubeSpec);
@@ -8566,7 +8608,7 @@ export class Track {
     this._addForestTunnelMouth(pts[start], -1, portalSpec, faceMat);
     this._addForestTunnelMouth(pts[end], 1, portalSpec, faceMat);
 
-    const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe8b0 });
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xc8a060 });
     const dummy = new THREE.Object3D();
     const lamps = [];
     for (let i = start; i <= end; i += 1) {
@@ -8603,12 +8645,13 @@ export class Track {
           );
         }
       }
-      if (i % 2 === 0) {
-        const side = Math.floor(i / 2) % 2 === 0 ? 1 : -1;
+      // Sparse sconces — Forest bore stays dark so headlights read.
+      if (i % 5 === 0) {
+        const side = Math.floor(i / 5) % 2 === 0 ? 1 : -1;
         const half = p.width * 0.5;
-        const lx = p.x + p.nx * side * (half - 0.4);
-        const ly = p.y + 3.55;
-        const lz = p.z + p.nz * side * (half - 0.4);
+        const lx = p.x + p.nx * side * (half - 0.35);
+        const ly = p.y + 3.35;
+        const lz = p.z + p.nz * side * (half - 0.35);
         lamps.push({ x: lx, y: ly, z: lz, ry: p.heading });
         this._tunnelLamps.push({ x: lx, y: ly, z: lz });
       }
@@ -8642,9 +8685,10 @@ export class Track {
   _addForestTunnelMouth(p, outward, spec, faceMat) {
     const g = new THREE.Group();
     const clearHalf = spec.half + 0.55;
+    // Deep double collar — approach camera cannot see woods through the rock face.
     const collarGeo = buildForestMouthCollarGeometry(
       { clearHalf, openH: spec.openH },
-      3.2
+      6.4
     );
     const collar = new THREE.Mesh(collarGeo, faceMat);
     collar.position.set(p.x, p.y - 0.22, p.z);
@@ -8655,6 +8699,25 @@ export class Track {
     collar.userData.portalMouthRing = true;
     collar.userData.cameraFade = false;
     g.add(collar);
+
+    const outerGeo = buildForestMouthCollarGeometry(
+      { clearHalf: clearHalf + 1.1, openH: spec.openH + 0.85 },
+      4.2
+    );
+    const outer = new THREE.Mesh(outerGeo, faceMat);
+    const fx = Math.sin(p.heading);
+    const fz = Math.cos(p.heading);
+    outer.position.set(
+      p.x + fx * outward * -1.8,
+      p.y - 0.35,
+      p.z + fz * outward * -1.8
+    );
+    outer.rotation.y = outward > 0 ? p.heading + Math.PI : p.heading;
+    outer.castShadow = true;
+    outer.receiveShadow = true;
+    outer.userData.tunnelPortal = true;
+    outer.userData.cameraFade = false;
+    g.add(outer);
 
     const bags = forestMouthBoulderPoses({
       p,
@@ -9245,7 +9308,6 @@ export class Track {
       this._crowd.dispose();
       this._crowd = null;
     }
-    if (def.scenery === "mountain") return;
     if (!propReady()) return;
     const kinds = CROWD_CHARACTER_KINDS.filter((k) => !!propCharacterParts(k));
     if (!kinds.length) {
@@ -9263,11 +9325,13 @@ export class Track {
 
     const desert = def.scenery === "desert";
     const forest = def.scenery === "forest";
+    const mountain = def.scenery === "mountain";
     const step = desert ? 10 : forest ? 34 : 12;
     const chance = desert ? 0.55 : forest ? 0.2 : 0.42;
     const standOff = ROAD_VERGE + 2.4;
-    // Room for finish hero grandstands (~170 seated) + start (~70) + gallery.
-    const maxPoses = desert ? 420 : forest ? 120 : 280;
+    // Start (~110) + finish dual modules (~288) + mid-stage gallery.
+    // Mountain: stands only (no verge gallery) to keep alpine cost down.
+    const maxPoses = mountain ? 420 : desert ? 520 : forest ? 480 : 460;
     const poses = [];
     let kindCursor = 0;
     const tintPalette = [
@@ -9297,6 +9361,13 @@ export class Track {
     };
 
     this._addGrandstandCrowds(rng, def, order, tintPalette, pushSpectator);
+
+    // Alpine stages: filled start/finish stands only — no mid-stage gallery strip.
+    if (mountain) {
+      if (!poses.length) return;
+      this._crowd = new CrowdField(this.group, poses, (mesh, chunk) => this._registerChunk(mesh, chunk));
+      return;
+    }
 
     for (let i = 8; i < this.points.length && poses.length < maxPoses; i++) {
       const p = this.points[i];
@@ -9350,8 +9421,8 @@ export class Track {
   }
 
   /**
-   * Bleachers at START and FINISH — wood/steel decks filled with a mixed crowd.
-   * Finish is the hero moment (denser seats, longer span, dual Kenney modules).
+   * Proper start/finish grandstands — Kenney covered modules with audiences
+   * seated *inside* each module footprint (rows climb back from the track).
    * @param {() => number} rng
    * @param {object} def
    * @param {string[]} order shuffled character kinds
@@ -9363,6 +9434,7 @@ export class Track {
     if (!pts || pts.length < 12) return;
     const useGlb =
       (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    // Prefer covered stands — reads as a proper rally grandstand.
     const standKind =
       useGlb && propGeometry("grandstand_covered")
         ? "grandstand_covered"
@@ -9378,29 +9450,32 @@ export class Track {
     const rails = [];
     const stands = [];
 
-    // Start stays readable; finish packs both banks for the checkered-row hero.
+    // Packed Kenney covered stand ≈ 5.4 m footprint after SCALE.grandstandCovered.
+    const STAND_FOOT_M = 5.4;
+
+    // Both ends are filled banks; finish is the denser dual-module hero.
     const tips = [
       {
         label: "start",
         i: Math.min(4, pts.length - 1),
-        alongSpan: 18,
-        rows: 4,
-        seats: 9,
+        alongSpan: 22,
+        rows: 5,
+        seats: 11,
         modules: 1,
-        scaleMul: 1,
-        rowPitch: 1.15,
-        seatRise: 0.55,
+        scaleMul: 1.05,
+        rowPitch: 0.7,
+        seatRise: 0.46,
       },
       {
         label: "finish",
         i: Math.max(0, pts.length - 5),
-        alongSpan: 32,
+        alongSpan: 36,
         rows: 6,
-        seats: 14,
+        seats: 12,
         modules: 2,
-        scaleMul: 1.28,
-        rowPitch: 1.05,
-        seatRise: 0.52,
+        scaleMul: 1.08,
+        rowPitch: 0.68,
+        seatRise: 0.48,
       },
     ];
 
@@ -9412,35 +9487,41 @@ export class Track {
       const chunk = this._chunkOfDist(p.dist);
       const isFinish = tip.label === "finish";
       const modules = Math.max(1, tip.modules | 0);
-      const rowPitch = tip.rowPitch != null ? tip.rowPitch : 1.15;
-      const seatRise = tip.seatRise != null ? tip.seatRise : 0.55;
+      const rowPitch = tip.rowPitch != null ? tip.rowPitch : 0.7;
+      const seatRise = tip.seatRise != null ? tip.seatRise : 0.48;
       const scaleMul = tip.scaleMul != null ? tip.scaleMul : 1;
       for (const side of [-1, 1]) {
-        const baseLat = p.width * 0.5 + ROAD_VERGE + 3.8;
+        const baseLat = p.width * 0.5 + ROAD_VERGE + 4.2;
         if (standKind) {
-          // Prefer both banks: nudge outward if the near verge fails ribbon clear.
           let sideLat = null;
-          let gy = 0;
-          for (let attempt = 0; attempt < 4; attempt++) {
-            const tryLat = baseLat + 2.2 + attempt * 1.35;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const tryLat = baseLat + 2.4 + attempt * 1.2;
             const tx = p.x + p.nx * side * tryLat;
             const tz = p.z + p.nz * side * tryLat;
-            if (!this._ribbonClear(tx, tz, isFinish ? 1.6 : 2.2)) continue;
+            if (!this._ribbonClear(tx, tz, isFinish ? 1.5 : 1.9)) continue;
             sideLat = tryLat;
-            gy = this._groundHeight(tx, tz, def.scenery);
             break;
           }
-          if (sideLat == null) continue;
+          if (sideLat == null) {
+            // Force a verge plant so every stage still gets a bank.
+            sideLat = baseLat + 3.6;
+          }
 
           const moduleSpan = tip.alongSpan / modules;
-          const moduleScale = (moduleSpan / 10) * scaleMul;
+          // Scale so each module fills its along-track span.
+          const moduleScale = Math.max(1.0, (moduleSpan / STAND_FOOT_M) * scaleMul);
+          const halfFoot = STAND_FOOT_M * moduleScale * 0.5;
+          // Rows stay inside the stand: front toward track, back under the roof.
+          const seatDepth = Math.min(halfFoot * 1.35, tip.rows * rowPitch + 0.35);
+          const seatLen = Math.min(halfFoot * 1.7, moduleSpan * 0.88);
+
           for (let m = 0; m < modules; m++) {
             const alongOff =
-              modules === 1 ? 0 : (m / (modules - 1) - 0.5) * (tip.alongSpan - moduleSpan * 0.35);
+              modules === 1 ? 0 : (m / (modules - 1) - 0.5) * (tip.alongSpan - moduleSpan * 0.28);
             const cx = p.x + p.nx * side * sideLat + fx * alongOff;
             const cz = p.z + p.nz * side * sideLat + fz * alongOff;
-            if (!this._ribbonClear(cx, cz, isFinish ? 1.4 : 2.0)) continue;
             const mGy = this._groundHeight(cx, cz, def.scenery);
+            // ry=heading maps local +X → road normal; flip opposite bank so both open to the ribbon.
             stands.push({
               c: chunk,
               x: cx,
@@ -9449,55 +9530,56 @@ export class Track {
               s: moduleScale,
               ry: p.heading + (side > 0 ? 0 : Math.PI),
             });
-          }
 
-          for (let row = 0; row < tip.rows; row++) {
-            const seatLat = baseLat + row * rowPitch + 0.4 + (sideLat - baseLat - 2.2) * 0.35;
-            const seatY = 0.55 + row * seatRise;
-            for (let s = 0; s < tip.seats; s++) {
-              const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
-              const along = (t - 0.5) * (tip.alongSpan - 1.2);
-              const jitter = (rng() - 0.5) * (isFinish ? 0.16 : 0.22);
-              const sx = p.x + p.nx * side * seatLat + fx * along + p.nx * side * jitter;
-              const sz = p.z + p.nz * side * seatLat + fz * along + p.nz * side * jitter;
-              if (!this._ribbonClear(sx, sz, isFinish ? 0.55 : 0.7)) continue;
-              const foot = gy + seatY + 0.08;
-              const kind = order[(s * 3 + row * 5 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
-              pushSpectator({
-                x: sx,
-                y: foot,
-                z: sz,
-                s: 0.88 + rng() * 0.2,
-                ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.25,
-                c: chunk,
-                kind,
-                tint: tintPalette[(s + row * tip.seats + (side > 0 ? 11 : 0)) % tintPalette.length],
-                animStyle: (s + row * 2 + tip.i) % 5,
-                animRate: 0.75 + rng() * 0.9,
-                shadow: row === 0 && s % 3 === 0,
-                phase: (s * 1.9 + row * 2.7 + tip.i * 0.3) % (Math.PI * 2),
-              });
+            for (let row = 0; row < tip.rows; row++) {
+              const depthT = tip.rows <= 1 ? 0.4 : row / (tip.rows - 1);
+              // Negative offset = toward track (into the open face of the stand).
+              const latFromCenter = (depthT - 0.38) * seatDepth;
+              const seatY = 0.4 + row * seatRise;
+              for (let s = 0; s < tip.seats; s++) {
+                const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
+                const along = (t - 0.5) * seatLen;
+                const jitter = (rng() - 0.5) * 0.08;
+                const sx = cx + p.nx * side * (latFromCenter + jitter) + fx * along;
+                const sz = cz + p.nz * side * (latFromCenter + jitter) + fz * along;
+                const kind =
+                  order[(s * 3 + row * 5 + m * 7 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
+                pushSpectator({
+                  x: sx,
+                  y: mGy + seatY,
+                  z: sz,
+                  s: 0.84 + rng() * 0.14,
+                  ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.1,
+                  c: chunk,
+                  kind,
+                  tint: tintPalette[(s + row * tip.seats + m * 9 + (side > 0 ? 11 : 0)) % tintPalette.length],
+                  animStyle: (s + row * 2 + m + tip.i) % 5,
+                  animRate: 0.72 + rng() * 0.95,
+                  shadow: row === 0 && s % 4 === 0,
+                  phase: (s * 1.9 + row * 2.7 + m * 1.3 + tip.i * 0.3) % (Math.PI * 2),
+                });
+              }
             }
           }
           continue;
         }
 
-        // Support posts + stepped decks (primitive fallback).
+        // Support posts + stepped decks (primitive fallback when GLB missing).
         for (let row = 0; row < tip.rows; row++) {
-          const lat = baseLat + row * (isFinish ? 1.2 : 1.35) + 0.4;
-          const seatY = 0.55 + row * (isFinish ? 0.55 : 0.62);
+          const lat = baseLat + row * (isFinish ? 1.05 : 1.15) + 0.4;
+          const seatY = 0.5 + row * (isFinish ? 0.5 : 0.55);
           const depth = tip.alongSpan;
           const cx = p.x + p.nx * side * lat;
           const cz = p.z + p.nz * side * lat;
-          const gy = this._groundHeight(cx, cz, def.scenery);
-          if (!this._ribbonClear(cx, cz, isFinish ? 1.6 : 2.2)) continue;
+          const gyRow = this._groundHeight(cx, cz, def.scenery);
+          if (!this._ribbonClear(cx, cz, isFinish ? 1.5 : 1.9) && row === 0) continue;
 
           decks.push({
             c: chunk,
             x: cx,
-            y: this._plantBoxY(gy + seatY, 0.14, 0.02),
+            y: this._plantBoxY(gyRow + seatY, 0.14, 0.02),
             z: cz,
-            sx: isFinish ? 1.25 : 1.15,
+            sx: isFinish ? 1.2 : 1.1,
             sy: 0.14,
             sz: depth,
             ry: p.heading,
@@ -9505,7 +9587,7 @@ export class Track {
           frames.push({
             c: chunk,
             x: p.x + p.nx * side * (lat + 0.55),
-            y: this._plantBoxY(gy, seatY + 0.7, 0.2),
+            y: this._plantBoxY(gyRow, seatY + 0.7, 0.2),
             z: cz,
             sx: 0.22,
             sy: seatY + 0.7,
@@ -9516,7 +9598,7 @@ export class Track {
             rails.push({
               c: chunk,
               x: p.x + p.nx * side * (lat - 0.35),
-              y: gy + seatY + 0.55,
+              y: gyRow + seatY + 0.55,
               z: cz,
               sx: 0.1,
               sy: 0.1,
@@ -9528,18 +9610,16 @@ export class Track {
           for (let s = 0; s < tip.seats; s++) {
             const t = tip.seats <= 1 ? 0.5 : s / (tip.seats - 1);
             const along = (t - 0.5) * (tip.alongSpan - 1.2);
-            const jitter = (rng() - 0.5) * (isFinish ? 0.16 : 0.22);
+            const jitter = (rng() - 0.5) * 0.14;
             const sx = cx + fx * along + p.nx * side * jitter;
             const sz = cz + fz * along + p.nz * side * jitter;
-            if (!this._ribbonClear(sx, sz, isFinish ? 0.55 : 0.7)) continue;
-            const foot = gy + seatY + 0.08;
             const kind = order[(s * 3 + row * 5 + tip.label.length + (side > 0 ? 7 : 0)) % order.length];
             pushSpectator({
               x: sx,
-              y: foot,
+              y: gyRow + seatY + 0.08,
               z: sz,
-              s: 0.88 + rng() * 0.2,
-              ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.25,
+              s: 0.88 + rng() * 0.16,
+              ry: p.heading + Math.PI * 0.5 * side + (rng() - 0.5) * 0.14,
               c: chunk,
               kind,
               tint: tintPalette[(s + row * tip.seats + (side > 0 ? 11 : 0)) % tintPalette.length],
@@ -9720,7 +9800,7 @@ export class Track {
 
   /**
    * Wind-driven cloth flags at a stage gate — red pair at START,
-   * ten checkered poles in a finish-corridor row at FINISH.
+   * five checkered poles per verge (ten total) at FINISH on every stage.
    * Poles sit on land beside the gantry, off the racing line. No cloth colliders.
    * @param {object} p gate sample
    * @param {string} label
@@ -9771,9 +9851,10 @@ export class Track {
   }
 
   /**
-   * Ten checkered cloth flags in one ceremonial row at the finish —
-   * five poles per verge, spaced along-track just past the gantry.
-   * Each pole gets a unique cloth seed so wind phases stay independent.
+   * Exactly ten checkered cloth flags at the finish — five poles per verge —
+   * for every stage (Desert / Forest / Mountain / Lakeside / physlab).
+   * Spaced along-track just past the gantry. Unique seeds → independent wind.
+   * Always plants all ten: clearance preferred, forced verge fallback if needed.
    * @param {object} p finish gate sample
    * @param {string} scenery
    */
@@ -9781,10 +9862,31 @@ export class Track {
     const half = p.width * 0.5;
     const tx = Math.sin(p.heading);
     const tz = Math.cos(p.heading);
-    const extras = [2.75, 3.55, 4.7, ROAD_VERGE + 1.25, ROAD_VERGE + 2.1];
-    // Along-track slots: a single row past the gantry (not a synced pair).
+    const extras = [2.75, 3.55, 4.7, ROAD_VERGE + 1.25, ROAD_VERGE + 2.1, ROAD_VERGE + 3.2];
+    // Five along-track slots per side past the gantry.
     const alongSlots = [-1.15, 0.55, 2.25, 3.95, 5.65];
     let planted = 0;
+
+    const plantAt = (fx, fz, side, seed, overHint) => {
+      const gy = this._groundHeight(fx, fz, scenery);
+      const flag = createClothFlag({
+        x: fx,
+        y: gy,
+        z: fz,
+        heading: p.heading,
+        side,
+        kind: "checkers",
+        scenery,
+        nx: p.nx,
+        nz: p.nz,
+        seed,
+      });
+      this.group.add(flag.group);
+      this._clothFlags.push(flag);
+      this._bump(fx, fz, 0.28, overHint != null ? overHint : 1.5);
+      planted++;
+    };
+
     for (const side of [-1, 1]) {
       for (let s = 0; s < alongSlots.length; s++) {
         const along = alongSlots[s];
@@ -9796,53 +9898,17 @@ export class Track {
           if (this._inTunnelMouthCorridor && this._inTunnelMouthCorridor(fx, fz)) continue;
           const road = this._nearestRoad(fx, fz);
           const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-          if (over < 1.7) continue;
-          const gy = this._groundHeight(fx, fz, scenery);
-          const flag = createClothFlag({
-            x: fx,
-            y: gy,
-            z: fz,
-            heading: p.heading,
-            side,
-            kind: "checkers",
-            scenery,
-            nx: p.nx,
-            nz: p.nz,
-            seed: 100 + planted,
-          });
-          this.group.add(flag.group);
-          this._clothFlags.push(flag);
-          this._bump(fx, fz, 0.28, over);
-          planted++;
+          if (over < 1.55) continue;
+          plantAt(fx, fz, side, 100 + planted, over);
           placed = true;
           break;
         }
         if (!placed) {
-          // Last-resort: push farther off the ribbon so the row still hits 10.
-          const lat = half + ROAD_VERGE + 2.8 + s * 0.15;
+          // Forced verge — every stage must still show 5+5 checkers.
+          const lat = half + ROAD_VERGE + 3.4 + s * 0.2;
           const fx = p.x + p.nx * side * lat + tx * along;
           const fz = p.z + p.nz * side * lat + tz * along;
-          if (this._inTunnelMouthCorridor && this._inTunnelMouthCorridor(fx, fz)) continue;
-          const road = this._nearestRoad(fx, fz);
-          const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-          if (over < 1.2) continue;
-          const gy = this._groundHeight(fx, fz, scenery);
-          const flag = createClothFlag({
-            x: fx,
-            y: gy,
-            z: fz,
-            heading: p.heading,
-            side,
-            kind: "checkers",
-            scenery,
-            nx: p.nx,
-            nz: p.nz,
-            seed: 100 + planted,
-          });
-          this.group.add(flag.group);
-          this._clothFlags.push(flag);
-          this._bump(fx, fz, 0.28, Math.max(over, 1.2));
-          planted++;
+          plantAt(fx, fz, side, 100 + planted, 1.5);
         }
       }
     }
@@ -10599,32 +10665,38 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
   const n2 = texHash((x * 0.055) | 0, (z * 0.055) | 0, 17);
   const n3 = texHash((x * 0.9) | 0, (z * 0.9) | 0, 83);
   const n4 = texHash((x * 0.012) | 0, (z * 0.012) | 0, 29);
+  const n5 = texHash((x * 0.38) | 0, (z * 0.38) | 0, 47);
   // Photo stages still need world-space soil blotches — maps alone tile too evenly.
   if (scenery === "forest" && forestPbrReady()) {
-    const k = 0.78 + n * 0.28 + (n2 - 0.5) * 0.14 + (n4 - 0.5) * 0.1;
+    const k = 0.7 + n * 0.34 + (n2 - 0.5) * 0.18 + (n4 - 0.5) * 0.14 + (n5 - 0.5) * 0.1;
     _organicTint.multiplyScalar(k);
-    if (n3 > 0.8) _organicTint.multiplyScalar(0.82);
-    if (n2 > 0.78 && n < 0.36) {
-      _organicTint.r *= 0.88;
-      _organicTint.g *= 0.92;
-      _organicTint.b *= 0.84;
+    if (n3 > 0.76) _organicTint.multiplyScalar(0.78);
+    if (n2 > 0.74 && n < 0.4) {
+      _organicTint.r *= 0.86;
+      _organicTint.g *= 0.9;
+      _organicTint.b *= 0.8;
     }
-    if (n4 < 0.22) {
-      _organicTint.r *= 1.06;
-      _organicTint.g *= 1.04;
-      _organicTint.b *= 0.96;
+    if (n4 < 0.2) {
+      _organicTint.r *= 1.08;
+      _organicTint.g *= 1.05;
+      _organicTint.b *= 0.94;
     }
   } else {
-    const k = 0.72 + n * 0.4 + (n2 - 0.5) * 0.2 + (n4 - 0.5) * 0.12;
+    const k = 0.64 + n * 0.48 + (n2 - 0.5) * 0.26 + (n4 - 0.5) * 0.16 + (n5 - 0.5) * 0.12;
     _organicTint.r *= k;
-    _organicTint.g *= k * (0.95 + n2 * 0.08);
-    _organicTint.b *= k * (0.9 + n * 0.1);
-    if (n3 > 0.84) _organicTint.multiplyScalar(0.7);
-    if (n2 < 0.16) _organicTint.multiplyScalar(1.12);
-    if (n4 > 0.82) {
-      _organicTint.r *= 0.9;
-      _organicTint.g *= 0.94;
-      _organicTint.b *= 0.86;
+    _organicTint.g *= k * (0.92 + n2 * 0.1 + (n5 - 0.5) * 0.04);
+    _organicTint.b *= k * (0.86 + n * 0.12 + (n4 - 0.5) * 0.05);
+    if (n3 > 0.8) _organicTint.multiplyScalar(0.64);
+    if (n2 < 0.14) _organicTint.multiplyScalar(1.16);
+    if (n4 > 0.8) {
+      _organicTint.r *= 0.88;
+      _organicTint.g *= 0.92;
+      _organicTint.b *= 0.82;
+    }
+    if (n5 > 0.88) {
+      _organicTint.r *= 1.1;
+      _organicTint.g *= 1.06;
+      _organicTint.b *= 0.95;
     }
   }
   return _organicTint.getHex();
@@ -10636,8 +10708,8 @@ function shoulderTintHex(terrainHex, from, to, mix, scenery) {
     surfaceShoulderHex(to, scenery),
     mix
   );
-  // Keep the apron on the land colour — a heavy edge mix reads as a foreign strip.
-  return mixHex(terrainHex, edgeBlend, 0.12);
+  // Land owns the apron — keep edge mix light so road→verge is continuous soil.
+  return mixHex(terrainHex, edgeBlend, 0.08);
 }
 
 /**
@@ -12087,7 +12159,7 @@ function landAlbedoMap(scenery, span) {
   const scale = VISUAL.textureScale || 1;
   const tier = VISUAL.tier || 1;
   const base = paintedTexture(
-    `land-albedo-v5-t${tier}-${kind}`,
+    `land-albedo-v6-t${tier}-${kind}`,
     (g, w, h) => {
       const img = g.createImageData(w, h);
       paintLandAlbedo(kind, w, h, img.data);
@@ -12641,7 +12713,8 @@ function paintSurface(id, w, h, d) {
   }
 
   paintEdgeErosion(id, w, h, d);
-  if (id === "dirt" || id === "mud" || id === "gravel" || id === "sand") {
+  // Soft roads + light tarmac mottling — asphalt stays readable but not wallpaper.
+  if (id === "dirt" || id === "mud" || id === "gravel" || id === "sand" || id === "tarmac" || id === "grass") {
     paintOrganicBreakup(id, w, h, d);
   }
 }
@@ -12655,6 +12728,8 @@ function paintSurface(id, w, h, d) {
  * @param {Uint8ClampedArray} d
  */
 function paintOrganicBreakup(id, w, h, d) {
+  const soft = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
+  const hard = id === "tarmac" || id === "cobble";
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const u = x / Math.max(1, w - 1);
@@ -12663,6 +12738,7 @@ function paintOrganicBreakup(id, w, h, d) {
       const mid = texFbm(x * 2, y * 2, 44);
       const fine = texFbm(x * 5, y * 5, 61);
       const macro = texFbm(x * 0.18, y * 0.18, 19);
+      const blotch = texFbm(x * 0.55 + 3, y * 0.4, 73);
       const rutLane = 0.18 + texFbm(x * 0.35, y * 0.12, 41) * 0.42;
       const rutLaneB = 0.48 + texFbm(x * 0.28 + 9, y * 0.1, 43) * 0.36;
       const rutLaneC = 0.34 + texFbm(x * 0.22 + 3, y * 0.15, 47) * 0.28;
@@ -12674,55 +12750,85 @@ function paintOrganicBreakup(id, w, h, d) {
       let r = d[i];
       let g = d[i + 1];
       let b = d[i + 2];
-      // Wide shade swing + hue drift so soft roads stop reading as stamped cloth.
-      const shade =
-        0.72 + mac * 0.38 + (mid - 0.5) * 0.22 + (macro - 0.5) * 0.18 + (fine - 0.5) * 0.08;
-      r *= shade;
-      g *= shade * (0.94 + mac * 0.08 + (macro - 0.5) * 0.04);
-      b *= shade * (0.9 + mid * 0.08 + (fine - 0.5) * 0.03);
-      if (rut < 0.09) {
-        const k = 1 - rut / 0.09;
-        r -= k * 26;
-        g -= k * 18;
-        b -= k * 12;
+      if (hard) {
+        // Subtle oil / wear mottling — keep lane paint readable.
+        const shade = 0.9 + mac * 0.14 + (mid - 0.5) * 0.08 + (fine - 0.5) * 0.04;
+        r *= shade;
+        g *= shade;
+        b *= shade * (0.98 + (blotch - 0.5) * 0.04);
+        if (texHash(x, y, 109) > 0.97) {
+          r *= 0.82;
+          g *= 0.8;
+          b *= 0.76;
+        }
+      } else {
+        // Wide shade swing + hue drift so soft roads stop reading as stamped cloth.
+        const amp = soft ? 1 : 0.7;
+        const shade =
+          0.62 +
+          mac * 0.48 * amp +
+          (mid - 0.5) * 0.28 * amp +
+          (macro - 0.5) * 0.22 * amp +
+          (fine - 0.5) * 0.1 * amp +
+          (blotch - 0.5) * 0.14 * amp;
+        r *= shade;
+        g *= shade * (0.9 + mac * 0.1 + (macro - 0.5) * 0.06);
+        b *= shade * (0.84 + mid * 0.1 + (fine - 0.5) * 0.04);
+        if (rut < 0.11) {
+          const k = 1 - rut / 0.11;
+          r -= k * 32;
+          g -= k * 22;
+          b -= k * 14;
+        }
       }
       if (id === "mud" || id === "dirt") {
         const pocket = texFbm(x >> 1, y >> 2, 9);
-        if (pocket > 0.7) {
-          const k = (pocket - 0.7) / 0.3;
-          r *= 1 - k * 0.3;
-          g *= 1 - k * 0.22;
-          b *= 1 - k * 0.14;
+        if (pocket > 0.66) {
+          const k = (pocket - 0.66) / 0.34;
+          r *= 1 - k * 0.36;
+          g *= 1 - k * 0.26;
+          b *= 1 - k * 0.16;
         }
         const clay = texFbm(x >> 2, y >> 1, 13);
-        if (clay > 0.82) {
-          const k = (clay - 0.82) / 0.18;
-          r = r * (1 - k * 0.25) + (168 + mac * 30) * k * 0.25;
-          g = g * (1 - k * 0.25) + (128 + mid * 24) * k * 0.25;
-          b = b * (1 - k * 0.25) + (88 + fine * 18) * k * 0.25;
+        if (clay > 0.78) {
+          const k = (clay - 0.78) / 0.22;
+          r = r * (1 - k * 0.28) + (168 + mac * 30) * k * 0.28;
+          g = g * (1 - k * 0.28) + (128 + mid * 24) * k * 0.28;
+          b = b * (1 - k * 0.28) + (88 + fine * 18) * k * 0.28;
         }
       }
       if (id === "sand") {
         const dune = texFbm(x * 0.4, y * 0.15, 33);
-        r *= 0.9 + dune * 0.16;
-        g *= 0.92 + dune * 0.12;
-        b *= 0.94 + dune * 0.08;
-        if (texHash(x, y, 107) > 0.96) {
-          r *= 0.72;
-          g *= 0.7;
-          b *= 0.62;
+        r *= 0.86 + dune * 0.22;
+        g *= 0.88 + dune * 0.16;
+        b *= 0.9 + dune * 0.1;
+        if (texHash(x, y, 107) > 0.94) {
+          r *= 0.68;
+          g *= 0.66;
+          b *= 0.58;
+        }
+        if (blotch > 0.82) {
+          r *= 1.08;
+          g *= 1.04;
+          b *= 0.92;
         }
       }
       if (id === "gravel") {
-        if (texHash(x, y, 101) > 0.9) {
-          r += 36;
-          g += 28;
-          b += 18;
-        } else if (texHash(x, y, 103) > 0.94) {
-          r *= 0.7;
-          g *= 0.68;
-          b *= 0.62;
+        if (texHash(x, y, 101) > 0.88) {
+          r += 42;
+          g += 32;
+          b += 20;
+        } else if (texHash(x, y, 103) > 0.92) {
+          r *= 0.66;
+          g *= 0.64;
+          b *= 0.58;
         }
+      }
+      if (id === "grass") {
+        const turf = texFbm(x * 0.6, y * 0.6, 51);
+        r *= 0.88 + turf * 0.16;
+        g *= 0.9 + turf * 0.18;
+        b *= 0.86 + mid * 0.08;
       }
       d[i] = Math.max(0, Math.min(255, r));
       d[i + 1] = Math.max(0, Math.min(255, g));
@@ -12743,46 +12849,54 @@ function paintEdgeErosion(id, w, h, d) {
     for (let x = 0; x < w; x++) {
       const u = x / (w - 1);
       const edge = Math.min(u, 1 - u);
-      if (edge > 0.13) continue;
-      const k = 1 - edge / 0.13;
+      // Wider soft feather so ribbon → verge does not read as a hard stripe.
+      if (edge > 0.2) continue;
+      const k = 1 - edge / 0.2;
+      const kSoft = k * k * (3 - 2 * k);
       const n = texHash(x, y, 77);
       const n2 = texHash(x, y, 91);
+      const n3 = texFbm(x * 0.7, y * 0.35, 88);
       const i = (y * w + x) * 4;
       let r = d[i];
       let g = d[i + 1];
       let b = d[i + 2];
       if (id === "tarmac" || id === "cobble") {
-        // Crumbled asphalt / stone — light chips + dark cavities.
-        if (n2 > 0.7) {
-          r = r * (1 - k * 0.35) + (150 + n * 40) * k * 0.35;
-          g = g * (1 - k * 0.35) + (140 + n * 32) * k * 0.35;
-          b = b * (1 - k * 0.35) + (120 + n * 24) * k * 0.35;
-        } else if (n2 < 0.28) {
-          r -= k * (18 + n * 14);
-          g -= k * (16 + n * 12);
-          b -= k * (12 + n * 10);
+        // Crumbled asphalt / stone — light chips + dark cavities + soil bleed.
+        if (n2 > 0.68) {
+          r = r * (1 - kSoft * 0.42) + (142 + n * 36 + n3 * 20) * kSoft * 0.42;
+          g = g * (1 - kSoft * 0.42) + (128 + n * 28 + n3 * 16) * kSoft * 0.42;
+          b = b * (1 - kSoft * 0.42) + (98 + n * 20 + n3 * 12) * kSoft * 0.42;
+        } else if (n2 < 0.32) {
+          r -= kSoft * (22 + n * 16);
+          g -= kSoft * (18 + n * 14);
+          b -= kSoft * (14 + n * 12);
+        }
+        if (n3 > 0.72) {
+          r = r * (1 - kSoft * 0.18) + (110 + n * 24) * kSoft * 0.18;
+          g = g * (1 - kSoft * 0.18) + (96 + n * 18) * kSoft * 0.18;
+          b = b * (1 - kSoft * 0.18) + (72 + n * 12) * kSoft * 0.18;
         }
       } else if (id === "gravel" || id === "dirt" || id === "sand") {
         // Packed verge — stay on the ribbon hue. Lifting toward clay (168/138/92)
         // painted a pale shoulder stripe that fought the stage land.
-        r -= k * (6 + n * 8);
-        g -= k * (5 + n * 6);
-        b -= k * (4 + n * 5);
-        if (n2 > 0.88) {
-          r += k * 10;
-          g += k * 8;
+        r -= kSoft * (8 + n * 10 + n3 * 6);
+        g -= kSoft * (6 + n * 8 + n3 * 4);
+        b -= kSoft * (5 + n * 6 + n3 * 3);
+        if (n2 > 0.86) {
+          r += kSoft * 12;
+          g += kSoft * 9;
         }
       } else if (id === "mud") {
-        r -= k * (8 + n * 10);
-        g -= k * (4 + n * 6);
-        if (n2 > 0.9) {
-          r += k * 20;
-          g += k * 12;
+        r -= kSoft * (10 + n * 12);
+        g -= kSoft * (5 + n * 8);
+        if (n2 > 0.88) {
+          r += kSoft * 22;
+          g += kSoft * 14;
         }
       } else if (id === "grass") {
-        r = r * (1 - k * 0.45) + (96 + n * 20) * k * 0.45;
-        g = g * (1 - k * 0.45) + (72 + n * 16) * k * 0.45;
-        b = b * (1 - k * 0.45) + (36 + n * 10) * k * 0.45;
+        r = r * (1 - kSoft * 0.5) + (92 + n * 22) * kSoft * 0.5;
+        g = g * (1 - kSoft * 0.5) + (70 + n * 18) * kSoft * 0.5;
+        b = b * (1 - kSoft * 0.5) + (34 + n * 12) * kSoft * 0.5;
       }
       d[i] = Math.max(0, Math.min(255, r));
       d[i + 1] = Math.max(0, Math.min(255, g));
@@ -12915,7 +13029,7 @@ function roadNormalFor(id) {
   if (!VISUAL.realisticArcade) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `v7|t${tier}|${key}`;
+  const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -12933,7 +13047,7 @@ function roadNormalFor(id) {
 function roadTextureFor(id) {
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `v7|t${tier}|${key}`;
+  const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -12986,7 +13100,7 @@ function skirtTextureFor(scenery) {
       ? scenery
       : "forest";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `skirt|v7|t${tier}|${kind}`;
+  const cacheKey = `skirt|v8|t${tier}|${kind}`;
   const hit = SKIRT_TEX.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
@@ -13020,7 +13134,7 @@ function skirtNormalFor(scenery) {
       ? scenery
       : "forest";
   const tier = VISUAL.tier || 1;
-  const cacheKey = `skirtN|v5|t${tier}|${kind}`;
+  const cacheKey = `skirtN|v6|t${tier}|${kind}`;
   const hit = SKIRT_NORM.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
@@ -13044,7 +13158,7 @@ function roadAoFor(id) {
   if (!VISUAL.realisticArcade || (VISUAL.tier || 0) < 3) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 3;
-  const cacheKey = `v7|t${tier}|${key}`;
+  const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
   const texScale = VISUAL.textureScale || 1;
@@ -13087,7 +13201,7 @@ function roadRoughFor(id) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const key = SURFACES[id] ? id : "dirt";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `rough|v5|t${tier}|${key}`;
+  const cacheKey = `rough|v6|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
   const texScale = Math.max(1, (VISUAL.textureScale || 1) * 0.5);
@@ -13152,7 +13266,7 @@ function landRoughnessMap(scenery, span) {
   if (!VISUAL.realisticArcade || VISUAL.roughnessMaps === false || (VISUAL.tier || 0) < 10) return null;
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   const tier = VISUAL.tier || 10;
-  const cacheKey = `land-rough|v5|t${tier}|${kind}`;
+  const cacheKey = `land-rough|v6|t${tier}|${kind}`;
   const hit = LAND_ROUGH.get(cacheKey);
   if (hit) {
     const map = hit.clone();

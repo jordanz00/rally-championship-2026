@@ -3,7 +3,7 @@
  *
  * WHO THIS IS FOR: POV camera + cockpit immersion without external mocap files.
  * WHAT IT DOES: spring-damped steering wheel, gear-shift punch, impact head-nod,
- *   hand countersteer offset, and POV driver sleeves that track the rim grips.
+ *   hand countersteer offset, and two-bone POV arms tracking gloved wrists.
  * HOW IT CONNECTS: game.js calls updateCockpitMotion() from the race loop after
  *   updateCockpit() gauge needles.
  */
@@ -13,31 +13,71 @@ import * as THREE from "../../vendor/three.module.js";
 const _yAxis = new THREE.Vector3(0, 1, 0);
 
 /**
- * Stretch a sleeve mesh from shoulder to wrist (cylinder along +Y).
- * @param {THREE.Mesh} sleeve
- * @param {THREE.Object3D} shoulder
- * @param {THREE.Object3D} hand
- * @param {{_tmpA:THREE.Vector3,_tmpB:THREE.Vector3,_tmpC:THREE.Vector3}} scratch
+ * Two-bone IK: shoulder → elbow → wrist. Elbow bends slightly toward the lap.
+ * @param {object} driver
+ * @param {"L"|"R"} side
  */
-function poseSleeve(sleeve, shoulder, hand, scratch) {
-  if (!sleeve || !shoulder || !hand || !sleeve.parent) return;
-  shoulder.getWorldPosition(scratch._tmpA);
-  hand.getWorldPosition(scratch._tmpB);
-  sleeve.parent.worldToLocal(scratch._tmpA);
-  sleeve.parent.worldToLocal(scratch._tmpB);
-  scratch._tmpC.subVectors(scratch._tmpB, scratch._tmpA);
-  const len = scratch._tmpC.length();
-  if (len < 0.04) {
-    sleeve.visible = false;
-    return;
+function poseArm(driver, side) {
+  const shoulder = side === "L" ? driver.shoulderL : driver.shoulderR;
+  const elbow = side === "L" ? driver.elbowL : driver.elbowR;
+  const upper = side === "L" ? driver.sleeveL : driver.sleeveR;
+  const forearm = side === "L" ? driver.forearmL : driver.forearmR;
+  const hand = side === "L" ? driver.handL : driver.handR;
+  const wristNode = side === "L" ? driver.wristL : driver.wristR;
+  if (!shoulder || !hand || !upper || !elbow || !forearm) return;
+
+  const shW = driver._tmpA;
+  const wrW = driver._tmpB;
+  const elW = driver._tmpC;
+  const dir = driver._tmpD;
+  const yAxis = driver._yAxis || _yAxis;
+
+  shoulder.getWorldPosition(shW);
+  (wristNode || hand).getWorldPosition(wrW);
+
+  // Elbow mid-reach, dropped toward the lap / cabin center.
+  elW.lerpVectors(shW, wrW, 0.48);
+  elW.y -= 0.075;
+  elW.x += (side === "L" ? -0.045 : 0.045);
+  elW.z -= 0.025;
+
+  // Upper arm: child of shoulder — local aim shoulder→elbow.
+  const elLocal = dir;
+  elLocal.copy(elW);
+  shoulder.worldToLocal(elLocal);
+  const upLen = elLocal.length();
+  if (upLen < 0.04) {
+    upper.visible = false;
+  } else {
+    upper.visible = true;
+    upper.position.set(0, 0, 0);
+    elLocal.multiplyScalar(1 / upLen);
+    upper.quaternion.setFromUnitVectors(yAxis, elLocal);
+    upper.scale.set(1, Math.min(0.34, upLen), 1);
   }
-  sleeve.visible = true;
-  sleeve.position.copy(scratch._tmpA);
-  scratch._tmpC.multiplyScalar(1 / len);
-  sleeve.quaternion.setFromUnitVectors(_yAxis, scratch._tmpC);
-  // Slight elbow bulge: keep reach short of the palm so the cuff meets the glove.
-  const reach = Math.min(0.42, Math.max(0.14, len * 0.9));
-  sleeve.scale.set(1, reach, 1);
+
+  // Elbow marker in cabin (shoulders group).
+  if (elbow.parent) {
+    const p = dir;
+    p.copy(elW);
+    elbow.parent.worldToLocal(p);
+    elbow.position.copy(p);
+  }
+
+  // Forearm: child of elbow — local aim elbow→wrist.
+  const wrLocal = dir;
+  wrLocal.copy(wrW);
+  elbow.worldToLocal(wrLocal);
+  const lowLen = wrLocal.length();
+  if (lowLen < 0.03) {
+    forearm.visible = false;
+  } else {
+    forearm.visible = true;
+    forearm.position.set(0, 0, 0);
+    wrLocal.multiplyScalar(1 / lowLen);
+    forearm.quaternion.setFromUnitVectors(yAxis, wrLocal);
+    forearm.scale.set(1, Math.min(0.4, lowLen * 0.96), 1);
+  }
 }
 
 /**
@@ -101,13 +141,45 @@ export function updateCockpitMotion(root, state) {
     pov.head.position.z = pov.eyeZ - anim.shiftT * 0.04;
   }
 
-  // POV driver arms — gloves ride the rim; sleeves stretch from fixed shoulders.
+  // POV driver — gloves ride the rim; two-bone sleeves track wrists.
   const driver = ud.povDriver;
-  if (driver && ud._cockpitOn && driver.sleeveL && driver.handL) {
+  if (driver && ud._cockpitOn && driver.handL) {
     const gripLean = anim.wheelZ * 0.08;
     if (driver.handL) driver.handL.rotation.y = gripLean;
     if (driver.handR) driver.handR.rotation.y = -gripLean;
-    poseSleeve(driver.sleeveL, driver.shoulderL, driver.handL, driver);
-    poseSleeve(driver.sleeveR, driver.shoulderR, driver.handR, driver);
+    if (driver.elbowL && driver.forearmL) {
+      poseArm(driver, "L");
+      poseArm(driver, "R");
+    } else if (driver.sleeveL) {
+      // Legacy single-cylinder sleeves.
+      poseLegacySleeve(driver.sleeveL, driver.shoulderL, driver.handL, driver);
+      poseLegacySleeve(driver.sleeveR, driver.shoulderR, driver.handR, driver);
+    }
   }
+}
+
+/**
+ * @param {THREE.Mesh} sleeve
+ * @param {THREE.Object3D} shoulder
+ * @param {THREE.Object3D} hand
+ * @param {object} scratch
+ */
+function poseLegacySleeve(sleeve, shoulder, hand, scratch) {
+  if (!sleeve || !shoulder || !hand || !sleeve.parent) return;
+  shoulder.getWorldPosition(scratch._tmpA);
+  hand.getWorldPosition(scratch._tmpB);
+  sleeve.parent.worldToLocal(scratch._tmpA);
+  sleeve.parent.worldToLocal(scratch._tmpB);
+  scratch._tmpC.subVectors(scratch._tmpB, scratch._tmpA);
+  const len = scratch._tmpC.length();
+  if (len < 0.04) {
+    sleeve.visible = false;
+    return;
+  }
+  sleeve.visible = true;
+  sleeve.position.copy(scratch._tmpA);
+  scratch._tmpC.multiplyScalar(1 / len);
+  sleeve.quaternion.setFromUnitVectors(_yAxis, scratch._tmpC);
+  const reach = Math.min(0.42, Math.max(0.14, len * 0.9));
+  sleeve.scale.set(1, reach, 1);
 }

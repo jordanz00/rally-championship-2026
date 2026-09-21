@@ -1,23 +1,18 @@
 /**
- * Forest photogrammetry PBR — Poly Haven 1k dirt / gravel / forest floor.
+ * Forest photogrammetry PBR — Poly Haven 1k boot, 2k stream.
  *
  * WHO THIS IS FOR: Track.buildAsync on the Forest stage only.
- * WHAT IT DOES: loads tiled albedo + normal + roughness + AO for the driving
- *   ribbon and land plane. Procedural code still decides *where* the road is;
- *   these maps replace canvas grain as the close-range material.
- * HOW IT CONNECTS: track.js awaits prepareForestPbr() before _buildMesh.
- *   Other stages keep painted textures. Node QA skips the Image load.
- *
- * Tile scale is the authored Poly Haven metre size (~2 m), not span/15.
- * That is the anti-stretch rule: a 15 m repeat of a 2 m photo reads fake.
+ * WHAT IT DOES: tiled albedo + normal + roughness for the driving ribbon
+ *   and land plane. Tile scale is the authored Poly Haven metre size (~2 m).
+ * HOW IT CONNECTS: track.js awaits prepareForestPbr() before _buildMesh
+ *   (1k color only). Normals / 2k swap in on the shared texture Source.
  */
 
 import * as THREE from "../../vendor/three.module.js";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=4";
 
-const ASSET_V = "1";
 const BASE = "assets/env/forest";
 
-/** Authored tile size in metres (Poly Haven 1k sets are ~2–2.1 m). */
 const TILE_DIRT_M = 2.0;
 const TILE_GRAVEL_M = 2.0;
 const TILE_FLOOR_M = 2.1;
@@ -38,13 +33,7 @@ let landSet = null;
  * @returns {THREE.Texture|null}
  */
 export function cloneForestMap(tex, rx, ry) {
-  if (!tex) return null;
-  const copy = tex.clone();
-  copy.wrapS = THREE.RepeatWrapping;
-  copy.wrapT = THREE.RepeatWrapping;
-  copy.repeat.set(rx, ry);
-  copy.needsUpdate = true;
-  return copy;
+  return cloneTracked(tex, rx, ry);
 }
 
 /**
@@ -71,7 +60,7 @@ export function forestRoadRepeat(vScale, tileMeters = TILE_DIRT_M, roadWidthM = 
 }
 
 /**
- * Load Forest 1k PBR sets. Safe to call more than once. No-ops in Node.
+ * Boot 1k albedo only. Detail / 2k continue in the background.
  * @returns {Promise<void>}
  */
 export async function prepareForestPbr() {
@@ -80,13 +69,18 @@ export async function prepareForestPbr() {
   if (typeof document === "undefined" || typeof Image === "undefined") return;
 
   const loader = new THREE.TextureLoader();
-  dirtSet = await loadSet(loader, "dirt_floor", TILE_DIRT_M);
-  gravelSet = await loadSet(loader, "gravel_road", TILE_GRAVEL_M);
-  landSet = await loadSet(loader, "forest_floor", TILE_FLOOR_M);
+  const [dirt, gravel, land] = await Promise.all([
+    bootPbrSet(loader, { base: BASE, stem: "dirt_floor", tileMeters: TILE_DIRT_M, tint: "#8a6a40" }),
+    bootPbrSet(loader, { base: BASE, stem: "gravel_road", tileMeters: TILE_GRAVEL_M, tint: "#9a8a70" }),
+    bootPbrSet(loader, { base: BASE, stem: "forest_floor", tileMeters: TILE_FLOOR_M, tint: "#4a5a38" }),
+  ]);
+  dirtSet = dirt;
+  gravelSet = gravel;
+  landSet = land;
 }
 
 /**
- * True once at least the dirt albedo is on the GPU.
+ * True once at least the dirt albedo slot exists.
  * @returns {boolean}
  */
 export function forestPbrReady() {
@@ -109,54 +103,4 @@ export function forestRoadMaps(surfaceId) {
  */
 export function forestLandMaps() {
   return landSet;
-}
-
-/**
- * @param {THREE.TextureLoader} loader
- * @param {string} stem
- * @param {number} tileMeters
- */
-async function loadSet(loader, stem, tileMeters) {
-  const map = await loadTex(loader, `${BASE}/${stem}_diff_1k.jpg`, true);
-  if (!map) return null;
-  const normalMap = await loadTex(loader, `${BASE}/${stem}_nor_gl_1k.jpg`, false);
-  const roughnessMap = await loadTex(loader, `${BASE}/${stem}_rough_1k.jpg`, false);
-  const aoMap = await loadTex(loader, `${BASE}/${stem}_ao_1k.jpg`, false);
-  return { map, normalMap, roughnessMap, aoMap, tileMeters };
-}
-
-/**
- * @param {THREE.TextureLoader} loader
- * @param {string} url
- * @param {boolean} srgb
- * @returns {Promise<THREE.Texture|null>}
- */
-function loadTex(loader, url, srgb) {
-  const href = `${url}?v=${ASSET_V}`;
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (tex) => {
-      if (settled) return;
-      settled = true;
-      resolve(tex);
-    };
-    const timer = setTimeout(() => finish(null), 14000);
-    loader.load(
-      href,
-      (tex) => {
-        clearTimeout(timer);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.anisotropy = 4;
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        tex.needsUpdate = true;
-        finish(tex);
-      },
-      undefined,
-      () => {
-        clearTimeout(timer);
-        finish(null);
-      }
-    );
-  });
 }

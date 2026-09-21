@@ -69,18 +69,23 @@ check(
 );
 check(
   "readable point size cap",
-  /uMaxPx:\s*\{\s*value:\s*(2[4-9]|[3-9]\d)\s*\}/.test(effects),
-  "uMaxPx 24–99 for chase-readable grit"
+  /uMaxPx:\s*\{\s*value:\s*(9\d|[1-9]\d{2})\s*\}/.test(effects),
+  "uMaxPx 90+ for chase-readable grit"
 );
 check(
-  "ground-aware depth test",
-  /depthTest:\s*true/.test(effects) && /bouncesLeft|bounce/.test(effects),
-  "particles depth-test + bounce/stick"
+  "spray not buried by road depth",
+  /depthTest:\s*false/.test(effects) && /frustumCulled\s*=\s*false/.test(effects),
+  "depthTest off + no frustum cull so wake stays visible"
 );
 check(
   "inherits chassis + wheel physics",
   /velY|omegaR|tread|_wheelVel|spinK/.test(effects),
   "velocity / spin / unload feed emit"
+);
+check(
+  "chase-scale particle sizes",
+  /size:\s*\[\s*0\.(4|5)/.test(effects) && /uScale:\s*\{\s*value:\s*1[0-9]{3}/.test(effects),
+  "metre sizes + uScale for medium chase"
 );
 check(
   "HDR skybox armed",
@@ -115,21 +120,21 @@ check("asset rock_largeA", exists("assets/props/rock_largeA.glb"), "missing rock
 {
   // Euler hang-time: grit must leave the patch and fall, not die in 2 frames.
   const dt = 1 / 60;
-  let y = 0.08;
-  let vy = 2.2;
+  let y = 0.14;
+  let vy = 4.2;
   let peak = y;
   let alive = 0;
-  for (let i = 0; i < 90; i++) {
-    vy -= 9.0 * dt;
-    vy *= Math.exp(-0.9 * dt);
+  for (let i = 0; i < 120; i++) {
+    vy -= 6.4 * dt;
+    vy *= Math.exp(-0.42 * dt);
     y += vy * dt;
     if (y > peak) peak = y;
-    if (y <= 0.01) break;
+    if (y <= 0.03) break;
     alive += dt;
   }
   check(
     "sand grit hangs long enough to see",
-    peak > 0.14 && peak < 1.2 && alive > 0.22,
+    peak > 0.35 && peak < 3.5 && alive > 0.45,
     `peak=${peak.toFixed(3)}m alive=${alive.toFixed(3)}s`
   );
 }

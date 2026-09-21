@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=233";
+import { VISUAL } from "../config.js?v=239";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -512,8 +512,8 @@ export function propNatureMaterial(kind) {
  */
 export function kindsForScenery(scenery) {
   const s = scenery || "desert";
-  // Mountain never plants spectators — skip the 12 character GLBs.
-  if (s === "mountain") return MOUNTAIN_NATURE.concat(TRACKSIDE_KINDS);
+  // Mountain: start/finish grandstand audiences only (no mid-stage gallery).
+  if (s === "mountain") return CROWD_ALL.concat(MOUNTAIN_NATURE, TRACKSIDE_KINDS);
   if (s === "forest") return CROWD_ALL.concat(FOREST_NATURE, FOREST_HERO_KINDS, TRACKSIDE_KINDS);
   if (s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE, TRACKSIDE_KINDS);
   return CROWD_ALL.concat(DESERT_NATURE, TRACKSIDE_KINDS);
@@ -584,6 +584,9 @@ function ensureKind(kind) {
             const split = splitCrowdCharacter(parts.body);
             split.material = parts.material;
             parts = split;
+          }
+          if (parts && parts.body && (!parts.armL || !parts.armR)) {
+            console.warn(`[prop-kit] crowd arms missing after split: ${kind} (T-pose risk)`);
           }
         } catch (charErr) {
           console.warn(`[prop-kit] character parse failed: ${kind}`, charErr);
@@ -1434,14 +1437,14 @@ function extractCrowdCharacterParts(root, kind) {
 /**
  * Split a merged biped GLB into a torso/legs body plus pivoted arms for cheer.
  * Triangles are bucketed by centroid — arms sit on the sides above the waist.
+ * Works on indexed *or* non-indexed geometry (normalizeForMerge strips indices).
  *
  * @param {THREE.BufferGeometry} geo grounded full-body mesh
  * @returns {{body:THREE.BufferGeometry, armL:THREE.BufferGeometry|null, armR:THREE.BufferGeometry|null, shoulderL:{x:number,y:number,z:number}, shoulderR:{x:number,y:number,z:number}}}
  */
 function splitCrowdCharacter(geo) {
   const pos = geo.getAttribute("position");
-  const idx = geo.getIndex();
-  if (!pos || !idx) {
+  if (!pos || pos.count < 9) {
     return {
       body: geo,
       armL: null,
@@ -1451,6 +1454,26 @@ function splitCrowdCharacter(geo) {
     };
   }
 
+  const idx = geo.getIndex();
+  const triCount = idx ? (idx.count / 3) | 0 : (pos.count / 3) | 0;
+  if (triCount < 3) {
+    return {
+      body: geo,
+      armL: null,
+      armR: null,
+      shoulderL: { x: -0.34, y: 1.38, z: 0 },
+      shoulderR: { x: 0.34, y: 1.38, z: 0 },
+    };
+  }
+
+  geo.computeBoundingBox();
+  const box = geo.boundingBox;
+  const height = box ? Math.max(0.5, box.max.y - box.min.y) : 1.7;
+  // Height-relative bands so kids/elders still lose their T-pose arms.
+  const yLo = box.min.y + height * 0.42;
+  const yHi = box.min.y + height * 0.98;
+  const xCut = Math.max(0.055, height * 0.045);
+
   /** @type {number[]} */
   const bodyTri = [];
   /** @type {number[]} */
@@ -1459,30 +1482,53 @@ function splitCrowdCharacter(geo) {
   const armRTri = [];
   const c = { x: 0, y: 0, z: 0 };
 
-  for (let t = 0; t < idx.count; t += 3) {
-    const ia = idx.getX(t);
-    const ib = idx.getX(t + 1);
-    const ic = idx.getX(t + 2);
+  for (let t = 0; t < triCount; t++) {
+    const ia = idx ? idx.getX(t * 3) : t * 3;
+    const ib = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+    const ic = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
     c.x = (pos.getX(ia) + pos.getX(ib) + pos.getX(ic)) / 3;
     c.y = (pos.getY(ia) + pos.getY(ib) + pos.getY(ic)) / 3;
     c.z = (pos.getZ(ia) + pos.getZ(ib) + pos.getZ(ic)) / 3;
     let bucket = bodyTri;
-    if (c.y > 0.82 && c.y < 1.72) {
-      if (c.x < -0.07) bucket = armLTri;
-      else if (c.x > 0.07) bucket = armRTri;
+    if (c.y > yLo && c.y < yHi) {
+      if (c.x < -xCut) bucket = armLTri;
+      else if (c.x > xCut) bucket = armRTri;
     }
     bucket.push(ia, ib, ic);
   }
 
+  // Need enough arm tris (non-indexed: 3 verts/tri → length >= 90 ≈ 30 tris).
+  const minArmVerts = 90;
   const body = subsetGeometry(geo, bodyTri) || geo;
-  const armL = armLTri.length >= 90 ? subsetGeometry(geo, armLTri) : null;
-  const armR = armRTri.length >= 90 ? subsetGeometry(geo, armRTri) : null;
+  const armL = armLTri.length >= minArmVerts ? subsetGeometry(geo, armLTri) : null;
+  const armR = armRTri.length >= minArmVerts ? subsetGeometry(geo, armRTri) : null;
   const shoulderL = armL ? shoulderPivot(armL, -1) : { x: -0.34, y: 1.38, z: 0 };
   const shoulderR = armR ? shoulderPivot(armR, 1) : { x: 0.34, y: 1.38, z: 0 };
-  if (armL) repivotToShoulder(armL, shoulderL);
-  if (armR) repivotToShoulder(armR, shoulderR);
+  if (armL) {
+    repivotToShoulder(armL, shoulderL);
+    // Quaternius bind is T-pose (±X). Cheer anim expects arms hanging (−Y) at rest.
+    orientArmDownFromTPose(armL, -1);
+  }
+  if (armR) {
+    repivotToShoulder(armR, shoulderR);
+    orientArmDownFromTPose(armR, 1);
+  }
 
   return { body, armL, armR, shoulderL, shoulderR };
+}
+
+/**
+ * Rotate a T-pose arm mesh so it hangs down (−Y) from the shoulder pivot.
+ * @param {THREE.BufferGeometry} geo
+ * @param {-1|1} side
+ */
+function orientArmDownFromTPose(geo, side) {
+  const q = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    side > 0 ? -Math.PI * 0.5 : Math.PI * 0.5
+  );
+  geo.applyQuaternion(q);
+  geo.computeBoundingSphere();
 }
 
 /**

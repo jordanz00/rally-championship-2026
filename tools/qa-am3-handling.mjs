@@ -45,6 +45,10 @@ check("Fujimoto scrub gap", /flatScrub:\s*0\.99/.test(config) && /worstScrub:\s*
 check("snappy countersteer", /counterAuthority:\s*[3-9]\.\d+/.test(config));
 check("holdable drift bleed", /driftBleedMul:\s*0\.0[12]\d/.test(config));
 check("easy power-slide pitch", /powerSlidePitch:\s*2\.\d+/.test(config));
+check("slide keep-speed drive", /slideDriveKeep:\s*1\.[1-9]/.test(config) && /slideKeepAmt/.test(vehicle));
+check("slide aero cut", /slideAeroCut:\s*0\.[2-4]/.test(config) && /aero \*= lerp/.test(vehicle));
+check("slide speed convert", /slideSpeedConvert:\s*0\.[5-9]/.test(config) && /slideSpeedConvert/.test(vehicle));
+check("gamepad scans every slot", /_pickGamepad\(/.test(read("js/input.js")) && /_sonyRawLayout\(/.test(read("js/input.js")));
 check("trail-brake yaw armed", /trailBrakeYaw:\s*(?:0\.[7-9]|1\.[0-2])/.test(config));
 check("low speed understeer (easy control)", /speedUndersteer:\s*0\.001/.test(config));
 check("arcade tireYawBlend (not drunk IV)", /tireYawBlend:\s*0\.[234]/.test(config));
@@ -59,9 +63,11 @@ check("ARCADE_ASSIST wired in vehicle", /ARCADE_ASSIST/.test(vehicle));
 check("quick novice steer rack", /steerSpeed:\s*11[89]|steerSpeed:\s*1[2-9]\d/.test(config));
 check("_applyGearDriftKick shared", /_applyGearDriftKick\(/.test(vehicle));
 check("manual uses gear-drift kick", /_shiftGearbox[\s\S]{0,800}?_applyGearDriftKick/.test(vehicle));
-check("auto brake-downshift kicks drift", /_autoShift\(dt\)[\s\S]{0,3200}?_applyGearDriftKick\(this\.steer/.test(vehicle));
+check("auto brake-downshift kicks drift", /_autoShift\(dt\)[\s\S]{0,4500}?_applyGearDriftKick\(this\.steer/.test(vehicle));
+check("auto is sequential (no multi-gear dump)", /hardDumpRpm/.test(vehicle) === false && /_groundRpm\(/.test(vehicle));
+check("clutch torque-cut after shift", /this\._clutch/.test(vehicle) && /tqDrive \*= 0\.1/.test(vehicle));
 check("brake+steer uses brakeSteerYaw", /brakeSteerYaw/.test(vehicle));
-check("wall glance keeps along-nose speed", /keep = closed \* 0\.62/.test(read("js/physics/collide.js")));
+check("wall glance keeps along-nose speed", /keep = Math\.abs\(vn\) \* 0\.62/.test(read("js/physics/collide.js")));
 
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 const vehV = Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1] || 0);

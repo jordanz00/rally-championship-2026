@@ -1,13 +1,14 @@
 /**
  * Animated trackside crowd — HD human biped GLBs with cheer motion.
  *
- * WHO THIS IS FOR: Desert, Lakeside, and sparse Forest gallery sections.
+ * WHO THIS IS FOR: Desert, Lakeside, Forest galleries; Mountain start/finish stands.
  * WHAT IT DOES: instances the full character-*.glb pack (male/female ×
  *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing/face atlas;
  *   per-person kind + tint + scale + cheer style/rate; splits authored cheer
  *   arms; body bob, lean, jump-cheer, and knee squash sell readable humans
- *   without a collider army. Track plants start/finish grandstands (finish is
- *   the denser hero bank — rows/seats/span in Track._addGrandstandCrowds).
+ *   without a collider army. Track plants proper start/finish grandstands with
+ *   audiences seated inside each Kenney module (Track._addGrandstandCrowds);
+ *   Mountain gets stands only (no mid-stage gallery).
  * HOW IT CONNECTS: Track._addSpectators() / _addGrandstandCrowds() build a
  *   CrowdField; Track.update() and RallyAudio consume crowd points for Doppler.
  *
@@ -17,7 +18,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=45";
+import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=48";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -318,7 +319,7 @@ export class CrowdField {
     const rate = p.animRate != null ? p.animRate : 1;
     const clap = Math.sin(timeSec * 9.2 * rate + phase * 1.9) * cheer * 0.48;
     const wave = Math.sin(timeSec * 4.6 * rate + phase * 0.8) * 0.35;
-    const rest = -0.52;
+    const rest = -0.18;
     let raise = rest;
     let roll = sway * 0.06 * side;
     let yawOff = 0;

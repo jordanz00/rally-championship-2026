@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=233";
+import { VISUAL } from "../config.js?v=239";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
@@ -524,11 +524,11 @@ function armRoadOrganic(mat, id) {
   const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: dirty ? 1 : id === "tarmac" ? 0.55 : 0.38,
-    ribbon: dirty ? 0.06 : id === "tarmac" ? 0.48 : id === "cobble" ? 0.18 : 0.28,
-    bump: dirty ? 0.68 : id === "tarmac" ? 0.2 : id === "cobble" ? 0.48 : 0.34,
+    amount: dirty ? 1 : id === "tarmac" ? 0.72 : 0.48,
+    ribbon: dirty ? 0.05 : id === "tarmac" ? 0.42 : id === "cobble" ? 0.16 : 0.24,
+    bump: dirty ? 0.74 : id === "tarmac" ? 0.28 : id === "cobble" ? 0.52 : 0.4,
     blotch: true,
-    key: `road-organic-v5-${id}`,
+    key: `road-organic-v6-${id}`,
   });
 }
 
@@ -548,14 +548,16 @@ function injectProjectedMaps(shader, opts) {
 	float n2 = roadNoise( vProjWorld.xz * 0.31 + 17.0 );
 	float n3 = roadNoise( vProjWorld.xz * 0.015 );
 	float n4 = roadNoise( vProjWorld.xz * 0.72 + 41.0 );
-	float blotch = n1 * 0.42 + n2 * 0.3 + n3 * 0.18 + n4 * 0.1;
-	float hueShift = ( n2 - 0.5 ) * 0.08 * uProjAmt;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.68 + blotch * 0.52 ), uProjAmt );
+	float n5 = roadNoise( vProjWorld.xz * 0.048 + 9.0 );
+	float blotch = n1 * 0.34 + n2 * 0.26 + n3 * 0.2 + n4 * 0.12 + n5 * 0.08;
+	float hueShift = ( n2 - 0.5 ) * 0.1 * uProjAmt + ( n5 - 0.5 ) * 0.04 * uProjAmt;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.58 + blotch * 0.68 ), uProjAmt );
 	sampledDiffuseColor.r *= 1.0 + hueShift;
-	sampledDiffuseColor.g *= 1.0 + hueShift * 0.4;
-	sampledDiffuseColor.b *= 1.0 - hueShift * 0.6;
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.37 + vec2( 0.19, 0.11 ) ), 0.18 * uProjAmt );
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 1.7 + vec2( 0.07, 0.23 ) ), 0.1 * uProjAmt );`
+	sampledDiffuseColor.g *= 1.0 + hueShift * 0.35;
+	sampledDiffuseColor.b *= 1.0 - hueShift * 0.7;
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.37 + vec2( 0.19, 0.11 ) ), 0.22 * uProjAmt );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 1.7 + vec2( 0.07, 0.23 ) ), 0.14 * uProjAmt );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.11 + vec2( 0.41, 0.07 ) ), 0.08 * uProjAmt );`
     : "";
   shader.vertexShader = shader.vertexShader
     .replace(
@@ -774,7 +776,7 @@ export function worldTerrainMaterial(opts = {}) {
     ribbon: 0.1,
     bump: opts.bumpScale ?? 0.52,
     blotch: true,
-    key: "terrain-proj-v2",
+    key: "terrain-proj-v3",
   });
   return mat;
 }
@@ -820,7 +822,7 @@ export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = 
     ribbon: 0.08,
     bump: 0.48,
     blotch: true,
-    key: "skirt-proj-v2",
+    key: "skirt-proj-v3",
   });
   return mat;
 }

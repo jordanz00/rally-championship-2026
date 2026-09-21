@@ -1,11 +1,11 @@
 /**
- * Per-car engine / exhaust voice — recorded 44.1 kHz beds + live layers.
+ * Per-car engine / exhaust voice — throaty recorded idle/load beds.
  *
  * WHO THIS IS FOR: RallyAudio (engine.js) and the race loop.
- * WHAT IT DOES: unique recorded exhaust per car (Celica 3S-GTE, Delta turbo
- *   four, Stratos V6), pitch-tracked to RPM, with a high-load scream layer,
- *   cylinder pulse, turbo whistle, gear-shift blip, and dynamic EQ so the
- *   voice reads as that chassis under throttle — not a single stretched loop.
+ * WHAT IT DOES: Celica / Delta / Stratos recorded loops, pitch-tracked with
+ *   compressed playback. An octave-down copy of the same load bed fills the
+ *   chest (80–250 Hz). Mild saturation adds exhaust harmonics. No synth
+ *   cylinder pulse, turbo kettle, or helium scream.
  * HOW IT CONNECTS: game.js passes rpm, throttle, gear, brake, carId each tick.
  *
  * See assets/sfx/ATTRIBUTION.txt for sample licenses.
@@ -27,25 +27,29 @@ export const POWERTRAINS = {
     liftUrl: "assets/sfx/celica-lift.mp3",
     recIdle: 980,
     recLoad: 4600,
-    /** High-load scream uses the load bed pitched from this RPM centre. */
     recHigh: 6200,
-    /** Slightly flatter pitch — less chipmunk at redline until a real V8 pack lands. */
-    rateMul: 0.96,
-    idleVol: 0.54,
-    loadVol: 0.9,
-    highVol: 0.26,
-    pulseVol: 0.14,
-    whistleVol: 0.04,
-    hp: 52,
-    lp: 5000,
-    body: 2.75,
-    presence: 0.85,
-    presenceHz: 1650,
+    rateMul: 0.86,
+    idleVol: 0.56,
+    loadVol: 0.82,
+    throatVol: 0.58,
+    highVol: 0,
+    pulseVol: 0,
+    whistleVol: 0,
+    hp: 28,
+    lp: 2400,
+    body: 5.4,
+    bodyHz: 92,
+    throatHz: 205,
+    throatEqDb: 4.8,
+    noteHz: 365,
+    noteGain: 2.6,
+    raspHz: 2200,
+    raspDb: -6.5,
     spoolUp: 2.5,
     spoolDown: 6.2,
-    bovDrop: 0.18,
+    bovDrop: 0.28,
     bovBoost: 0.28,
-    crackle: true,
+    crackle: false,
   },
   delta: {
     id: "delta",
@@ -60,22 +64,28 @@ export const POWERTRAINS = {
     recIdle: 960,
     recLoad: 4300,
     recHigh: 5800,
-    rateMul: 0.94,
+    rateMul: 0.84,
     idleVol: 0.58,
-    loadVol: 0.96,
-    highVol: 0.28,
-    pulseVol: 0.15,
-    whistleVol: 0.032,
-    hp: 42,
-    lp: 4400,
-    body: 4.6,
-    presence: 0.35,
-    presenceHz: 1450,
+    loadVol: 0.84,
+    throatVol: 0.64,
+    highVol: 0,
+    pulseVol: 0,
+    whistleVol: 0,
+    hp: 24,
+    lp: 2200,
+    body: 6.2,
+    bodyHz: 84,
+    throatHz: 175,
+    throatEqDb: 5.4,
+    noteHz: 320,
+    noteGain: 2.2,
+    raspHz: 2000,
+    raspDb: -7.2,
     spoolUp: 2.9,
     spoolDown: 7.0,
-    bovDrop: 0.16,
+    bovDrop: 0.26,
     bovBoost: 0.26,
-    crackle: true,
+    crackle: false,
   },
   stratos: {
     id: "stratos",
@@ -90,17 +100,23 @@ export const POWERTRAINS = {
     recIdle: 900,
     recLoad: 4200,
     recHigh: 6400,
-    rateMul: 0.98,
+    rateMul: 0.88,
     idleVol: 0.6,
-    loadVol: 0.86,
-    highVol: 0.28,
-    pulseVol: 0.12,
+    loadVol: 0.8,
+    throatVol: 0.5,
+    highVol: 0,
+    pulseVol: 0,
     whistleVol: 0,
-    hp: 58,
-    lp: 5200,
-    body: 1.85,
-    presence: 0.95,
-    presenceHz: 1850,
+    hp: 30,
+    lp: 2550,
+    body: 4.4,
+    bodyHz: 102,
+    throatHz: 240,
+    throatEqDb: 4.2,
+    noteHz: 445,
+    noteGain: 3.0,
+    raspHz: 2400,
+    raspDb: -5.8,
     spoolUp: 0,
     spoolDown: 0,
     bovDrop: 1,
@@ -131,6 +147,7 @@ export class PowertrainVoice {
     this._buf = {};
     this.idleSrc = null;
     this.loadSrc = null;
+    this.throatSrc = null;
     this.highSrc = null;
     this._noiseSrc = null;
     this._pulseLfo = null;
@@ -155,7 +172,6 @@ export class PowertrainVoice {
     ).then(() => {
       this.ready = true;
       this._startLoops();
-      this._startPulse();
     });
   }
 
@@ -169,10 +185,7 @@ export class PowertrainVoice {
     this.carId = next;
     this.boost = 0;
     this._applyTone(true);
-    if (this.ready) {
-      this._startLoops();
-      this._retunePulse();
-    }
+    if (this.ready) this._startLoops();
   }
 
   /**
@@ -201,40 +214,31 @@ export class PowertrainVoice {
     this._maybeGearShift(p, gear, rpm, throttle, now);
     this._maybeLift(p, throttle, rpm, now);
 
-    const mute = live ? 1 : s.idleHum ? 0.1 : 0;
-    // Engine braking: closed throttle at speed still pulls the load bed.
+    const mute = live ? 1 : s.idleHum ? 0.12 : 0;
     const coast = clamp((1 - throttle) * clamp((rpmN - 0.22) * 1.4, 0, 1) * clamp(speed / 18, 0, 1), 0, 0.55);
     const brakeLoad = brake * 0.35 * rpmN;
 
-    // Smooth crossfade — idle owns park; load owns WOT mid; high opens near redline.
-    const idleMix =
-      mute *
-      (1 - rpmN) *
-      (0.62 + 0.38 * (1 - throttle)) *
-      (1 - throttle * 0.35);
+    const idleMix = mute * (1 - rpmN) * (0.72 + 0.28 * (1 - throttle));
+    // Working-band WOT is chesty, not a limiter scream. Extra RPM past ~0.72
+    // (cruise 4th) adds little gain — the engine is doing its job, not straining.
+    const cruise = clamp((rpmN - 0.72) / 0.28, 0, 1);
     const loadMix =
       mute *
-      (rpmN * 0.38 + throttle * 0.78 + coast * 0.45 + brakeLoad) *
-      (1 - Math.max(0, rpmN - 0.72) * 0.55);
-    // Scream opens later and softer — load bed owns the meat; high is garnish.
-    const highMix =
-      mute *
-      Math.pow(clamp((rpmN - 0.58) / 0.48, 0, 1), 1.55) *
-      (0.22 + throttle * 0.62 + coast * 0.18);
+      (rpmN * 0.42 + throttle * 0.7 + coast * 0.32 + brakeLoad) *
+      lerp(1, 0.78, cruise * throttle);
+    const throatMix = mute * p.throatVol * (0.28 + loadMix * 0.72 + idleMix * 0.22);
 
-    this.idleGain.gain.setTargetAtTime(idleMix * p.idleVol, now, 0.055);
-    this.loadGain.gain.setTargetAtTime(loadMix * p.loadVol, now, 0.045);
-    this.highGain.gain.setTargetAtTime(highMix * p.highVol, now, 0.04);
+    this.idleGain.gain.setTargetAtTime(idleMix * p.idleVol, now, 0.07);
+    this.loadGain.gain.setTargetAtTime(loadMix * p.loadVol, now, 0.055);
+    this.throatGain.gain.setTargetAtTime(throatMix, now, 0.06);
+    if (this.highGain) this.highGain.gain.setTargetAtTime(0, now, 0.04);
 
-    const idleRate = clamp((rpm / p.recIdle) * p.rateMul, 0.7, 2.05);
-    const loadRate = clamp((rpm / p.recLoad) * p.rateMul, 0.55, 1.68);
-    const highRate = clamp((rpm / p.recHigh) * p.rateMul, 0.62, 1.55);
-    if (this.idleSrc) this.idleSrc.playbackRate.setTargetAtTime(idleRate, now, 0.048);
-    if (this.loadSrc) this.loadSrc.playbackRate.setTargetAtTime(loadRate, now, 0.042);
-    if (this.highSrc) this.highSrc.playbackRate.setTargetAtTime(highRate, now, 0.04);
+    const idleRate = loopRate(rpm, p.recIdle, p.rateMul);
+    const loadRate = loopRate(rpm, p.recLoad, p.rateMul);
+    if (this.idleSrc) this.idleSrc.playbackRate.setTargetAtTime(idleRate, now, 0.055);
+    if (this.loadSrc) this.loadSrc.playbackRate.setTargetAtTime(loadRate, now, 0.05);
+    if (this.throatSrc) this.throatSrc.playbackRate.setTargetAtTime(clamp(loadRate * 0.5, 0.4, 0.62), now, 0.06);
 
-    this._tickPulse(p, rpm, throttle, mute, now);
-    this._tickWhistle(p, throttle, rpmN, mute, now);
     this._tickDynamicEq(p, rpmN, throttle, mute, now);
 
     this._prevThrottle = throttle;
@@ -273,18 +277,10 @@ export class PowertrainVoice {
     this.loadGain.gain.setValueAtTime(cur, now);
     this.loadGain.gain.linearRampToValueAtTime(Math.max(0.02, cur * (1 - dip)), now + 0.04);
     this.loadGain.gain.linearRampToValueAtTime(cur, now + 0.14);
-    if (this.highGain) {
-      const h = this.highGain.gain.value;
-      this.highGain.gain.cancelScheduledValues(now);
-      this.highGain.gain.setValueAtTime(h, now);
-      this.highGain.gain.linearRampToValueAtTime(Math.max(0.01, h * 0.55), now + 0.035);
-      this.highGain.gain.linearRampToValueAtTime(h, now + 0.12);
-    }
-    // Soft mechanical edge — recorded overrun, not a synth click.
     playHit(this.ctx, this.dest, this._buf[OVERRUN_URL], {
-      gain: (up ? 0.12 : 0.18) * (0.45 + throttle * 0.4),
-      rate: 0.85 + rpm / p.redline * 0.35,
-      dur: 0.28,
+      gain: (up ? 0.05 : 0.08) * (0.4 + throttle * 0.35),
+      rate: 0.82 + (rpm / p.redline) * 0.22,
+      dur: 0.22,
     });
   }
 
@@ -303,9 +299,9 @@ export class PowertrainVoice {
     this._lastBov = now;
     const intensity = clamp((p.turbo ? this.boost * 0.75 : 0.55) + drop * 0.55, 0.28, 1);
     playHit(this.ctx, this.dest, this._buf[p.liftUrl], {
-      gain: (p.turbo ? 0.48 : 0.36) * intensity,
-      rate: 0.88 + (p.turbo ? this.boost : rpm / p.redline) * 0.22,
-      dur: 0.58,
+      gain: (p.turbo ? 0.16 : 0.12) * intensity,
+      rate: 0.92 + (p.turbo ? this.boost : rpm / p.redline) * 0.1,
+      dur: 0.42,
     });
     if (p.crackle && this._buf[OVERRUN_URL]) {
       const jitter = 0.92 + ((Math.floor(rpm) % 17) / 17) * 0.12;
@@ -318,38 +314,13 @@ export class PowertrainVoice {
     if (p.turbo) this.boost *= 0.3;
   }
 
-  _tickPulse(p, rpm, throttle, mute, now) {
-    if (!this.pulseGain || !this._pulseLfo) return;
-    const fireHz = (rpm / 60) * (p.cylinders / 2);
-    this._pulseLfo.frequency.setTargetAtTime(clamp(fireHz, 8, 220), now, 0.05);
-    const amt =
-      mute *
-      p.pulseVol *
-      (0.35 + throttle * 0.65) *
-      (0.55 + clamp((rpm - p.idle) / (p.redline - p.idle), 0, 1) * 0.55);
-    this.pulseGain.gain.setTargetAtTime(amt, now, 0.06);
-  }
-
-  _tickWhistle(p, throttle, rpmN, mute, now) {
-    if (!this.whistleGain) return;
-    if (!p.turbo || p.whistleVol <= 0) {
-      this.whistleGain.gain.setTargetAtTime(0, now, 0.08);
-      return;
-    }
-    const open = this.boost * throttle * clamp((rpmN - 0.12) / 0.55, 0, 1);
-    this.whistleGain.gain.setTargetAtTime(mute * p.whistleVol * open, now, 0.07);
-    if (this.whistleFilt) {
-      this.whistleFilt.frequency.setTargetAtTime(2600 + this.boost * 2800 + rpmN * 1200, now, 0.08);
-    }
-  }
-
   _tickDynamicEq(p, rpmN, throttle, mute, now) {
-    // Presence stays restrained; LP barely opens under load so the cabin stays bass-heavy.
-    const load = mute * (rpmN * 0.35 + throttle * 0.55);
-    this.presence.gain.setTargetAtTime(p.presence * (0.4 + load * 0.45), now, 0.07);
-    this.presence.frequency.setTargetAtTime(p.presenceHz * (0.9 + throttle * 0.08), now, 0.08);
-    this.lp.frequency.setTargetAtTime(p.lp * (0.62 + load * 0.26), now, 0.08);
-    this.body.gain.setTargetAtTime(p.body * (1.12 - throttle * 0.1), now, 0.08);
+    const load = mute * (rpmN * 0.4 + throttle * 0.6);
+    this.throatEq.gain.setTargetAtTime(p.throatEqDb * (0.78 + load * 0.4), now, 0.07);
+    this.throatEq.frequency.setTargetAtTime(p.throatHz * (0.9 + throttle * 0.12), now, 0.08);
+    this.noteEq.gain.setTargetAtTime(p.noteGain * (0.55 + load * 0.5), now, 0.07);
+    this.lp.frequency.setTargetAtTime(p.lp * (0.82 + load * 0.16), now, 0.08);
+    this.body.gain.setTargetAtTime(p.body * (0.92 + throttle * 0.22), now, 0.08);
   }
 
   _buildGraph() {
@@ -359,6 +330,8 @@ export class PowertrainVoice {
     this.idleGain.gain.value = 0;
     this.loadGain = ctx.createGain();
     this.loadGain.gain.value = 0;
+    this.throatGain = ctx.createGain();
+    this.throatGain.gain.value = 0;
     this.highGain = ctx.createGain();
     this.highGain.gain.value = 0;
     this.pulseGain = ctx.createGain();
@@ -368,104 +341,69 @@ export class PowertrainVoice {
 
     this.hp = ctx.createBiquadFilter();
     this.hp.type = "highpass";
-    this.hp.frequency.value = 55;
-    this.hp.Q.value = 0.7;
+    this.hp.frequency.value = 28;
+    this.hp.Q.value = 0.55;
 
     this.body = ctx.createBiquadFilter();
     this.body.type = "lowshelf";
-    this.body.frequency.value = 125;
-    this.body.gain.value = 2.2;
+    this.body.frequency.value = 92;
+    this.body.gain.value = 5.2;
 
-    this.presence = ctx.createBiquadFilter();
-    this.presence.type = "peaking";
-    this.presence.frequency.value = 1650;
-    this.presence.Q.value = 0.75;
-    this.presence.gain.value = 0.7;
+    this.throatEq = ctx.createBiquadFilter();
+    this.throatEq.type = "peaking";
+    this.throatEq.frequency.value = 205;
+    this.throatEq.Q.value = 0.85;
+    this.throatEq.gain.value = 4.6;
+
+    this.noteEq = ctx.createBiquadFilter();
+    this.noteEq.type = "peaking";
+    this.noteEq.frequency.value = 365;
+    this.noteEq.Q.value = 0.7;
+    this.noteEq.gain.value = 2.4;
+
+    this.rasp = ctx.createBiquadFilter();
+    this.rasp.type = "highshelf";
+    this.rasp.frequency.value = 2200;
+    this.rasp.gain.value = -6.5;
 
     this.lp = ctx.createBiquadFilter();
     this.lp.type = "lowpass";
-    this.lp.frequency.value = 5000;
-    this.lp.Q.value = 0.7;
+    this.lp.frequency.value = 2400;
+    this.lp.Q.value = 0.65;
 
-    // Soft bus compressor — recorded beds stay punchy without clipping the SFX bus.
+    this.throatLp = ctx.createBiquadFilter();
+    this.throatLp.type = "lowpass";
+    this.throatLp.frequency.value = 520;
+    this.throatLp.Q.value = 0.7;
+
+    this.drive = ctx.createWaveShaper();
+    this.drive.curve = makeThroatCurve(2.35);
+    this.drive.oversample = "2x";
+    this.driveTrim = ctx.createGain();
+    this.driveTrim.gain.value = 0.78;
+
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -15;
+    this.comp.threshold.value = -16;
     this.comp.knee.value = 14;
-    this.comp.ratio.value = 2.3;
-    this.comp.attack.value = 0.006;
-    this.comp.release.value = 0.12;
+    this.comp.ratio.value = 2.0;
+    this.comp.attack.value = 0.008;
+    this.comp.release.value = 0.14;
 
     this.idleGain.connect(this.hp);
     this.loadGain.connect(this.hp);
-    this.highGain.connect(this.hp);
+    this.throatGain.connect(this.throatLp);
+    this.throatLp.connect(this.hp);
     this.hp.connect(this.body);
-    this.body.connect(this.presence);
-    this.presence.connect(this.lp);
-    this.lp.connect(this.comp);
+    this.body.connect(this.throatEq);
+    this.throatEq.connect(this.noteEq);
+    this.noteEq.connect(this.rasp);
+    this.rasp.connect(this.lp);
+    this.lp.connect(this.drive);
+    this.drive.connect(this.driveTrim);
+    this.driveTrim.connect(this.comp);
     this.comp.connect(this.dest);
 
-    // Cylinder pulse: filtered noise amplitude-modulated at firing frequency.
-    this.pulseFilt = ctx.createBiquadFilter();
-    this.pulseFilt.type = "bandpass";
-    this.pulseFilt.frequency.value = 180;
-    this.pulseFilt.Q.value = 2.4;
-    this.pulseGain.connect(this.pulseFilt);
-    this.pulseFilt.connect(this.body);
-
-    // Turbo whistle: high bandpass on shared noise.
-    this.whistleFilt = ctx.createBiquadFilter();
-    this.whistleFilt.type = "bandpass";
-    this.whistleFilt.frequency.value = 3600;
-    this.whistleFilt.Q.value = 5.5;
-    this.whistleGain.connect(this.whistleFilt);
-    this.whistleFilt.connect(this.presence);
-
     this._applyTone(true);
-  }
-
-  _startPulse() {
-    if (this._noiseSrc) return;
-    const ctx = this.ctx;
-    const seconds = 1.5;
-    const n = Math.floor(ctx.sampleRate * seconds);
-    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
-
-    const noise = ctx.createBufferSource();
-    noise.buffer = buf;
-    noise.loop = true;
-
-    // LFO gates the noise into a soft firing pulse (depth via pulseGain).
-    this._pulseLfo = ctx.createOscillator();
-    this._pulseLfo.type = "sine";
-    this._pulseLfo.frequency.value = 40;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.55;
-    const pulseGate = ctx.createGain();
-    pulseGate.gain.value = 0.45;
-    this._pulseLfo.connect(lfoGain);
-    lfoGain.connect(pulseGate.gain);
-
-    noise.connect(pulseGate);
-    pulseGate.connect(this.pulseGain);
-    // Same noise also feeds the whistle path (gain 0 until spool).
-    noise.connect(this.whistleGain);
-
-    noise.start();
-    this._pulseLfo.start();
-    this._noiseSrc = noise;
-    this._retunePulse();
-  }
-
-  _retunePulse() {
-    const p = POWERTRAINS[this.carId];
-    if (!this.pulseFilt) return;
-    const now = this.ctx.currentTime;
-    // 4-cyl sits lower / thicker; V6 a bit higher and thinner.
-    const centre = p.cylinders >= 6 ? 220 : 155;
-    this.pulseFilt.frequency.setTargetAtTime(centre, now, 0.1);
-    this.pulseFilt.Q.setTargetAtTime(p.cylinders >= 6 ? 1.8 : 2.6, now, 0.1);
   }
 
   /**
@@ -477,15 +415,21 @@ export class PowertrainVoice {
     const tau = snap ? 0.02 : 0.08;
     this.hp.frequency.setTargetAtTime(p.hp, now, tau);
     this.lp.frequency.setTargetAtTime(p.lp, now, tau);
+    this.body.frequency.setTargetAtTime(p.bodyHz, now, tau);
     this.body.gain.setTargetAtTime(p.body, now, tau);
-    this.presence.gain.setTargetAtTime(p.presence, now, tau);
-    this.presence.frequency.setTargetAtTime(p.presenceHz, now, tau);
+    this.throatEq.frequency.setTargetAtTime(p.throatHz, now, tau);
+    this.throatEq.gain.setTargetAtTime(p.throatEqDb, now, tau);
+    this.noteEq.frequency.setTargetAtTime(p.noteHz, now, tau);
+    this.noteEq.gain.setTargetAtTime(p.noteGain, now, tau);
+    this.rasp.frequency.setTargetAtTime(p.raspHz, now, tau);
+    this.rasp.gain.setTargetAtTime(p.raspDb, now, tau);
   }
 
   _startLoops() {
     this._restart("idleSrc", "idleGain", this._idleBuf());
     this._restart("loadSrc", "loadGain", this._loadBuf());
-    this._restart("highSrc", "highGain", this._loadBuf());
+    this._restart("throatSrc", "throatGain", this._loadBuf());
+    this._restart("highSrc", "highGain", null);
   }
 
   /** @returns {AudioBuffer|null} */
@@ -499,8 +443,8 @@ export class PowertrainVoice {
   }
 
   /**
-   * @param {"idleSrc"|"loadSrc"|"highSrc"} srcKey
-   * @param {"idleGain"|"loadGain"|"highGain"} gainKey
+   * @param {"idleSrc"|"loadSrc"|"throatSrc"|"highSrc"} srcKey
+   * @param {"idleGain"|"loadGain"|"throatGain"|"highGain"} gainKey
    * @param {AudioBuffer|null} buf
    */
   _restart(srcKey, gainKey, buf) {
@@ -534,7 +478,7 @@ export class PowertrainVoice {
     if (!this.ready || !this.ctx) return;
     const now = this.ctx.currentTime;
     const dur = Math.max(0.25, durationSec);
-    for (const g of [this.idleGain, this.loadGain, this.highGain, this.pulseGain, this.whistleGain]) {
+    for (const g of [this.idleGain, this.loadGain, this.throatGain, this.highGain]) {
       if (!g) continue;
       g.gain.cancelScheduledValues(now);
       g.gain.setValueAtTime(g.gain.value, now);
@@ -545,4 +489,35 @@ export class PowertrainVoice {
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * Map RPM onto a loop without helium stretch.
+ * Linear rpm/rec at redline is ~1.6× (chipmunk). Compress the delta so the
+ * recorded centre stays honest and the top is a growl.
+ */
+function loopRate(rpm, rec, mul) {
+  const recHz = Math.max(200, rec);
+  const n = (rpm - recHz) / recHz;
+  const compressed = 1 + n * 0.4 * mul;
+  return clamp(compressed * 0.93, 0.8, 1.18);
+}
+
+/**
+ * Soft saturator — even harmonics from the recording, not a synth oscillator.
+ * @param {number} k
+ * @returns {Float32Array}
+ */
+function makeThroatCurve(k) {
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / (n - 1) - 1;
+    curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+  }
+  return curve;
 }

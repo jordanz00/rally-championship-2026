@@ -52,7 +52,7 @@ check("driftBleedMul low", /driftBleedMul:\s*0\.0[0-4]\d/.test(config), "throttl
 check("slideGripMul recoverable", /slideGripMul:\s*0\.[3-4]\d*/.test(config), "catchable angle grip");
 check("sand loose", /driftEase:\s*1\.[4-9]\d/.test(config), "sand pitch-in");
 check("gravel brakeYaw", /brakeYaw:\s*0\.[6-9]\d/.test(config), "gravel brake-to-slide");
-check("tc dumps in drift", /tcMul = slideIntent \|\| hb > hbEnter \? 0\.12/.test(vehicle), "wheelspin hold");
+check("tc dumps in drift", /tcMul = slideIntent \|\| hb > hbEnter \|\| slideKeepAmt > 0\.2 \? 0\.06/.test(vehicle), "wheelspin hold");
 check("player ground spring", /groundPlantRate:\s*(4[6-9]|[5-9]\d)/.test(config), "direct deck plant");
 check("player chatter scale", /roadChatterScale:\s*0\.\d+/.test(config), "ribbon chatter");
 check("Sprint 33 SLIDE HUD", /cluster-slide/.test(index) && /slideBadge/.test(hud), "drift badge");

@@ -2,13 +2,13 @@
  * FOREST — Sega Rally Championship 1995 (Saturn) reconstruction.
  *
  * Public pace notes:
- *   mini-S · VLER · LER MAYBE · VLEL · ML tunnel · MLm · LMR ·
+ *   mini-S · VLER · LER MAYBE · VLEL · long multi-turn rock tunnel · MLm · LMR ·
  *   VHR hairpin · HL · MR · ER · EL · LMR · ER · slight L
- * Tight tree corridor, birds on the first sweeper, rock tunnel, killer U-turn.
+ * Tight tree corridor, birds on the first sweeper, long rock tunnel, killer U-turn.
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=233";
+import { COLORS } from "../../config.js?v=239";
 
 /**
  * Forest ribbon scale vs the Saturn-narrow authoring (11.6–13.2 m).
@@ -86,19 +86,20 @@ export const FOREST_DEFINITION = {
       sweep: true,
       purpose: "Very long easy left — hug the left wall into the bore",
     },
-    { kind: "straight", length: 16, surface: "dirt", width: forestWidth(12.0), purpose: "Tunnel approach from the right" },
+    { kind: "straight", length: 18, surface: "dirt", width: forestWidth(12.0), purpose: "Tunnel approach from the right" },
+    // Long dark rock bore — multi-turn tube (~500 m), headlights own the cabin.
     {
       kind: "tunnel",
-      length: 24,
+      length: 36,
       surface: "dirt",
       width: forestWidth(11.6),
-      purpose: "Tunnel entrance straight — longer bore",
+      purpose: "Tunnel entrance straight",
     },
     {
       kind: "tunnel",
       direction: "left",
-      radius: 46,
-      angle: 58,
+      radius: 50,
+      angle: 78,
       surface: "dirt",
       width: forestWidth(11.6),
       purpose: "Medium left — rock tunnel",
@@ -106,10 +107,51 @@ export const FOREST_DEFINITION = {
     },
     {
       kind: "tunnel",
-      length: 160,
+      length: 72,
       surface: "dirt",
       width: forestWidth(11.6),
-      purpose: "Tunnel straight",
+      purpose: "Tunnel mid straight after ML",
+    },
+    {
+      kind: "tunnel",
+      direction: "right",
+      radius: 44,
+      angle: 72,
+      surface: "dirt",
+      width: forestWidth(11.6),
+      purpose: "Medium right — deep bore",
+    },
+    {
+      kind: "tunnel",
+      length: 48,
+      surface: "dirt",
+      width: forestWidth(11.6),
+      purpose: "Tunnel straight between bends",
+    },
+    {
+      kind: "tunnel",
+      direction: "left",
+      radius: 52,
+      angle: 58,
+      surface: "dirt",
+      width: forestWidth(11.6),
+      purpose: "Easy left — still underground",
+    },
+    {
+      kind: "tunnel",
+      direction: "right",
+      radius: 38,
+      angle: 52,
+      surface: "dirt",
+      width: forestWidth(11.6),
+      purpose: "Tight right before exit run",
+    },
+    {
+      kind: "tunnel",
+      length: 150,
+      surface: "dirt",
+      width: forestWidth(11.6),
+      purpose: "Long exit bore — headlights punch the dark",
     },
     {
       kind: "straight",
@@ -122,21 +164,21 @@ export const FOREST_DEFINITION = {
     {
       kind: "medium_corner",
       direction: "left",
-      radius: 44,
-      angle: 66,
+      radius: 52,
+      angle: 78,
       surface: "dirt",
       width: forestWidth(12.2),
-      purpose: "Medium left maybe — 3rd, exit left",
+      purpose: "Long medium left — handbrake in, power out",
     },
-    { kind: "straight", length: 32, surface: "dirt", width: forestWidth(12.2), purpose: "Brake for long medium right" },
+    { kind: "straight", length: 28, surface: "dirt", width: forestWidth(12.2), purpose: "Brake for long medium right" },
     {
       kind: "medium_corner",
       direction: "right",
-      radius: 56,
-      angle: 80,
+      radius: 58,
+      angle: 92,
       surface: "dirt",
       width: forestWidth(12.0),
-      purpose: "Long medium right — 3rd, little slide",
+      purpose: "Long medium right — hold the power slide",
     },
     {
       kind: "straight",
@@ -171,50 +213,50 @@ export const FOREST_DEFINITION = {
     {
       kind: "medium_corner",
       direction: "right",
-      radius: 48,
-      angle: 62,
+      radius: 54,
+      angle: 78,
       surface: "dirt",
       width: forestWidth(12.4),
-      purpose: "Medium right",
+      purpose: "Long medium right — slide through dirt",
     },
-    { kind: "straight", length: 28, surface: "dirt", width: forestWidth(12.6), purpose: "Easy pair" },
+    { kind: "straight", length: 24, surface: "dirt", width: forestWidth(12.6), purpose: "Linked drift pair" },
     {
       kind: "s_bend",
       direction: "left",
-      radius: 108,
-      angle: 26,
-      length: 26,
+      radius: 92,
+      angle: 40,
+      length: 24,
       surface: "dirt",
       width: forestWidth(12.6),
-      purpose: "Easy left then easy right",
+      purpose: "Medium left then right — keep attitude",
     },
-    { kind: "straight", length: 34, surface: "dirt", width: forestWidth(12.6), purpose: "Long medium right + easy right as one" },
+    { kind: "straight", length: 28, surface: "dirt", width: forestWidth(12.6), purpose: "Long medium right into the finish family" },
     {
       kind: "medium_corner",
       direction: "right",
-      radius: 58,
-      angle: 78,
+      radius: 60,
+      angle: 88,
       surface: "dirt",
       width: forestWidth(12.6),
-      purpose: "Long medium right",
+      purpose: "Long medium right — hold the slide",
     },
     {
       kind: "medium_corner",
       direction: "right",
-      radius: 118,
-      angle: 28,
+      radius: 96,
+      angle: 52,
       surface: "dirt",
       width: forestWidth(12.8),
-      purpose: "Easy right — same family",
+      purpose: "Medium right — same family, power out",
     },
     {
       kind: "medium_corner",
       direction: "left",
-      radius: 148,
-      angle: 16,
+      radius: 108,
+      angle: 42,
       surface: "dirt",
       width: forestWidth(13.0),
-      purpose: "Slight left to the finish",
+      purpose: "Medium left to the finish",
     },
     {
       kind: "straight",
