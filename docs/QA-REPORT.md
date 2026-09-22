@@ -1,5 +1,21 @@
 # QA report — quality-control pass
 
+## Mobile dust OFF (2026-09-22)
+
+**Player report:** particles still too big / too brown / fill the whole mobile image after the prior budget cut.
+
+**Cause:** cinema grit + soft tire stamps still drew on phone. A “tiny” Points budget still covered the chase; soft tire marks added a brown smear. Fallback `PointsMaterial` also ignored phone size caps. Desktop sand spray was also strengthened in the AAA closeout wave.
+
+**Shipped:** on `isPhonePlay()`, dust does not emit, Points are hidden (`uAlpha=0`), tire marks are skipped/hidden. Desktop wake unchanged.
+
+**Proof:** `node tools/qa-mobile-controls.mjs`
+
+**Boot:** `main.js?v=829` · `effects.js?v=86`
+
+**Human gate:** hard refresh phone Desert — clear road and car, no brown fog.
+
+---
+
 ## CEO AAA Sprint closeout (2026-09-22)
 
 **Mandate:** Realistic-arcade Desert friend drive — feel → chase mass → world coupling → dust/light/audio → lock-30 honesty. Forest Phase 2 acquisition stays async (no primitives).

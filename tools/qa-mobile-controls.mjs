@@ -139,12 +139,13 @@ check(
 );
 
 check(
-  "phone dust budget — tiny pool + small screen points",
-  /this\._phone = phone/.test(read("js/effects.js")) &&
-    /phone \? 360/.test(read("js/effects.js")) &&
-    /phone \? 18/.test(read("js/effects.js")) &&
-    /!isPhonePlay\(\)/.test(game),
-  "mobile must not fill the chase with a brown sand wall"
+  "phone dust OFF — no brown wall",
+  /Phones: dust OFF/.test(read("js/effects.js")) &&
+    /uAlpha:\s*\{\s*value:\s*phone \? 0\.0/.test(read("js/effects.js")) &&
+    /points\.visible = !phone/.test(read("js/effects.js")) &&
+    /if \(isPhonePlay\(\)\) \{/.test(game) &&
+    /dust\.points\.visible = false/.test(game),
+  "mobile must not draw cinema grit or tire-mark smear"
 );
 
 check(

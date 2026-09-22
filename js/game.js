@@ -28,7 +28,7 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=41";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=85";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=86";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=56";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
@@ -1033,9 +1033,12 @@ export class RallyGame {
   _warmRaceSystems() {
     if (!this.scene) return;
     try {
-      if (!this.dust) this.dust = new Dust(this.scene);
+      // Phones skip dust + tire-mark buffers — cinema grit was a brown wall.
+      if (!isPhonePlay()) {
+        if (!this.dust) this.dust = new Dust(this.scene);
+        if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
+      }
       if (!this.sparks) this.sparks = new ImpactSparks(this.scene);
-      if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
     } catch (err) {
       console.warn("[warm] race systems", err);
     }
@@ -3461,7 +3464,9 @@ export class RallyGame {
     this.raceTime += dt;
     this.timeLeft -= dt;
     this._checkpoints();
-    if (this.dust) {
+    if (isPhonePlay()) {
+      if (this.dust && this.dust.points) this.dust.points.visible = false;
+    } else if (this.dust) {
       this.dust.cockpit = !!this._cockpitLive;
       this.dust.emit(this.player, dt, this.track);
     } else if (this.scene) {
@@ -3513,15 +3518,19 @@ export class RallyGame {
       if (near0 >= 0) this.dust.emit(this.opponents[near0].vehicle, dt, this.track);
       if (near1 >= 0) this.dust.emit(this.opponents[near1].vehicle, dt, this.track);
     }
-    if (this.dust) this.dust.step(dt, this.track);
+    if (this.dust && !isPhonePlay()) this.dust.step(dt, this.track);
     if (this.sparks) this.sparks.step(dt);
-    if (this.tireMarks) this.tireMarks.emit(this.player, this.track, dt);
-    for (const o of this.opponents) {
-      // Tire stamps are the expensive secondary FX — near rivals only.
-      if (o.fxBand !== 0) continue;
-      if (this.tireMarks) this.tireMarks.emit(o.vehicle, this.track, dt);
+    // Soft tire stamps also read as a brown smear on phone — skip on mobile.
+    if (!isPhonePlay()) {
+      if (this.tireMarks) this.tireMarks.emit(this.player, this.track, dt);
+      for (const o of this.opponents) {
+        if (o.fxBand !== 0) continue;
+        if (this.tireMarks) this.tireMarks.emit(o.vehicle, this.track, dt);
+      }
+      if (this.tireMarks) this.tireMarks.step(dt);
+    } else if (this.tireMarks && this.tireMarks.mesh) {
+      this.tireMarks.mesh.visible = false;
     }
-    if (this.tireMarks) this.tireMarks.step(dt);
     if (this.track && this.track.wheelRuts && this.track.wheelRuts.flush) {
       this.track.wheelRuts.flush();
     }

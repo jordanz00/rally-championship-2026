@@ -70,19 +70,26 @@ function makeDustSprite() {
 
 /**
  * Custom GLSL particle materials are WebGL-only (Phase R native WebGPU skips them).
+ * Phone must never fall back to large opaque PointsMaterial — that path ignored
+ * uMaxPx/uAlpha and painted a brown wall over the chase.
  * @param {object} spec ShaderMaterial parameters
+ * @param {boolean} [phone=false]
  * @returns {THREE.Material}
  */
-function particleMaterial(spec) {
-  if (RENDER_CAPS.glslCustom) return new THREE.ShaderMaterial(spec);
+function particleMaterial(spec, phone = false) {
+  if (RENDER_CAPS.glslCustom && !phone) return new THREE.ShaderMaterial(spec);
+  if (RENDER_CAPS.glslCustom && phone) {
+    // Still use the shader so uAlpha=0 discards every fragment.
+    return new THREE.ShaderMaterial(spec);
+  }
   return new THREE.PointsMaterial({
     color: 0xc4a882,
-    size: 0.85,
+    size: phone ? 0.02 : 0.85,
     map: makeDustSprite(),
     transparent: true,
-    opacity: 0.9,
+    opacity: phone ? 0 : 0.9,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     sizeAttenuation: true,
   });
 }
@@ -154,6 +161,7 @@ uniform sampler2D uMap;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform float uAlpha;
 varying vec3 vColor;
 varying float vLife;
 varying float vAngle;
@@ -165,7 +173,7 @@ void main() {
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   float mask = texture2D(uMap, uv).a;
   float fade = smoothstep(0.0, 0.05, vLife) * smoothstep(0.0, 0.22, 1.0 - (1.0 - vLife) * 0.28);
-  float alpha = mask * fade * 0.98;
+  float alpha = mask * fade * uAlpha;
   if (alpha < 0.012) discard;
   float fog = clamp((vDepth - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
   // Soft haze only — prior fog*0.72 wiped the wake in Desert/Forest fog.
@@ -179,7 +187,8 @@ export class Dust {
    */
   constructor(scene) {
     this.scene = scene;
-    // Phones: tiny pool. Desktop cinema wake stays dense.
+    // Phones: dust OFF. Cinema wake was painting a solid brown wall over the
+    // chase on Adreno/Mali (player screenshot). Desktop keeps the full spray.
     let phone = false;
     try {
       phone = isPhonePlay();
@@ -187,7 +196,7 @@ export class Dust {
       phone = false;
     }
     this._phone = phone;
-    this.count = phone ? 360 : VISUAL.rearDirtWake === false ? 2200 : 5600;
+    this.count = phone ? 8 : VISUAL.rearDirtWake === false ? 2200 : 5600;
     this.pos = new Float32Array(this.count * 3);
     this.col = new Float32Array(this.count * 3);
     this.vel = new Float32Array(this.count * 3);
@@ -211,33 +220,35 @@ export class Dust {
     this.geo.setAttribute("aLife", new THREE.BufferAttribute(this.fade, 1));
     this.geo.setAttribute("aAngle", new THREE.BufferAttribute(this.angle, 1));
 
-    this.mat = particleMaterial({
-      uniforms: {
-        uMap: { value: makeDustSprite() },
-        // Chase-readable grit on desktop. Phone caps screen-space size so
-        // Desert sand cannot white-out / brown-out the whole viewport.
-        uScale: { value: phone ? 280 : 1180 },
-        uMaxPx: { value: phone ? 18 : 110 },
-        uFogColor: { value: new THREE.Color(0xc9b48a) },
-        uFogNear: { value: 100 },
-        uFogFar: { value: 480 },
+    this.mat = particleMaterial(
+      {
+        uniforms: {
+          uMap: { value: makeDustSprite() },
+          uScale: { value: phone ? 60 : 1180 },
+          uMaxPx: { value: phone ? 4 : 110 },
+          uAlpha: { value: phone ? 0.0 : 0.98 },
+          uFogColor: { value: new THREE.Color(0xc9b48a) },
+          uFogNear: { value: 100 },
+          uFogFar: { value: 480 },
+        },
+        vertexShader: VERT,
+        fragmentShader: FRAG,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.NormalBlending,
+        toneMapped: false,
       },
-      vertexShader: VERT,
-      fragmentShader: FRAG,
-      transparent: true,
-      depthWrite: false,
-      // Desktop: skip depth so thin wakes read behind tires. Phone: test
-      // depth so a sand wall cannot paint over the whole stage.
-      depthTest: phone ? true : false,
-      blending: THREE.NormalBlending,
-      toneMapped: false,
-    });
+      phone
+    );
     this.points = new THREE.Points(this.geo, this.mat);
     // One draw call — never cull a trailing plume that left the car sphere.
     this.points.frustumCulled = false;
     this.geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 220);
     this.points.renderOrder = 6;
-    this.points.visible = true;
+    // Phone: hide the Points draw entirely. Even a "tiny" budget still filled
+    // the mobile chase with opaque sand sprites.
+    this.points.visible = !phone;
     scene.add(this.points);
 
     this.i = 0;
@@ -290,6 +301,21 @@ export class Dust {
    * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object}|null} [track]
    */
   emit(vehicle, dt, track) {
+    // Re-check every emit — constructor can race before phone class arms.
+    if (!this._phone) {
+      try {
+        if (isPhonePlay()) this._phone = true;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this._phone) {
+      if (this.points) this.points.visible = false;
+      if (this.mat && this.mat.uniforms && this.mat.uniforms.uAlpha) {
+        this.mat.uniforms.uAlpha.value = 0;
+      }
+      return;
+    }
     if (!vehicle || vehicle.onGround === false) return;
     if (track && typeof track.query === "function") this._track = track;
     const sphere = this.geo.boundingSphere;
