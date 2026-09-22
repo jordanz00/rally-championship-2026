@@ -1,8 +1,8 @@
 # Stabilization brief — Rally Championship 2026
 
 **Status:** Binding working packet for humans and LLMs.  
-**Date:** 2026-09-08  
-**Boot:** `index.html` → `js/main.js?v=771`  
+**Date:** 2026-09-22  
+**Boot:** `index.html` → `js/main.js?v=828`  
 **Live URL may lag this tree.**
 
 This document replaces `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` as **current engine state**. Those files are historical and marked SUPERSEDED.
@@ -87,22 +87,22 @@ Inspect before “fixing” these — they are in the tree as of 2026-09-05/06:
 | Off-road recoverable | `bounceOffRoad` + player verge speed floor |
 | Screen-space LOD + SSGI (R.2 WebGL) | `gpu-lod.js` + `postfx.js` SSGI; WebGPU opt-in `?webgpu=1` |
 | Progressive grip envelope (PATCH 1) | `combinedTire` peak-hold + breakaway + recover floor; `pedalLoadBlend` into axle load. Jumps not in this patch. |
-| Forest hero photogrammetry (rocks/logs) | `prop-kit.js` `FOREST_HERO_KINDS`. Trees still REJECT — see [`ASSET-QUALITY-GATE.md`](ASSET-QUALITY-GATE.md). |
+| Forest hero photogrammetry (rocks/logs) | `prop-kit.js` `FOREST_HERO_KINDS`. **Hero trees PASS** (Poly Haven a–h). Phase 2 still open: ferns, tunnel rock, veg clusters, road PBR headed gate — see [`ASSET-QUALITY-GATE.md`](ASSET-QUALITY-GATE.md). |
 
 **Do not** start mid-race `Track.create` again. 14 ms yield slices still hitch M1. Result / loading own the warmup.
 
 ---
 
-## 3b. Environment reconstruction (blocked on content)
+## 3b. Environment reconstruction (content-gated)
 
 **Target:** UE5-inspired photorealism at the player's focal distance (browser WebGL). Not Nanite. Not arcade decoration.
 
-Forest is the reference stage. **Phase 1 is blocked** until hero trees exist.
+Forest is the reference stage. **Phase 1 hero trees are PASS.** Phase 2 (road PBR headed gate, ferns, tunnel rock, veg clusters) is still content-blocked — do not fill with primitives.
 
 - Audit: [`ENVIRONMENT-AUDIT.md`](ENVIRONMENT-AUDIT.md) — read before generator edits
-- Gate: `node tools/qa-asset-quality.mjs` (FOREST_TREE_LARGE PASS; tunnel/ferns still open)
+- Gate: `node tools/qa-asset-quality.mjs` (trees PASS; tunnel/ferns still open)
 - Manifest: [`ASSET-ACQUISITION-MANIFEST.md`](ASSET-ACQUISITION-MANIFEST.md)
-- Do not generate primitive trees. Do not skim Desert/Mountain/Lakeside yet.
+- Do not generate primitive trees. Do not skim Desert/Mountain/Lakeside densify until Forest Phase 2 closes.
 
 ---
 

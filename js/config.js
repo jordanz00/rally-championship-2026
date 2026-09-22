@@ -423,29 +423,29 @@ export const LIGHTING = {
     cloudScale: 1.72,
     horizonGlow: 0xf4d8b0,
     horizonStrength: 0.4,
-    dustStrength: 0.48,
+    dustStrength: 0.56,
     wind: [1.85, 0, 0.65],
     fog: 0xe8d090,
     fogNear: 52,
     fogFar: 380,
     hemiSky: 0xb0cce0,
-    hemiGround: 0xd8b078,
-    hemi: 0.56,
+    hemiGround: 0xdcc088,
+    hemi: 0.6,
     sun: 0xffecd0,
     sunKelvin: 5350,
-    sunInt: 2.35,
+    sunInt: 2.42,
     sunDir: [0.54, 0.72, 0.36],
     rimSky: 0xd8ccb0,
-    rimInt: 0.28,
+    rimInt: 0.3,
     fill: 0xd0bc98,
-    fillInt: 0.26,
+    fillInt: 0.28,
     ambient: 0xd0c0a0,
     /**
      * Open-sky bounce must light ridge shadows after the tunnel mouth.
      * 0.14 left the mud exit nearly black — keep a floor, not a wash.
      */
-    ambientInt: 0.22,
-    exposure: 0.96,
+    ambientInt: 0.24,
+    exposure: 0.97,
     gradeWarmth: 0.18,
     skyBack: 0x3a88b8,
     worldEnv: 1.05,
@@ -858,21 +858,21 @@ export const SURFACES = {
     id: "gravel",
     label: "GRAVEL",
     muPeak: 1.1,
-    muSlide: 0.64,
-    slipPeak: 0.152,
+    muSlide: 0.62,
+    slipPeak: 0.156,
     /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
-    brakeHold: 0.3,
-    brakeYaw: 0.92,
-    slideHold: 1.7,
+    brakeHold: 0.26,
+    brakeYaw: 0.98,
+    slideHold: 1.82,
     /** Catch authority on opposite-lock — still patient vs tarmac, not mush. */
-    gripSnap: 1.34,
+    gripSnap: 1.4,
     bumpSteer: 0.88,
     roll: 0.032,
     sink: 0.038,
     bump: 0.054,
     dust: 1.12,
     speedScale: 0.93,
-    driftEase: 1.58,
+    driftEase: 1.64,
     pacejkaB: 3.25,
     pacejkaC: 1.22,
     pacejkaE: 0.16,
@@ -949,20 +949,24 @@ export const SURFACES = {
     id: "sand",
     label: "SAND",
     muPeak: 0.82,
-    muSlide: 0.52,
-    slipPeak: 0.168,
-    /** Soft stop — brake rotates you into the slide (Desert headline). */
-    brakeHold: 0.18,
-    brakeYaw: 1.12,
-    slideHold: 2.22,
-    gripSnap: 1.18,
+    muSlide: 0.5,
+    slipPeak: 0.172,
+    /**
+     * Desert headline (AM3): brake late → rotate → hold → catch on throttle.
+     * Soft brakeHold keeps the stop from becoming a parking brake; gripSnap
+     * is the catch switch so long slideHold is not runoff.
+     */
+    brakeHold: 0.15,
+    brakeYaw: 1.18,
+    slideHold: 2.34,
+    gripSnap: 1.28,
     bumpSteer: 0.86,
     roll: 0.062,
     sink: 0.092,
     bump: 0.028,
     dust: 1.55,
     speedScale: 0.86,
-    driftEase: 1.88,
+    driftEase: 1.94,
     pacejkaB: 3.1,
     pacejkaC: 1.22,
     pacejkaE: 0.17,
@@ -1039,7 +1043,7 @@ export const HANDLING = {
    * straight on hard ground). Scales with the surface driftEase spread, so
    * one dial covers "throttle steers you" across all seven surfaces.
    */
-  throttleSlide: 2.48,
+  throttleSlide: 2.58,
   /**
    * Bump + steering-away amplifier. Research: two wheels on a bump plus
    * steering away from it can end you. Amplify it, do not hide it.
@@ -1092,7 +1096,7 @@ export const HANDLING = {
    * Trail-brake rotation. Brake + steer on loose surfaces transfers weight
    * forward and rotates the nose — AM3 "brake into the corner" technique.
    */
-  trailBrakeYaw: 1.08,
+  trailBrakeYaw: 1.12,
   /**
    * Bonus countersteer authority when catching a slide at the limit.
    * Scales yawFollow when opposite lock is active — catch = switch.
@@ -1291,11 +1295,11 @@ export const ARCADE_ASSIST = {
    */
   yawAssist: 0.24,
   /** Soften lateral velocity when opposite-lock + slip still recoverable. */
-  recoveryAssist: 0.92,
+  recoveryAssist: 0.96,
   /** |vy| (m/s) below which recoveryAssist may help (above = consequence). */
-  recoverableSlide: 13.5,
+  recoverableSlide: 14.2,
   /** Extra rear grip rebuild while countersteering at mid slip (0–1 scale). */
-  driftStability: 0.56,
+  driftStability: 0.6,
   /** Landing: damp residual yaw rate after a planted touchdown. */
   landingAssist: 0.55,
   /**
@@ -1667,12 +1671,16 @@ export const CAMERA = {
   springPosStiffY: 22,
   springLookStiff: 36,
   springLookDamp: 0,
-  springFovStiff: 28,
+  /**
+   * FOV spring — soft enough that GO / land kicks ease in (no hitch),
+   * stiff enough that C-key and land punches still read.
+   */
+  springFovStiff: 16,
   /** Extra XZ spring stiffness while accelerating so medium does not trail the car. */
   accelFollowBoost: 1.55,
   /** Camera lean from longitudinal g (brake = nose-down look, accel = squat). */
-  accelCamPitch: 0.14,
-  brakeCamPitch: 0.22,
+  accelCamPitch: 0.16,
+  brakeCamPitch: 0.24,
   /** Multiplier on existing land Y/FOV kick in `_feelPad` (Stage 6 mass punch). */
   landKickScale: 1.38,
   /** Pitch bias scale in `_chaseCam` (was hard-coded 0.04 / 0.03). */
@@ -1769,11 +1777,12 @@ export const CAMERA = {
       /**
        * No continuous FOV zoom-out (that made the car look farther under
        * throttle). Speed reads through look-ahead + brake/accel pitch +
-       * land/impact kicks instead.
+       * land/impact kicks instead. Keep 0 — GO soft kick must not stack
+       * with a speed FOV hitch on first throttle.
        */
       speedFovScale: 0,
       /** Push look down the road at pace — Model 2 rush without shrinking the car. */
-      speedLookAheadScale: 0.62,
+      speedLookAheadScale: 0.74,
       stableBehind: false,
       lockPos: true,
       lockHeight: false,
@@ -1782,26 +1791,28 @@ export const CAMERA = {
       heightFollow: 38,
       lookFollow: 32,
       /** Grip: keep the hairpin. Slide: lag chassis yaw so the car can angle. */
-      yawStiffness: 18,
-      yawStiffnessSlide: 5.5,
+      yawStiffness: 16,
+      /** Lazy slide yaw — car angles in frame; lens does not whip outside. */
+      yawStiffnessSlide: 4.2,
       yawRateCap: 0,
-      yawRateCapSlide: 1.08,
-      slideYawBlend: 0.78,
-      slideLook: 0.52,
-      slideCamOut: 0.035,
-      slideLookAhead: 1.8,
-      slideKickMax: 0.01,
-      rollFollow: 0.12,
+      /** Harder slide rate cap — powerslide rotates the car, not the world. */
+      yawRateCapSlide: 0.88,
+      slideYawBlend: 0.86,
+      slideLook: 0.48,
+      slideCamOut: 0.03,
+      slideLookAhead: 1.65,
+      slideKickMax: 0.008,
+      rollFollow: 0.1,
       /** Aim along the ribbon, not a side orbit. */
-      roadLookBlend: 0.18,
+      roadLookBlend: 0.2,
       /** Readable mass: brake nose-down / accel squat on the look target. */
-      brakePitchMul: 0.078,
-      accelPitchMul: 0.042,
+      brakePitchMul: 0.088,
+      accelPitchMul: 0.055,
       /** Safari landings must punch the lens — 0.22 erased weight. */
-      landKickMul: 0.82,
+      landKickMul: 0.9,
       landFovMul: 1.05,
-      shakeMul: 0.78,
-      shakeAmp: 0.58,
+      shakeMul: 0.85,
+      shakeAmp: 0.62,
       /** Tighter than far (far uses ~0.55× global) — smooth, not floaty. */
       springPosStiff: 82,
       springPosStiffY: 48,

@@ -139,6 +139,15 @@ check(
 );
 
 check(
+  "phone dust budget — tiny pool + small screen points",
+  /this\._phone = phone/.test(read("js/effects.js")) &&
+    /phone \? 360/.test(read("js/effects.js")) &&
+    /phone \? 18/.test(read("js/effects.js")) &&
+    /!isPhonePlay\(\)/.test(game),
+  "mobile must not fill the chase with a brown sand wall"
+);
+
+check(
   "Android classifies as lowPower / preferLock30",
   /const android = \/Android\/i\.test\(ua\)/.test(read("js/gfx/capabilities.js")) &&
     /preferLock30: lowPower/.test(read("js/gfx/capabilities.js")),

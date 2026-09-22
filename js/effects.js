@@ -17,8 +17,9 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { VISUAL } from "./config.js?v=239";
+import { VISUAL } from "./config.js?v=241";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
+import { isPhonePlay } from "./ui/touch-controls.js?v=3";
 
 /**
  * Soft irregular puff so points read as dust volume, not hard discs.
@@ -93,8 +94,8 @@ function particleMaterial(spec) {
  */
 const PROFILE = {
   sand: {
-    rate: 480, size: [0.55, 1.55], life: [0.75, 1.85], gravity: 6.4, damp: 0.85,
-    spread: 2.15, lift: 5.8, kick: 11.5, chunks: 0.12, plume: 0.58, bounce: 0.14, stick: 0,
+    rate: 560, size: [0.58, 1.65], life: [0.8, 1.95], gravity: 6.2, damp: 0.82,
+    spread: 2.25, lift: 6.2, kick: 12.4, chunks: 0.14, plume: 0.62, bounce: 0.14, stick: 0,
   },
   dirt: {
     rate: 400, size: [0.48, 1.35], life: [0.55, 1.35], gravity: 9.2, damp: 1.35,
@@ -178,7 +179,15 @@ export class Dust {
    */
   constructor(scene) {
     this.scene = scene;
-    this.count = VISUAL.rearDirtWake === false ? 2200 : 5600;
+    // Phones: tiny pool. Desktop cinema wake stays dense.
+    let phone = false;
+    try {
+      phone = isPhonePlay();
+    } catch {
+      phone = false;
+    }
+    this._phone = phone;
+    this.count = phone ? 360 : VISUAL.rearDirtWake === false ? 2200 : 5600;
     this.pos = new Float32Array(this.count * 3);
     this.col = new Float32Array(this.count * 3);
     this.vel = new Float32Array(this.count * 3);
@@ -205,9 +214,10 @@ export class Dust {
     this.mat = particleMaterial({
       uniforms: {
         uMap: { value: makeDustSprite() },
-        // Chase-readable grit: size(m) * scale / dist → ~40–90 px at 12–20 m.
-        uScale: { value: 1180 },
-        uMaxPx: { value: 110 },
+        // Chase-readable grit on desktop. Phone caps screen-space size so
+        // Desert sand cannot white-out / brown-out the whole viewport.
+        uScale: { value: phone ? 280 : 1180 },
+        uMaxPx: { value: phone ? 18 : 110 },
         uFogColor: { value: new THREE.Color(0xc9b48a) },
         uFogNear: { value: 100 },
         uFogFar: { value: 480 },
@@ -216,9 +226,9 @@ export class Dust {
       fragmentShader: FRAG,
       transparent: true,
       depthWrite: false,
-      // Road / chassis depth used to bury contact-patch spray. Points are thin
-      // volumes — skip depth so the wake reads behind the tires in chase.
-      depthTest: false,
+      // Desktop: skip depth so thin wakes read behind tires. Phone: test
+      // depth so a sand wall cannot paint over the whole stage.
+      depthTest: phone ? true : false,
       blending: THREE.NormalBlending,
       toneMapped: false,
     });
@@ -336,9 +346,21 @@ export class Dust {
       speedK * 0.72 + throtK * 0.55 + brakeK * 0.35 + slipK * 2.15 + spinK * 1.35;
     if (work < 0.035) return;
 
-    const focus = vehicle.ai ? 0.42 : this.cockpit ? 1.15 : 1.55;
-    const envBoost = 1.05 + this._dustStrength * 1.35;
-    const wakeOn = VISUAL.rearDirtWake !== false;
+    const focus = vehicle.ai
+      ? this._phone
+        ? 0.1
+        : 0.42
+      : this.cockpit
+        ? this._phone
+          ? 0.32
+          : 1.15
+        : this._phone
+          ? 0.22
+          : 1.55;
+    const envBoost = this._phone
+      ? 0.45 + this._dustStrength * 0.28
+      : 1.05 + this._dustStrength * 1.35;
+    const wakeOn = !this._phone && VISUAL.rearDirtWake !== false;
 
     let bag = this._carry.get(vehicle);
     if (!bag || bag.length !== 4) {
@@ -412,7 +434,17 @@ export class Dust {
         outside *
         (this.cockpit ? 0.7 : 1);
       bag[wi] += perSec * dt;
-      const cap = vehicle.ai ? 4 : this.cockpit ? 18 : 36;
+      const cap = vehicle.ai
+        ? this._phone
+          ? 1
+          : 4
+        : this.cockpit
+          ? this._phone
+            ? 2
+            : 18
+          : this._phone
+            ? 2
+            : 36;
       let n = Math.min(cap, bag[wi] | 0);
       bag[wi] -= n;
       if (n < 1) continue;
@@ -548,7 +580,8 @@ export class Dust {
 
     const life =
       lerp(profile.life[0], profile.life[1], Math.random()) *
-      (grit ? 0.7 : plume ? 1.12 : speck ? 0.75 : 0.92);
+      (grit ? 0.7 : plume ? 1.12 : speck ? 0.75 : 0.92) *
+      (this._phone ? 0.38 : 1);
     this.life[i] = life;
     this.maxLife[i] = life;
     this.fade[i] = 1;
@@ -560,6 +593,7 @@ export class Dust {
     else sz *= 0.85 + Math.random() * 0.35 + slipK * 0.08;
     sz *= 1.05 + speedK * 0.18;
     if (this.cockpit) sz *= 0.78;
+    if (this._phone) sz *= 0.28;
     if (sz < 0.08) sz = 0.08;
     this.size[i] = sz;
 
@@ -946,15 +980,15 @@ const MARK_PROFILE = {
   },
   sand: {
     type: "soft",
-    life: 48.0,
-    width: 0.46,
-    alpha: 0.46,
-    dark: 0.46,
-    slip: 0.012,
-    steer: 0.025,
-    speed: 0.4,
-    center: 0x3a2c1e,
-    lip: 0x6a5440,
+    life: 56.0,
+    width: 0.5,
+    alpha: 0.54,
+    dark: 0.4,
+    slip: 0.01,
+    steer: 0.022,
+    speed: 0.35,
+    center: 0x322418,
+    lip: 0x7a6048,
   },
   mud: {
     type: "soft",

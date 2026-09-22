@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=239";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=241";
 import { selectLodBand } from "../gfx/gpu-lod.js?v=1";
 import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=7";
@@ -171,9 +171,10 @@ const FOREST_TREE_CLEAR = 8.6;
 /**
  * Visual + plant shoulder skirt. A steep 0.38 drop made the verge a wall the
  * chassis punched through; keep a shallow grade over a longer run.
+ * Contract: SKIRT_SLOPE 0.18 + biome base ~6.4–8.5 m (max 13.5) — not 11–12 m slabs.
  */
-const SKIRT_SLOPE = 0.12;
-const SKIRT_REACH_MAX = 15.5;
+const SKIRT_SLOPE = 0.18;
+const SKIRT_REACH_MAX = 13.5;
 const SKIRT_MID_U = 0.38;
 const SKIRT_MID_DROP = 0.22;
 const SKIRT_PLANT_BIAS = 0.04;
@@ -183,11 +184,11 @@ const SKIRT_PLANT_BIAS = 0.04;
  * @returns {number}
  */
 function skirtBaseReach(scenery) {
-  if (scenery === "desert") return 8.2;
-  if (scenery === "mountain") return 9.6;
-  if (scenery === "forest") return 8.8;
-  if (scenery === "lakeside") return 7.6;
-  return 7.2;
+  if (scenery === "desert") return 6.8;
+  if (scenery === "mountain") return 8.5;
+  if (scenery === "forest") return 7.6;
+  if (scenery === "lakeside") return 6.4;
+  return 6.8;
 }
 
 /**

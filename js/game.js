@@ -12,11 +12,11 @@ import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=89";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=212";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
-import { Track } from "./tracks/track.js?v=368";
+import { Track } from "./tracks/track.js?v=369";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=48";
 import { Opponent } from "./ai.js?v=195";
-import { RallyAudio } from "./audio/engine.js?v=77";
+import { RallyAudio } from "./audio/engine.js?v=78";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=46";
 import {
@@ -28,7 +28,7 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=41";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=83";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=85";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=56";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
@@ -59,7 +59,7 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
-} from "./config.js?v=239";
+} from "./config.js?v=241";
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
@@ -3507,9 +3507,9 @@ export class RallyGame {
     }
     const locked30 = !!(this.perfTier && this.perfTier.locked30);
     if (this.dust) this.dust.locked30 = locked30;
-    // Lock-30: player wake only. Rival grit is a second Track.query spray
-    // the chase camera barely reads.
-    if (this.dust && !locked30) {
+    // Lock-30 / phones: player wake only. Rival grit fills the chase on
+    // Adreno/Mali and was drowning Desert sand into a brown wall.
+    if (this.dust && !locked30 && !isPhonePlay()) {
       if (near0 >= 0) this.dust.emit(this.opponents[near0].vehicle, dt, this.track);
       if (near1 >= 0) this.dust.emit(this.opponents[near1].vehicle, dt, this.track);
     }

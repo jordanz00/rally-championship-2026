@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { LIGHTING, VISUAL } from "../config.js?v=239";
+import { LIGHTING, VISUAL } from "../config.js?v=241";
 
 const COLS = 8;
 const ROWS = 12;

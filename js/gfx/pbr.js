@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=239";
+import { VISUAL } from "../config.js?v=241";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */

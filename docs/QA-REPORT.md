@@ -1,5 +1,87 @@
 # QA report — quality-control pass
 
+## CEO AAA Sprint closeout (2026-09-22)
+
+**Mandate:** Realistic-arcade Desert friend drive — feel → chase mass → world coupling → dust/light/audio → lock-30 honesty. Forest Phase 2 acquisition stays async (no primitives).
+
+**Wave 1**
+- **G1** — sand/gravel slide verbs + recovery assist (`config.js?v=241`); `qa-am3-handling` PASS
+- **C1** — medium chase look-ahead / pitch / land kick; softer slide yaw + FOV spring; `qa-medium-camera` PASS
+- **W1** — skirt ramp contract restored (`track.js?v=369`); world-geometry + env-clip + desert mouth PASS
+
+**Wave 2**
+- **E1** — stronger desktop sand spray + tire trenches; phone dust wall caps preserved (`effects.js?v=85`)
+- **L1** — Desert hemi/sun/ambient bounce depth without sat punch (`LIGHTING.desert`)
+- **A1** — earlier cruise load-bed fade so 4th stays chesty (`powertrain.js?v=34`)
+
+**Wave 3 / V1**
+- `preferLock30` + `forceLock30AtSettle` + `lockRaceQuality` confirmed
+- Stabilization brief boot → `?v=828`; trees PASS doc drift fixed
+- Manifest: CEO Sprint V1 next-acquire table (fern/tunnel/veg/road) — content still MISSING, honest
+
+**Proof:** `qa-static-audit` · `qa-world-geometry` · `qa-env-clip` · `qa-desert-tunnel-mouth` · `qa-am3-handling` · `qa-engine-cruise` · `qa-medium-camera` · `qa-mobile-controls` · `qa-asset-quality` (Forest trees PASS)
+
+**Boot:** `main.js?v=828` · `game.js?v=828` · `config.js?v=241` · `track.js?v=369` · `effects.js?v=85` · `powertrain.js?v=34`
+
+**Human gate:** Desert practice hard-refresh — late-brake slide, weighty chase, grit at tires (not phone sand wall), 4th pull ~6k not scream. Real Android Chrome still required for friend phone gate.
+
+---
+
+## Mobile dust wall (2026-09-22)
+
+**Player report (screenshot):** on phone Desert, brown particles fill ~99% of the chase — road and car unreadable.
+
+**Cause:** cinema dust pool (5600) with large screen-space points (`uScale` 1180 / `uMaxPx` 110), `depthTest` off, chase focus 1.55, and rival emitters. On a phone viewport that reads as a solid sand wall.
+
+**Shipped:** phone dust pool 360, `uMaxPx` 18, depth test on, no plumes / rival grit, ~5× lower rate/size/life. Desktop wake unchanged.
+
+**Proof:** `node tools/qa-mobile-controls.mjs`
+
+**Boot:** `main.js?v=827` · `effects.js?v=84`
+
+**Human gate:** hard refresh on phone, Desert drive — grit at the tires only, stage stays visible.
+
+---
+
+## G1 Desert sand / gravel AM3 slide feel (2026-09-22)
+
+**Player moment:** Desert practice — brake late into the first right, rotate, hold the slide, catch with throttle. Gravel shares the same attack→slide→recover verbs. 4th cruise remains a pull (Vmax overdrive already shipped).
+
+**Shipped (config-only):** sand softer `brakeHold` + higher `brakeYaw` / `slideHold` / `driftEase` with stronger `gripSnap` catch; gravel half-lock retuned the same way; `throttleSlide` / `trailBrakeYaw` + recovery assist window nudged. No `vehicle.js` architecture change.
+
+**Proof:** `node tools/qa-am3-handling.mjs` · `node tools/qa-engine-cruise.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=826` · `game.js?v=826` · `config.js?v=240` · `vehicle.js?v=166` (unchanged)
+
+**Human gate:** Hard-refresh → Desert Automatic. First sand right — late brake rotates, slide holds, throttle catches without parking-brake stop or runoff spin.
+
+---
+
+## W1 Desert world coupling — skirt ramp contract (2026-09-22)
+
+**Player moment:** Off the painted edge on Desert (and other biomes), the car rides a gradual shoulder ramp — not a steep 11–12 m slab folded onto hairpins.
+
+**Cause:** `skirtBaseReach` / `SKIRT_SLOPE` drifted to 0.12 slope and oversized bases (desert 8.2 / mountain 9.6). `qa-env-clip` gate expected the shipped gradual-ramp contract.
+
+**Shipped (generators only — no `Track.query` / `vehicle.js` rewrite):**
+- Restored **SKIRT_SLOPE 0.18**, **SKIRT_REACH_MAX 13.5**
+- Biome bases: desert **6.8**, mountain **8.5**, forest **7.6**, lakeside **6.4**
+- Per-point reach smoothing comment retained
+
+**Proof:**
+```bash
+node tools/qa-world-geometry.mjs   # PASS
+node tools/qa-env-clip.mjs         # PASS
+node tools/qa-desert-tunnel-mouth.mjs  # PASS
+node tools/qa-static-audit.mjs     # PASS
+```
+
+**Boot:** `main.js?v=826` · `game.js?v=826` · `track.js?v=369`
+
+**Human gate:** Desert practice — slide a wheel onto the verge; chassis stays on the sand apron, no clip/float/bury through a slab skirt.
+
+---
+
 ## Android Pixel UA smoke (2026-09-21)
 
 **Ask:** run a test on Android and confirm it works.

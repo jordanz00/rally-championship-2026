@@ -219,14 +219,14 @@ export class PowertrainVoice {
     const brakeLoad = brake * 0.35 * rpmN;
 
     const idleMix = mute * (1 - rpmN) * (0.72 + 0.28 * (1 - throttle));
-    // Working-band WOT is chesty, not a limiter scream. Extra RPM past ~0.72
+    // Working-band WOT is chesty, not a limiter scream. Extra RPM past ~0.68
     // (cruise 4th) adds little gain — the engine is doing its job, not straining.
-    const cruise = clamp((rpmN - 0.72) / 0.28, 0, 1);
+    const cruise = clamp((rpmN - 0.68) / 0.32, 0, 1);
     const loadMix =
       mute *
-      (rpmN * 0.42 + throttle * 0.7 + coast * 0.32 + brakeLoad) *
-      lerp(1, 0.78, cruise * throttle);
-    const throatMix = mute * p.throatVol * (0.28 + loadMix * 0.72 + idleMix * 0.22);
+      (rpmN * 0.4 + throttle * 0.68 + coast * 0.32 + brakeLoad) *
+      lerp(1, 0.66, cruise * throttle);
+    const throatMix = mute * p.throatVol * (0.26 + loadMix * 0.7 + idleMix * 0.22);
 
     this.idleGain.gain.setTargetAtTime(idleMix * p.idleVol, now, 0.07);
     this.loadGain.gain.setTargetAtTime(loadMix * p.loadVol, now, 0.055);

@@ -63,7 +63,9 @@ check(
 check("_autoShift binds this.spec", /_autoShift\(dt\) \{\s*const s = this\.spec;/.test(vehicle));
 check(
   "load bed does not scream in cruise",
-  /cruise/.test(powertrain) && /rpmN - 0\.72/.test(powertrain),
+  /cruise/.test(powertrain) &&
+    (/rpmN - 0\.72/.test(powertrain) || /rpmN - 0\.68/.test(powertrain)) &&
+    (/lerp\(1,\s*0\.78/.test(powertrain) || /lerp\(1,\s*0\.66/.test(powertrain)),
   "WOT in 4th should stay chesty"
 );
 

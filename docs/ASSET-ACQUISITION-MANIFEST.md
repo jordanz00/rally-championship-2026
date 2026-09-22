@@ -85,6 +85,22 @@ light multiply, not the albedo. Still a heightmap. Do not call this a scanned fo
 
 ---
 
+## CEO Sprint V1 — next acquire (async, no primitives)
+
+Ordered for Forest stop-and-look (5–30 m). **Do not** ship billboard ferns or tube-mapped tunnels as PASS.
+
+| Priority | ID | Action |
+|---|---|---|
+| 1 | `FOREST_VEGETATION_CLUSTER` | Acquire 5 CC0/CC-BY volumetric bush/fern/grass/litter GLBs (albedo+normal+rough). Keep `fern_02` mid/far only until replaced. |
+| 2 | `FOREST_TUNNEL_ROCK` | Acquire 4 sculpted portal/strata/debris meshes; maps already on disk are not enough. |
+| 3 | `ROAD_MATERIAL_FOREST` | Headed 5/10/20/30 m PASS gate on existing Poly Haven dirt/gravel projection; add height/displacement only if licensed maps exist. |
+| 4 | `FOREST_ROCK_HERO` | +2 distinct outcrops (still PARTIAL 4/6). |
+| 5 | `FOREST_BUSH` / `FOREST_ROOTS` | Phase 2 after clusters. |
+
+Desert friend-ship does **not** wait on this table.
+
+---
+
 ## Already acceptable (do not replace with worse)
 
 | ID | File | Notes |
