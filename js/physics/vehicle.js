@@ -50,7 +50,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=241";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
-import { bounceOffRoad, glanceObstacles } from "./collide.js?v=56";
+import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=57";
 import { JumpModel } from "./jump.js?v=35";
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
@@ -798,6 +798,7 @@ export class Vehicle {
       const q = track.query(this.position.x, this.position.z, this._q, this.progress);
       bounceOffRoad(this, q, track);
       glanceObstacles(this, track);
+      holdVisualGround(this, track);
       if (this._envDeep && this._hasGoodPose) {
         this.position.x = this._goodX;
         this.position.z = this._goodZ;
@@ -1132,6 +1133,9 @@ export class Vehicle {
     // glance while airborne let hops punch the chassis through rock.
     bounceOffRoad(this, q2, track);
     glanceObstacles(this, track);
+    // Dune faces and flyover aprons are not ribbon colliders. Plant off-road
+    // on the mesh and refuse a nose that would tunnel a steep face.
+    holdVisualGround(this, track);
     this.stripLaunchReverse();
     if (this._envDeep && this._hasGoodPose) {
       // Impossible state: still deep in a solid after TOI + correction.

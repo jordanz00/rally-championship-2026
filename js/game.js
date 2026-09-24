@@ -7,12 +7,12 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=166";
+import { Vehicle } from "./physics/vehicle.js?v=167";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=89";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=212";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
-import { Track } from "./tracks/track.js?v=369";
+import { Track } from "./tracks/track.js?v=371";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=48";
 import { Opponent } from "./ai.js?v=195";
@@ -28,8 +28,8 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=41";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=86";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=56";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=87";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=57";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=15";

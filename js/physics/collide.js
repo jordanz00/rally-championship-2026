@@ -794,6 +794,50 @@ export function glanceObstacles(v, track) {
 }
 
 /**
+ * Keep the chassis on the visible ground and out of steep faces.
+ *
+ * The ribbon heightfield does not include dune walls or a flyover apron.
+ * Off the paint, ride the land mesh. A nose sample that rises like a wall
+ * shoves the car back along its heading so the body cannot tunnel the face.
+ *
+ * @param {{position:{x:number,y:number,z:number}, velocity:{x:number,z:number}, yaw:number, onGround?:boolean, hitWall?:number, _q?:{onRoad?:boolean, jumpKind?:string, height?:number}}} v
+ * @param {{scenery?:string, _groundHeight?:Function}} track
+ */
+export function holdVisualGround(v, track) {
+  if (!track || typeof track._groundHeight !== "function" || !v.onGround) return;
+  const q = v._q;
+  if (q && q.jumpKind === "gap") return;
+  const scenery = track.scenery || "desert";
+  const gy = track._groundHeight(v.position.x, v.position.z, scenery);
+  if (!Number.isFinite(gy)) return;
+  const onRoad = !!(q && q.onRoad);
+  const deck = q && Number.isFinite(q.height) ? q.height : v.position.y;
+  // Off the painted deck the mesh is the floor. A small lift plants the
+  // tires on it; a multi-metre bury is a wall, not a bank to climb.
+  if (!onRoad && gy > v.position.y + 0.06) {
+    const bury = gy - v.position.y;
+    if (bury < 2.2) v.position.y += Math.min(0.5, bury);
+  }
+  const fx = Math.sin(v.yaw);
+  const fz = Math.cos(v.yaw);
+  const ahead = track._groundHeight(v.position.x + fx * 2.2, v.position.z + fz * 2.2, scenery);
+  if (!Number.isFinite(ahead)) return;
+  const base = onRoad ? Math.max(deck, v.position.y) : Math.max(gy, v.position.y);
+  const face = ahead - base;
+  if (face > 1.8) {
+    const push = Math.min(0.85, (face - 1.2) * 0.45);
+    v.position.x -= fx * push;
+    v.position.z -= fz * push;
+    const vn = v.velocity.x * fx + v.velocity.z * fz;
+    if (vn > 0.4) {
+      v.velocity.x -= fx * vn;
+      v.velocity.z -= fz * vn;
+    }
+    v.hitWall = Math.max(v.hitWall || 0, Math.min(face, 4) * 0.35);
+  }
+}
+
+/**
  * Final hard boundary: if the car is still inside a solid after the sweep
  * resolve, nudge out once. Does not zero velocity.
  *

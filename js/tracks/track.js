@@ -1758,6 +1758,19 @@ export class Track {
     const mountain = scenery === "mountain";
     const forest = scenery === "forest";
     const drop = mountain ? 0.28 : forest ? 0.38 : scenery === "lakeside" ? 0.55 : desert ? 0.95 : 0.55;
+    // Stacked ribbons (Desert start straight under the later flyover): the
+    // nearest sample can be the deck in the air. Land must stay with the road
+    // underneath, or the apron becomes a wall the car drives through.
+    if (
+      desert &&
+      overlapBed != null &&
+      Number.isFinite(overlapBed) &&
+      roadY - overlapBed > 3.2 &&
+      !tunnel
+    ) {
+      const stackedClear = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      if (stackedClear < roadW * 0.5 + 18) return overlapBed - drop;
+    }
     // Shared TunnelVolume mouth contract — every stage: never raise land through
     // the drive cone. Mountain biome ridges previously skipped this (Desert-only).
     {
@@ -2738,6 +2751,8 @@ export class Track {
     /** @type {Map<number, {pos:number[], col:number[], idx:number[], n:number}>} */
     const skirt = new Map();
     /** @type {Map<number, {pos:number[], col:number[], idx:number[], n:number}>} */
+    const under = new Map();
+    /** @type {Map<number, {pos:number[], col:number[], idx:number[], n:number}>} */
     const kerb = new Map();
     const color = new THREE.Color();
     const desert = def.scenery === "desert";
@@ -2912,23 +2927,37 @@ export class Track {
       }
     }
 
+    // Flyover skirt must not cross a foreign drive corridor. Smoothing can
+    // only run before this clamp — stretching reach back out rebuilds the wall.
+    for (let i = 0; i < nPts; i++) {
+      const p = pts[i];
+      if (p.tunnel || p.underpass) continue;
+      const e = edge(p);
+      reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist);
+      reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist);
+    }
+
     for (let i = 0; i < nPts; i++) {
       const p = pts[i];
       const e = edge(p);
-      const plantOuter = (lx, lz, edgeY) => {
+      const plantOuter = (lx, lz, edgeY, reach) => {
         if (p.tunnel || p.underpass || p.jump || p.jumpWash) return edgeY - 0.14;
         if (p.landmark) return edgeY - 0.2;
         const gy = this._groundHeight(lx, lz, scenery);
         if (!Number.isFinite(gy)) return edgeY - 0.22;
         // Seat into land — floating lips left sky holes under the apron.
-        return Math.min(gy - 0.05, edgeY - 0.1);
+        // Slope cap: a shortened flyover reach must stay a lip, not a curtain
+        // down through the road underneath.
+        const seated = Math.min(gy - 0.05, edgeY - 0.1);
+        const cap = Math.max(0.22, (reach > 0 ? reach : 0.4) * SKIRT_SLOPE);
+        return Math.max(seated, edgeY - cap);
       };
       const oLx = e.lx + p.nx * reachL[i];
       const oLz = e.lz + p.nz * reachL[i];
       const oRx = e.rx - p.nx * reachR[i];
       const oRz = e.rz - p.nz * reachR[i];
-      outYL[i] = plantOuter(oLx, oLz, kerbYL[i]);
-      outYR[i] = plantOuter(oRx, oRz, kerbYR[i]);
+      outYL[i] = plantOuter(oLx, oLz, kerbYL[i], reachL[i]);
+      outYR[i] = plantOuter(oRx, oRz, kerbYR[i], reachR[i]);
       midYL[i] = kerbYL[i] + (outYL[i] - kerbYL[i]) * SKIRT_MID_DROP;
       midYR[i] = kerbYR[i] + (outYR[i] - kerbYR[i]) * SKIRT_MID_DROP;
     }
@@ -2982,38 +3011,30 @@ export class Track {
       // slabs. Keep a short dark tuck so the kerb meets the rock, nothing else.
       const inTunnel = !!(p.tunnel || q.tunnel);
       const inUnderpass = !!(p.underpass || q.underpass);
-      // Closed deck under FrontSide ribbon on EVERY stage — without this,
-      // elevated / overlapping decks show sky through backfaces ("seeing
-      // behind the polygons of the roads that are above"). Thickness matches
-      // land bed so the ribbon reads supported, not floating.
-      const yDown =
-        scenery === "mountain"
-          ? 0.24
-          : scenery === "forest"
-            ? 0.34
-            : desert
-              ? 0.48
-              : 0.36;
-      const underHex = mixHex(tintP, 0x2a241c, 0.45);
-      const underHexQ = mixHex(tintQ, 0x2a241c, 0.45);
-      vert(rb, e.rx, e.yR - yDown, e.rz, underHex, 1, v0);
-      vert(rb, e.lx, e.yL - yDown, e.lz, underHex, 0, v0);
-      vert(rb, f.rx, f.yR - yDown, f.rz, underHexQ, 1, v1);
-      vert(rb, f.lx, f.yL - yDown, f.lz, underHexQ, 0, v1);
-      quad(rb);
-      // Edge walls close the deck thickness so chase cam never sees an open slab.
-      const edgeHex = mixHex(tintP, 0x3a3228, 0.35);
-      const edgeHexQ = mixHex(tintQ, 0x3a3228, 0.35);
-      vert(rb, e.lx, e.yL, e.lz, edgeHex, 0, v0);
-      vert(rb, e.lx, e.yL - yDown, e.lz, underHex, 0, v0);
-      vert(rb, f.lx, f.yL, f.lz, edgeHexQ, 0, v1);
-      vert(rb, f.lx, f.yL - yDown, f.lz, underHexQ, 0, v1);
-      quad(rb);
-      vert(rb, e.rx, e.yR - yDown, e.rz, underHex, 1, v0);
-      vert(rb, e.rx, e.yR, e.rz, edgeHex, 1, v0);
-      vert(rb, f.rx, f.yR - yDown, f.rz, underHexQ, 1, v1);
-      vert(rb, f.rx, f.yR, f.rz, edgeHexQ, 1, v1);
-      quad(rb);
+      // Thin sand soffit. The old 0.48 m deck lived in the road material, so
+      // downward normals rendered as a black blade across whatever road sat
+      // underneath a flyover. Own bucket, road-colored, lit even in shadow.
+      const yDown = scenery === "mountain" ? 0.16 : scenery === "forest" ? 0.18 : 0.16;
+      const ub = plainBucket(under, chunk);
+      const underHex = mixHex(tintP, desert ? 0xd2b07a : 0x8a7560, 0.35);
+      const underHexQ = mixHex(tintQ, desert ? 0xd2b07a : 0x8a7560, 0.35);
+      vert(ub, e.rx, e.yR - yDown, e.rz, underHex);
+      vert(ub, e.lx, e.yL - yDown, e.lz, underHex);
+      vert(ub, f.rx, f.yR - yDown, f.rz, underHexQ);
+      vert(ub, f.lx, f.yL - yDown, f.lz, underHexQ);
+      quad(ub);
+      const edgeHex = mixHex(tintP, desert ? 0xc4a468 : 0x7a6854, 0.25);
+      const edgeHexQ = mixHex(tintQ, desert ? 0xc4a468 : 0x7a6854, 0.25);
+      vert(ub, e.lx, e.yL, e.lz, edgeHex);
+      vert(ub, e.lx, e.yL - yDown, e.lz, underHex);
+      vert(ub, f.lx, f.yL, f.lz, edgeHexQ);
+      vert(ub, f.lx, f.yL - yDown, f.lz, underHexQ);
+      quad(ub);
+      vert(ub, e.rx, e.yR - yDown, e.rz, underHex);
+      vert(ub, e.rx, e.yR, e.rz, edgeHex);
+      vert(ub, f.rx, f.yR - yDown, f.rz, underHexQ);
+      vert(ub, f.rx, f.yR, f.rz, edgeHexQ);
+      quad(ub);
 
       const tun = inTunnel || inUnderpass;
       const tunIn = tun ? 0x4a4034 : null;
@@ -3149,6 +3170,26 @@ export class Track {
       mat.polygonOffsetFactor = -4;
       mat.polygonOffsetUnits = -8;
       this._registerChunk(mesh, b.chunk);
+      group.add(mesh);
+    }
+
+    // Soffit is its own draw: road PBR leaves downward faces black, which read
+    // as a solid clip through the lane under every flyover.
+    const soffitMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: desert ? 0xb88848 : scenery === "forest" ? 0x6a5840 : 0x7a6848,
+      emissiveIntensity: 0.9,
+      roughness: 1,
+      metalness: 0,
+      vertexColors: true,
+      fog: true,
+    });
+    for (const [chunk, b] of under) {
+      if (!b.n) continue;
+      const mesh = new THREE.Mesh(buildGeo(b, false), soffitMat);
+      mesh.receiveShadow = false;
+      mesh.castShadow = false;
+      this._registerChunk(mesh, chunk);
       group.add(mesh);
     }
 
@@ -10480,6 +10521,67 @@ export class Track {
       return { id: mix > 0.55 ? here : prev, from: prev, to: here, mix };
     }
     return { id: here, from: here, to: here, mix: 0 };
+  }
+
+  /**
+   * Shorten a skirt so it stops at the edge of any other ribbon.
+   * A flyover apron that keeps its full reach becomes a sand wall across the
+   * road underneath — the car then drives through it.
+   * @param {number} ex edge X
+   * @param {number} ez edge Z
+   * @param {number} nx outward normal X
+   * @param {number} nz outward normal Z
+   * @param {number} want desired reach (m)
+   * @param {number} selfDist along-track distance of this post
+   * @returns {number}
+   */
+  _limitSkirtReach(ex, ez, nx, nz, want, selfDist) {
+    if (!(want > 0.45)) return want;
+    const steps = 5;
+    for (let s = 1; s <= steps; s++) {
+      const dist = (want * s) / steps;
+      if (this._skirtHitsForeignDeck(ex + nx * dist, ez + nz * dist, selfDist)) {
+        return Math.max(0.3, (want * (s - 1)) / steps);
+      }
+    }
+    return want;
+  }
+
+  /**
+   * True when (x, z) sits in another ribbon's drive corridor.
+   * Local posts (same stretch of road) are ignored.
+   * @param {number} x
+   * @param {number} z
+   * @param {number} selfDist
+   * @returns {boolean}
+   */
+  _skirtHitsForeignDeck(x, z, selfDist) {
+    const pts = this.points;
+    if (!pts || pts.length < 2) return false;
+    let hit = false;
+    this._forNearbySegments(x, z, (i) => {
+      if (hit) return;
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (Math.abs(a.dist - selfDist) < 48 && Math.abs(b.dist - selfDist) < 48) return;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz;
+      let t = 0;
+      if (len2 > 1e-6) {
+        t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+      }
+      const px = a.x + dx * t;
+      const pz = a.z + dz * t;
+      const nx = a.nx + (b.nx - a.nx) * t;
+      const nz = a.nz + (b.nz - a.nz) * t;
+      const lat = Math.abs((x - px) * nx + (z - pz) * nz);
+      const w = a.width + (b.width - a.width) * t;
+      if (lat < w * 0.5 + 2.4) hit = true;
+    });
+    return hit;
   }
 
   /**

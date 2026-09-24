@@ -69,13 +69,13 @@ check(
 );
 check(
   "readable point size cap",
-  /uMaxPx:\s*\{\s*value:\s*(9\d|[1-9]\d{2})\s*\}/.test(effects),
-  "uMaxPx 90+ for chase-readable grit"
+  /uMaxPx:\s*\{\s*value:\s*phone \? 4 : (1\d|2\d)\s*\}/.test(effects),
+  "uMaxPx stays a small tire puff, not a screen-filling disc"
 );
 check(
-  "spray not buried by road depth",
-  /depthTest:\s*false/.test(effects) && /frustumCulled\s*=\s*false/.test(effects),
-  "depthTest off + no frustum cull so wake stays visible"
+  "spray depth-tests against the car",
+  /depthTest:\s*true/.test(effects) && /frustumCulled\s*=\s*false/.test(effects),
+  "depthTest on so grit cannot paint over the body"
 );
 check(
   "inherits chassis + wheel physics",
@@ -84,8 +84,8 @@ check(
 );
 check(
   "chase-scale particle sizes",
-  /size:\s*\[\s*0\.(4|5)/.test(effects) && /uScale:\s*\{\s*value:\s*1[0-9]{3}/.test(effects),
-  "metre sizes + uScale for medium chase"
+  /size:\s*\[\s*0\.0[5-9]/.test(effects) && /uScale:\s*\{\s*value:\s*phone \? 60 : \d{3}/.test(effects),
+  "small metre sizes so roost stays at the tire"
 );
 check(
   "HDR skybox armed",

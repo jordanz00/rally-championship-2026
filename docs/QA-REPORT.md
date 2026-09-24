@@ -1,5 +1,35 @@
 # QA report — quality-control pass
 
+## Flyover soffit — black blade across the road (2026-09-24)
+
+**Player moment:** Desert roadway. Where the course crosses itself, the upper deck’s underside was a full-width black slab through the view.
+
+**Cause:** The closed soffit used the road PBR material. Downward faces get no sun, and the color was mixed toward near-black, so every flyover read as a solid clip.
+
+**Shipped:** Soffit is its own thin deck, sand-colored, and still visible in shadow.
+
+**Boot:** `main.js?v=832` · `track.js?v=371`
+
+## Tire dust — trunk fountain (2026-09-24)
+
+**Player moment:** Sand sprites erupted off the trunk lid, thick and solid, and painted over the body.
+
+**Cause:** Spray rate, size, and upward kick were sized for a screen-filling wake. Point sprites spawned under the rear quarter and rose through the trunk. Alpha stayed near 1 for the whole life.
+
+**Shipped:** Emit only at the tire contact, outboard and low. Far fewer, smaller, and hazy (alpha falls with life). The body box deflects any grit that enters the shell back down and out.
+
+**Boot:** `main.js?v=831` · `effects.js?v=87`
+
+## Desert flyover wall — car through geometry (2026-09-24)
+
+**Player moment:** Desert opening straight (~156 m). A later crossing is lifted into a flyover; its sand skirt and the land sample of the high deck formed a wall across the road. The car and rivals drove through it, and a rival sat buried in the mesh.
+
+**Shipped:** Desert land under a stacked deck stays on the lower road. Skirt reach stops at any other ribbon, and a shortened apron cannot drop faster than the skirt slope (no curtain through the under-road). Off-road, the chassis plants on the visible ground and a steep nose face pushes the car back.
+
+**Boot:** `main.js?v=830` · `game.js?v=830` · `track.js?v=370` · `vehicle.js?v=167` · `collide.js?v=57`
+
+**Human gate:** Hard refresh, Desert practice. The opening straight should run under the later crossing, not into a sand wall. The car should stop at a dune face instead of passing through it.
+
 ## Mobile dust OFF (2026-09-22)
 
 **Player report:** particles still too big / too brown / fill the whole mobile image after the prior budget cut.

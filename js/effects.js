@@ -33,11 +33,11 @@ function makeDustSprite() {
   g.clearRect(0, 0, 64, 64);
   // Fine dust puffs + sharp grit specks — reads as sand/dirt, not soft blobs.
   const blobs = [
-    [32, 32, 11, 0.9],
-    [28, 30, 5, 0.55],
-    [36, 34, 4.5, 0.48],
-    [31, 36, 3, 0.7],
-    [35, 28, 2.5, 0.62],
+    [32, 32, 9, 0.42],
+    [28, 30, 4, 0.22],
+    [36, 34, 3.5, 0.18],
+    [31, 36, 2.4, 0.28],
+    [35, 28, 2, 0.2],
   ];
   for (let i = 0; i < blobs.length; i++) {
     const [x, y, r, a] = blobs[i];
@@ -84,10 +84,10 @@ function particleMaterial(spec, phone = false) {
   }
   return new THREE.PointsMaterial({
     color: 0xc4a882,
-    size: phone ? 0.02 : 0.85,
+    size: phone ? 0.02 : 0.12,
     map: makeDustSprite(),
     transparent: true,
-    opacity: phone ? 0 : 0.9,
+    opacity: phone ? 0 : 0.28,
     depthWrite: false,
     depthTest: true,
     sizeAttenuation: true,
@@ -101,24 +101,24 @@ function particleMaterial(spec, phone = false) {
  */
 const PROFILE = {
   sand: {
-    rate: 560, size: [0.58, 1.65], life: [0.8, 1.95], gravity: 6.2, damp: 0.82,
-    spread: 2.25, lift: 6.2, kick: 12.4, chunks: 0.14, plume: 0.62, bounce: 0.14, stick: 0,
+    rate: 58, size: [0.07, 0.18], life: [0.28, 0.62], gravity: 12.5, damp: 1.85,
+    spread: 0.38, lift: 0.42, kick: 2.4, chunks: 0.42, plume: 0.06, bounce: 0.08, stick: 0,
   },
   dirt: {
-    rate: 400, size: [0.48, 1.35], life: [0.55, 1.35], gravity: 9.2, damp: 1.35,
-    spread: 1.65, lift: 4.6, kick: 9.8, chunks: 0.32, plume: 0.38, bounce: 0.2, stick: 0,
+    rate: 46, size: [0.06, 0.16], life: [0.24, 0.52], gravity: 14.2, damp: 2.1,
+    spread: 0.32, lift: 0.34, kick: 2.1, chunks: 0.48, plume: 0.05, bounce: 0.1, stick: 0,
   },
   gravel: {
-    rate: 340, size: [0.42, 1.15], life: [0.42, 1.05], gravity: 13.2, damp: 1.85,
-    spread: 1.45, lift: 3.8, kick: 10.2, chunks: 0.55, plume: 0.18, bounce: 0.32, stick: 0,
+    rate: 38, size: [0.05, 0.14], life: [0.2, 0.42], gravity: 16.5, damp: 2.4,
+    spread: 0.28, lift: 0.28, kick: 2.2, chunks: 0.62, plume: 0.03, bounce: 0.16, stick: 0,
   },
   mud: {
-    rate: 320, size: [0.58, 1.55], life: [0.5, 1.25], gravity: 15.5, damp: 2.6,
-    spread: 0.95, lift: 3.4, kick: 6.8, chunks: 0.72, plume: 0.14, bounce: 0.04, stick: 1,
+    rate: 34, size: [0.07, 0.17], life: [0.22, 0.48], gravity: 17.5, damp: 2.8,
+    spread: 0.22, lift: 0.22, kick: 1.6, chunks: 0.7, plume: 0.02, bounce: 0.02, stick: 1,
   },
   grass: {
-    rate: 160, size: [0.35, 0.95], life: [0.35, 0.85], gravity: 10.5, damp: 1.65,
-    spread: 1.2, lift: 3.0, kick: 6.2, chunks: 0.38, plume: 0.22, bounce: 0.12, stick: 0,
+    rate: 22, size: [0.05, 0.13], life: [0.18, 0.4], gravity: 14.5, damp: 2.2,
+    spread: 0.26, lift: 0.26, kick: 1.5, chunks: 0.45, plume: 0.04, bounce: 0.08, stick: 0,
   },
 };
 
@@ -172,7 +172,8 @@ void main() {
   vec2 uv = gl_PointCoord - 0.5;
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   float mask = texture2D(uMap, uv).a;
-  float fade = smoothstep(0.0, 0.05, vLife) * smoothstep(0.0, 0.22, 1.0 - (1.0 - vLife) * 0.28);
+  // Life falls off fast so sprites stay a haze, not a solid disc on the body.
+  float fade = smoothstep(0.0, 0.14, vLife) * vLife * vLife;
   float alpha = mask * fade * uAlpha;
   if (alpha < 0.012) discard;
   float fog = clamp((vDepth - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
@@ -196,7 +197,7 @@ export class Dust {
       phone = false;
     }
     this._phone = phone;
-    this.count = phone ? 8 : VISUAL.rearDirtWake === false ? 2200 : 5600;
+    this.count = phone ? 8 : VISUAL.rearDirtWake === false ? 480 : 900;
     this.pos = new Float32Array(this.count * 3);
     this.col = new Float32Array(this.count * 3);
     this.vel = new Float32Array(this.count * 3);
@@ -224,9 +225,9 @@ export class Dust {
       {
         uniforms: {
           uMap: { value: makeDustSprite() },
-          uScale: { value: phone ? 60 : 1180 },
-          uMaxPx: { value: phone ? 4 : 110 },
-          uAlpha: { value: phone ? 0.0 : 0.98 },
+          uScale: { value: phone ? 60 : 420 },
+          uMaxPx: { value: phone ? 4 : 22 },
+          uAlpha: { value: phone ? 0.0 : 0.32 },
           uFogColor: { value: new THREE.Color(0xc9b48a) },
           uFogNear: { value: 100 },
           uFogFar: { value: 480 },
@@ -245,7 +246,8 @@ export class Dust {
     // One draw call — never cull a trailing plume that left the car sphere.
     this.points.frustumCulled = false;
     this.geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 220);
-    this.points.renderOrder = 6;
+    // With the world, not over the body. Depth test hides grit behind sheet metal.
+    this.points.renderOrder = 2;
     // Phone: hide the Points draw entirely. Even a "tiny" budget still filled
     // the mobile chase with opaque sand sprites.
     this.points.visible = !phone;
@@ -267,6 +269,13 @@ export class Dust {
     this._track = null;
     this.cockpit = false;
     this.locked30 = false;
+    /** Chassis shells particles must not enter (player + two near rivals). */
+    this._bodies = [
+      { x: 0, y: 0, z: 0, fx: 0, fz: 1, rx: 1, rz: 0 },
+      { x: 0, y: 0, z: 0, fx: 0, fz: 1, rx: 1, rz: 0 },
+      { x: 0, y: 0, z: 0, fx: 0, fz: 1, rx: 1, rz: 0 },
+    ];
+    this._bodyN = 0;
     for (let i = 0; i < this.count; i++) {
       this.pos[i * 3 + 1] = -40;
       this.gnd[i] = -20;
@@ -316,7 +325,9 @@ export class Dust {
       }
       return;
     }
-    if (!vehicle || vehicle.onGround === false) return;
+    if (!vehicle || !vehicle.position) return;
+    this._pushBody(vehicle);
+    if (vehicle.onGround === false) return;
     if (track && typeof track.query === "function") this._track = track;
     const sphere = this.geo.boundingSphere;
     if (sphere && vehicle.position) {
@@ -372,20 +383,10 @@ export class Dust {
       speedK * 0.72 + throtK * 0.55 + brakeK * 0.35 + slipK * 2.15 + spinK * 1.35;
     if (work < 0.035) return;
 
-    const focus = vehicle.ai
-      ? this._phone
-        ? 0.1
-        : 0.42
-      : this.cockpit
-        ? this._phone
-          ? 0.32
-          : 1.15
-        : this._phone
-          ? 0.22
-          : 1.55;
+    const focus = vehicle.ai ? 0.28 : this.cockpit ? 0.55 : 0.72;
     const envBoost = this._phone
       ? 0.45 + this._dustStrength * 0.28
-      : 1.05 + this._dustStrength * 1.35;
+      : 0.62 + this._dustStrength * 0.22;
     const wakeOn = !this._phone && VISUAL.rearDirtWake !== false;
 
     let bag = this._carry.get(vehicle);
@@ -401,7 +402,7 @@ export class Dust {
     const wheels = vehicle.wheels;
     const hint = vehicle.progress || 0;
     const slideSign = Math.sign(vehicle.driftAngle || 0);
-    const liftCap = this.cockpit ? 1.45 : 7.5;
+    const liftCap = this.cockpit ? 0.35 : 0.72;
     // Suspension unload kicks grit up — compress rebound on soft roads.
     const unload =
       vehicle._wheelVel && Array.isArray(vehicle._wheelVel)
@@ -460,17 +461,7 @@ export class Dust {
         outside *
         (this.cockpit ? 0.7 : 1);
       bag[wi] += perSec * dt;
-      const cap = vehicle.ai
-        ? this._phone
-          ? 1
-          : 4
-        : this.cockpit
-          ? this._phone
-            ? 2
-            : 18
-          : this._phone
-            ? 2
-            : 36;
+      const cap = vehicle.ai ? 1 : this.cockpit ? 2 : 3;
       let n = Math.min(cap, bag[wi] | 0);
       bag[wi] -= n;
       if (n < 1) continue;
@@ -562,12 +553,12 @@ export class Dust {
     const i = this.i % this.count;
     this.i += 1;
 
-    const out = sideSign * (0.14 + Math.random() * (rear ? 0.32 : 0.18));
-    const jitter = (Math.random() - 0.5) * 0.12;
-    const aft = rear ? 0.12 + Math.random() * 0.38 : -0.02 + Math.random() * 0.14;
-    // Lift off the deck so grit clears the ribbon before gravity pulls it back.
+    // Outboard of the sidewall and just aft of the contact — not up into the trunk.
+    const out = sideSign * (0.2 + Math.random() * 0.14);
+    const jitter = (Math.random() - 0.5) * 0.05;
+    const aft = rear ? 0.06 + Math.random() * 0.12 : 0.02 + Math.random() * 0.06;
     this.pos[i * 3] = px + rx * (jitter + out) - fx * aft;
-    this.pos[i * 3 + 1] = groundY + 0.14 + Math.random() * 0.22;
+    this.pos[i * 3 + 1] = groundY + 0.04 + Math.random() * 0.06;
     this.pos[i * 3 + 2] = pz + rz * (jitter + out) - fz * aft;
     this.gnd[i] = groundY;
 
@@ -595,7 +586,7 @@ export class Dust {
       rx * fanLat +
       rx * slideLat +
       this._wind.x * (0.2 + Math.random() * 0.28);
-    this.vel[i * 3 + 1] = lift + vy * 0.45 + (Math.random() - 0.5) * 0.35;
+    this.vel[i * 3 + 1] = lift + vy * 0.12 + (Math.random() - 0.5) * 0.06;
     this.vel[i * 3 + 2] =
       vz * inherit +
       oppZ * fanRear +
@@ -677,7 +668,10 @@ export class Dust {
   step(dt, track) {
     if (track && typeof track.query === "function") this._track = track;
     this._syncFog();
-    if (!this.alive && !this._emitDirty) return;
+    if (!this.alive && !this._emitDirty) {
+      this._bodyN = 0;
+      return;
+    }
     this._emitDirty = false;
     const qTrack = this._track;
     const wx = this._wind.x;
@@ -706,6 +700,7 @@ export class Dust {
       this.pos[i * 3] += this.vel[i * 3] * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this._deflectBodies(i);
       this.angle[i] += this.spin[i] * dt;
 
       let floor = this.gnd[i];
@@ -773,6 +768,64 @@ export class Dust {
       this.geo.attributes.aAngle.needsUpdate = true;
     }
     this._hadLive = live > 0;
+    this._bodyN = 0;
+  }
+
+  /**
+   * Remember a chassis so grit cannot rise through the trunk or cabin.
+   * Origin is the contact patch. The box is the body, not the tires.
+   * @param {{position:{x:number,y:number,z:number}, yaw:number}} vehicle
+   */
+  _pushBody(vehicle) {
+    if (this._bodyN >= this._bodies.length) return;
+    const yaw = vehicle.yaw || 0;
+    const b = this._bodies[this._bodyN];
+    this._bodyN += 1;
+    b.x = vehicle.position.x;
+    b.y = vehicle.position.y;
+    b.z = vehicle.position.z;
+    b.fx = Math.sin(yaw);
+    b.fz = Math.cos(yaw);
+    b.rx = b.fz;
+    b.rz = -b.fx;
+  }
+
+  /**
+   * Body shell is solid. Dust that enters it is dropped to the contact
+   * plane and shoved outboard and aft so it stays in the tire wake.
+   * @param {number} i particle index
+   */
+  _deflectBodies(i) {
+    const n = this._bodyN;
+    if (n < 1) return;
+    const o = i * 3;
+    let x = this.pos[o];
+    let y = this.pos[o + 1];
+    let z = this.pos[o + 2];
+    for (let b = 0; b < n; b++) {
+      const body = this._bodies[b];
+      const dx = x - body.x;
+      const dz = z - body.z;
+      const along = dx * body.fx + dz * body.fz;
+      const lat = dx * body.rx + dz * body.rz;
+      const ly = y - body.y;
+      if (ly < 0.16 || ly > 1.38) continue;
+      if (along > 1.72 || along < -2.05) continue;
+      if (Math.abs(lat) > 0.86) continue;
+      const side = lat >= 0 ? 1 : -1;
+      x += -body.fx * 0.16 + body.rx * side * 0.2;
+      z += -body.fz * 0.16 + body.rz * side * 0.2;
+      y = body.y + 0.08;
+      if (this.vel[o + 1] > 0) this.vel[o + 1] = 0;
+      const into = this.vel[o] * body.fx + this.vel[o + 2] * body.fz;
+      if (into > 0) {
+        this.vel[o] -= body.fx * into;
+        this.vel[o + 2] -= body.fz * into;
+      }
+    }
+    this.pos[o] = x;
+    this.pos[o + 1] = y;
+    this.pos[o + 2] = z;
   }
 
   /**
