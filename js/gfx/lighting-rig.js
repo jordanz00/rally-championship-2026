@@ -163,6 +163,49 @@ export function updateShadowFrustum(sun, extent, near, far) {
   cam.updateProjectionMatrix();
 }
 
+const _snapForward = new THREE.Vector3();
+const _snapRight = new THREE.Vector3();
+const _snapUp = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0, 1, 0);
+const _worldX = new THREE.Vector3(1, 0, 0);
+
+/**
+ * Lock the sun shadow camera to whole texels in light space.
+ * A frustum that follows the car in sub-texel steps makes every shadow
+ * edge crawl across the road. Snapping both the light and its target
+ * keeps the sun direction and moves the map in whole texels only.
+ *
+ * @param {THREE.DirectionalLight} sun
+ * @param {number} [mapSize] shadow map width in texels
+ */
+export function snapShadowCamera(sun, mapSize) {
+  if (!sun || !sun.shadow || !sun.shadow.camera || !sun.target) return;
+  const cam = sun.shadow.camera;
+  const size =
+    mapSize > 0 ? mapSize : sun.shadow.mapSize && sun.shadow.mapSize.x ? sun.shadow.mapSize.x : 1024;
+  const span = cam.right - cam.left;
+  const texel = span / size;
+  if (!(texel > 1e-6)) return;
+
+  _snapForward.subVectors(sun.target.position, sun.position);
+  if (_snapForward.lengthSq() < 1e-8) return;
+  _snapForward.normalize();
+  _snapRight.crossVectors(_snapForward, _worldUp);
+  if (_snapRight.lengthSq() < 1e-8) _snapRight.crossVectors(_snapForward, _worldX);
+  _snapRight.normalize();
+  _snapUp.crossVectors(_snapRight, _snapForward).normalize();
+
+  const tx = sun.target.position.dot(_snapRight);
+  const ty = sun.target.position.dot(_snapUp);
+  const dx = Math.round(tx / texel) * texel - tx;
+  const dy = Math.round(ty / texel) * texel - ty;
+  if (Math.abs(dx) < 1e-5 && Math.abs(dy) < 1e-5) return;
+
+  sun.target.position.addScaledVector(_snapRight, dx).addScaledVector(_snapUp, dy);
+  sun.position.addScaledVector(_snapRight, dx).addScaledVector(_snapUp, dy);
+  sun.target.updateMatrixWorld();
+}
+
 /**
  * Renderer knobs for physically based outdoor lighting.
  *

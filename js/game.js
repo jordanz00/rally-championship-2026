@@ -7,12 +7,12 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=167";
+import { Vehicle } from "./physics/vehicle.js?v=169";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=89";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=212";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
-import { Track } from "./tracks/track.js?v=371";
+import { Track } from "./tracks/track.js?v=380";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=48";
 import { Opponent } from "./ai.js?v=195";
@@ -29,13 +29,13 @@ import {
   placeOrdinal,
 } from "./ui/hud.js?v=41";
 import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=87";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=57";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=59";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=15";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=38";
-import { createPerfTier } from "./gfx/perf-tier.js?v=52";
+import { createPerfTier } from "./gfx/perf-tier.js?v=53";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=3";
@@ -76,7 +76,8 @@ import {
   skyPmremCapture,
   updateRaceLightFollow,
   updateShadowFrustum,
-} from "./gfx/lighting-rig.js?v=26";
+  snapShadowCamera,
+} from "./gfx/lighting-rig.js?v=27";
 import { shadowGeometry, carShadowMaterial } from "./tracks/trees.js?v=44";
 
 /** Consecutive failing frames before we stop logging and show the error. */
@@ -480,6 +481,11 @@ export class RallyGame {
       GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 512 : 768);
       // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
       if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
+    } else {
+      // Desktop presents at 60. Do not trade the frame for a 30 Hz lock,
+      // and do not shrink the framebuffer or the shadow atlas to get there.
+      GFX.preferLock30 = false;
+      GFX.forceLock30AtSettle = false;
     }
     const created = await createGameRenderer({
       antialias: !wantPost && !isPhonePlay(),
@@ -492,7 +498,10 @@ export class RallyGame {
         lowPower: false,
         preferLock30: false,
       };
-    if (this._gpuBudget.preferLock30 || this._gpuBudget.lowPower) {
+    if (
+      isPhonePlay() &&
+      (this._gpuBudget.preferLock30 || this._gpuBudget.lowPower)
+    ) {
       GFX.preferLock30 = true;
     }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1992,29 +2001,12 @@ export class RallyGame {
     });
     this.playerMesh.traverse((o) => {
       if (!o.isMesh) return;
-      if (on) {
-        // Pad has no live sun atlas — casting still costs setup per mesh.
-        o.castShadow = false;
-        o.receiveShadow = false;
-        return;
-      }
-      o.castShadow = true;
+      // Cars do not cast into the sun atlas. That map refreshes on a cadence
+      // while the light follows the car, so a body silhouette jumps and swims.
+      // The contact disc under the chassis is the shadow the player reads.
+      o.castShadow = false;
       o.receiveShadow = false;
-      const n = `${o.name || ""} ${o.parent && o.parent.name ? o.parent.name : ""}`.toLowerCase();
-      if (/wheel|tire|tyre|rim|brake|disc|caliper|rotor/.test(n)) o.castShadow = false;
     });
-    if (!on) {
-      const wheels = this.playerMesh.userData && this.playerMesh.userData.wheels;
-      if (Array.isArray(wheels)) {
-        for (let i = 0; i < wheels.length; i++) {
-          const hub = wheels[i];
-          if (!hub || !hub.traverse) continue;
-          hub.traverse((o) => {
-            if (o.isMesh) o.castShadow = false;
-          });
-        }
-      }
-    }
   }
 
   /**
@@ -2292,6 +2284,7 @@ export class RallyGame {
     this._titleKick.intensity = 0;
     this.renderer.shadowMap.enabled = true;
     this.sun.castShadow = true;
+    this._shadowHold = null;
     // Settle owns the race atlas size — do not allocate 2048 then shrink (hitch).
     this._setShadowMapSize(GFX.shadowMap || 1536);
     if (this.post) {
@@ -2313,6 +2306,7 @@ export class RallyGame {
     if (!this.player || !this.playerMesh) return;
     this.playerMesh.visible = true;
     this._syncPackMeshes();
+    this._silenceCarSunShadows();
     this._camSnap = true;
     this._chaseCam(1 / 60);
     this._syncWorldStream();
@@ -2332,8 +2326,9 @@ export class RallyGame {
 
   /**
    * Near / mid / far presentation cost for the 14-car pack.
-   * Physics is unchanged. Far uses STREAM.rivalShadowFar (castShadow off).
-   * Mid keeps the silhouette and sun shadows; expensive dust/marks drop.
+   * Physics is unchanged. Far uses STREAM.rivalShadowFar. No car casts a
+   * sun silhouette — the contact disc is the under-car shadow. Mid still
+   * drops expensive dust and marks.
    */
   _applyRivalLod() {
     if (!this.camera || !this.opponents.length) return;
@@ -2374,8 +2369,49 @@ export class RallyGame {
         mesh.userData.lodShadowCasters = list;
       }
       const list = mesh.userData.lodShadowCasters;
-      for (let j = 0; j < list.length; j++) list[j].castShadow = !far;
+      // Same contract as the player: rivals do not cast a sun silhouette.
+      for (let j = 0; j < list.length; j++) list[j].castShadow = false;
     }
+  }
+
+  /**
+   * Turn sun-atlas casting off on every car. Safe to call more than once.
+   * Under-car read is the contact disc in _syncContactBlobs.
+   */
+  _silenceCarSunShadows() {
+    const kill = (root) => {
+      if (!root || !root.traverse) return;
+      root.traverse((o) => {
+        if (o.isMesh) o.castShadow = false;
+      });
+    };
+    kill(this.playerMesh);
+    if (this.ghostMesh) kill(this.ghostMesh);
+    if (!this.opponents) return;
+    for (let i = 0; i < this.opponents.length; i++) kill(this.opponents[i].mesh);
+  }
+
+  /** Remember the sun pose that matches the shadow map currently in the atlas. */
+  _holdSunShadowPose() {
+    const s = this.sun;
+    if (!s || !s.target) return;
+    const h = this._shadowHold || (this._shadowHold = {});
+    h.px = s.position.x;
+    h.py = s.position.y;
+    h.pz = s.position.z;
+    h.tx = s.target.position.x;
+    h.ty = s.target.position.y;
+    h.tz = s.target.position.z;
+  }
+
+  /** Put the sun back on the pose the atlas was baked with. Direction stays put. */
+  _restoreSunShadowPose() {
+    const h = this._shadowHold;
+    const s = this.sun;
+    if (!h || !s || !s.target) return;
+    s.position.set(h.px, h.py, h.pz);
+    s.target.position.set(h.tx, h.ty, h.tz);
+    s.target.updateMatrixWorld();
   }
 
   /**
@@ -2407,29 +2443,68 @@ export class RallyGame {
   }
 
   /**
-   * Soft contact discs under the nearest cars. Soft radial alpha + smoothed
-   * ground Y so the blob under the player never z-fights or strobes.
+   * Dark core with a short soft edge, so the chase view reads a shadow
+   * behind the bumper instead of a faint ring.
+   * @returns {THREE.CanvasTexture}
+   */
+  _carContactMap() {
+    if (this._carContactTex) return this._carContactTex;
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const g = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.5);
+    g.addColorStop(0, "rgba(0,0,0,1)");
+    g.addColorStop(0.55, "rgba(0,0,0,0.9)");
+    g.addColorStop(0.78, "rgba(0,0,0,0.42)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+    this._carContactTex = tex;
+    return tex;
+  }
+
+  /**
+   * Soft contact discs under the nearest cars. On the road the disc uses the
+   * car's filtered pose. A fresh ground sample made it pop and z-fight.
    */
   _initContactBlobs() {
     this._contactBlobs = [];
     const geo = shadowGeometry();
+    const map = this._carContactMap();
     for (let i = 0; i < 8; i++) {
       const mat = carShadowMaterial();
-      // Player (slot 0): slightly darker / larger read. Rivals: softer.
-      mat.opacity = i === 0 ? 0.78 : 0.5;
-      mat.color.setHex(i === 0 ? 0x0c0a08 : 0x14100c);
+      // The road is pulled toward the camera, so a normal transparent disc
+      // loses the depth test and flickers in thin diamonds. An opaque cutout
+      // drawn after the road stays a solid oval and cannot swim.
+      mat.map = map;
+      mat.transparent = false;
+      mat.alphaTest = 0.2;
+      mat.depthWrite = true;
+      mat.depthTest = true;
+      mat.side = THREE.FrontSide;
+      mat.polygonOffset = true;
+      mat.polygonOffsetFactor = -2;
+      mat.polygonOffsetUnits = -4;
+      mat.opacity = 1;
+      mat.color.setHex(0x000000);
+      mat.needsUpdate = true;
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       mesh.visible = false;
       mesh.frustumCulled = false;
-      mesh.renderOrder = -2;
+      mesh.renderOrder = 3;
       mesh.userData.blob = {
         y: null,
         sx: 1,
         sz: 1,
-        op: mat.opacity,
-        baseOp: mat.opacity,
+        op: 1,
+        baseOp: i === 0 ? 1 : 0.85,
       };
       this.scene.add(mesh);
       this._contactBlobs.push(mesh);
@@ -2437,8 +2512,9 @@ export class RallyGame {
   }
 
   /**
-   * Plant contact discs on the road/ground under each car — never on the chassis.
-   * Over a jump the blob stays on the pit/pad below while the car is in the air.
+   * Soft oval under each car. Flat on the road, shifted toward the rear so
+   * the chase camera sees it behind the bumper. Pitch is not applied: a
+   * tilted disc cuts the road and the cut line jumps.
    * @param {number} alpha
    */
   _syncContactBlobs(alpha) {
@@ -2480,9 +2556,9 @@ export class RallyGame {
 
     const track = this.track;
     const q = this._blobQuery;
-    // Airborne only — grounded discs snap to the road so they never trail the car.
-    const airFollow = 1 - Math.exp(-14 * Math.max(1 / 120, FIXED_DT));
-    const scaleFollow = 1 - Math.exp(-14 * Math.max(1 / 120, FIXED_DT));
+    const step = Math.max(1 / 120, FIXED_DT);
+    const airFollow = 1 - Math.exp(-12 * step);
+    const scaleFollow = 1 - Math.exp(-12 * step);
     for (let i = 0; i < blobs.length; i++) {
       const mesh = blobs[i];
       const st = mesh.userData.blob;
@@ -2500,40 +2576,52 @@ export class RallyGame {
         }
         st.y = 0;
         mesh.visible = true;
-        mesh.position.set(d.x, 0.03, d.z);
+        mesh.position.set(d.x, 0.04, d.z);
         mesh.rotation.set(0, d.yaw, 0);
         mesh.scale.set(1.55, 1, 2.95);
         if (mesh.material) mesh.material.opacity = 0.52;
         continue;
       }
-      let groundY = d.y;
-      if (track && track.query) {
-        const hit = track.query(d.x, d.z, q, v.progress);
-        if (hit && Number.isFinite(hit.height)) groundY = hit.height;
-      }
       const grounded = !!v.onGround;
-      // Same XZ as the mesh every present — never lag behind the car.
-      if (grounded || st.y == null) st.y = groundY;
-      else st.y += (groundY - st.y) * airFollow;
-
-      const hover = grounded ? 0 : Math.max(0, d.y - st.y);
-      const wantSx = (i === 0 ? 1.35 : 1.1) / (1 + hover * 0.11);
-      const wantSz = (i === 0 ? 2.55 : 2.2) / (1 + hover * 0.11);
-      const wantOp = st.baseOp / (1 + hover * 0.22);
+      // The chase camera sits low, so the road directly behind the bumper is
+      // below the frame. A wide oval under the chassis shows on the sand
+      // beside the car, which is the shadow the player can actually see.
+      const back = i === 0 ? 0.45 : 0.4;
+      const lift = 0.07;
       if (grounded) {
-        st.sx = wantSx;
-        st.sz = wantSz;
-        st.op = wantOp;
+        st.y = d.y;
+        st.sx = i === 0 ? 1.75 : 1.45;
+        st.sz = i === 0 ? 1.15 : 1.0;
+        st.op = st.baseOp;
+        mesh.visible = true;
+        mesh.scale.set(st.sx, 1, st.sz);
+        mesh.position.set(d.x, d.y + lift, d.z);
+        mesh.rotation.set(0, d.yaw, 0);
+        mesh.translateZ(-back);
       } else {
+        let groundY = st.y != null ? st.y : d.y;
+        if (track && track.query) {
+          const hit = track.query(d.x, d.z, q, v.progress);
+          if (hit && Number.isFinite(hit.height)) groundY = hit.height;
+        }
+        if (st.y == null) st.y = groundY;
+        else {
+          const err = groundY - st.y;
+          st.y += Math.abs(err) > 1.2 ? err : err * airFollow;
+        }
+        const hover = Math.max(0, d.y - st.y);
+        const wantSx = (i === 0 ? 1.75 : 1.45) / (1 + hover * 0.12);
+        const wantSz = (i === 0 ? 1.15 : 1.0) / (1 + hover * 0.12);
+        const wantOp = st.baseOp / (1 + hover * 0.2);
         st.sx += (wantSx - st.sx) * scaleFollow;
         st.sz += (wantSz - st.sz) * scaleFollow;
         st.op += (wantOp - st.op) * scaleFollow;
+        mesh.visible = true;
+        mesh.scale.set(st.sx, 1, st.sz);
+        mesh.position.set(d.x, st.y + 0.07, d.z);
+        mesh.rotation.set(0, d.yaw, 0);
+        mesh.translateZ(-(i === 0 ? 0.45 : 0.4));
       }
-
-      mesh.visible = true;
-      mesh.position.set(d.x, st.y + 0.012, d.z);
-      mesh.rotation.set(0, d.yaw, 0);
-      mesh.scale.set(st.sx, 1, st.sz);
       if (mesh.material && mesh.material.opacity !== st.op) {
         mesh.material.opacity = st.op;
       }
@@ -2804,6 +2892,8 @@ export class RallyGame {
     this._lastPresentCost = 8;
     this._raceWarmFrames = 32;
     this._shadowTick = 0;
+    this._shadowHold = null;
+    this._silenceCarSunShadows();
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
@@ -5684,13 +5774,25 @@ export class RallyGame {
           : onPad
             ? Math.max(2, padShadowEvery | 0)
             : Math.max(1, this._qualityShadowEvery || GFX.shadowEvery | 0 || 1);
-    // Do not throttle the sun atlas further on lock-30 — a 10 Hz shadow
-    // silhouette trails the chassis and reads as a ghost car in medium/far.
+    // Do not throttle the sun atlas further on lock-30 — a slow refresh
+    // used to leave a ghost of the car. Cars no longer cast into this map.
+    // On a skipped frame the sun stays where the map was baked, then snaps
+    // to whole texels on the next bake, so scenery shadows do not shear.
     this._shadowTick = (this._shadowTick || 0) + 1;
     if (this.renderer.shadowMap.enabled) {
-      // Soft PCF hides a one-frame skip. Forcing a full atlas bake every
-      // present while cars move doubled M1 fill-rate with no readable gain.
-      this.renderer.shadowMap.needsUpdate = this._shadowTick % every === 0;
+      const bake = this._shadowTick % every === 0;
+      const raceAtlas = !onPad && this.sun && this.sun.castShadow;
+      if (raceAtlas && (bake || !this._shadowHold)) {
+        const mapSize = this.sun.shadow.mapSize && this.sun.shadow.mapSize.x;
+        snapShadowCamera(this.sun, mapSize);
+        this._holdSunShadowPose();
+        this.renderer.shadowMap.needsUpdate = true;
+      } else if (raceAtlas) {
+        this._restoreSunShadowPose();
+        this.renderer.shadowMap.needsUpdate = false;
+      } else {
+        this.renderer.shadowMap.needsUpdate = bake;
+      }
     }
     const prevMask = this.camera.layers.mask;
     this._armPresentLayers(this.camera);

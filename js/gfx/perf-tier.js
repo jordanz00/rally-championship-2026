@@ -16,9 +16,9 @@
  * of degrading. Tiers now carry the caps and game.js is the only applier.
  *
  * Soft fill-rate under `GFX.lockRaceQuality` is owned by QualityManager
- * (render scale only) — this ladder must not mid-race dump post/sky/shadow.
- * Lock-30 is a *present cadence* weapon, not a fidelity dump. Visual knobs
- * stay at the start tier; hidden cost (shadow bake interval) may stretch.
+ * (render scale only) — this ladder must not mid-race dump post/sky/shadow
+ * or the framebuffer. Desktop cadence stays at 60 Hz. A phone that sets
+ * `preferLock30` may still present at an even 30.
  *
  * POWER BI MAPPING: none
  */
@@ -311,9 +311,10 @@ export function createPerfTier(gfx, opts = {}) {
         upFor = 0;
       }
 
-      // Cadence lock. preferLock30 counts over-deadline frames even while the
-      // ladder is still walking down — otherwise DOWN_HOLD resets lock30For
-      // every step and we only lock after already sitting at min.
+      // A missed 16.7 ms deadline used to lock the whole stage at 30 Hz.
+      // That kept the picture, but the player was not at 60. Quality stays
+      // put (lockRaceQuality). Cadence stays at the 60 Hz target unless a
+      // phone budget explicitly asked for the 30 Hz lock.
       const settled = !changed && downFor === 0 && upFor === 0;
       if (emaMs > deadlineMs) {
         lock30For += 1;
@@ -322,18 +323,21 @@ export function createPerfTier(gfx, opts = {}) {
         if (preferLock && lock30For >= PUSH_HOLD) {
           lock30For = 0;
           lockedHz = 30;
-        } else if (settled && !atFloor && lock30For >= PUSH_HOLD) {
-          if (lockQuality) {
-            lock30For = 0;
-            lockedHz = 30;
-          } else {
-            lock30For = 0;
-            index += 1;
-            changed = true;
-          }
-        } else if (settled && atFloor && emaMs > lock30Ms && lock30For >= LOCK30_HOLD) {
+        } else if (settled && !atFloor && lock30For >= PUSH_HOLD && !lockQuality) {
+          lock30For = 0;
+          index += 1;
+          changed = true;
+        } else if (
+          settled &&
+          atFloor &&
+          preferLock &&
+          emaMs > lock30Ms &&
+          lock30For >= LOCK30_HOLD
+        ) {
           lock30For = 0;
           lockedHz = 30;
+        } else if (lock30For >= PUSH_HOLD) {
+          lock30For = 0;
         }
       } else {
         lock30For = 0;

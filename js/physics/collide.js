@@ -116,6 +116,23 @@ function clamp(v, a, b) {
 }
 
 /**
+ * A face across an open road. Tunnel lining is a real wall. While the
+ * car's centre is still on the paint, a hit that opposes forward travel
+ * is a fake gate and must not stop the car. Side scrapes still count.
+ * @param {{_q?:{onRoad?:boolean, tunnel?:boolean}}} v
+ * @param {number} nx
+ * @param {number} nz
+ * @param {number} fx
+ * @param {number} fz
+ */
+function blocksOpenLane(v, nx, nz, fx, fz) {
+  const q = v && v._q;
+  if (!q || q.tunnel || !q.onRoad) return false;
+  const into = -(nx * fx + nz * fz);
+  return into > 0.4;
+}
+
+/**
  * Short props (cones, tape) do not block a car whose undercarriage is already
  * above them. Tunnel walls always reach.
  * @param {{kind?:string, top?:number}} c
@@ -750,6 +767,7 @@ export function glanceObstacles(v, track) {
         hit = circleVsCarObb(c.x, c.z, c.r || 0.5, px, pz, fx, fz, rx, rz);
       }
       if (!hit || hit.overlap <= 0) continue;
+      if (blocksOpenLane(v, hit.nx, hit.nz, fx, fz)) continue;
       if (!toi || t < toi.t - 1e-6 || (Math.abs(t - toi.t) < 1e-6 && hit.overlap > toi.overlap)) {
         toi = { t, overlap: hit.overlap, nx: hit.nx, nz: hit.nz, wall };
       }
@@ -771,7 +789,9 @@ export function glanceObstacles(v, track) {
     if (!colliderHitsCarY(c, v)) continue;
     if (c.kind === "wall") {
       const hit = wallHitAt(c, v.position.x, v.position.z, fx, fz, rx, rz);
-      if (hit) applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: true });
+      if (hit && !blocksOpenLane(v, hit.nx, hit.nz, fx, fz)) {
+        applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: true });
+      }
       continue;
     }
     const hit = circleVsCarObb(
@@ -785,7 +805,7 @@ export function glanceObstacles(v, track) {
       rx,
       rz
     );
-    if (hit && hit.overlap > 0.02) {
+    if (hit && hit.overlap > 0.02 && !blocksOpenLane(v, hit.nx, hit.nz, fx, fz)) {
       applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall: false });
     }
   }
@@ -794,11 +814,10 @@ export function glanceObstacles(v, track) {
 }
 
 /**
- * Keep the chassis on the visible ground and out of steep faces.
+ * Keep an off-road chassis sitting on a low bank.
  *
- * The ribbon heightfield does not include dune walls or a flyover apron.
- * Off the paint, ride the land mesh. A nose sample that rises like a wall
- * shoves the car back along its heading so the body cannot tunnel the face.
+ * The painted lane is never a stop. A nose probe into a dune or flyover
+ * used to shove the car backward and delete its forward speed.
  *
  * @param {{position:{x:number,y:number,z:number}, velocity:{x:number,z:number}, yaw:number, onGround?:boolean, hitWall?:number, _q?:{onRoad?:boolean, jumpKind?:string, height?:number}}} v
  * @param {{scenery?:string, _groundHeight?:Function}} track
@@ -807,33 +826,21 @@ export function holdVisualGround(v, track) {
   if (!track || typeof track._groundHeight !== "function" || !v.onGround) return;
   const q = v._q;
   if (q && q.jumpKind === "gap") return;
+  // The racing line is never a wall. A nose sample into a dune, flyover
+  // deck, or bank used to shove the chassis back and delete forward speed,
+  // so the car stopped forever on Desert and Forest.
+  if (q && q.onRoad) return;
+  if (q && Number.isFinite(q.lateral) && Number.isFinite(q.width)) {
+    if (Math.abs(q.lateral) <= q.width * 0.5 + 3.5) return;
+  }
   const scenery = track.scenery || "desert";
   const gy = track._groundHeight(v.position.x, v.position.z, scenery);
   if (!Number.isFinite(gy)) return;
-  const onRoad = !!(q && q.onRoad);
-  const deck = q && Number.isFinite(q.height) ? q.height : v.position.y;
-  // Off the painted deck the mesh is the floor. A small lift plants the
-  // tires on it; a multi-metre bury is a wall, not a bank to climb.
-  if (!onRoad && gy > v.position.y + 0.06) {
+  // Far off the paint, sit the tires on a low bank. Do not climb a face
+  // and do not take speed away — the lane must stay drivable.
+  if (gy > v.position.y + 0.06) {
     const bury = gy - v.position.y;
-    if (bury < 2.2) v.position.y += Math.min(0.5, bury);
-  }
-  const fx = Math.sin(v.yaw);
-  const fz = Math.cos(v.yaw);
-  const ahead = track._groundHeight(v.position.x + fx * 2.2, v.position.z + fz * 2.2, scenery);
-  if (!Number.isFinite(ahead)) return;
-  const base = onRoad ? Math.max(deck, v.position.y) : Math.max(gy, v.position.y);
-  const face = ahead - base;
-  if (face > 1.8) {
-    const push = Math.min(0.85, (face - 1.2) * 0.45);
-    v.position.x -= fx * push;
-    v.position.z -= fz * push;
-    const vn = v.velocity.x * fx + v.velocity.z * fz;
-    if (vn > 0.4) {
-      v.velocity.x -= fx * vn;
-      v.velocity.z -= fz * vn;
-    }
-    v.hitWall = Math.max(v.hitWall || 0, Math.min(face, 4) * 0.35);
+    if (bury < 0.4) v.position.y += bury;
   }
 }
 
@@ -882,6 +889,7 @@ export function correctEnvPenetration(v, track) {
         hit = circleVsCarObb(c.x, c.z, c.r || 0.5, v.position.x, v.position.z, fx, fz, rx, rz);
       }
       if (!hit || hit.overlap <= 0.02) continue;
+      if (blocksOpenLane(v, hit.nx, hit.nz, fx, fz)) continue;
       if (hit.overlap > worst) worst = hit.overlap;
       applyGlance(v, hit.nx, hit.nz, hit.overlap, 1, fx, fz, fast, { wall, vel: pass === 0 });
     }

@@ -176,7 +176,7 @@ const FOREST_TREE_CLEAR = 8.6;
 const SKIRT_SLOPE = 0.18;
 const SKIRT_REACH_MAX = 13.5;
 const SKIRT_MID_U = 0.38;
-const SKIRT_MID_DROP = 0.22;
+const SKIRT_MID_DROP = 0.42;
 const SKIRT_PLANT_BIAS = 0.04;
 
 /**
@@ -1530,11 +1530,24 @@ export class Track {
             : Math.max(ROAD_VERGE + 4.5, 14)
           : ROAD_COLLIDER_CLEAR + Math.max(this._landCell || 12, 10) * (desert ? 0.55 : 0.35);
         const overPaint = near.minOver < refusePad;
+        // High road beside a lower one keeps its embankment. Only the lower
+        // lane itself is pulled down to that bed — otherwise the ramp floats.
+        const onLowerDeck =
+          near.overlapBed != null &&
+          near.roadY - near.overlapBed > 3.2 &&
+          near.overlapOver != null &&
+          near.overlapOver < ROAD_VERGE + 2.2;
         if (overPaint) {
-          const bed = near.overlapBed != null ? near.overlapBed : near.roadY;
+          const bed = onLowerDeck
+            ? near.overlapBed
+            : near.overlapBed != null && !(near.roadY - near.overlapBed > 3.2)
+              ? near.overlapBed
+              : near.roadY;
           h = Math.min(h, bed - bedDrop);
         } else if (!tunnelCut) {
-          if (near.overlapBed != null) {
+          if (near.overlapBed != null && !onLowerDeck && !(near.roadY - near.overlapBed > 3.2)) {
+            h = Math.min(h, near.overlapBed - bedDrop);
+          } else if (near.overlapBed != null && onLowerDeck) {
             h = Math.min(h, near.overlapBed - bedDrop);
           } else if (
             near.dist < near.roadW * 0.5 + ROAD_VERGE + Math.max(this._landCell || 12, 12)
@@ -1647,6 +1660,7 @@ export class Track {
       along: 0,
       minOver: 1e6,
       overlapBed: null,
+      overlapOver: null,
     };
     if (!pts.length) return empty;
 
@@ -1659,6 +1673,7 @@ export class Track {
     let bestTunnel = false;
     let minOver = Infinity;
     let overlapBed = Infinity;
+    let overlapOver = Infinity;
 
     this._forNearbySegments(x, z, (i) => {
       const a = pts[i];
@@ -1677,12 +1692,26 @@ export class Track {
       const nx = a.nx + (b.nx - a.nx) * t;
       const nz = a.nz + (b.nz - a.nz) * t;
       const side = (x - px) * nx + (z - pz) * nz;
-      const lat = Math.abs(side);
+      // Past a segment end, the normal component alone is not a distance —
+      // a straight ahead looked "on the paint" and the shoulder stayed a shelf.
+      let lat = Math.abs(side);
+      if (t <= 0 || t >= 1) lat = Math.hypot(x - px, z - pz);
       const w = a.width + (b.width - a.width) * t;
       const y = a.y + (b.y - a.y) * t;
       const over = lat - w * 0.5;
       if (over < minOver) minOver = over;
-      if (lat < w * 0.5 + pad && y < overlapBed) overlapBed = y;
+      // Lowest deck this sample can see. A far endpoint at the same height
+      // used to keep a 20 m "over" and the flyover then became the floor of
+      // the road underneath (Desert ~280 m — cars stopped dead).
+      if (lat < w * 0.5 + pad) {
+        const unset = !Number.isFinite(overlapBed);
+        const lowerDeck = y < overlapBed - 0.2;
+        const sameDeck = Math.abs(y - overlapBed) <= 0.2 && over < overlapOver;
+        if (unset || lowerDeck || sameDeck) {
+          overlapBed = y;
+          overlapOver = over;
+        }
+      }
       if (lat < bestLat) {
         bestLat = lat;
         bestSide = side;
@@ -1707,6 +1736,7 @@ export class Track {
         along: p.dist,
         minOver: over,
         overlapBed: Math.abs(side) < p.width * 0.5 + pad ? p.y : null,
+        overlapOver: Math.abs(side) - p.width * 0.5,
       };
     }
 
@@ -1719,6 +1749,7 @@ export class Track {
       along: bestAlong,
       minOver: Number.isFinite(minOver) ? minOver : bestLat - bestW * 0.5,
       overlapBed: Number.isFinite(overlapBed) ? overlapBed : null,
+      overlapOver: Number.isFinite(overlapOver) ? overlapOver : null,
     };
   }
 
@@ -1758,18 +1789,37 @@ export class Track {
     const mountain = scenery === "mountain";
     const forest = scenery === "forest";
     const drop = mountain ? 0.28 : forest ? 0.38 : scenery === "lakeside" ? 0.55 : desert ? 0.95 : 0.55;
-    // Stacked ribbons (Desert start straight under the later flyover): the
-    // nearest sample can be the deck in the air. Land must stay with the road
-    // underneath, or the apron becomes a wall the car drives through.
+    // On the paint of a lower ribbon, the floor is that ribbon. The nearest
+    // centreline may be a flyover; using it built a wall in the lane
+    // (Desert ~280 m, and the same crossing shape on every stage).
     if (
-      desert &&
+      !tunnel &&
+      overlapBed != null &&
+      Number.isFinite(overlapBed) &&
+      near.overlapOver != null &&
+      near.overlapOver < 0.55 &&
+      roadY - overlapBed > 1.15
+    ) {
+      return overlapBed - drop;
+    }
+    // Stacked ribbons: the span over the lower lane stays on that lane's bed
+    // so a skirt cannot become a wall. Beside the high road, an easy
+    // embankment falls away from the deck and meets the valley — the ramp
+    // is not a floating plank.
+    if (
       overlapBed != null &&
       Number.isFinite(overlapBed) &&
       roadY - overlapBed > 3.2 &&
       !tunnel
     ) {
-      const stackedClear = near.minOver != null ? near.minOver : dist - roadW * 0.5;
-      if (stackedClear < roadW * 0.5 + 18) return overlapBed - drop;
+      const lowOver = near.overlapOver;
+      const onLower = lowOver != null && lowOver < ROAD_VERGE + 2.2;
+      // Paint and verge of the road underneath. The flyover deck stays overhead.
+      if (onLower) return overlapBed - drop;
+      const overHigh = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      const valley = overlapBed - drop;
+      const embank = roadY - drop - Math.max(0, overHigh) * 0.11;
+      return Math.max(valley, embank);
     }
     // Shared TunnelVolume mouth contract — every stage: never raise land through
     // the drive cone. Mountain biome ridges previously skipped this (Desert-only).
@@ -1796,6 +1846,16 @@ export class Track {
         const clearanceDeck =
           near.minOver != null ? near.minOver : dist - roadW * 0.5;
         if (clearanceDeck < ROAD_VERGE + 1.0) {
+          // Nearest centreline can be the deck overhead. The lane underneath
+          // stays on its own bed — never a wall at the crossing.
+          if (
+            overlapBed != null &&
+            roadY - overlapBed > 2.4 &&
+            near.overlapOver != null &&
+            near.overlapOver < 1.2
+          ) {
+            return overlapBed - drop;
+          }
           return roadY - drop;
         }
       }
@@ -1855,7 +1915,9 @@ export class Track {
         const run = flats[fi];
         const reach = run.lateral != null ? run.lateral : flatReach;
         if ((along || 0) >= run.dist0 && (along || 0) <= run.dist1 && dist < reach) {
-          return bed;
+          // Drive floor only. Past the paint the shoulder is allowed to fall
+          // away; a 50 m wash left the road sitting on a flat shelf.
+          if (dist < roadW * 0.5 + 2.4) return bed;
         }
       }
       return null;
@@ -1880,13 +1942,20 @@ export class Track {
       }
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + ROAD_VERGE + 1.2) return bed;
-      // Stronger verge banks past the trench — still near-flat in chase corridor.
+      // Paint stays a floor. Just off the edge, an easy ditch falls away and
+      // joins the banks — the ribbon is not a plank on a flat shelf.
+      if (dist < roadW * 0.5 + 1.6) return bed;
       const bank = clamp(dune - 2.6, -1.2, 7.2);
-      if (dist < trench) return bed;
+      const shoulder1 = roadW * 0.5 + 18;
+      if (dist < shoulder1) {
+        const t = sm((dist - (roadW * 0.5 + 1.6)) / Math.max(1, shoulder1 - roadW * 0.5 - 1.6));
+        return bed - 0.9 * t;
+      }
+      const ditch = bed - 0.9;
+      if (dist < trench) return ditch;
       if (dist < chaseFlat) {
         const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
-        return bed + bank * t * 0.2;
+        return ditch + (bed + bank * 0.2 - ditch) * t;
       }
       if (dist < trench + rise) return bed + bank * sm((dist - trench) / rise);
       // Far forest hills under the treeline rings (Visual Pass V4 — taller mounds).
@@ -1961,13 +2030,23 @@ export class Track {
       const bank = Math.max(hill, clamp(dune - bed, -0.4, 7.2));
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + ROAD_VERGE + 1.2) return bed;
-      if (dist < trench) return bed;
+      if (dist < roadW * 0.5 + 1.6) return bed;
+      const shoulder1 = roadW * 0.5 + 18;
+      if (dist < shoulder1) {
+        const t = sm((dist - (roadW * 0.5 + 1.6)) / Math.max(1, shoulder1 - roadW * 0.5 - 1.6));
+        return bed - 1.15 * t;
+      }
+      const ditch = bed - 1.15;
+      if (dist < trench) return ditch;
       if (dist < chaseFlat) {
         const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
-        return bed + bank * t * 0.015;
+        return ditch + (bed + bank * 0.25 - ditch) * t;
       }
-      if (dist < chaseFlat + rise) return bed + bank * sm((dist - chaseFlat) / rise);
+      if (dist < chaseFlat + rise) {
+        const t = sm((dist - chaseFlat) / rise);
+        const from = bed + bank * 0.25;
+        return from + (bed + bank - from) * t;
+      }
       if (dist < chaseFlat + rise + blend) {
         const t = sm((dist - chaseFlat - rise) / blend);
         return bed + bank * (0.9 + 0.1 * t);
@@ -2933,8 +3012,8 @@ export class Track {
       const p = pts[i];
       if (p.tunnel || p.underpass) continue;
       const e = edge(p);
-      reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist);
-      reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist);
+      reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist, kerbYL[i]);
+      reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist, kerbYR[i]);
     }
 
     for (let i = 0; i < nPts; i++) {
@@ -2945,10 +3024,10 @@ export class Track {
         if (p.landmark) return edgeY - 0.2;
         const gy = this._groundHeight(lx, lz, scenery);
         if (!Number.isFinite(gy)) return edgeY - 0.22;
-        // Seat into land — floating lips left sky holes under the apron.
-        // Slope cap: a shortened flyover reach must stay a lip, not a curtain
-        // down through the road underneath.
-        const seated = Math.min(gy - 0.05, edgeY - 0.1);
+        // Sit the lip in the dirt so the shoulder meets the land mesh.
+        // A flyover whose reach was cut short stays a lip — it must not
+        // fall through the road underneath.
+        const seated = Math.min(gy - 0.08, edgeY - 0.12);
         const cap = Math.max(0.22, (reach > 0 ? reach : 0.4) * SKIRT_SLOPE);
         return Math.max(seated, edgeY - cap);
       };
@@ -4080,6 +4159,7 @@ export class Track {
     this.corridorViolations = dropped;
     this._assertDriveCorridor(dropped);
     this._scrubCollidersOnRibbonSamples();
+    this._openDriveLane();
   }
 
   /**
@@ -4203,6 +4283,117 @@ export class Track {
     const ext =
       HL * Math.abs(fx) + HW * Math.abs(rx) + r;
     return Math.hypot(dx, dz) < ext + 0.15;
+  }
+
+  /**
+   * True distance from a world XZ to the nearest ribbon segment.
+   * `_nearestRoad` lateral ignores how far past a segment end you are, so a
+   * straight can look "on the paint" tens of metres away. Lane scrub uses this.
+   * @param {number} x
+   * @param {number} z
+   * @returns {{dist:number, over:number, w:number, x:number, z:number, nx:number, nz:number}|null}
+   */
+  _ribbonMetrics(x, z) {
+    const pts = this.points;
+    if (!pts || pts.length < 2) return null;
+    const hit = this._nearestPointIndex(x, z);
+    const i0 = Math.max(0, hit.i - 8);
+    const i1 = Math.min(pts.length - 2, hit.i + 8);
+    let bestD = Infinity;
+    let best = null;
+    for (let i = i0; i <= i1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz;
+      let t = 0;
+      if (len2 > 1e-6) {
+        t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+      }
+      const px = a.x + dx * t;
+      const pz = a.z + dz * t;
+      const d = Math.hypot(x - px, z - pz);
+      if (d >= bestD) continue;
+      bestD = d;
+      const w = a.width + (b.width - a.width) * t;
+      const nx = a.nx + (b.nx - a.nx) * t;
+      const nz = a.nz + (b.nz - a.nz) * t;
+      best = { dist: d, over: d - w * 0.5, w, x: px, z: pz, nx, nz };
+    }
+    return best;
+  }
+
+  /**
+   * Nothing solid may stop a car on the painted lane.
+   * Spheres that reach the roadway are dropped. Wall faces that overlap a
+   * car on the centre or mid-lane are slid outward; if they still block, dropped.
+   */
+  _openDriveLane() {
+    const list = this.colliders;
+    const pts = this.points;
+    if (!list || !list.length || !pts || pts.length < 2) return;
+    const drop = new Set();
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (c.kind === "wall") continue;
+      const m = this._ribbonMetrics(c.x, c.z);
+      if (!m) continue;
+      const r = c.r || 0.5;
+      if (m.over - r < 1.1) drop.add(i);
+    }
+    const offenders = new Set();
+    const laneSpots = (p) => {
+      const half = p.width * 0.5;
+      // Full paint, every stage. A face that meets the centre or either
+      // edge is in the roadway and must not remain.
+      return [0, half * 0.9, -half * 0.9];
+    };
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const spots = laneSpots(p);
+      for (let s = 0; s < spots.length; s++) {
+        const sx = p.x + p.nx * spots[s];
+        const sz = p.z + p.nz * spots[s];
+        for (let c = 0; c < list.length; c++) {
+          if (drop.has(c) || offenders.has(c)) continue;
+          const col = list[c];
+          if (col.kind !== "wall") continue;
+          if (Math.hypot(col.x - sx, col.z - sz) > (col.halfLen || 4) + 6) continue;
+          if (this._colliderBlocksSample(col, sx, sz, p.heading)) offenders.add(c);
+        }
+      }
+    }
+    offenders.forEach((idx) => {
+      const c = list[idx];
+      if (!c) return;
+      c.x -= c.nx * 3.2;
+      c.z -= c.nz * 3.2;
+    });
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const spots = laneSpots(p);
+      for (let s = 0; s < spots.length; s++) {
+        const sx = p.x + p.nx * spots[s];
+        const sz = p.z + p.nz * spots[s];
+        for (let c = 0; c < list.length; c++) {
+          if (drop.has(c)) continue;
+          const col = list[c];
+          if (col.kind !== "wall") continue;
+          if (Math.hypot(col.x - sx, col.z - sz) > (col.halfLen || 4) + 6) continue;
+          if (this._colliderBlocksSample(col, sx, sz, p.heading)) drop.add(c);
+        }
+      }
+    }
+    if (!drop.size) return;
+    const kept = [];
+    for (let i = 0; i < list.length; i++) {
+      if (!drop.has(i)) kept.push(list[i]);
+    }
+    list.length = 0;
+    for (let i = 0; i < kept.length; i++) list.push(kept[i]);
   }
 
   /**
@@ -10182,7 +10373,9 @@ export class Track {
     if (!(reach > 0.4)) {
       reach = skirtReachFromDrop(skirtBaseReach(scenery), Math.max(0, kerbY - gy));
     }
-    const outerY = Math.min(gy - 0.05, kerbY - 0.1);
+    const seated = Math.min(gy - 0.08, kerbY - 0.12);
+    const cap = Math.max(0.22, (reach > 0 ? reach : 0.4) * SKIRT_SLOPE);
+    const outerY = Math.max(seated, kerbY - cap);
     return skirtYAlong(clearance, reach, kerbY, outerY, roadH);
   }
 
@@ -10414,6 +10607,21 @@ export class Track {
             }
           }
         }
+        const hintAt = Math.max(0, Math.min(n - 1, lo));
+        const hintP = pts[hintAt];
+        const chosen = pts[best];
+        // Still on the hinted road: do not adopt a deck overhead. That
+        // crossing is a bridge, not a wall across this lane.
+        if (
+          hintP &&
+          chosen &&
+          chosen.y > hintP.y + 1.5 &&
+          Math.abs((chosen.dist || 0) - hintDist) > 20
+        ) {
+          const lat =
+            (x - hintP.x) * (hintP.nx || 0) + (z - hintP.z) * (hintP.nz || 0);
+          if (Math.abs(lat) <= (hintP.width || 12) * 0.5 + 1) return hintAt;
+        }
         return best;
       }
     }
@@ -10535,27 +10743,40 @@ export class Track {
    * @param {number} selfDist along-track distance of this post
    * @returns {number}
    */
-  _limitSkirtReach(ex, ez, nx, nz, want, selfDist) {
+  /**
+   * @param {number} ex
+   * @param {number} ez
+   * @param {number} nx
+   * @param {number} nz
+   * @param {number} want
+   * @param {number} selfDist
+   * @param {number} localY kerb height — a deck overhead must not eat this shoulder
+   */
+  _limitSkirtReach(ex, ez, nx, nz, want, selfDist, localY) {
     if (!(want > 0.45)) return want;
-    const steps = 5;
+    const steps = 6;
     for (let s = 1; s <= steps; s++) {
       const dist = (want * s) / steps;
-      if (this._skirtHitsForeignDeck(ex + nx * dist, ez + nz * dist, selfDist)) {
-        return Math.max(0.3, (want * (s - 1)) / steps);
+      if (this._skirtHitsForeignDeck(ex + nx * dist, ez + nz * dist, selfDist, localY)) {
+        return Math.max(1.15, (want * (s - 1)) / steps);
       }
     }
     return want;
   }
 
   /**
-   * True when (x, z) sits in another ribbon's drive corridor.
-   * Local posts (same stretch of road) are ignored.
+   * True when (x, z) sits on another ribbon the shoulder would actually meet.
+   * Distance is Euclidean. A clamped normal-only lateral made every straight
+   * look like it hit the road ahead, so both shoulders shrank to a stub and
+   * the deck floated above the dirt.
+   * A flyover several metres overhead does not block the road underneath.
    * @param {number} x
    * @param {number} z
    * @param {number} selfDist
+   * @param {number} localY
    * @returns {boolean}
    */
-  _skirtHitsForeignDeck(x, z, selfDist) {
+  _skirtHitsForeignDeck(x, z, selfDist, localY) {
     const pts = this.points;
     if (!pts || pts.length < 2) return false;
     let hit = false;
@@ -10575,11 +10796,12 @@ export class Track {
       }
       const px = a.x + dx * t;
       const pz = a.z + dz * t;
-      const nx = a.nx + (b.nx - a.nx) * t;
-      const nz = a.nz + (b.nz - a.nz) * t;
-      const lat = Math.abs((x - px) * nx + (z - pz) * nz);
+      const d = Math.hypot(x - px, z - pz);
       const w = a.width + (b.width - a.width) * t;
-      if (lat < w * 0.5 + 2.4) hit = true;
+      if (d >= w * 0.5 + 1.6) return;
+      const y = a.y + (b.y - a.y) * t;
+      if (Number.isFinite(localY) && y > localY + 2.6) return;
+      hit = true;
     });
     return hit;
   }

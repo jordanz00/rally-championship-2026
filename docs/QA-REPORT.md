@@ -1,5 +1,57 @@
 # QA report — quality-control pass
 
+## Race presents at 60 (2026-09-27)
+
+**Player moment:** The race was drawing at 30 frames a second even when the picture was already paid for.
+
+**Cause:** After a short run of frames past the 16.7 ms deadline, the presenter locked the rest of the stage to 30 Hz. Pixel ratio, shadow map, and post stayed where they were — the frame rate was the thing that dropped.
+
+**Shipped:** Desktop races keep the 60 Hz present target. The quality ladder still does not cut resolution or image quality mid-stage. Phones keep their existing fill-rate budget.
+
+**Boot:** `main.js?v=847` · `game.js?v=847` · `perf-tier.js?v=53`
+
+## Stable shadow under the cars (2026-09-27)
+
+**Player moment:** The dark shape under each car jumped, swam, and flickered while driving.
+
+**Cause:** The sun shadow map redrew every other frame while the light kept following the car, so the body silhouette sheared. A second disc re-sampled the road every frame and popped on small height changes.
+
+**Shipped:** Each car has one flat oval on the road, glued to the car's filtered pose. It is a simple solid contact shadow so it cannot stair-step or cut the road into jumping diamonds. Cars no longer cast a second silhouette into the sun map, which was redrawing every other frame and shearing. Scenery shadows stay on the same refresh rate, but the sun does not move between refreshes, and it steps in whole texels so those edges do not crawl.
+
+**Boot:** `main.js?v=846` · `game.js?v=846` · `lighting-rig.js?v=27`
+
+## No fake walls on any roadway (2026-09-27)
+
+**Player moment:** Stage 1, about 280 m, into the first right. Every car stopped. The same kind of stop must not exist on any road, on any stage.
+
+**Cause:** Where a later flyover crosses an earlier road, the ground sample kept a far endpoint, so the lane underneath was given the deck overhead — about 9 m of floor in the roadway.
+
+**Shipped:** A sample on the paint of a lower road uses that road. A car that still has its place on a road is not handed the deck overhead. A solid that faces down the open lane does not take the car's speed. Tunnel walls still hold the sides. Checked on Desert, Forest, Mountain, Lakeside, and the phys lab.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lane-floor.mjs`
+
+**Boot:** `main.js?v=841` · `game.js?v=841` · `track.js?v=380` · `collide.js?v=59`
+
+## Road shoulders meet the ground (2026-09-24)
+
+**Player moment:** Both edges of the road floated above the dirt. The drop-off was a stub, not a slope into the stage.
+
+**Cause:** The shoulder test treated the road ahead on the same straight as a second road beside the lane, so each apron was cut to 30 cm and hung above the land.
+
+**Shipped:** Shoulders use real distance and ignore a flyover overhead. Both sides ramp down onto the terrain. A deck at the same height or below still stops the apron so it cannot fall through another road.
+
+**Boot:** `main.js?v=839` · `track.js?v=378`
+
+## Cars stuck on Desert and Forest (2026-09-24)
+
+**Player moment:** On stage 1 and stage 2 the car reached some stretches and would not move again.
+
+**Cause:** A nose probe treated dunes, banks, and the flyover deck as a wall, shoved the chassis backward, and deleted forward speed every frame. Solids that still reached the painted lane did the same.
+
+**Shipped:** The drive corridor no longer stops the car. Sphere colliders inside the lane are removed. Wall faces that overlap a car on the lane are slid out, then dropped if they still block.
+
+**Boot:** `main.js?v=834` · `track.js?v=373` · `collide.js?v=58`
+
 ## Flyover soffit — black blade across the road (2026-09-24)
 
 **Player moment:** Desert roadway. Where the course crosses itself, the upper deck’s underside was a full-width black slab through the view.
