@@ -94,7 +94,10 @@ export function buildForestTunnelTubeGeometry(pts, start, end, spec) {
   // chase camera cannot see sky or terrain through the lining.
   const inner = horseshoeProfile(clearHalf, openH, -2.55, 8, 28, 1.55);
   const outer = offsetProfile(inner, thick);
-  return sweepTube(frames, inner, outer, tile);
+  // A later ribbon can cross above this bore. The semicircle crown is as
+  // tall as the tunnel is wide, so it was standing in that roadway.
+  const caps = roadClearanceCaps(frames, pts, spec);
+  return sweepTube(frames, inner, outer, tile, caps);
 }
 
 /**
@@ -349,7 +352,103 @@ function displaceProfile(prof, amp, seed) {
  * @param {Array<{x:number,y:number}>} outer
  * @param {number} tile
  */
-function sweepTube(frames, inner, outer, tile) {
+/**
+ * Later roads that pass over this bore. Caps are world-Y ceilings so the
+ * rock lid stays under that deck and the car on it does not drive through
+ * the arch. Infinity means the natural crown.
+ * Far chase sits about 4 m up, so the bore never closes below 5.4 m.
+ * @param {Array<{x:number,y:number,z:number,heading:number,nx:number,nz:number}>} frames
+ * @param {Array<{x:number,y:number,z:number,heading:number,nx:number,nz:number,width:number,tunnel?:boolean,y:number}>} pts
+ * @param {{clearHalf:number,openH:number,thick?:number}} spec
+ * @returns {{inner:Float64Array, outer:Float64Array}}
+ */
+function roadClearanceCaps(frames, pts, spec) {
+  const half = spec.clearHalf;
+  const thick = spec.thick != null ? spec.thick : 3.85;
+  const crown = spec.openH * 0.62 + half;
+  const minBore = 5.4;
+  const n = frames.length;
+  const hardI = new Float64Array(n);
+  const hardO = new Float64Array(n);
+  hardI.fill(Infinity);
+  hardO.fill(Infinity);
+  const roads = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (!pts[i].tunnel) roads.push(pts[i]);
+  }
+  for (let i = 0; i < n; i++) {
+    const f = frames[i];
+    const shoulders = [0, -half * 0.9, half * 0.9];
+    for (let s = 0; s < shoulders.length; s++) {
+      const sx = f.x + f.nx * shoulders[s];
+      const sz = f.z + f.nz * shoulders[s];
+      for (let r = 0; r < roads.length; r++) {
+        const p = roads[r];
+        const dx = p.x - sx;
+        const dz = p.z - sz;
+        const reach = p.width * 0.5 + half + 2;
+        if (dx * dx + dz * dz > reach * reach) continue;
+        const along =
+          (sx - p.x) * Math.sin(p.heading) + (sz - p.z) * Math.cos(p.heading);
+        const lat = (sx - p.x) * p.nx + (sz - p.z) * p.nz;
+        if (Math.abs(along) > 8) continue;
+        if (Math.abs(lat) > p.width * 0.5 + 1.5) continue;
+        const dy = p.y - f.y;
+        if (dy < minBore + 0.5 || dy > crown + thick) continue;
+        const iCap = Math.max(f.y + minBore, p.y - 2.05);
+        const oCap = Math.min(p.y - 1.15, iCap + 0.65);
+        if (iCap < hardI[i]) hardI[i] = iCap;
+        if (oCap < hardO[i]) hardO[i] = oCap;
+      }
+    }
+  }
+  const alongD = new Float64Array(n);
+  for (let i = 1; i < n; i++) {
+    alongD[i] =
+      alongD[i - 1] +
+      Math.hypot(frames[i].x - frames[i - 1].x, frames[i].z - frames[i - 1].z);
+  }
+  const EASE = 14;
+  const innerCap = new Float64Array(n);
+  const outerCap = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let iCap = hardI[i];
+    let oCap = hardO[i];
+    const natural = frames[i].y + crown;
+    const naturalO = natural + thick * 0.55;
+    for (let j = 0; j < n; j++) {
+      if (hardI[j] === Infinity) continue;
+      const dist = Math.abs(alongD[i] - alongD[j]);
+      if (dist <= 0 || dist >= EASE) continue;
+      const u = dist / EASE;
+      const easedI = hardI[j] + (natural - hardI[j]) * u;
+      const easedO = hardO[j] + (naturalO - hardO[j]) * u;
+      if (easedI < iCap) iCap = easedI;
+      if (easedO < oCap) oCap = easedO;
+    }
+    innerCap[i] = iCap;
+    outerCap[i] = oCap > iCap ? oCap : iCap + 0.4;
+  }
+  return { inner: innerCap, outer: outerCap };
+}
+
+/**
+ * World-Y the Forest bore is allowed to reach at one station.
+ * A later road overhead pulls this down so that deck stays clear.
+ * @param {{x:number,y:number,z:number,nx:number,nz:number}} frame
+ * @param {Array<{x:number,y:number,z:number,heading:number,nx:number,nz:number,width:number,tunnel?:boolean}>} pts
+ * @param {{clearHalf:number,openH:number,thick?:number}} spec
+ * @returns {number}
+ */
+export function forestBoreCeiling(frame, pts, spec) {
+  const caps = roadClearanceCaps([frame], pts, spec);
+  const cap = caps.inner[0];
+  if (Number.isFinite(cap)) return cap;
+  const half = spec.clearHalf;
+  return frame.y + spec.openH * 0.62 + half;
+}
+
+function sweepTube(frames, inner, outer, tile, caps) {
   const F = frames.length;
   const P = inner.length;
   if (F < 2 || P < 4) return new THREE.BufferGeometry();
@@ -399,11 +498,17 @@ function sweepTube(frames, inner, outer, tile) {
       const ip = inner[j];
       const op = outer[j];
       const ix = f.x + rx * ip.x;
-      const iy = f.y + ip.y;
+      let iy = f.y + ip.y;
       const iz = f.z + rz * ip.x;
       const ox = f.x + rx * op.x;
-      const oy = f.y + op.y;
+      let oy = f.y + op.y;
       const oz = f.z + rz * op.x;
+      if (caps) {
+        const iCap = caps.inner[i];
+        const oCap = caps.outer[i];
+        if (iy > iCap) iy = iCap;
+        if (oy > oCap) oy = oCap;
+      }
       const onx = ox - ix;
       const ony = oy - iy;
       const onz = oz - iz;
@@ -434,13 +539,16 @@ function sweepTube(frames, inner, outer, tile) {
       const b = i * P + j + 1;
       const c = (i + 1) * P + j + 1;
       const d = (i + 1) * P + j;
-      // Inner: winding so the cabin-facing normal stays inward.
-      quad(a, d, c, b);
+      // Profile runs left-toe → crown → right-toe. That walk's right-hand
+      // normal points into the cabin. The old order faced the walls outward,
+      // so FrontSide dropped the lining and the chase cam saw the outer shell
+      // through it.
+      quad(a, b, c, d);
       const oa = innerCount + a;
       const ob = innerCount + b;
       const oc = innerCount + c;
       const od = innerCount + d;
-      quad(oa, ob, oc, od);
+      quad(oa, od, oc, ob);
     }
   }
 
@@ -479,6 +587,7 @@ function sweepTube(frames, inner, outer, tile) {
   geo.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
   geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  geo.computeVertexNormals();
+  // Keep the authored inward / outward normals. Averaging them with the
+  // toe caps and mouth rims tipped the wall lighting back out of the bore.
   return geo;
 }

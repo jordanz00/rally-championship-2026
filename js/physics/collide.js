@@ -116,6 +116,27 @@ function clamp(v, a, b) {
 }
 
 /**
+ * Along-nose Δv for Vehicle._stepSuspension. A head-on wall nods the body;
+ * a side rub stays quiet. Vehicle already reads `_impactAx` — this was a
+ * dead handoff.
+ * @param {{ai?:boolean, _impactAx?:number}} v
+ * @param {number} closed closing speed into the face (m/s)
+ * @param {number} fx
+ * @param {number} fz
+ * @param {number} nx
+ * @param {number} nz
+ */
+function noteNoseDip(v, closed, fx, fz, nx, nz) {
+  if (!v || v.ai || !(closed > 0.7)) return;
+  const headOn = Math.max(0, -(fx * nx + fz * nz));
+  const dv = closed * headOn;
+  if (dv > 0.7) {
+    const cur = v._impactAx || 0;
+    v._impactAx = cur > dv ? cur : dv > 12 ? 12 : dv;
+  }
+}
+
+/**
  * A face across an open road. Tunnel lining is a real wall. While the
  * car's centre is still on the paint, a hit that opposes forward travel
  * is a fake gate and must not stop the car. Side scrapes still count.
@@ -139,8 +160,12 @@ function blocksOpenLane(v, nx, nz, fx, fz) {
  * @param {{position?:{y?:number}}} v
  */
 function colliderHitsCarY(c, v) {
-  if (!c || c.kind === "wall") return true;
   const y = v && v.position && Number.isFinite(v.position.y) ? v.position.y : 0;
+  if (!c) return true;
+  if (c.kind === "wall") {
+    if (!Number.isFinite(c.top)) return true;
+    return y < c.top + 0.45;
+  }
   const top = Number.isFinite(c.top) ? c.top : 3.1;
   return y < top + 0.45;
 }
@@ -342,6 +367,9 @@ function resolvePlayerRival(a, b, hit, dx, dz) {
     }
     player.velocity.x -= pdvx;
     player.velocity.z -= pdvz;
+    const pfx = Math.sin(player.yaw);
+    const pfz = Math.cos(player.yaw);
+    noteNoseDip(player, Math.hypot(pdvx, pdvz), pfx, pfz, nx, nz);
     rival.velocity.x += jn * nx * invR;
     rival.velocity.z += jn * nz * invR;
     player.hitCar = Math.max(player.hitCar || 0, Math.abs(relN) * 0.45 + overlap);
@@ -558,6 +586,7 @@ function applyGlance(v, nx, nz, overlap, pass, fx, fz, fast, opts = {}) {
       }
     } else {
       const killFrac = wall ? (glancing ? 0.32 : 0.78) : glancing ? 0.14 : 0.48;
+      noteNoseDip(v, closed * killFrac, fx, fz, nx, nz);
       v.velocity.x -= vn * nx * killFrac;
       v.velocity.z -= vn * nz * killFrac;
       const keep = closed * killFrac * (wall ? 0.7 : 0.88);

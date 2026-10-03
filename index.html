@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=48" />
+    <link rel="stylesheet" href="css/game.css?v=53" />
     <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
@@ -127,21 +127,30 @@
           var r = e && e.reason;
           report("Engine failed during async startup.", String(r && r.stack ? r.stack : r));
         });
+        var phoneBoot = /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || "");
+        // Slow Android radios spend the first seconds downloading the engine.
+        // An 8s "failed" banner on top of a page that then starts reads as broken.
         window.setTimeout(function () {
           var curtain = document.getElementById("fx-curtain");
           if (curtain) curtain.classList.remove("is-on");
-          if (!window.game) {
-            report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct within 8s. Try Chrome or Safari — in-app browsers (Instagram, Facebook, Messenger) often block the 3D engine.");
-            return;
-          }
-        }, 8000);
+          if (window.game) return;
+          report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct in time. Try Chrome or Safari — in-app browsers (Instagram, Facebook, Messenger) often block the 3D engine.");
+        }, phoneBoot ? 22000 : 8000);
         window.setTimeout(function () {
           var curtain = document.getElementById("fx-curtain");
           if (curtain) curtain.classList.remove("is-on");
           if (!window.game) return;
+          // Phones start WebGL on the first tap, not at splash.
+          if (phoneBoot && window.game.state !== "race" && window.game.state !== "countdown" && window.game.state !== "loading") return;
           if (window.game.renderer) return;
           report("3D graphics did not start on this device.", "Open this page in Chrome or Safari (not an in-app browser). On Android, enable Settings → Chrome → Use hardware acceleration.");
-        }, 12000);
+        }, phoneBoot ? 28000 : 12000);
+        window.setInterval(function () {
+          if (!window.game) return;
+          var el = document.getElementById("boot-error");
+          if (!el || el.hidden) return;
+          if (/never finished starting/.test(el.textContent || "")) el.hidden = true;
+        }, 1000);
       })();
 
       // Phone class before modules load — menus need it even if WebGL is slow.
@@ -354,16 +363,15 @@
       <section id="screen-hud" class="screen hud">
         <div class="hud-top">
           <div>
-            <span class="label">COURSE</span>
-            <strong id="hud-course">DESERT</strong>
-          </div>
-          <div>
             <span class="label">TIME</span>
             <strong id="hud-time">0'00"00</strong>
           </div>
           <div>
             <span class="label">POSITION</span>
             <strong id="hud-pos">9th</strong>
+          </div>
+          <div hidden>
+            <strong id="hud-course">DESERT</strong>
           </div>
         </div>
         <canvas id="minimap" width="140" height="100"></canvas>
@@ -394,7 +402,7 @@
         <div class="hud-bottom">
           <div class="speed-block">
             <span id="hud-speed">000</span>
-            <small>km/h</small>
+            <small>MPH</small>
           </div>
           <div class="gear-block">
             <span id="hud-gear">1</span>
@@ -453,6 +461,20 @@
             <label class="vol-row">
               <span>NAVIGATOR <strong id="vol-nav-val">100</strong></span>
               <input id="vol-nav" type="range" min="0" max="100" step="1" value="100" aria-label="Navigator volume" />
+            </label>
+            <label class="vol-row">
+              <span>IMAGE</span>
+              <select id="opt-tsr" aria-label="Image reconstruct">
+                <option value="quality">Quality · reconstruct</option>
+                <option value="balanced">Balanced</option>
+                <option value="performance">Performance</option>
+                <option value="dlaa">DLAA · native AA</option>
+                <option value="off">Off · native</option>
+              </select>
+            </label>
+            <label class="vol-row vol-row-check" for="opt-recon">
+              <span>REFINE <strong id="opt-recon-val">ON</strong></span>
+              <input id="opt-recon" type="checkbox" checked aria-label="3D image refine" />
             </label>
           </div>
           <div class="ui-cards ui-cards-compact" role="list">
@@ -513,6 +535,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=847" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=924" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

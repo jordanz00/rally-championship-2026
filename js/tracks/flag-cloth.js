@@ -9,7 +9,8 @@
  *   Wind comes from config LIGHTING[scenery].wind — no second weather system.
  *   Each flag carries phase / seed offsets so a finish row never sync-waves.
  *
- * Cost: start pair + finish row of 10. 96 particles each. No extra physics world.
+ * Cost: Desert start avenue is ten flags; other stages keep a start pair.
+ * Finish row is ten. 96 particles each. Far flags skip frames. No extra physics world.
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -103,12 +104,13 @@ export function stageWind(scenery, time, opts) {
 }
 
 /**
- * Fabric albedo — checkered finish or solid rally red, with a faint weave.
- * @param {"checkers"|"red"} kind
+ * Fabric albedo. Checkers, solid rally colours, and simple event marks.
+ * Hoist (pole) is the left edge. Not a licensed sponsor lockup.
+ * @param {string} kind
  * @returns {THREE.CanvasTexture}
  */
 function flagTexture(kind) {
-  const key = kind === "checkers" ? "checkers" : "red";
+  const key = FLAG_PAINT[kind] ? kind : "red";
   const hit = FLAG_TEX.get(key);
   if (hit) return hit;
   const w = 512;
@@ -117,31 +119,146 @@ function flagTexture(kind) {
   c.width = w;
   c.height = h;
   const g = c.getContext("2d");
-  if (key === "checkers") {
+  FLAG_PAINT[key](g, w, h);
+  weaveCloth(g, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  tex.userData.shared = true;
+  FLAG_TEX.set(key, tex);
+  return tex;
+}
+
+/** @param {CanvasRenderingContext2D} g @param {number} w @param {number} h @param {string} color */
+function hoistBar(g, w, h, color) {
+  g.fillStyle = color;
+  g.fillRect(0, 0, Math.max(16, w * 0.045), h);
+}
+
+/**
+ * Rally / event flag faces. Each key is a different colour.
+ * @type {Record<string, function(CanvasRenderingContext2D, number, number): void>}
+ */
+const FLAG_PAINT = {
+  checkers(g, w, h) {
     const cols = 8;
     const rows = 6;
     const cw = w / cols;
     const rh = h / rows;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const dark = (x + y) % 2 === 0;
-        g.fillStyle = dark ? "#1a1a1c" : "#e8e4dc";
+        g.fillStyle = (x + y) % 2 === 0 ? "#1a1a1c" : "#e8e4dc";
         g.fillRect(x * cw, y * rh, cw + 0.6, rh + 0.6);
       }
     }
-  } else {
+  },
+  red(g, w, h) {
     const grad = g.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, "#d0181c");
     grad.addColorStop(0.55, "#b41018");
     grad.addColorStop(1, "#8c1014");
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
-    g.fillStyle = "#f0ece4";
-    g.fillRect(0, 0, 18, h);
-    g.fillStyle = "rgba(255,220,220,0.12)";
-    g.fillRect(0, 0, w, 10);
-    g.fillRect(0, h - 10, w, 10);
-  }
+    hoistBar(g, w, h, "#f0ece4");
+  },
+  yellow(g, w, h) {
+    g.fillStyle = "#f2c21a";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#1c1c1e";
+    g.fillRect(0, h * 0.36, w, h * 0.28);
+    hoistBar(g, w, h, "#f7f3ea");
+  },
+  green(g, w, h) {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#1f8a3a");
+    grad.addColorStop(1, "#0e5c24");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    hoistBar(g, w, h, "#f4f0e6");
+  },
+  blue(g, w, h) {
+    g.fillStyle = "#1a4f9c";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#f4f0e6";
+    g.beginPath();
+    g.arc(w * 0.58, h * 0.5, h * 0.28, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#1a4f9c";
+    g.beginPath();
+    g.arc(w * 0.58, h * 0.5, h * 0.16, 0, Math.PI * 2);
+    g.fill();
+    hoistBar(g, w, h, "#f4f0e6");
+  },
+  white(g, w, h) {
+    g.fillStyle = "#f3efe6";
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#c41218";
+    g.lineWidth = 28;
+    g.strokeRect(14, 14, w - 28, h - 28);
+    hoistBar(g, w, h, "#c41218");
+  },
+  orange(g, w, h) {
+    g.fillStyle = "#e25a12";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#f6f1e6";
+    g.beginPath();
+    g.moveTo(w * 0.28, 0);
+    g.lineTo(w * 0.62, h * 0.5);
+    g.lineTo(w * 0.28, h);
+    g.lineTo(w * 0.14, h);
+    g.lineTo(w * 0.48, h * 0.5);
+    g.lineTo(w * 0.14, 0);
+    g.fill();
+    hoistBar(g, w, h, "#f6f1e6");
+  },
+  navy(g, w, h) {
+    g.fillStyle = "#14243f";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#d4b15a";
+    g.fillRect(0, h * 0.4, w, h * 0.2);
+    hoistBar(g, w, h, "#d4b15a");
+  },
+  maroon(g, w, h) {
+    g.fillStyle = "#7a1830";
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#f0e6d2";
+    g.lineWidth = 36;
+    g.beginPath();
+    g.moveTo(0, h);
+    g.lineTo(w, 0);
+    g.stroke();
+    hoistBar(g, w, h, "#f0e6d2");
+  },
+  gold(g, w, h) {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#e6c56a");
+    grad.addColorStop(1, "#b8892e");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#1c1a16";
+    g.beginPath();
+    g.moveTo(w * 0.42, h * 0.18);
+    g.lineTo(w * 0.78, h * 0.5);
+    g.lineTo(w * 0.42, h * 0.82);
+    g.lineTo(w * 0.32, h * 0.82);
+    g.lineTo(w * 0.64, h * 0.5);
+    g.lineTo(w * 0.32, h * 0.18);
+    g.fill();
+    hoistBar(g, w, h, "#1c1a16");
+  },
+};
+
+/**
+ * @param {CanvasRenderingContext2D} g
+ * @param {number} w
+ * @param {number} h
+ */
+function weaveCloth(g, w, h) {
   const img = g.getImageData(0, 0, w, h);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -154,13 +271,6 @@ function flagTexture(kind) {
     d[i + 2] = clampByte(d[i + 2] + n);
   }
   g.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  tex.needsUpdate = true;
-  tex.userData.shared = true;
-  FLAG_TEX.set(key, tex);
-  return tex;
 }
 
 function clampByte(v) {
@@ -168,7 +278,7 @@ function clampByte(v) {
 }
 
 function clothMaterial(kind) {
-  const key = kind === "checkers" ? "checkers" : "red";
+  const key = FLAG_PAINT[kind] ? kind : "red";
   let m = CLOTH_MAT.get(key);
   if (m) return m;
   const cinema = (VISUAL.tier || 0) >= 8 && VISUAL.realisticArcade !== false;
@@ -261,7 +371,7 @@ function hash3(a, b, c) {
  * @param {number} opts.z
  * @param {number} opts.heading road heading
  * @param {number} opts.side -1 left / +1 right (along nx)
- * @param {"checkers"|"red"} opts.kind
+ * @param {string} opts.kind checkers, red, or a desert start-avenue colour
  * @param {string} opts.scenery
  * @param {number} opts.nx
  * @param {number} opts.nz
@@ -270,7 +380,7 @@ function hash3(a, b, c) {
  * @returns {ClothFlag}
  */
 export function createClothFlag(opts) {
-  const kind = opts.kind === "checkers" ? "checkers" : "red";
+  const kind = FLAG_PAINT[opts.kind] ? opts.kind : "red";
   const scenery = opts.scenery || "forest";
   const nx = opts.nx || 0;
   const nz = opts.nz || 1;

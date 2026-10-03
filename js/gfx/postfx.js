@@ -6,6 +6,8 @@
  *   colour bounce, cost-gated), cheap quarter-res bloom, then a single composite
  *   with grade + vignette. Quality auto-scales so control lag cannot return.
  * HOW IT CONNECTS: RallyGame creates PhotoRealPost; _render / _onResize drive it.
+ * Legal GI-look: NeuralShade.apply() runs on sceneRT colour+depth here — not
+ *   in game.js _render (TSR). See NSHADE_HOOK in neural-shade.js.
  *
  * Sprint 24: FXAA/sharpen off by default, bloom at 1/4 res with one separable
  * pair, and a 'low' path that skips bloom and AO when frame time climbs.
@@ -15,6 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=241";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
+import { NeuralShade, nshadeWanted } from "./neural-shade.js?v=6";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -177,9 +180,11 @@ uniform sampler2D tDiffuse;
 uniform sampler2D tBloom;
 uniform sampler2D tAO;
 uniform sampler2D tSSGI;
+uniform sampler2D tNShade;
 uniform float bloomStrength;
 uniform float aoStrength;
 uniform float ssgiStrength;
+uniform float nshadeStrength;
 uniform float vignette;
 uniform float contrast;
 uniform float saturation;
@@ -201,6 +206,16 @@ void main() {
   if (aoStrength > 0.001) {
     ao = texture2D(tAO, vUv).r;
     color *= mix(1.0, ao, aoStrength);
+  }
+  float srcLuma = luma(color);
+  if (nshadeStrength > 0.001) {
+    vec4 ns = texture2D(tNShade, vUv);
+    float open = mix(1.0, ns.a, nshadeStrength);
+    vec3 shaded = color * open;
+    shaded += ns.rgb * nshadeStrength;
+    float newL = luma(shaded);
+    if (newL > srcLuma && newL > 1e-4) shaded *= srcLuma / newL;
+    color = shaded;
   }
   if (ssgiStrength > 0.001) {
     vec3 gi = texture2D(tSSGI, vUv).rgb;
@@ -349,9 +364,11 @@ export class PhotoRealPost {
         tBloom: { value: null },
         tAO: { value: white },
         tSSGI: { value: black },
+        tNShade: { value: black },
         bloomStrength: { value: VISUAL.bloomStrength ?? 0.28 },
         aoStrength: { value: VISUAL.aoStrength ?? 0 },
         ssgiStrength: { value: ssgiAmount() },
+        nshadeStrength: { value: 0 },
         vignette: { value: VISUAL.vignette ?? 0.85 },
         contrast: { value: VISUAL.gradeContrast ?? 1.1 },
         saturation: { value: VISUAL.gradeSaturation ?? 1.06 },
@@ -382,6 +399,9 @@ export class PhotoRealPost {
     this._postCamPos = new THREE.Vector3();
     this._postCamQuat = new THREE.Quaternion();
     this._postCamScratch = new THREE.Quaternion();
+
+    /** Legal GI-look field. Hook: NSHADE_HOOK in neural-shade.js. */
+    this.nshade = nshadeWanted() ? new NeuralShade() : null;
   }
 
   /**
@@ -463,6 +483,7 @@ export class PhotoRealPost {
     this.brightRT = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurA = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurB = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
+    if (this.nshade) this.nshade.setSize(w, h);
   }
 
   /**
@@ -505,6 +526,18 @@ export class PhotoRealPost {
     r.clear();
     r.render(scene, camera);
 
+    // Legal GI-look: colour + depth already sit on sceneRT. Do not call this
+    // from game.js _render — TSR owns that hook.
+    const useNshade =
+      !!this.nshade &&
+      this.nshade.enabled &&
+      q !== "low" &&
+      !titlePad &&
+      !!this.sceneRT.depthTexture;
+    if (useNshade) {
+      this.nshade.apply(r, this.sceneRT.texture, this.sceneRT.depthTexture, camera);
+    }
+
     // AO may skip when the lens is still. Bloom always rebakes — a stale blur
     // field is a soft copy of last frame's highlights (reads as ghosting).
     // SSGI stays off via VISUAL.ssgi; if re-enabled, never composite a stale bake.
@@ -536,8 +569,10 @@ export class PhotoRealPost {
       this._compMat.uniforms.tBloom.value = this.sceneRT.texture;
       this._compMat.uniforms.tAO.value = this._whiteTex;
       if (this._compMat.uniforms.tSSGI) this._compMat.uniforms.tSSGI.value = this._blackTex;
+      if (this._compMat.uniforms.tNShade) this._compMat.uniforms.tNShade.value = this._blackTex;
       this._compMat.uniforms.aoStrength.value = 0;
       if (this._compMat.uniforms.ssgiStrength) this._compMat.uniforms.ssgiStrength.value = 0;
+      if (this._compMat.uniforms.nshadeStrength) this._compMat.uniforms.nshadeStrength.value = 0;
       this._compMat.uniforms.grain.value = 0;
       this._compMat.uniforms.time.value = performance.now() * 0.001;
       this._quad.material = this._compMat;
@@ -584,9 +619,16 @@ export class PhotoRealPost {
       this._compMat.uniforms.tSSGI.value =
         useSsgi && refreshGi ? this.ssgiRT.texture : this._blackTex;
     }
+    if (this._compMat.uniforms.tNShade) {
+      this._compMat.uniforms.tNShade.value =
+        useNshade && this.nshade.texture ? this.nshade.texture : this._blackTex;
+    }
     this._compMat.uniforms.bloomStrength.value = bloomAmt;
     this._compMat.uniforms.aoStrength.value = useAo ? VISUAL.aoStrength ?? 0.55 : 0;
     if (this._compMat.uniforms.ssgiStrength) this._compMat.uniforms.ssgiStrength.value = giComp;
+    if (this._compMat.uniforms.nshadeStrength) {
+      this._compMat.uniforms.nshadeStrength.value = useNshade ? this.nshade.strength : 0;
+    }
     this._compMat.uniforms.grain.value = titlePad ? 0 : VISUAL.filmGrain ?? 0;
     if (titlePad && this._compMat.uniforms.vignette) {
       this._compMat.uniforms.vignette.value = 0.48;
@@ -691,6 +733,8 @@ export class PhotoRealPost {
     this._aoMat.dispose();
     this._ssgiMat.dispose();
     this._compMat.dispose();
+    this.nshade?.dispose();
+    this.nshade = null;
     this._whiteTex.dispose();
     this._blackTex.dispose();
     this._quad.geometry.dispose();

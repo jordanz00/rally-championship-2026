@@ -51,13 +51,13 @@ check(
 );
 
 check(
-  "POV speedo is km/h 0–280 like chase AnalogDial + digital HUD",
-  /POV_SPEED_MAX_KMH = 280/.test(car) &&
-    /SPEED_DIAL_MAX_KMH = 280/.test(hud) &&
-    /Math\.max\(0, state\.speedKmh \|\| 0\)/.test(car) &&
-    /label:\s*"km\/h"/.test(hud) &&
-    /max:\s*SPEED_DIAL_MAX_KMH/.test(hud),
-  "digital HUD is km/h — dials must not stay on MPH 0–140"
+  "POV speedo is mph 0–180 like chase AnalogDial + digital HUD",
+  /POV_SPEED_MAX_MPH = 180/.test(car) &&
+    /SPEED_DIAL_MAX_MPH = 180/.test(hud) &&
+    /Math\.max\(0, state\.speedMph \|\| 0\)/.test(car) &&
+    /label:\s*"MPH"/.test(hud) &&
+    /max:\s*SPEED_DIAL_MAX_MPH/.test(hud),
+  "digital HUD is mph — dials must use the same 0–180 scale"
 );
 
 check(

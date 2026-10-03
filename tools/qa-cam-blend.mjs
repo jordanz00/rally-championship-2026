@@ -50,7 +50,7 @@ check(
 
 check(
   "C records blend origin; cabin seats mid-blend",
-  /_startCamBlend\(\)/.test(game) &&
+  /_startCamBlend\(/.test(game) &&
     /seatIn/.test(game) &&
     !/if \(mode && mode\.id === "pov"\) this\._applyCockpitCam\(\)/.test(game),
   "pose eases; cabin must not hitch-compile on the C press"
@@ -72,11 +72,11 @@ check(
 );
 
 check(
-  "every C-key mode switch starts a pose blend",
-  /this\.camMode = \(this\.camMode \+ 1\) % CAMERA\.views\.length/.test(game) &&
-    /_startCamBlend\(\)/.test(game) &&
-    /_cycleCamera\(/.test(game),
-  "POV / medium / far must all ease — no hard cut path"
+  "C eases POV / medium / far instead of cutting",
+  /_cycleCamera\(\) \{[\s\S]{0,700}?_startCamBlend\(/.test(game) &&
+    !/_cycleCamera\(\) \{[\s\S]{0,500}?_camBlendT = 0/.test(game) &&
+    !/_cycleCamera\(\) \{[\s\S]{0,500}?_camCut = true/.test(game),
+  "C must start a pose blend and must not snap the lens"
 );
 
 check(

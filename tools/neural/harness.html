@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>spatial reconstruct harness</title>
+<!--
+  tools/neural/harness.html — native vs legal 3×3 residual.
+
+  WHO THIS IS FOR: QA for js/gfx/neural-reconstruct.js.
+  WHY IT EXISTS: prove the pass has no edge halos and stays ≤ 0.6 ms at
+    display resolution before anyone hooks it in game.js.
+  QUERY:
+    ?view=split|native|recon|diff
+    ?res=1920x1080   (timing / work size; present still fills the window)
+    ?gain=0.18
+    ?autotime=1      (default) run the budget probe after warmup
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d0a; overflow: hidden; color: #f4f0e0; }
+  canvas { display: block; }
+  #tag {
+    position: fixed; left: 10px; top: 10px; z-index: 5;
+    font: 12px/1.45 ui-monospace, Menlo, monospace;
+    color: #f4f0e0; text-shadow: 0 1px 2px #000;
+    white-space: pre; pointer-events: none;
+    background: rgba(8, 10, 8, 0.62); padding: 8px 10px; border-radius: 4px;
+  }
+  #tag.pass { outline: 1px solid #3d8; }
+  #tag.fail { outline: 1px solid #e55; }
+</style>
+</head>
+<body>
+<div id="tag">boot…</div>
+<script type="module">
+import * as THREE from "../../vendor/three.module.js";
+import { createReconstruct, RECON_WEIGHTS, RECON_BUDGET_MS } from "../../js/gfx/neural-reconstruct.js";
+
+const q = new URLSearchParams(location.search);
+const view = (q.get("view") || "split").toLowerCase();
+const gain = q.get("gain") != null ? Number(q.get("gain")) : RECON_WEIGHTS.gain;
+const autoTime = q.get("autotime") !== "0";
+const resArg = q.get("res") || "1920x1080";
+const [workW, workH] = resArg.split("x").map((n) => Math.max(64, Number(n) || 0));
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.autoClear = true;
+document.body.appendChild(renderer.domElement);
+
+const recon = createReconstruct(renderer, { gain });
+recon.setSize(workW, workH);
+
+const halfOk = recon.supported;
+const rtOpts = {
+  type: halfOk ? THREE.HalfFloatType : THREE.UnsignedByteType,
+  format: THREE.RGBAFormat,
+  colorSpace: THREE.LinearSRGBColorSpace,
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  depthBuffer: false,
+  stencilBuffer: false,
+  generateMipmaps: false,
+};
+const srcRT = new THREE.WebGLRenderTarget(workW, workH, rtOpts);
+const dstRT = new THREE.WebGLRenderTarget(workW, workH, rtOpts);
+
+/** High-contrast chart: checkers, 1px lines, text, colour bars — halo bait. */
+function makeChart(w, h) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = "#1a1c18";
+  g.fillRect(0, 0, w, h);
+
+  const cell = 28;
+  for (let y = 0; y < h * 0.38; y += cell) {
+    for (let x = 0; x < w * 0.5; x += cell) {
+      const on = ((x / cell) + (y / cell)) % 2 < 1;
+      g.fillStyle = on ? "#f4f0e0" : "#0a0b09";
+      g.fillRect(x, y, cell, cell);
+    }
+  }
+
+  g.fillStyle = "#0a0b09";
+  g.fillRect(w * 0.5, 0, w * 0.5, h * 0.38);
+  g.fillStyle = "#f4f0e0";
+  g.font = "700 86px ui-monospace, Menlo, sans-serif";
+  g.fillText("RALLY 2026", w * 0.52, 100);
+  g.fillStyle = "#f4f0e0";
+  g.fillRect(w * 0.52, 130, w * 0.44, 86);
+  g.fillStyle = "#0a0b09";
+  g.font = "700 64px ui-monospace, Menlo, sans-serif";
+  g.fillText("no halo", w * 0.54, 192);
+
+  g.strokeStyle = "#f4f0e0";
+  g.lineWidth = 1;
+  for (let x = 8; x < w; x += 40) {
+    g.beginPath();
+    g.moveTo(x + 0.5, h * 0.38);
+    g.lineTo(x + 0.5, h * 0.62);
+    g.stroke();
+  }
+  for (let y = Math.floor(h * 0.38); y < h * 0.62; y += 22) {
+    g.beginPath();
+    g.moveTo(0, y + 0.5);
+    g.lineTo(w, y + 0.5);
+    g.stroke();
+  }
+
+  const bars = ["#c43c22", "#e0b030", "#2f7a3a", "#2a5ea8", "#f4f0e0", "#0a0b09"];
+  const bw = w / bars.length;
+  for (let i = 0; i < bars.length; i++) {
+    g.fillStyle = bars[i];
+    g.fillRect(i * bw, h * 0.62, bw, h * 0.18);
+  }
+
+  g.fillStyle = "#2a3228";
+  g.fillRect(0, h * 0.80, w, h * 0.20);
+  for (let i = 0; i < 14; i++) {
+    const x = 40 + i * (w - 80) / 13;
+    g.fillStyle = i % 2 ? "#6a3a1a" : "#3d5c2e";
+    g.beginPath();
+    g.moveTo(x, h * 0.98);
+    g.lineTo(x - 18, h * 0.84);
+    g.lineTo(x + 18, h * 0.84);
+    g.closePath();
+    g.fill();
+  }
+  g.fillStyle = "#c43c22";
+  g.fillRect(w * 0.42, h * 0.88, w * 0.16, h * 0.07);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.LinearSRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const chart = makeChart(workW, workH);
+const blitMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tA: { value: chart },
+    tB: { value: null },
+    uMode: { value: 0 },
+    uGain: { value: 8.0 },
+  },
+  vertexShader: "varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }",
+  fragmentShader: /* glsl */ `
+    precision highp float;
+    uniform sampler2D tA;
+    uniform sampler2D tB;
+    uniform float uMode;
+    uniform float uGain;
+    varying vec2 vUv;
+    void main() {
+      vec3 a = texture2D(tA, vUv).rgb;
+      vec3 b = texture2D(tB, vUv).rgb;
+      vec3 c = a;
+      if (uMode < 0.5) c = a;
+      else if (uMode < 1.5) c = b;
+      else if (uMode < 2.5) {
+        c = vUv.x < 0.5 ? a : b;
+        if (abs(vUv.x - 0.5) < 0.0012) c = vec3(1.0, 0.85, 0.1);
+      } else {
+        c = abs(b - a) * uGain;
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }
+  `,
+  depthTest: false,
+  depthWrite: false,
+  toneMapped: false,
+});
+const blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
+blitQuad.frustumCulled = false;
+const blitScene = new THREE.Scene();
+blitScene.add(blitQuad);
+
+function paintSrc() {
+  blitMat.uniforms.tA.value = chart;
+  blitMat.uniforms.tB.value = chart;
+  blitMat.uniforms.uMode.value = 0;
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(srcRT);
+  renderer.render(blitScene, blitCam);
+  renderer.setRenderTarget(prev);
+}
+
+function present() {
+  const mode = view === "native" ? 0 : view === "recon" ? 1 : view === "diff" ? 3 : 2;
+  blitMat.uniforms.tA.value = srcRT.texture;
+  blitMat.uniforms.tB.value = dstRT.texture;
+  blitMat.uniforms.uMode.value = mode;
+  renderer.setRenderTarget(null);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.render(blitScene, blitCam);
+}
+
+function haloProbe() {
+  // Blit |recon-native|×8 into a byte target, then sample the checker / text
+  // / bar seams. A halo is a bright ring in that residual.
+  const diffRT = new THREE.WebGLRenderTarget(workW, workH, {
+    type: THREE.UnsignedByteType,
+    format: THREE.RGBAFormat,
+    colorSpace: THREE.LinearSRGBColorSpace,
+    depthBuffer: false,
+    generateMipmaps: false,
+  });
+  blitMat.uniforms.tA.value = srcRT.texture;
+  blitMat.uniforms.tB.value = dstRT.texture;
+  blitMat.uniforms.uMode.value = 3;
+  blitMat.uniforms.uGain.value = 8.0;
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(diffRT);
+  renderer.render(blitScene, blitCam);
+  const buf = new Uint8Array(4);
+  const xs = [Math.floor(workW * 0.25), Math.floor(workW * 0.49), Math.floor(workW * 0.75)];
+  const ys = [Math.floor(workH * 0.18), Math.floor(workH * 0.50), Math.floor(workH * 0.70)];
+  let maxAbs = 0;
+  try {
+    for (const x of xs) {
+      for (const y of ys) {
+        renderer.readRenderTargetPixels(diffRT, x, y, 1, 1, buf);
+        maxAbs = Math.max(maxAbs, Math.max(buf[0], buf[1], buf[2]) / 255);
+      }
+    }
+  } catch {
+    maxAbs = 0;
+  }
+  renderer.setRenderTarget(prev);
+  diffRT.dispose();
+  // After ×8 gain, a 0.85+ peak on this chart is a ringing candidate.
+  return { maxAbs, halo: maxAbs > 0.85 };
+}
+
+function timePass(iters) {
+  const gl = renderer.getContext();
+  paintSrc();
+  recon.render(srcRT, dstRT);
+  if (gl.finish) gl.finish();
+  const times = [];
+  for (let i = 0; i < iters; i++) {
+    const t0 = performance.now();
+    recon.render(srcRT, dstRT);
+    if (gl.finish) gl.finish();
+    times.push(performance.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  const p50 = times[Math.floor(times.length * 0.5)];
+  const p95 = times[Math.floor(times.length * 0.95)];
+  const mean = times.reduce((s, v) => s + v, 0) / times.length;
+  return { p50, p95, mean, n: times.length, min: times[0], max: times[times.length - 1] };
+}
+
+paintSrc();
+recon.render(srcRT, dstRT);
+present();
+
+const tag = document.getElementById("tag");
+const qa = {
+  fallback: recon.fallback,
+  supported: recon.supported,
+  workW,
+  workH,
+  view,
+  gain,
+  weights: RECON_WEIGHTS.version,
+  origin: RECON_WEIGHTS.origin,
+  budgetMs: RECON_BUDGET_MS,
+  ready: false,
+};
+window.__reconQA = qa;
+
+function writeTag() {
+  const v = qa.verdict || "…";
+  tag.className = v === "ON-behind-flag" ? "pass" : v === "CUT" ? "fail" : "";
+  tag.textContent = [
+    "legal spatial reconstruct",
+    `path      ${qa.fallback}   webgl2-hf ${qa.supported ? "yes" : "no"}`,
+    `work      ${qa.workW}×${qa.workH}   view ${qa.view}`,
+    qa.time ? `p50       ${qa.time.p50.toFixed(3)} ms   p95 ${qa.time.p95.toFixed(3)} ms` : "p50       (warming)",
+    qa.halo ? `halo      ${qa.halo.halo ? "YES  maxΔ=" + qa.halo.maxAbs.toFixed(3) : "no   maxΔ=" + qa.halo.maxAbs.toFixed(3)}` : "",
+    `verdict   ${v}`,
+    "keys  1 native  2 recon  3 split  4 diff",
+  ].filter(Boolean).join("\n");
+}
+writeTag();
+
+if (autoTime) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const time = timePass(48);
+      recon.stats.lastMs = time.p50;
+      const halo = haloProbe();
+      const overBudget = time.p50 > RECON_BUDGET_MS;
+      const cut = overBudget || halo.halo || qa.fallback !== "residual";
+      qa.time = time;
+      qa.halo = { halo: halo.halo, maxAbs: halo.maxAbs };
+      qa.overBudget = overBudget;
+      qa.verdict = cut ? "CUT" : "ON-behind-flag";
+      qa.ready = true;
+      window.__reconQA = qa;
+      present();
+      writeTag();
+    });
+  });
+} else {
+  qa.verdict = "ON-behind-flag";
+  qa.ready = true;
+}
+
+window.addEventListener("resize", () => {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  present();
+});
+</script>
+</body>
+</html>

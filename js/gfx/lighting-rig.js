@@ -43,6 +43,128 @@ export function kelvinToColor(kelvin) {
   );
 }
 
+const _hemiHor = new THREE.Color();
+const _fogHor = new THREE.Color();
+const _fogGlow = new THREE.Color();
+
+/**
+ * Forest / Mountain open-daylight floors (after _seatSunShadows).
+ * Shade under a bright sky must still read — do not lower these.
+ */
+export const DAYLIGHT_FLOORS = {
+  forest: { ambient: 0.2, fill: 0.32, hemi: 0.62 },
+  mountain: { ambient: 0.2, fill: 0.32, hemi: 0.62 },
+};
+
+/**
+ * Infer stage from the authored LIGHTING block (config.js is locked).
+ * @param {object} L
+ * @param {string} [courseId]
+ * @returns {"desert"|"forest"|"mountain"|"lakeside"|"title"|"other"}
+ */
+export function lightingStageId(L, courseId) {
+  if (courseId === "desert" || courseId === "forest" || courseId === "mountain" || courseId === "lakeside" || courseId === "title") {
+    return courseId;
+  }
+  if (!L) return "other";
+  if (L.fogFar === 260) return "forest";
+  if (L.sunKelvin === 6300) return "mountain";
+  if (L.fogFar === 720) return "lakeside";
+  if (L.sunKelvin === 5350 || L.sunInt === 2.42) return "desert";
+  if (L.kickInt != null) return "title";
+  return "other";
+}
+
+/**
+ * Hemisphere sky lobe from the visible sky (authored hemiSky + horizon).
+ * Do not lerp the dark zenith — linear sRGB→linear midpoints go muddy grey.
+ *
+ * @param {THREE.HemisphereLight | null | undefined} hemi
+ * @param {object} L
+ */
+export function applyHemiFromSky(hemi, L) {
+  if (!hemi || !L) return;
+  // Driving-camera sky is the horizon, not the dark zenith. Linear-lerp of
+  // 0x0a4088 → sand goes muddy grey under ACES color management.
+  const skyHex = L.hemiSky != null ? L.hemiSky : L.skyHorizon;
+  const horHex = L.skyHorizon != null ? L.skyHorizon : skyHex;
+  if (skyHex != null) {
+    hemi.color.setHex(skyHex);
+    if (horHex != null && horHex !== skyHex) {
+      _hemiHor.setHex(horHex);
+      hemi.color.lerp(_hemiHor, 0.3);
+    }
+  }
+  if (L.hemiGround != null) hemi.groundColor.setHex(L.hemiGround);
+}
+
+/**
+ * Fog that dissolves land into the sky photo horizon (not a gray/yellow band).
+ *
+ * @param {object} L
+ * @param {THREE.Color} [out]
+ * @returns {THREE.Color}
+ */
+export function horizonFogColor(L, out) {
+  const col = out || new THREE.Color();
+  if (L && L.skyHorizon != null) col.setHex(L.skyHorizon);
+  else if (L && L.fog != null) col.setHex(L.fog);
+  else col.setHex(0xc8d4dc);
+  if (L && L.horizonGlow != null) {
+    const hs = Math.max(0, Math.min(1, Number(L.horizonStrength) || 0));
+    _fogGlow.setHex(L.horizonGlow);
+    col.lerp(_fogGlow, Math.min(0.42, hs * 0.7));
+  }
+  return col;
+}
+
+/**
+ * After _seatSunShadows: keep the seated sun, restore a daylight sun/sky
+ * ratio, pin Forest/Mountain floors, and write fog = horizon.
+ * Does not change ACES or the `sun *= 1 - 0.22 * open` line.
+ *
+ * @param {{ sun?: THREE.DirectionalLight, fill?: THREE.DirectionalLight, hemi?: THREE.HemisphereLight, ambient?: THREE.AmbientLight, skyRim?: THREE.DirectionalLight }} lights
+ * @param {THREE.Color | null | undefined} fogColor scene.fog.color
+ * @param {object} L
+ * @param {number} tunnelBlend
+ * @param {THREE.Color | null | undefined} tunnelFog
+ * @param {string} [courseId]
+ */
+export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, courseId) {
+  if (!L) return;
+  const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
+  const open = 1 - t;
+  const stage = lightingStageId(L, courseId);
+
+  applyHemiFromSky(lights && lights.hemi, L);
+  if (lights && lights.skyRim && (L.skyHorizon != null || L.rimSky != null)) {
+    lights.skyRim.color.setHex(L.skyHorizon != null ? L.skyHorizon : L.rimSky);
+  }
+
+  if (open > 0.85 && lights) {
+    if (stage === "desert") {
+      // Seat boosts fill ×2.15 / ambient ×1.7 and flattens the key.
+      // Cap sky bounce so the Kelvin sun still sculpts sand and the car.
+      if (lights.fill) lights.fill.intensity = Math.min(lights.fill.intensity, 0.4);
+      if (lights.ambient) lights.ambient.intensity = Math.min(lights.ambient.intensity, 0.28);
+      if (lights.hemi) {
+        lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, 0.52), 0.66);
+      }
+    } else if (stage === "forest" || stage === "mountain") {
+      const fl = DAYLIGHT_FLOORS[stage];
+      if (lights.ambient && lights.ambient.intensity < fl.ambient) lights.ambient.intensity = fl.ambient;
+      if (lights.fill && lights.fill.intensity < fl.fill) lights.fill.intensity = fl.fill;
+      if (lights.hemi && lights.hemi.intensity < fl.hemi) lights.hemi.intensity = fl.hemi;
+    }
+  }
+
+  if (fogColor) {
+    horizonFogColor(L, _fogHor);
+    if (t <= 0.002 || !tunnelFog) fogColor.copy(_fogHor);
+    else fogColor.lerpColors(_fogHor, tunnelFog, t);
+  }
+}
+
 /**
  * Apply authored stage LIGHTING block onto the fixed light pool.
  * Desert earth bias lives in LIGHTING.desert (warm fill/hemiGround/Kelvin) —
@@ -63,6 +185,7 @@ export function applyStageLights(lights, L) {
     if (L.hemiSky != null) lights.hemi.color.setHex(L.hemiSky);
     if (L.hemiGround != null) lights.hemi.groundColor.setHex(L.hemiGround);
     if (L.hemi != null) lights.hemi.intensity = L.hemi;
+    applyHemiFromSky(lights.hemi, L);
   }
 
   if (lights.fill) {
@@ -76,7 +199,9 @@ export function applyStageLights(lights, L) {
   }
 
   if (lights.skyRim) {
-    lights.skyRim.color.setHex(L.rimSky != null ? L.rimSky : L.hemiSky != null ? L.hemiSky : 0xb0d0f0);
+    lights.skyRim.color.setHex(
+      L.skyHorizon != null ? L.skyHorizon : L.rimSky != null ? L.rimSky : L.hemiSky != null ? L.hemiSky : 0xb0d0f0
+    );
     lights.skyRim.intensity = L.rimInt != null ? L.rimInt : 0.24;
     lights.skyRim.castShadow = false;
   }

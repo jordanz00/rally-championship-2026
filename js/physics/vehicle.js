@@ -50,7 +50,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=241";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
-import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=59";
+import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
 import { JumpModel } from "./jump.js?v=35";
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
@@ -295,61 +295,141 @@ function tireEnvelopeFalloff(over, peakHold, soft) {
 }
 
 /**
- * Combined longitudinal + lateral tire force with mild load sensitivity
- * and road-camber thrust.
+ * Per-surface tire curve shape (the physical layer under SURFACES µ).
  *
- * HOW IT WORKS: compute Fx and Fy independently (stiff Pacejka), then scale
- * onto a friction ellipse. Peak µ softens as Fz rises above FZ0 (real tires
- * are not linear in load). Camber from road roll adds a small lateral bias.
- *
- * Envelope: bite → peak plateau → progressive breakaway → recoverable slide.
- * Sliding force never drops below tireRecoverFloor, so opposite-lock still
- * has something to catch. Arcade, not Pacejka-as-sim.
- *
- * @returns {{fx:number, fy:number}}
+ * peakDeg   — slip angle where lateral force peaks (tarmac ~9°, loose wider).
+ * kappaPeak — slip ratio where longitudinal force peaks (loose tires dig
+ *             later and softer than tarmac rubber).
+ * C / E     — Pacejka shape / curvature. C sets how sharp the peak is and how
+ *             far the asymptote drops; E rounds the top. Final peak→slide fall
+ *             is still owned by SURFACES.muSlide via the arcade envelope.
+ * digIn     — locked-wheel longitudinal bonus on loose ground. A locked tire
+ *             on gravel builds a wedge of stones in front of itself and stops
+ *             harder than a rolling one (the opposite of tarmac), which is why
+ *             rally drivers lock up on purpose on gravel. 0 = none.
+ * SURFACES.pacejka* in config.js are honoured as overrides when present.
  */
-function combinedTire(alpha, kappa, Fz, muPeak, muSlide, slipPeak, surface, camber = 0) {
-  const load = clamp(Fz, 700, 18000);
-  const aPeak = Math.max(0.055, slipPeak || 0.09);
-  // Load sensitivity: peak force grows sub-linear with Fz (≈ Fz^0.82).
+const TIRE_CURVES = {
+  tarmac: { peakDeg: 9, kappaPeak: 0.12, C: 1.46, E: 0.45, digIn: 0 },
+  cobble: { peakDeg: 10, kappaPeak: 0.13, C: 1.42, E: 0.4, digIn: 0.04 },
+  gravel: { peakDeg: 14, kappaPeak: 0.2, C: 1.28, E: 0.15, digIn: 0.3 },
+  dirt: { peakDeg: 13, kappaPeak: 0.18, C: 1.3, E: 0.22, digIn: 0.24 },
+  grass: { peakDeg: 15, kappaPeak: 0.22, C: 1.24, E: 0.05, digIn: 0.12 },
+  sand: { peakDeg: 17, kappaPeak: 0.26, C: 1.2, E: 0, digIn: 0.4 },
+  mud: { peakDeg: 19, kappaPeak: 0.3, C: 1.14, E: -0.2, digIn: 0.16 },
+};
+/** Nominal Pacejka stiffness before normalisation (peak is re-scaled to x = 1). */
+const TIRE_B = 6;
+/**
+ * Normalise each curve so y(1) = 1 at the stated peak slip. Pacejka's peak
+ * lands wherever B / C / E put it; scanning once at load time means the
+ * table's `peakDeg` is the real peak, not a nominal one.
+ */
+for (const id in TIRE_CURVES) {
+  const c = TIRE_CURVES[id];
+  let best = 0;
+  let xBest = 1;
+  for (let x = 0.02; x <= 6; x += 0.01) {
+    const y = pacejka(x, TIRE_B, c.C, 1, c.E);
+    if (y > best) {
+      best = y;
+      xBest = x;
+    }
+  }
+  c.xPeak = xBest;
+  c.yPeak = Math.max(1e-3, best);
+  c.alphaPeak = (c.peakDeg * Math.PI) / 180;
+}
+/**
+ * Curve for a felt surface. Blends toward the id's curve; unknown ids fall
+ * back to dirt so an untuned course still drives.
+ * @param {{id?:string}} surface
+ */
+function tireCurve(surface) {
+  return (surface && TIRE_CURVES[surface.id]) || TIRE_CURVES.dirt;
+}
+/** Lateral slip angle (rad) where the felt surface's tire peaks. */
+function tirePeakAngle(surface) {
+  return tireCurve(surface).alphaPeak;
+}
+/** Longitudinal weight inside the combined-slip resultant (1 = pure circle). */
+const COMBINED_LONG_W = 0.86;
+/** Load-sensitivity exponent: peak µ ∝ (Fz/FZ0)^−LOAD_SENS. */
+const LOAD_SENS = 0.19;
+
+/**
+ * Combined-slip, load-sensitive tire (brush/Pacejka-lite).
+ *
+ * HOW IT WORKS: lateral and longitudinal slip are normalised by their own
+ * peaks and joined into one resultant slip σ. One force magnitude is read off
+ * the surface curve at σ and split back along the slip vector, so drive,
+ * brake, and cornering genuinely share one friction budget — wheelspin takes
+ * steering away, a locked wheel does not turn. Peak µ falls as Fz rises
+ * (sub-linear load sensitivity), so the weight the chassis moves between
+ * corners changes how much grip each one has. Camber from road roll adds a
+ * small lateral bias.
+ *
+ * Envelope (arcade layer, ARCADE_ASSIST): bite → peak plateau → progressive
+ * breakaway → recoverable slide. Sliding force never drops below
+ * tireRecoverFloor, so opposite-lock always has something to catch.
+ *
+ * @param {number} alpha slip angle (rad)
+ * @param {number} kappa slip ratio
+ * @param {number} Fz vertical load (N)
+ * @param {number} muPeak surface peak µ (after chassis / assist scaling)
+ * @param {number} muSlide surface sliding µ
+ * @param {object} curve entry from TIRE_CURVES
+ * @param {number} camber road-induced camber (rad)
+ * @param {{fx:number, fy:number, D:number, sat:number}} out reused result bag
+ */
+function combinedTire(alpha, kappa, Fz, muPeak, muSlide, curve, camber, out) {
+  if (!out || typeof out !== "object") out = { fx: 0, fy: 0, D: 0, sat: 0 };
+  if (!curve || typeof curve.alphaPeak !== "number") curve = TIRE_CURVES.dirt;
+  const load = clamp(Fz, 400, 18000);
+  const aPeak = curve.alphaPeak;
+  const kPeak = curve.kappaPeak;
   const loadN = load / FZ0;
-  const loadSens = clamp(Math.pow(Math.max(0.35, loadN), -0.18), 0.72, 1.2);
+  const loadSens = clamp(Math.pow(Math.max(0.3, loadN), -LOAD_SENS), 0.74, 1.26);
   const peakBoost = ARCADE_ASSIST.tirePeakBoost != null ? ARCADE_ASSIST.tirePeakBoost : 1.04;
   const D = muPeak * load * loadSens * peakBoost;
   const Ds = Math.max(muSlide, muPeak * 0.5) * load * loadSens;
-  const B = surface?.pacejkaB ?? 4.1;
-  const C = surface?.pacejkaC ?? 1.32;
-  const E = surface?.pacejkaE ?? 0.08;
-  // Stiffer longitudinal peak slip (~0.11) reads as planted rubber, not ice.
-  const kPeak = 0.11;
-  const fyPure = -pacejka(alpha / aPeak, B, C, D, E);
-  const fxPure = pacejka(kappa / kPeak, B * 1.28, C, D, E * 0.85);
-  let fx = fxPure;
-  let fy = fyPure;
+
+  const sa = alpha / aPeak;
+  const sk = (kappa / kPeak) * COMBINED_LONG_W;
+  const sigma = Math.hypot(sa, sk);
+  let fx = 0;
+  let fy = 0;
+  if (sigma > 1e-6) {
+    const F = (pacejka(sigma * curve.xPeak, TIRE_B, curve.C, 1, curve.E) / curve.yPeak) * D;
+    fx = (F * sk) / sigma / COMBINED_LONG_W;
+    fy = -(F * sa) / sigma;
+  }
   // Camber thrust from road-induced roll (radians → lateral N).
   const camGain = HANDLING.camberLatGain != null ? HANDLING.camberLatGain : 0.12;
   if (camber !== 0 && camGain > 0) {
     fy += -camber * load * camGain;
   }
-  const mag = Math.hypot(fx, fy);
-  if (mag > D && mag > 1e-6) {
-    // Share the circle but keep a lateral floor so WOT still turns (arcade).
-    const fyKeep = Math.min(Math.abs(fy), D * 0.66);
-    const fxMax = Math.sqrt(Math.max(0, D * D - fyKeep * fyKeep));
-    fy = Math.sign(fy) * fyKeep;
-    fx = clamp(fx, -fxMax, fxMax);
+  // Loose-surface dig-in: a locked / deeply slipping tire under braking stops
+  // harder as it ploughs. Rolling peak is unchanged; only kappa < 0 past the
+  // peak gets the wedge.
+  if (curve.digIn > 0 && kappa < -kPeak * 2.2) {
+    const t = clamp((-kappa - kPeak * 2.2) / 0.5, 0, 1);
+    fx *= 1 + curve.digIn * t * t * (3 - 2 * t);
   }
   const peakHold = ARCADE_ASSIST.tirePeakHold != null ? ARCADE_ASSIST.tirePeakHold : 1.08;
   const soft = ARCADE_ASSIST.tireSlideSoft != null ? ARCADE_ASSIST.tireSlideSoft : 3.15;
   const recoverFloor = ARCADE_ASSIST.tireRecoverFloor != null ? ARCADE_ASSIST.tireRecoverFloor : 0.42;
-  const over = Math.max(Math.abs(alpha) / aPeak, Math.abs(kappa) / (kPeak * 1.45));
-  const u = tireEnvelopeFalloff(over, peakHold, soft);
+  const u = tireEnvelopeFalloff(sigma, peakHold, soft);
   if (u > 0) {
     const slide = Math.max(Ds / Math.max(D, 1), recoverFloor);
     fx = lerp(fx, fx * slide, u);
     fy = lerp(fy, fy * slide, u);
   }
-  return { fx, fy };
+  out.fx = fx;
+  out.fy = fy;
+  out.D = D;
+  out.sat = sigma;
+  return out;
 }
 
 /**
@@ -589,6 +669,28 @@ export class Vehicle {
     this._axleSplit = 0;
     this._slidePct = 0;
     this._gripUsed = 0;
+    /** Suspension rigid-body state + per-corner loads (see _stepSuspension). */
+    this._suspPitch = 0;
+    this._suspPitchRate = 0;
+    this._suspRoll = 0;
+    this._suspRollRate = 0;
+    /** Per-corner vertical load (N): FL, FR, RL, RR. */
+    this._wheelLoad = [0, 0, 0, 0];
+    /** Body-relative suspension deflection (m, − = hub into arch). */
+    this._suspTravel = [0, 0, 0, 0];
+    /** Road-geometry wheel follow from the corner probes (m). */
+    this._roadTravel = [0, 0, 0, 0];
+    /** Peak tire capacity summed over the car last substep (N) — grip budget. */
+    this._tireCapacity = 0;
+    /** Collision Δv (m/s, along the nose) collide.js hands over for the pitch dip. */
+    this._impactAx = 0;
+    /** Reused tire results — no per-substep allocation. */
+    this._tFL = { fx: 0, fy: 0, D: 0, sat: 0 };
+    this._tFR = { fx: 0, fy: 0, D: 0, sat: 0 };
+    this._tRL = { fx: 0, fy: 0, D: 0, sat: 0 };
+    this._tRR = { fx: 0, fy: 0, D: 0, sat: 0 };
+    this._axleF = { fx: 0, fy: 0, D: 0, sat: 0 };
+    this._axleR = { fx: 0, fy: 0, D: 0, sat: 0 };
     /** Reused Track.query / sample bags — Desert’s 14-car grid is GC-sensitive. */
     this._q = {};
     this._qFront = {};
@@ -749,6 +851,17 @@ export class Vehicle {
     this._feltSnap = 1;
     this._surfShock = 0;
     this._axleSplit = 0;
+    this._suspPitch = 0;
+    this._suspPitchRate = 0;
+    this._suspRoll = 0;
+    this._suspRollRate = 0;
+    this._impactAx = 0;
+    this._tireCapacity = 0;
+    for (let i = 0; i < 4; i++) {
+      this._suspTravel[i] = 0;
+      this._roadTravel[i] = 0;
+      this._wheelLoad[i] = this.spec.mass * G * 0.25;
+    }
     this.jump.reset();
     this.freezeLaunch();
   }
@@ -1079,6 +1192,7 @@ export class Vehicle {
     q2 = this._keepOnRibbon(track, q2, dt);
     this._stalePit = q2.jumpKind === "gap" && !this._xzOnRibbon(track, q2.dist, 6).on;
     const axles = this._axleRoad(track, q2.height, q2.dist);
+    this._plantSlideDeck(track, axles, q2);
     this._wheelCornerProbe(track, q2.height, q2.dist, axles, dt);
     const axleOnLand =
       (axles.front && axles.front.kind === "land") ||
@@ -1467,6 +1581,19 @@ export class Vehicle {
         plantDeck = solidY;
       }
       if (!Number.isFinite(plantDeck)) plantDeck = prevY;
+      // A slide used to ride the deck filter. The filter hangs above a
+      // dropping probe, then drops — that is the hop on brake and handbrake.
+      if (this._chassisSliding() && !onJumpApproach) {
+        const glued = Number.isFinite(q2.height) ? q2.height - TIRE_PLANT : plantDeck;
+        this.position.y = glued;
+        this._deckFilt = glued;
+        this._deckSmoothY = glued;
+        this.velY = 0;
+        this._groundVy = 0;
+        this._climbVel = 0;
+        this._airTime = 0;
+        return;
+      }
       if (this._deckFilt == null) this._deckFilt = plantDeck;
       const err = plantDeck - this._deckFilt;
       const followFast =
@@ -1934,6 +2061,21 @@ export class Vehicle {
       return;
     }
     if (!Number.isFinite(floor)) return;
+    if (
+      this.onGround &&
+      this._chassisSliding() &&
+      this._q &&
+      this._q.jumpKind !== "gap" &&
+      this._q.jumpKind !== "ramp" &&
+      this._q.jumpKind !== "crest" &&
+      Number.isFinite(this._q.height)
+    ) {
+      const deck = this._q.height - TIRE_PLANT;
+      if (this.position.y > deck + 0.012) this.position.y = deck + 0.012;
+      else if (this.position.y < deck - 0.012) this.position.y = deck - 0.012;
+      this.velY = 0;
+      return;
+    }
     const slack = tightDeckPlant(kind, this._landLock) ? 0 : DECK_FOLLOW_SLACK;
     if (this.position.y < floor - slack) this.position.y = floor - slack;
     // Hover cap only on the road we are actually on. A stale pit floor
@@ -2743,9 +2885,10 @@ export class Vehicle {
     this.pitchRate = (this.jump.noseUpRate || 0) * -0.12 + (wantPitch - this.pitch) * 6.5;
     this.roll = clamp((this.roll || 0) * 0.4 + this._landRollOff * 0.35, -rollMax, rollMax);
     this.rollRate = (this.jump.rollRate || 0) * 0.22;
-    this._bodyPitch += (noseDown - this._bodyPitch) * 0.55;
-    this._bodyPitchRate = 0;
-    this._squatSmooth += (noseDown - this._squatSmooth) * 0.55;
+    // Touchdown kicks the sprung body: nose-down rate the pitch spring then
+    // settles (one firm nod, no keyframed squash). Rate ∝ impact.
+    this._suspPitchRate += clamp(impact * 0.055, 0, 0.6);
+    this._suspRollRate += clamp((this.jump.roll || 0) * 1.5, -0.5, 0.5);
   }
 
   /**
@@ -2835,22 +2978,10 @@ export class Vehicle {
   }
 
   /**
-   * Push land spring into wheel hubs (hubs up into arches = negative travel).
-   * Soft blend so the spring–damper probe still owns the rest of the stroke.
+   * Land spring → wheel hubs now lives in _stepSuspension (heave term), so the
+   * landing sink, brake dive, and cornering tuck share one travel sum.
    */
-  _applyLandWheelTravel() {
-    const sink = this._landCompress || 0;
-    if (Math.abs(sink) < 0.001) return;
-    const t = this._wheelTravel;
-    const v = this._wheelVel;
-    for (let i = 0; i < 4; i++) {
-      const rearBias = i >= 2 ? 1.12 : 0.92;
-      const want = sink > 0 ? -sink * rearBias : -sink * rearBias * 0.88;
-      const prev = t[i];
-      t[i] += (want - t[i]) * 0.48;
-      v[i] = (t[i] - prev) * 60;
-    }
-  }
+  _applyLandWheelTravel() {}
 
   /**
    * Height of the far pad so flight never drops into the visual pit.
@@ -2943,30 +3074,33 @@ export class Vehicle {
       this._roadPitch = roadPitch;
       if (flat || tightPlant) this._visPitch = roadPitch;
       this._slope = flat ? 0 : grade;
+      // Sprung-body pitch (dive / squat / impact dip) rides on top of the
+      // road plane everywhere. The hubs in _stepSuspension compensate it, so
+      // the axles stay on the deck — this is weight, not the old nose float.
+      const body = clamp(this._bodyPitch || 0, -0.1, 0.12);
       if (flat) {
-        // Flat ribbon: hard-level so both axles sit on the deck (no nose-up float).
-        this.pitch = 0;
-        this.pitchRate = 0;
-        this._bodyPitch = 0;
-        this._bodyPitchRate = 0;
-        this._squatSmooth = 0;
+        // Flat ribbon: road plane is level; only the suspension may tilt the body.
+        this.pitch = body;
+        this.pitchRate = this._bodyPitchRate || 0;
       } else if (this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004) {
         // Residual air attitude is intentional — lift below keeps tires planted.
         const maxOff = JUMP.landSettlePitchMax != null ? JUMP.landSettlePitchMax : 0.22;
         this.pitch = clamp(this.pitch, roadPitch - maxOff, roadPitch + maxOff);
-        this._bodyPitch = clamp(this._bodyPitch, -maxOff, 0.04);
       } else {
         const slack = tightPlant ? 0.01 : 0.055;
-        this.pitch = clamp(this.pitch, roadPitch - slack, roadPitch + slack);
-        this._bodyPitch = clamp(this._bodyPitch, -slack, slack);
-        this._squatSmooth = clamp(this._squatSmooth || 0, -slack, slack);
+        this.pitch = clamp(this.pitch, roadPitch + body - slack, roadPitch + body + slack);
         this.pitchRate = 0;
       }
     }
 
     const L = Math.max(1.6, axles.L || this.spec.wheelbase || 2.55);
     const half = L * 0.5;
-    const sinP = Math.sin(this.pitch);
+    // Axle height offsets come from the ROAD pitch only. Body pitch is a
+    // suspension deflection already absorbed by the hubs; lifting the chassis
+    // for it was a brake-dive hop.
+    const landingPose = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
+    const geomPitch = landingPose ? this.pitch : this.pitch - (this._bodyPitch || 0);
+    const sinP = Math.sin(geomPitch);
     const frontOff = -half * sinP;
     const rearOff = half * sinP;
     // While residual air pitch is live, lift harder so axles never poke the deck.
@@ -2978,6 +3112,19 @@ export class Vehicle {
         : tightPlant
           ? AXLE_SINK_MAX
           : DECK_FOLLOW_SLACK;
+
+    // Shoulder probes are higher than the deck under the car. Lifting to
+    // them is the hop during a drift, brake, or handbrake.
+    if (
+      this.onGround &&
+      this._chassisSliding() &&
+      kind !== "gap" &&
+      kind !== "ramp" &&
+      kind !== "crest" &&
+      kind !== "land"
+    ) {
+      return;
+    }
 
     let lift = 0;
     const needLift = (solid, height, off) => {
@@ -3031,6 +3178,51 @@ export class Vehicle {
       if (bothSolid && this.position.y > deck + slack) {
         this.position.y = deck + slack;
       }
+    }
+  }
+
+  /**
+   * True while a drift, brake-turn, or handbrake should stay planted.
+   * A real jump (ramp, crest, gap) is not a slide.
+   * @returns {boolean}
+   */
+  _chassisSliding() {
+    if (this.handbrake > 0.18) return true;
+    if (Math.abs(this.driftAngle) > 0.1 || this.drifting) return true;
+    if (this._rearSlide && Math.abs(this.steer) > 0.12 && Math.abs(this.speed) > 6) return true;
+    if (this.brake > 0.4 && Math.abs(this.steer) > 0.15 && Math.abs(this.speed) > 6) return true;
+    return false;
+  }
+
+  /**
+   * Sideways axle probes read the shoulder as a ramp. During a slide the
+   * chassis stays on the deck under its centre, and pitch follows the
+   * ribbon grade instead of that false nose-up.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {ReturnType<Vehicle['_fillAxles']>} axles
+   * @param {{height?:number, dist?:number, jumpKind?:string}} q2
+   */
+  _plantSlideDeck(track, axles, q2) {
+    if (!this.onGround || !axles || axles.bothGap || !this._chassisSliding()) return;
+    const kind = (q2 && q2.jumpKind) || "";
+    if (kind === "gap" || kind === "ramp" || kind === "crest" || kind === "land") return;
+    const center = q2 && Number.isFinite(q2.height) ? q2.height : null;
+    if (Number.isFinite(center) && Number.isFinite(axles.midH) && Math.abs(axles.midH - center) > 0.03) {
+      axles.midH = center;
+    }
+    let grade = this._slope || 0;
+    if (track && typeof track.sample === "function" && q2 && Number.isFinite(q2.dist)) {
+      const a = track.sample(q2.dist, this._sample);
+      const b = track.sample(q2.dist + 4.5, this._sRear);
+      if (a && b && Number.isFinite(a.y) && Number.isFinite(b.y)) {
+        const horiz = Math.hypot(b.x - a.x, b.z - a.z);
+        if (horiz > 0.5) grade = Math.atan2(b.y - a.y, horiz);
+      }
+    }
+    const cap = 0.04;
+    const raw = axles.pitch || 0;
+    if (Math.abs(raw - grade) > cap) {
+      axles.pitch = grade + clamp(raw - grade, -cap, cap);
     }
   }
 
@@ -3182,12 +3374,12 @@ export class Vehicle {
    * @param {number} [dt=FIXED_DT]
    */
   _wheelCornerProbe(track, centerH, hintDist, axles, dt = FIXED_DT) {
-    const travel = this._wheelTravel;
-    const wVel = this._wheelVel;
+    // Road-geometry component only. Body-relative suspension deflection
+    // (pitch / heave) is added in _stepSuspension; _wheelTravel is the sum.
+    const travel = this._roadTravel;
     const step = Math.max(1e-4, Math.min(0.05, dt));
     if (!this.onGround || axles.bothGap || !Number.isFinite(centerH)) {
       travel[0] = travel[1] = travel[2] = travel[3] = 0;
-      wVel[0] = wVel[1] = wVel[2] = wVel[3] = 0;
       this._roadRoll = 0;
       return travel;
     }
@@ -3195,7 +3387,6 @@ export class Vehicle {
       // Mesh pitch already follows the axle plane. Fake pitch travel lifted the
       // downhill wheels off the ribbon so the pack read as floating.
       travel[0] = travel[1] = travel[2] = travel[3] = 0;
-      wVel[0] = wVel[1] = wVel[2] = wVel[3] = 0;
       this._roadRoll *= 0.88;
       return travel;
     }
@@ -3237,6 +3428,9 @@ export class Vehicle {
       // Ignore centimetre washboard so hubs do not pump on throttle.
       let raw = centerH - h;
       if (Math.abs(raw) < 0.014) raw = 0;
+      // A slide yaws the hubs onto the shoulder. That is not suspension travel,
+      // and letting it through pumps the body while the car is still on the road.
+      if (this._chassisSliding() && Math.abs(raw) > 0.02) raw *= 0.2;
       wants[i] = clamp(raw, -maxT, maxT * 0.72);
     }
     // Soft anti-roll: resist left/right travel difference (Group A bars).
@@ -3258,7 +3452,6 @@ export class Vehicle {
       const rate = compressing ? bumpRate : rebRate;
       const k = 1 - Math.exp(-rate * step);
       travel[i] = prev + (want - prev) * k;
-      wVel[i] = (travel[i] - prev) / step;
     }
 
     const trackW = Math.max(1.2, (this.spec.trackFront || 1.5) * 0.5 + (this.spec.trackRear || 1.5) * 0.5);
@@ -3304,6 +3497,171 @@ export class Vehicle {
   }
 
   /**
+   * Per-corner vertical loads from static weight, aero, and quasi-static
+   * weight transfer.
+   *
+   * HOW IT WORKS: longitudinal transfer m·ax·h/L moves load between axles
+   * (brake → nose, throttle → tail). Lateral transfer m·ay·h/t moves load to
+   * the outside wheels and is split front/rear by roll-stiffness share
+   * (springs × track² plus the anti-roll bars) — a stiffer front bar puts more
+   * of the transfer on the front axle, which the load-sensitive tire turns
+   * into push. The landing heave spring adds the touchdown spike. Loads feed
+   * combinedTire directly, so the grip each corner has really follows the
+   * weight the chassis just moved onto it.
+   *
+   * Runs once per step on the filtered `_ax` / `_ay` so the 240 Hz tire loop
+   * never chases its own load. Wheel order: FL, FR, RL, RR (FL = side +1).
+   */
+  _updateWheelLoads() {
+    const s = this.spec;
+    const m = s.mass;
+    const L = Math.max(1.6, s.wheelbase);
+    const lf = L * 0.46;
+    const lr = L * 0.54;
+    const tF = Math.max(1.2, s.trackFront || 1.5);
+    const tR = Math.max(1.2, s.trackRear || 1.5);
+    const h = Math.max(0.2, s.cgHeight || 0.41);
+    const vx = Math.abs(this.speed);
+    const down = 1 + (s.downforce || 0) * vx * vx * 0.0004;
+    const staticF = m * G * (lr / L) * down * 0.5;
+    const staticR = m * G * (lf / L) * down * 0.5;
+    const wtMul = HANDLING.weightTransferMul != null ? HANDLING.weightTransferMul : 2.28;
+    // Pedal intent loads the axle before tire force has fully built `_ax`
+    // (the player caused the shift; it should read on the car immediately).
+    const pedalBlend = HANDLING.pedalLoadBlend != null ? HANDLING.pedalLoadBlend : 0.34;
+    const pedal = clamp(this.throttle + this.brake + this.handbrake * 0.35, 0, 1);
+    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - this.handbrake * 0.14) * G;
+    const ax = this.onGround ? this._ax + (axIntent - this._ax) * pedalBlend * pedal : 0;
+    const ay = this.onGround && vx > 1.2 ? this._ay : 0;
+    // Physical transfer × a modest readability multiplier (wtMul ~2.3 is the
+    // arcade dial; 0.55 of it keeps the per-corner loads believable).
+    const dLong = ((m * ax * h) / L) * clamp(wtMul * 0.55, 0.8, 1.6);
+    const k = s.spring || 42000;
+    const rollF = (k * tF * tF) / 2 + (s.antiRollFront || 0);
+    const rollR = (k * tR * tR) / 2 + (s.antiRollRear || 0);
+    const shareF = rollF / Math.max(1, rollF + rollR);
+    const dLat = m * ay * h;
+    const dLatF = (dLat / tF) * shareF;
+    const dLatR = (dLat / tR) * (1 - shareF);
+    // Landing heave: the overdamped land spring is a real compression of all
+    // four corners — stiff load spike on touchdown, gone in ~0.2 s.
+    const heave = this._landCompress || 0;
+    const heaveF = heave > 0 ? k * heave * 0.92 : 0;
+    const heaveR = heave > 0 ? k * heave * 1.12 : 0;
+    const loads = this._wheelLoad;
+    // Outside wheels are on the −ay side (vy, ay are + toward the body right vector).
+    const minF = staticF * 0.08;
+    const minR = staticR * 0.08;
+    loads[0] = Math.max(minF, staticF - dLong * 0.5 - dLatF + heaveF);
+    loads[1] = Math.max(minF, staticF - dLong * 0.5 + dLatF + heaveF);
+    loads[2] = Math.max(minR, staticR + dLong * 0.5 - dLatR + heaveR);
+    loads[3] = Math.max(minR, staticR + dLong * 0.5 + dLatR + heaveR);
+  }
+
+  /**
+   * Chassis as a sprung body: pitch and roll on the real spring / damper /
+   * anti-roll numbers, excited by the same inertial loads the tires see.
+   *
+   * HOW IT WORKS: two second-order axes. Pitch stiffness is 2k(lf² + lr²),
+   * roll stiffness k(t²)/2 per axle plus the bars; damping is the config
+   * bump / rebound rates (asymmetric — bump firmer than rebound so a landing
+   * plants, a corner exit does not spring back). Drive moments are m·ax·h and
+   * m·ay·h, plus a collision Δv dip from collide.js and a touchdown kick.
+   * The physical angles are small on a stiff Group A car, so a readability
+   * gain (brakeDiveVis / bodyRollMul) scales what the mesh shows — the loads
+   * in _updateWheelLoads stay physical.
+   *
+   * Output: `_suspPitch` / `_suspRoll` (visual radians) and `_suspTravel`
+   * (hub deflection that keeps the tires on the deck while the body pitches
+   * or squats). `_wheelTravel` = road follow + body deflection.
+   */
+  _stepSuspension(dt) {
+    const s = this.spec;
+    const m = s.mass;
+    const L = Math.max(1.6, s.wheelbase);
+    const lf = L * 0.46;
+    const lr = L * 0.54;
+    const tF = Math.max(1.2, s.trackFront || 1.5);
+    const tR = Math.max(1.2, s.trackRear || 1.5);
+    const h = Math.max(0.2, s.cgHeight || 0.41);
+    const k = s.spring || 42000;
+    const cBump = (s.damperBump || s.damper || 7200) * 0.55;
+    const cReb = (s.damperRebound || s.damper || 4800) * 0.55;
+    const ground = this.onGround;
+
+    // ---- pitch (θ + = nose down) ----
+    const kP = 2 * k * (lf * lf + lr * lr);
+    const Ip = Math.max(300, s.pitchInertia || 860);
+    // Same pedal-intent blend as _updateWheelLoads — dive/squat must start
+    // when the player hits the pedal, not after tire force has built `_ax`.
+    const pedalBlend = HANDLING.pedalLoadBlend != null ? HANDLING.pedalLoadBlend : 0.34;
+    const pedal = clamp(this.throttle + this.brake + this.handbrake * 0.35, 0, 1);
+    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - this.handbrake * 0.14) * G;
+    const axPhys = ground ? this._ax : 0;
+    const ax = axPhys + (axIntent - axPhys) * pedalBlend * pedal;
+    const diveGain = HANDLING.brakeDiveVis != null ? HANDLING.brakeDiveVis / 0.068 : 1;
+    const squatGain = HANDLING.accelSquatVis != null ? HANDLING.accelSquatVis / 0.048 : 1;
+    const visP = ax < 0 ? 3.5 * diveGain : 2.55 * squatGain;
+    let mP = -m * ax * h * visP;
+    // Head-on / glancing contact: collide.js reports the along-nose Δv; a
+    // 10 m/s stop is a hard nose dip, a 2 m/s rub is a nod.
+    if (this._impactAx > 0.05) {
+      mP += m * clamp(this._impactAx, 0, 14) * h * 7;
+      this._impactAx = 0;
+    }
+    {
+      const v = this._suspPitchRate;
+      // Front bump while diving, rear rebound — asymmetry by stroke direction.
+      const cP = 2 * (v > 0 ? cBump : cReb) * (lf * lf + lr * lr);
+      const acc = (mP - kP * this._suspPitch - cP * v) / Ip;
+      this._suspPitchRate = v + acc * dt;
+      this._suspPitch = clamp(this._suspPitch + this._suspPitchRate * dt, -0.1, 0.12);
+    }
+
+    // ---- roll (same sign as `ay`, matching the legacy rollTarget) ----
+    const kR = (k * (tF * tF + tR * tR)) / 2 + (s.antiRollFront || 0) + (s.antiRollRear || 0);
+    const Ir = Math.max(280, s.rollInertia || 640);
+    const ay = ground && Math.abs(this.speed) > 1.2 ? this._ay : 0;
+    const rollMul = HANDLING.bodyRollMul != null ? HANDLING.bodyRollMul : 1.85;
+    const rollMax = HANDLING.bodyRollMax != null ? HANDLING.bodyRollMax : 0.125;
+    const mR = m * ay * (h - 0.1) * rollMul * 1.3;
+    {
+      const v = this._suspRollRate;
+      const cR = ((v * this._suspRoll > 0 ? cBump : cReb) * (tF * tF + tR * tR)) / 2;
+      const acc = (mR - kR * this._suspRoll - cR * v) / Ir;
+      this._suspRollRate = v + acc * dt;
+      this._suspRoll = clamp(this._suspRoll + this._suspRollRate * dt, -rollMax, rollMax);
+    }
+    if (!ground) {
+      // Airborne: the springs unload and the body stops leaning.
+      this._suspPitch *= Math.exp(-6 * dt);
+      this._suspRoll *= Math.exp(-6 * dt);
+      this._suspPitchRate *= Math.exp(-6 * dt);
+      this._suspRollRate *= Math.exp(-6 * dt);
+    }
+
+    // ---- hub deflection: the body moved, the tires did not ----
+    const theta = this._suspPitch;
+    const heave = this._landCompress || 0;
+    const st = this._suspTravel;
+    st[0] = st[1] = -theta * lf - (heave > 0 ? heave * 0.92 : heave * 0.8);
+    st[2] = st[3] = theta * lr - (heave > 0 ? heave * 1.12 : heave * 0.95);
+    const maxT = s.travel != null ? s.travel : 0.18;
+    const rt = this._roadTravel;
+    const wt = this._wheelTravel;
+    const wv = this._wheelVel;
+    const inv = 1 / Math.max(dt, 1e-4);
+    for (let i = 0; i < 4; i++) {
+      const prev = wt[i];
+      // Bottoming: the bump stop. A hard landing cannot push the hub past the
+      // stroke — the body takes the rest as a jolt, not a tunnel.
+      const next = clamp(rt[i] + st[i], -maxT, maxT * 0.6);
+      wt[i] = next;
+      wv[i] = (next - prev) * inv;
+    }
+  }
+
+  /**
    * Chassis attitude from the road plane plus GTA IV weight.
    *
    * `_slope` is geometric uphill (front higher). `_visPitch` is the Three.js
@@ -3313,58 +3671,31 @@ export class Vehicle {
    */
   _updateAttitude(dt) {
     this._updateLandSettle(dt);
-    const s = this.spec;
-    const trackW = 0.5 * ((s.trackFront || 1.5) + (s.trackRear || 1.5));
-    const kSpringRoll = (trackW * trackW * 0.25) * (s.spring || 32000) * 2;
-    const kArb = (s.antiRollFront || 0) + (s.antiRollRear || 0);
-    const kRoll = Math.max(12000, kSpringRoll + kArb);
-    const h = Math.max(0.12, (s.cgHeight || 0.34) - 0.12);
-    const m = s.mass;
-    const rollGain = (m * h) / kRoll;
-    // Body lean is weight transfer, not extra wheel camber.
-    // Wheels undo this in applyWheelPose about chassis Z, independent of steer.
+    this._stepSuspension(dt);
     const rollMax = HANDLING.bodyRollMax != null ? HANDLING.bodyRollMax : 0.125;
-    const rollMul = HANDLING.bodyRollMul != null ? HANDLING.bodyRollMul : 1.85;
 
-    let rollTarget = 0;
-    let squatTarget = 0;
-    if (this.onGround) {
-      const ay = Math.abs(this.speed) < 1.2 ? 0 : this._ay;
-      rollTarget = clamp(ay * rollGain * rollMul + this._roadRoll, -rollMax, rollMax);
-      // Phase 1: readable brake dive / accel squat from longitudinal force.
-      const ax = this._ax || 0;
-      const dive = HANDLING.brakeDiveVis != null ? HANDLING.brakeDiveVis : 0.05;
-      const squat = HANDLING.accelSquatVis != null ? HANDLING.accelSquatVis : 0.035;
-      if (Math.abs(this.speed) > 2.5) {
-        if (ax < -0.5) squatTarget += clamp(-ax * dive * 0.08, 0, 0.06);
-        else if (ax > 0.8) squatTarget += clamp(-ax * squat * 0.06, -0.045, 0);
-      }
-      if (this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004) {
-        squatTarget += clamp((this._landSquash || 0) * 0.55, 0, 0.07);
-      }
-      squatTarget = clamp(squatTarget, -0.05, 0.07);
-    }
+    // Body pitch IS the suspension pitch — brake dive, squat, impact dip and
+    // the touchdown nod all come out of one sprung-body axis. The hubs in
+    // _stepSuspension undo it on the deck so the tires never leave the road.
+    this._bodyPitch = this._suspPitch;
+    this._bodyPitchRate = this._suspPitchRate;
+    this._squatSmooth = this._suspPitch;
 
     if (this.onGround) {
-      const squatRate = HANDLING.squatSmoothRate != null ? HANDLING.squatSmoothRate : 10;
-      this._squatSmooth += (squatTarget - this._squatSmooth) * (1 - Math.exp(-squatRate * dt));
-    } else {
-      this._squatSmooth *= Math.exp(-8 * dt);
-    }
-    this._bodyPitch += (this._squatSmooth - this._bodyPitch) * (1 - Math.exp(-10 * dt));
-    this._bodyPitchRate = 0;
-
-    const iRoll = Math.max(280, s.rollInertia || 480);
-    const wnRoll = Math.max(10, Math.sqrt(kRoll / iRoll));
-    if (this.onGround) {
-      const settleRoll = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004 ? this._landRollOff : 0;
-      const wantRoll = clamp(rollTarget + settleRoll, -Math.max(rollMax, 0.24), Math.max(rollMax, 0.24));
-      const wnScale = JUMP.landRollWnScale != null ? JUMP.landRollWnScale : 0.42;
-      const landZeta = JUMP.landRollZeta != null ? JUMP.landRollZeta : 0.92;
       const landing = this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004;
-      const wn = landing ? wnRoll * wnScale : wnRoll;
-      const zeta = landing ? landZeta : 1.08;
-      this._springAxis("roll", wantRoll, dt, wn, zeta);
+      const settleRoll = landing ? this._landRollOff : 0;
+      // Lean = sprung roll + road camber + residual landing rock. The spring
+      // already carries its own damping; the follow here only hides the
+      // 60 Hz step so the mesh does not stair.
+      const wantRoll = clamp(
+        this._suspRoll + this._roadRoll + settleRoll,
+        -Math.max(rollMax, 0.24),
+        Math.max(rollMax, 0.24)
+      );
+      const k = 1 - Math.exp(-(landing ? 18 : 30) * dt);
+      const prev = this.roll;
+      this.roll += (wantRoll - this.roll) * k;
+      this.rollRate = (this.roll - prev) / Math.max(dt, 1e-4);
     } else {
       const wantRoll = clamp(this.jump.roll || 0, -0.32, 0.32);
       const k = 1 - Math.exp(-7.5 * dt);
@@ -3555,29 +3886,19 @@ export class Vehicle {
     const staticF = m * G * (lr / L) * down;
     const staticR = m * G * (lf / L) * down;
     const wtMul = HANDLING.weightTransferMul != null ? HANDLING.weightTransferMul : 2.28;
-    // Pedal intent loads the axle before tire force has fully built `_ax`.
-    // Brake → front bite / light rear. Throttle → rear squat / light nose.
-    // Coast (pedals off) keeps the existing `_ax` authority — not a second sim.
-    const pedalBlend = HANDLING.pedalLoadBlend != null ? HANDLING.pedalLoadBlend : 0.34;
-    const pedal = clamp(this.throttle + this.brake + hb * 0.35, 0, 1);
-    const axIntent = (this.throttle * 0.65 - this.brake * 1.25 - hb * 0.14) * G;
-    const axLoad = this._ax + (axIntent - this._ax) * pedalBlend * pedal;
-    const dLong = ((m * axLoad * s.cgHeight) / L) * wtMul;
-    // Suspension compression feeds axle load (travel − = hub into arch).
-    const wt = this._wheelTravel;
-    const suspGain = HANDLING.suspLoadGain != null ? HANDLING.suspLoadGain : 9200;
-    const compressF = Math.max(0, -(wt[0] + wt[1]) * 0.5);
-    const compressR = Math.max(0, -(wt[2] + wt[3]) * 0.5);
-    // Lateral load transfer from felt ay (inside tire unloads in a turn).
-    const trackW = Math.max(1.2, 0.5 * ((s.trackFront || 1.5) + (s.trackRear || 1.5)));
-    const hCg = Math.max(0.12, (s.cgHeight || 0.41) - 0.08);
-    const dLat = ((m * this._ay * hCg) / trackW) * 0.38;
-    let loadF = clamp(staticF - dLong + compressF * suspGain - Math.abs(dLat) * 0.12, m * G * 0.12, m * G * 0.88);
-    let loadR = clamp(staticR + dLong + compressR * suspGain - Math.abs(dLat) * 0.1, m * G * 0.14, m * G * 0.9);
+    // Per-corner loads from _updateWheelLoads (static + long/lat transfer +
+    // landing heave). The light/heavy axle ratios below drive the arcade yaw
+    // layer; the tires read the corner loads directly.
+    const loads = this._wheelLoad;
+    const loadF = loads[0] + loads[1];
+    const loadR = loads[2] + loads[3];
     const loadFRatio = loadF / Math.max(400, staticF);
     const loadRRatio = loadR / Math.max(400, staticR);
     const frontLight = clamp(1 - loadFRatio, 0, 0.65);
     const rearLight = clamp(1 - loadRRatio, 0, 0.65);
+    const wt = this._wheelTravel;
+    const compressF = Math.max(0, -(wt[0] + wt[1]) * 0.5);
+    const compressR = Math.max(0, -(wt[2] + wt[3]) * 0.5);
 
     const alphaFRaw = slipAngle(vy + r * lf, vx) - st;
     const alphaRRaw = slipAngle(vy - r * lr, vx);
@@ -3673,15 +3994,16 @@ export class Vehicle {
 
     const camberF = this._roadRoll * 0.85 + this.roll * 0.35;
     const camberR = this._roadRoll * 0.7 + this.roll * 0.28;
+    const curve = tireCurve(surface);
     const front = combinedTire(
       this._alphaF,
       clamp(kappaF, -1.4, 1.6),
       loadF,
       muF,
       muSlideF,
-      peakA,
-      surface,
-      camberF
+      curve,
+      camberF,
+      this._tFL
     );
     const rear = combinedTire(
       this._alphaR,
@@ -3689,9 +4011,9 @@ export class Vehicle {
       loadR,
       muR,
       muSlideR,
-      peakA,
-      surface,
-      camberR
+      curve,
+      camberR,
+      this._tRL
     );
 
     const ratio = this._gearRatio();
@@ -4332,6 +4654,28 @@ export class Vehicle {
   speedKmh() {
     // Ground-plane speed only — matches what the wheels / world cover.
     return Math.hypot(this.velocity.x, this.velocity.z) * 3.6;
+  }
+
+  /** Same ground speed, in miles per hour. */
+  speedMph() {
+    return this.speedKmh() * 0.621371;
+  }
+
+  /**
+   * Tach reading for the speed the car is actually doing in this gear.
+   * Wheelspin can wind the engine above this; the gauge stays with the road.
+   * @returns {number} rpm
+   */
+  roadRpm() {
+    const s = this.spec;
+    const ratio = this._gearRatio();
+    if (ratio <= 1e-6) return s.idleRpm;
+    const v = Math.hypot(this.velocity.x, this.velocity.z);
+    const radius = s.wheelRadius > 0.05 ? s.wheelRadius : 0.32;
+    const driven = (v / radius) * ratio * (60 / (Math.PI * 2));
+    if (driven < s.idleRpm) return s.idleRpm;
+    if (driven > s.redline) return s.redline;
+    return driven;
   }
 
   /** 0..1 lateral slide intensity for expert HUD / camera. */

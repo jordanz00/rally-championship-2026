@@ -384,6 +384,7 @@ export function shadowMaterial() {
       polygonOffsetUnits: -2,
     });
     SHADOW_MAT_T5.userData.shared = true;
+    SHADOW_MAT_T5.userData.blobShadow = true;
     return SHADOW_MAT_T5;
   }
   if (SHADOW_MAT) return SHADOW_MAT;
@@ -398,6 +399,7 @@ export function shadowMaterial() {
     polygonOffsetUnits: -2,
   });
   SHADOW_MAT.userData.shared = true;
+  SHADOW_MAT.userData.blobShadow = true;
   return SHADOW_MAT;
 }
 

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebTSR lab — browser reconstruct SDK</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0d0c; color: #e8e6df; font: 14px/1.4 ui-sans-serif, system-ui; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud {
+      position: absolute; left: 16px; top: 16px; z-index: 2;
+      background: rgba(10, 12, 11, 0.72); border: 1px solid #3a4038;
+      padding: 12px 14px; max-width: 360px;
+    }
+    #hud h1 { margin: 0 0 6px; font-size: 15px; letter-spacing: 0.08em; }
+    #hud p { margin: 0 0 8px; color: #b7b3a8; }
+    label { display: block; margin: 6px 0; }
+    select, button {
+      min-height: 36px; background: #1a2218; color: #e8e6df;
+      border: 1px solid #7a7; padding: 0 8px;
+    }
+    #stats { margin-top: 8px; font-variant-numeric: tabular-nums; color: #c9e8a8; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <h1>WebTSR lab</h1>
+    <p>Original WebGL2 reconstruct SDK. Not NVIDIA DLSS. Moving cube = velocity test.</p>
+    <label>IMAGE
+      <select id="mode">
+        <option value="off">Off · native</option>
+        <option value="dlaa">DLAA</option>
+        <option value="quality" selected>Quality</option>
+        <option value="balanced">Balanced</option>
+        <option value="performance">Performance</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="guided" checked /> Depth-guided residual</label>
+    <div id="stats">booting…</div>
+  </div>
+  <script type="module">
+    import * as THREE from "../vendor/three.module.js";
+    import { createBrowserReconstruct } from "../js/gfx/browser-reconstruct-sdk/index.js?v=924";
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x6a8aaa);
+    scene.fog = new THREE.Fog(0x6a8aaa, 18, 70);
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.15, 200);
+    camera.position.set(0, 2.2, 7);
+
+    scene.add(new THREE.AmbientLight(0xc8d4e8, 0.35));
+    const sun = new THREE.DirectionalLight(0xfff1d0, 1.6);
+    sun.position.set(8, 14, 4);
+    scene.add(sun);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 80, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x3d3428, roughness: 0.92, metalness: 0.02 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    for (let i = 0; i < 18; i++) {
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 1.6, 0.12),
+        new THREE.MeshStandardMaterial({ color: 0xc9c4b0, roughness: 0.5 })
+      );
+      const side = i < 9 ? -2.4 : 2.4;
+      post.position.set(side, 0.8, -i * 2.2 + 4);
+      scene.add(post);
+    }
+
+    const car = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.45, 3.1),
+      new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.35, metalness: 0.15 })
+    );
+    car.position.y = 0.35;
+    scene.add(car);
+
+    const recon = createBrowserReconstruct(renderer, { mode: "quality", guided: true });
+    const modeEl = document.getElementById("mode");
+    const guidedEl = document.getElementById("guided");
+    const statsEl = document.getElementById("stats");
+    modeEl.addEventListener("change", () => recon.setMode(modeEl.value));
+    guidedEl.addEventListener("change", () => {
+      if (recon.guided) recon.guided.enabled = guidedEl.checked;
+    });
+
+    function fit() {
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+      const pr = renderer.getPixelRatio();
+      recon.setSize(Math.floor(w * pr), Math.floor(h * pr));
+    }
+    window.addEventListener("resize", fit);
+    fit();
+
+    const t0 = performance.now();
+    const dts = [];
+    let last = t0;
+    function frame(now) {
+      const dt = now - last;
+      last = now;
+      if (dt < 200) {
+        dts.push(dt);
+        if (dts.length > 40) dts.shift();
+      }
+      const t = (now - t0) / 1000;
+      car.position.x = Math.sin(t * 1.4) * 1.15;
+      car.position.z = Math.cos(t * 0.55) * 2.2 - 1;
+      car.rotation.y = Math.sin(t * 1.4) * 0.35;
+      camera.position.x = car.position.x * 0.35;
+      camera.lookAt(car.position.x, 0.6, car.position.z);
+
+      if (recon.active) {
+        recon.render(scene, camera, { dynamicRoots: [car] });
+        renderer.render(recon.presentScene, camera);
+      } else {
+        renderer.render(scene, camera);
+      }
+      const sorted = dts.slice().sort((a, b) => a - b);
+      const p50 = sorted[sorted.length >> 1] || 0;
+      const st = recon.stats || {};
+      statsEl.textContent =
+        `mode ${recon.mode}  ·  p50 ${p50.toFixed(1)} ms  ·  ` +
+        (st.lowW ? `internal ${st.lowW}×${st.lowH} → ${st.outW}×${st.outH}` : "native present");
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

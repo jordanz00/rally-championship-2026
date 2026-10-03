@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Neural shade harness — legal GI-look</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #eee; font: 13px/1.4 ui-monospace, monospace; }
+    #c { display: block; width: 100%; height: 100%; }
+    #hud {
+      position: fixed; left: 12px; top: 12px; z-index: 2;
+      background: rgba(0,0,0,.62); padding: 10px 12px; max-width: 42rem;
+      border: 1px solid #333;
+    }
+    #hud b { color: #9fd; }
+    kbd { background: #222; padding: 0 4px; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    Legal GI-look stand-in (our GLSL, MIT). No NVIDIA weights.<br />
+    Hook: <b>PhotoRealPost.render()</b> after sceneRT colour+depth, not game.js _render.<br />
+    <kbd>1</kbd> off &nbsp; <kbd>2</kbd> on &nbsp; <kbd>3</kbd> field &nbsp;
+    crop: tree well + under-car<br />
+    <span id="stats">booting…</span>
+  </div>
+  <canvas id="c"></canvas>
+  <script type="module">
+    import * as THREE from "../../vendor/three.module.js";
+    import { NeuralShade, NSHADE_HOOK } from "../../js/gfx/neural-shade.js?v=6";
+
+    const canvas = document.getElementById("c");
+    const statsEl = document.getElementById("stats");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+    renderer.setPixelRatio(1);
+    renderer.autoClear = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x6a8aaa);
+    const camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.2, 200);
+    camera.position.set(3.4, 1.55, 6.2);
+    camera.lookAt(0.1, 0.45, 0.2);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(40, 40, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0x7a8a52 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    const car = new THREE.Mesh(
+      new THREE.BoxGeometry(1.7, 0.48, 4.1),
+      new THREE.MeshBasicMaterial({ color: 0xe05030 })
+    );
+    car.position.set(0, 0.42, 0.2);
+    scene.add(car);
+    const cabin = new THREE.Mesh(
+      new THREE.BoxGeometry(1.45, 0.38, 1.6),
+      new THREE.MeshBasicMaterial({ color: 0x3a4248 })
+    );
+    cabin.position.set(0, 0.78, -0.15);
+    scene.add(cabin);
+
+    function trunk(x, z, h, r, bark) {
+      const t = new THREE.Mesh(
+        new THREE.CylinderGeometry(r * 0.72, r, h, 7),
+        new THREE.MeshBasicMaterial({ color: bark })
+      );
+      t.position.set(x, h * 0.5, z);
+      scene.add(t);
+      const crown = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 3.4, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0x4a6e38 })
+      );
+      crown.position.set(x, h + r * 1.6, z);
+      scene.add(crown);
+    }
+    trunk(-2.4, -1.1, 4.2, 0.28, 0x8a6238);
+    trunk(-3.1, 1.4, 3.6, 0.22, 0x7a542e);
+    trunk(2.8, -0.8, 4.8, 0.32, 0x8d6640);
+    trunk(-1.6, 2.6, 3.2, 0.18, 0x7c5530);
+    trunk(1.4, 2.2, 3.8, 0.2, 0x855c34);
+
+    const nshade = new NeuralShade();
+    nshade.enabled = true;
+
+    let w = 0;
+    let h = 0;
+    let sceneRT = null;
+    function resize() {
+      w = Math.max(320, canvas.clientWidth | 0);
+      h = Math.max(240, canvas.clientHeight | 0);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      if (sceneRT) sceneRT.dispose();
+      const depth = new THREE.DepthTexture(w, h);
+      depth.format = THREE.DepthFormat;
+      depth.type = THREE.UnsignedIntType;
+      sceneRT = new THREE.WebGLRenderTarget(w, h, {
+        type: THREE.UnsignedByteType,
+        format: THREE.RGBAFormat,
+        colorSpace: THREE.NoColorSpace,
+        depthBuffer: true,
+        stencilBuffer: false,
+        depthTexture: depth,
+      });
+      nshade.setSize(w, h);
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    const blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const blitScene = new THREE.Scene();
+    const SHOW_FRAG = /* glsl */ `
+      precision mediump float;
+      uniform sampler2D tColor;
+      uniform sampler2D tField;
+      uniform float mode;
+      uniform float strength;
+      varying vec2 vUv;
+      float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+      void main() {
+        vec3 color = texture2D(tColor, vUv).rgb;
+        if (mode < 0.5) { gl_FragColor = vec4(color, 1.0); return; }
+        vec4 ns = texture2D(tField, vUv);
+        if (mode > 1.5) {
+          gl_FragColor = vec4(ns.rgb + vec3(ns.a * 0.35), 1.0);
+          return;
+        }
+        float srcL = luma(color);
+        float open = mix(1.0, ns.a, strength);
+        vec3 shaded = color * open + ns.rgb * strength;
+        float newL = luma(shaded);
+        if (newL > srcL && newL > 1e-4) shaded *= srcL / newL;
+        gl_FragColor = vec4(shaded, 1.0);
+      }
+    `;
+    const blitMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tColor: { value: null },
+        tField: { value: null },
+        mode: { value: 1 },
+        strength: { value: nshade.strength },
+      },
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: SHOW_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
+    blitQuad.frustumCulled = false;
+    blitScene.add(blitQuad);
+
+    let mode = 1;
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "1") mode = 0;
+      if (e.key === "2") mode = 1;
+      if (e.key === "3") mode = 2;
+    });
+
+    const samples = [];
+    const SAMPLE_N = 80;
+    let warm = 0;
+    function p50(arr) {
+      if (!arr.length) return 0;
+      const s = arr.slice().sort((a, b) => a - b);
+      return s[(s.length * 0.5) | 0];
+    }
+
+    function frame() {
+      renderer.setRenderTarget(sceneRT);
+      renderer.clear();
+      renderer.render(scene, camera);
+      const timePass = warm > 8;
+      nshade.apply(renderer, sceneRT.texture, sceneRT.depthTexture, camera, { time: timePass });
+      warm += 1;
+      if (timePass) samples.push(nshade.lastMs);
+      if (samples.length > SAMPLE_N) samples.shift();
+
+      blitMat.uniforms.tColor.value = sceneRT.texture;
+      blitMat.uniforms.tField.value = nshade.texture;
+      blitMat.uniforms.mode.value = mode;
+      renderer.setRenderTarget(null);
+      renderer.clear();
+      renderer.render(blitScene, blitCam);
+
+      const med = p50(samples);
+      const label = mode === 0 ? "OFF" : mode === 1 ? "ON" : "FIELD";
+      statsEl.textContent =
+        `mode ${label}  ·  apply p50 ${med.toFixed(3)} ms  (n=${samples.length})  ·  ` +
+        `${w}×${h} half-res field  ·  ${med <= 1 ? "PASS ≤1.0 ms" : "OVER 1 ms — game default stays ?nshade=1"}`;
+      requestAnimationFrame(frame);
+    }
+    window.__nshadeHarness = {
+      nshade,
+      hook: NSHADE_HOOK,
+      samples,
+      p50,
+      get mode() { return mode; },
+      setMode(m) { mode = m | 0; },
+    };
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

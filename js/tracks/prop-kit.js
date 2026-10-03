@@ -17,7 +17,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
-import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
 import { VISUAL } from "../config.js?v=241";
 
 /**
@@ -143,7 +143,8 @@ const CHAR_PARTS = Object.create(null);
 /**
  * Forest pack trees — trunk + canopy with authored textures from
  * assets/props/low_poly_forest_tree_pack.glb
- * @type {Record<string, {trunk:THREE.BufferGeometry, canopy:THREE.BufferGeometry, trunkMat:THREE.Material, canopyMat:THREE.Material}|null>}
+ * Hero trees may also carry `trunkLod1` / `canopyLod1` (same silhouette, ~45 % tris).
+ * @type {Record<string, {trunk:THREE.BufferGeometry, canopy:THREE.BufferGeometry, trunkMat:THREE.Material, canopyMat:THREE.Material, trunkLod1?:THREE.BufferGeometry|null, canopyLod1?:THREE.BufferGeometry|null}|null>}
  */
 const FOREST_PARTS = Object.create(null);
 
@@ -272,6 +273,19 @@ const FOREST_HERO_TREE_FILES = Object.freeze({
   forest_tree_g: "forest_hero_tree_g.glb",
   forest_tree_h: "forest_hero_tree_h.glb",
 });
+
+/**
+ * Same-silhouette LOD1 baked by tools/bake-forest-lod1.mjs (~45 % of the
+ * tris, same UVs, no textures — drawn with the LOD0 materials). Optional:
+ * a missing file falls back to the full mesh. `?lod1=0` disables for A/B.
+ * @param {string} file LOD0 file name
+ * @returns {string}
+ */
+function forestHeroLod1File(file) {
+  return file.replace(/\.glb$/, "_lod1.glb");
+}
+const FOREST_LOD1_OFF =
+  typeof location !== "undefined" && /[?&]lod1=0(?:&|$)/.test(location.search || "");
 
 /** Full spectator pack — male/female × adult/tall/teen/elder/stocky/child. */
 const CROWD_ALL = Object.freeze([
@@ -665,7 +679,9 @@ export function prefetchPropKit(scenery) {
   const kinds = kindsForScenery(scenery || "desert");
   const extra =
     scenery === "forest" || scenery === "mountain"
-      ? Object.values(FOREST_HERO_TREE_FILES)
+      ? Object.values(FOREST_HERO_TREE_FILES).flatMap((f) =>
+          FOREST_LOD1_OFF ? [f] : [f, forestHeroLod1File(f)]
+        )
       : [];
   return Promise.all(
     kinds
@@ -690,12 +706,14 @@ export function prefetchPropKit(scenery) {
  */
 export function prefetchForestHeroTrees() {
   return Promise.all(
-    Object.values(FOREST_HERO_TREE_FILES).map((file) =>
-      fetch(`assets/props/${file}?v=${KIT_ASSET_V}`, { mode: "cors", credentials: "same-origin" }).then(
-        (res) => (res && res.ok ? res.arrayBuffer() : null),
-        () => null
+    Object.values(FOREST_HERO_TREE_FILES)
+      .flatMap((f) => (FOREST_LOD1_OFF ? [f] : [f, forestHeroLod1File(f)]))
+      .map((file) =>
+        fetch(`assets/props/${file}?v=${KIT_ASSET_V}`, { mode: "cors", credentials: "same-origin" }).then(
+          (res) => (res && res.ok ? res.arrayBuffer() : null),
+          () => null
+        )
       )
-    )
   ).then(() => {});
 }
 
@@ -831,14 +849,64 @@ async function loadForestHeroTrees(loader, assetV) {
         CACHE[kind] = parts.canopy;
         MAT_CACHE[kind] = parts.canopyMat;
         MAT_CACHE[`${kind}_trunk`] = parts.trunkMat;
+        if (!FOREST_LOD1_OFF) await attachHeroTreeLod1(loader, kind, parts, assetV);
       } catch (err) {
         console.warn(`[prop-kit] hero tree failed: ${url}`, err);
       }
     })
   );
+  const lod1Count = FOREST_TREE_KINDS.filter((k) => FOREST_PARTS[k] && FOREST_PARTS[k].canopyLod1).length;
+  if (lod1Count) console.info(`[prop-kit] forest hero LOD1 ${lod1Count}/${FOREST_TREE_KINDS.length}`);
   console.info(
     `[prop-kit] forest hero trees ${FOREST_TREE_KINDS.filter((k) => FOREST_PARTS[k]).length}/${FOREST_TREE_KINDS.length}`
   );
+}
+
+/**
+ * Load `<hero>_lod1.glb` and run it through the SAME split / merge / fit as
+ * LOD0 (`parts.fit`), so the mid-distance copy lands on the identical
+ * footprint and scale. Geometry only — the LOD0 materials are reused, the
+ * throwaway LOD1 materials are disposed. Any failure is silent: the full
+ * mesh is the fallback and the file is optional.
+ *
+ * @param {GLTFLoader} loader
+ * @param {string} kind
+ * @param {{trunk:THREE.BufferGeometry, canopy:THREE.BufferGeometry, fit?:object, trunkLod1?:THREE.BufferGeometry|null, canopyLod1?:THREE.BufferGeometry|null}} parts
+ * @param {string} assetV
+ * @returns {Promise<void>}
+ */
+async function attachHeroTreeLod1(loader, kind, parts, assetV) {
+  const file = FOREST_HERO_TREE_FILES[kind];
+  if (!file || !parts || !parts.fit) return;
+  const url = `assets/props/${forestHeroLod1File(file)}?v=${assetV}`;
+  try {
+    const res = await fetch(url, { mode: "cors", credentials: "same-origin" });
+    if (!res || !res.ok) return;
+    const buf = await res.arrayBuffer();
+    const gltf = await new Promise((resolve, reject) => loader.parse(buf, "", resolve, reject));
+    const root = gltf && (gltf.scene || gltf.scenes[0]);
+    if (!root) return;
+    root.updateMatrixWorld(true);
+    const lod = buildHeroTreeParts(kind, root, 11.5, parts.fit);
+    if (!lod) return;
+    for (const geo of [lod.trunk, lod.canopy]) {
+      // weldPropGeometry hangs a coarse farLod on big meshes — unused here.
+      if (geo.userData.farLod) {
+        geo.userData.farLod.dispose?.();
+        delete geo.userData.farLod;
+      }
+      geo.userData.lod1 = true;
+      geo.userData.propKind = kind;
+      if (!geo.boundingSphere) geo.computeBoundingSphere();
+    }
+    lod.trunkMat?.dispose?.();
+    lod.canopyMat?.dispose?.();
+    parts.trunkLod1 = lod.trunk;
+    parts.canopyLod1 = lod.canopy;
+  } catch {
+    parts.trunkLod1 = null;
+    parts.canopyLod1 = null;
+  }
 }
 
 /**
@@ -914,8 +982,10 @@ function splitHeroTreeMesh(mesh) {
  * @param {string} kind
  * @param {THREE.Object3D} root
  * @param {number} targetH
+ * @param {{s:number, cx:number, floor:number, cz:number}} [fit] reuse LOD0's
+ *   scale + re-ground so a LOD1 lands on the identical footprint
  */
-function buildHeroTreeParts(kind, root, targetH) {
+function buildHeroTreeParts(kind, root, targetH, fit) {
   /** @type {THREE.Mesh[]} */
   const trunkMeshes = [];
   /** @type {THREE.Mesh[]} */
@@ -935,7 +1005,7 @@ function buildHeroTreeParts(kind, root, targetH) {
     trunkMeshes.push(canopyMeshes[0]);
   }
   if (!trunkMeshes.length || !canopyMeshes.length) return null;
-  const parts = buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH);
+  const parts = buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit);
   if (!parts) return null;
   if (parts.canopyMat) {
     parts.canopyMat.alphaTest = 0.38;
@@ -1135,34 +1205,51 @@ function branchMatKey(key) {
  * @param {THREE.Mesh[]} canopyMeshes
  * @param {number} targetH
  */
-function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH) {
+function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit) {
   const trunk = mergeMeshList(trunkMeshes, kind, "bark");
   const canopy = mergeMeshList(canopyMeshes, kind, "canopy");
   if (!trunk || !canopy) return null;
 
-  // Shared scale from combined height so trunk and canopy stay aligned.
-  const tBox = trunk.boundingBox || (trunk.computeBoundingBox(), trunk.boundingBox);
-  const cBox = canopy.boundingBox || (canopy.computeBoundingBox(), canopy.boundingBox);
-  const minY = Math.min(tBox.min.y, cBox.min.y);
-  const maxY = Math.max(tBox.max.y, cBox.max.y);
-  const h = Math.max(1e-3, maxY - minY);
-  const s = targetH / h;
-  trunk.scale(s, s, s);
-  canopy.scale(s, s, s);
-  // Re-ground both to the same floor after uniform scale.
-  trunk.computeBoundingBox();
-  canopy.computeBoundingBox();
-  const floor = Math.min(trunk.boundingBox.min.y, canopy.boundingBox.min.y);
-  const cx =
-    (Math.min(trunk.boundingBox.min.x, canopy.boundingBox.min.x) +
-      Math.max(trunk.boundingBox.max.x, canopy.boundingBox.max.x)) *
-    0.5;
-  const cz =
-    (Math.min(trunk.boundingBox.min.z, canopy.boundingBox.min.z) +
-      Math.max(trunk.boundingBox.max.z, canopy.boundingBox.max.z)) *
-    0.5;
+  let s;
+  let floor;
+  let cx;
+  let cz;
+  if (fit && Number.isFinite(fit.s)) {
+    // LOD1: inherit LOD0's fit so both levels share one footprint. A thinned
+    // crown has a slightly different box; measuring it would shift the copy.
+    s = fit.s;
+    trunk.scale(s, s, s);
+    canopy.scale(s, s, s);
+    floor = fit.floor;
+    cx = fit.cx;
+    cz = fit.cz;
+  } else {
+    // Shared scale from combined height so trunk and canopy stay aligned.
+    const tBox = trunk.boundingBox || (trunk.computeBoundingBox(), trunk.boundingBox);
+    const cBox = canopy.boundingBox || (canopy.computeBoundingBox(), canopy.boundingBox);
+    const minY = Math.min(tBox.min.y, cBox.min.y);
+    const maxY = Math.max(tBox.max.y, cBox.max.y);
+    const h = Math.max(1e-3, maxY - minY);
+    s = targetH / h;
+    trunk.scale(s, s, s);
+    canopy.scale(s, s, s);
+    // Re-ground both to the same floor after uniform scale.
+    trunk.computeBoundingBox();
+    canopy.computeBoundingBox();
+    floor = Math.min(trunk.boundingBox.min.y, canopy.boundingBox.min.y);
+    cx =
+      (Math.min(trunk.boundingBox.min.x, canopy.boundingBox.min.x) +
+        Math.max(trunk.boundingBox.max.x, canopy.boundingBox.max.x)) *
+      0.5;
+    cz =
+      (Math.min(trunk.boundingBox.min.z, canopy.boundingBox.min.z) +
+        Math.max(trunk.boundingBox.max.z, canopy.boundingBox.max.z)) *
+      0.5;
+  }
   trunk.translate(-cx, -floor, -cz);
   canopy.translate(-cx, -floor, -cz);
+  trunk.computeBoundingBox();
+  canopy.computeBoundingBox();
   trunk.computeBoundingSphere();
   canopy.computeBoundingSphere();
 
@@ -1174,7 +1261,7 @@ function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH) {
     alphaTest: 0.38,
     doubleSide: true,
   });
-  return { trunk, canopy, trunkMat, canopyMat };
+  return { trunk, canopy, trunkMat, canopyMat, fit: { s, cx, floor, cz } };
 }
 
 /**
@@ -1190,16 +1277,15 @@ function mergeMeshList(meshes, kind, role) {
   for (const mesh of meshes) {
     const cloned = mesh.geometry.clone();
     cloned.applyMatrix4(mesh.matrixWorld);
-    parts.push(normalizeForMerge(cloned, role, kind));
+    parts.push(normalizeForMerge(cloned, role, kind, materialUvChannel(mesh.material)));
   }
   const merged = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   if (!merged) return null;
-  merged.computeBoundingBox();
-  merged.computeBoundingSphere();
-  merged.userData.shared = true;
-  merged.userData.propKind = kind;
-  return merged;
+  const solid = weldPropGeometry(merged);
+  solid.userData.shared = true;
+  solid.userData.propKind = kind;
+  return solid;
 }
 
 /**
@@ -1239,6 +1325,17 @@ function adoptPackMaterial(src, kind, opts) {
     mat.map.needsUpdate = true;
   }
   if (mat.normalMap) mat.normalMap.needsUpdate = true;
+  // Merged prop geometry has a single `uv` set (see normalizeForMerge); a glTF
+  // material whose maps sample TEXCOORD_1 would otherwise compile against a
+  // missing `uv1` attribute and fail the whole material (seen on forest_tree_e trunk).
+  for (const key of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "alphaMap", "emissiveMap"]) {
+    const tex = mat[key];
+    if (tex && tex.channel !== 0) {
+      mat[key] = tex.clone();
+      mat[key].channel = 0;
+      mat[key].needsUpdate = true;
+    }
+  }
   mat.vertexColors = false;
   mat.fog = true;
   mat.flatShading = false;
@@ -1307,7 +1404,7 @@ function extractPropGeometry(root, kind) {
     const cloned = obj.geometry.clone();
     cloned.applyMatrix4(obj.matrixWorld);
     const role = meshRole(obj.name || "", kind);
-    parts.push(normalizeForMerge(cloned, role, kind));
+    parts.push(normalizeForMerge(cloned, role, kind, materialUvChannel(obj.material)));
   });
 
   if (!parts.length) {
@@ -1325,11 +1422,10 @@ function extractPropGeometry(root, kind) {
   groundAndCenter(merged);
   applyKindScale(merged, kind);
 
-  merged.computeBoundingBox();
-  merged.computeBoundingSphere();
-  merged.userData.shared = true;
-  merged.userData.propKind = kind;
-  return merged;
+  const solid = weldPropGeometry(merged);
+  solid.userData.shared = true;
+  solid.userData.propKind = kind;
+  return solid;
 }
 
 /**
@@ -1609,10 +1705,144 @@ function repivotToShoulder(geo, pivot) {
 }
 
 /**
- * @param {string} name
- * @param {string} kind
- * @returns {"bark"|"canopy"|"rock"|"default"}
+ * Coarse copy of a heavy prop. The racing line folds back on itself, so a
+ * camera in the middle of a stage can see the same kind of rock or fence
+ * several times inside the fog. Up close the full mesh stays. Past the
+ * clear air this copy is the one that draws, so that overlap does not
+ * multiply the full mesh.
+ * @param {THREE.BufferGeometry} geo
+ * @returns {THREE.BufferGeometry}
  */
+/**
+ * Clustering corners leaves the old triangle list in place. Most of those
+ * triangles collapse onto one point. Until they are removed, the coarse copy
+ * costs the same as the full mesh and gets thrown away.
+ * @param {THREE.BufferGeometry} geo
+ * @returns {number} triangles kept
+ */
+function stripCollapsedTriangles(geo) {
+  const index = geo.getIndex();
+  const pos = geo.getAttribute("position");
+  if (!index || !pos) return 0;
+  const src = index.array;
+  const keep = new Uint32Array(src.length);
+  let n = 0;
+  for (let i = 0; i + 2 < src.length; i += 3) {
+    const a = src[i];
+    const b = src[i + 1];
+    const c = src[i + 2];
+    if (a === b || b === c || a === c) continue;
+    const ax = pos.getX(a);
+    const ay = pos.getY(a);
+    const az = pos.getZ(a);
+    const bx = pos.getX(b) - ax;
+    const by = pos.getY(b) - ay;
+    const bz = pos.getZ(b) - az;
+    const cx = pos.getX(c) - ax;
+    const cy = pos.getY(c) - ay;
+    const cz = pos.getZ(c) - az;
+    const crx = by * cz - bz * cy;
+    const cry = bz * cx - bx * cz;
+    const crz = bx * cy - by * cx;
+    // About a square centimetre. Smaller than that does not read past the haze.
+    if (crx * crx + cry * cry + crz * crz < 1e-8) continue;
+    keep[n++] = a;
+    keep[n++] = b;
+    keep[n++] = c;
+  }
+  geo.setIndex(new THREE.BufferAttribute(keep.subarray(0, n), 1));
+  return n / 3;
+}
+
+function attachFarLod(geo) {
+  if (!geo || !geo.getAttribute("position") || geo.userData.farLod) return geo;
+  const index = geo.getIndex();
+  const heroTris = (index ? index.count : geo.getAttribute("position").count) / 3;
+  // Cactus and the smaller rocks sit under the old 9k line and still stack
+  // when a stage folds. Anything under 4k is cheap enough to leave alone.
+  if (heroTris < 4000) return geo;
+  const src = new THREE.BufferGeometry();
+  src.setAttribute("position", geo.getAttribute("position").clone());
+  if (index) src.setIndex(index.clone());
+  // Position only. Normals, UV seams, and the small color jitter would
+  // otherwise keep every corner and the coarse copy would not be coarse.
+  let far = mergeVertices(src, 0.08);
+  src.dispose();
+  if (!far || !far.getAttribute("position")) {
+    if (far && far !== geo) far.dispose();
+    return geo;
+  }
+  let farTris = stripCollapsedTriangles(far);
+  // A first pass still leaves some canopies with thousands of triangles.
+  // One more, wider cluster is only for that leftover. The full mesh
+  // beside the car is untouched.
+  if (farTris > 4000) {
+    const src2 = new THREE.BufferGeometry();
+    src2.setAttribute("position", far.getAttribute("position").clone());
+    const idx2 = far.getIndex();
+    if (idx2) src2.setIndex(idx2.clone());
+    const coarser = mergeVertices(src2, 0.4);
+    src2.dispose();
+    if (coarser && coarser.getAttribute("position")) {
+      const coarseTris = stripCollapsedTriangles(coarser);
+      if (coarseTris >= 32 && coarseTris < farTris) {
+        far.dispose();
+        far = coarser;
+        farTris = coarseTris;
+      } else {
+        coarser.dispose();
+      }
+    } else if (coarser) {
+      coarser.dispose();
+    }
+  }
+  if (!(farTris < heroTris * 0.55) || farTris < 32) {
+    far.dispose();
+    return geo;
+  }
+  far.computeVertexNormals();
+  const pos = far.getAttribute("position");
+  const uv = new Float32Array(pos.count * 2);
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i) * 0.35 + 0.5;
+    uv[i * 2 + 1] = pos.getY(i) * 0.35 + 0.15;
+    colors[i * 3] = 1;
+    colors[i * 3 + 1] = 1;
+    colors[i * 3 + 2] = 1;
+  }
+  far.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  far.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  far.computeBoundingBox();
+  far.computeBoundingSphere();
+  far.userData.shared = true;
+  geo.userData.farLod = far;
+  return geo;
+}
+
+/**
+ * The merge step expands every triangle into three private corners so mixed
+ * GLBs can combine. Weld those corners back together. The shape stays.
+ * @param {THREE.BufferGeometry} geo
+ * @returns {THREE.BufferGeometry}
+ */
+function weldPropGeometry(geo) {
+  if (!geo || !geo.getAttribute("position")) return geo;
+  const before = geo.getAttribute("position").count;
+  if (before < 300) return attachFarLod(geo);
+  const welded = mergeVertices(geo, 1e-4);
+  if (!welded || welded === geo) return attachFarLod(geo);
+  const after = welded.getAttribute("position") ? welded.getAttribute("position").count : before;
+  if (!(after > 0) || after >= before) {
+    welded.dispose();
+    return attachFarLod(geo);
+  }
+  geo.dispose();
+  welded.computeBoundingBox();
+  welded.computeBoundingSphere();
+  return attachFarLod(welded);
+}
+
 function meshRole(name, kind) {
   const n = String(name || "");
   if (kind.startsWith("character-")) return "character";
@@ -1637,7 +1867,21 @@ function meshRole(name, kind) {
  * @param {string} kind
  * @returns {THREE.BufferGeometry}
  */
-function normalizeForMerge(geo, role, kind) {
+/**
+ * Which UV set a glTF material samples its maps from (0 = `uv`, 1 = `uv1`).
+ * Merged prop geometry only carries one `uv` attribute, so the merge copies the
+ * set the material actually uses and `adoptPackMaterial` pins every map to channel 0.
+ * @param {THREE.Material|THREE.Material[]|undefined} material
+ * @returns {0|1}
+ */
+function materialUvChannel(material) {
+  const m = Array.isArray(material) ? material[0] : material;
+  if (!m) return 0;
+  const tex = m.map || m.normalMap || m.roughnessMap || m.metalnessMap || m.alphaMap;
+  return tex && tex.channel === 1 ? 1 : 0;
+}
+
+function normalizeForMerge(geo, role, kind, uvChannel = 0) {
   const flat = typeof geo.toNonIndexed === "function" ? geo.toNonIndexed() : geo.clone();
   const posAttr = flat.getAttribute("position");
   if (!posAttr) {
@@ -1665,7 +1909,8 @@ function normalizeForMerge(geo, role, kind) {
     out.computeVertexNormals();
   }
 
-  const uvSrc = flat.getAttribute("uv");
+  const uvSrc =
+    (uvChannel === 1 && flat.getAttribute("uv1")) || flat.getAttribute("uv");
   const uv = new Float32Array(count * 2);
   if (uvSrc && !uvSrc.isInterleavedBufferAttribute) {
     for (let i = 0; i < count; i++) {

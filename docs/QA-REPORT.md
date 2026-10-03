@@ -1,5 +1,474 @@
 # QA report — quality-control pass
 
+## Motion-guided residual (2026-10-03)
+
+**Player moment:** DLSS-class reconstruct — do not spatially sharpen a sliding car. Residual now reads TSR car velocity and fades gain along motion. Depth + derived normals still gate silhouettes.
+
+**Boot:** `main.js?v=924` · `browser-reconstruct-sdk/index.js?v=924` · `tsr-upscaler.js?v=924` · `neural-reconstruct.js?v=5`
+
+## Quality TSR is a real 30 fps option (2026-10-03)
+
+**Player-facing name:** Pause **IMAGE** / Quality reconstruct. Never "DLSS 5". Legal: in-engine TSR + optional depth-guided residual. No NVIDIA DLSS/NGX/Streamline, no leaked weights.
+
+**Verdict: default Quality ON for desktop.** Forest ~600 m, same spawn, Celica, IDE tab. Quality no longer costs a second Forest walk.
+
+**What we cut from the pass cost:**
+- Velocity: 214 car meshes + full scene graph walk → hero body/wheels only (14 scanned, 7 drawn) on a dedicated `_velScene`. Scan every 90 frames, frustum/distance cull rivals.
+- Stacked RCAS: TSR present sharpen is off when guided residual is on (`skipPresentSharp`).
+- History: Catmull-Rom + 3×3 gather only when the camera is still; bilinear + short history when screen motion is high.
+- TSR already skipped on title/countdown; also skipped while paused (last present quad stays).
+- Split native pass stays debug-only. Guided residual left at ~0.1 ms. Shadows **1536**, DPR **0.93** — not cut.
+
+**Measured (40 rAF samples, ignore dt >200 ms, same Forest 600 m plant, same IDE tab):**
+
+| Mode | p50 | p95 | kept | vel |
+|---|---|---|---|---|
+| Quality | **32.7 ms** (30.6 fps) | 50.3 ms | 40/48 (8 gaps) | 7 drawn / 14 scanned |
+| Off / native | **33.4 ms** (29.9 fps) | 50.1 ms | 40/48 (8 gaps) | — |
+
+Quality is **0.7 ms faster** than Off (was **65.8 vs 33.7**). Low **1377×775** → out **1788×1006**. DPR **0.93**, sun shadow **1536**. History cheap=0 at rest (Catmull-Rom still path); cheap=1 under throttle (600→1030 m at ~51 m/s). Velocity CPU **~0.1 ms**.
+
+**Image:** Quality still is one solid car, not softer than native in a way that hurts. 2 s mid-throttle (tunnel): one body, no trail, no ghost.
+
+**Screenshots:**
+- `/tmp/tsr-fast/forest-600-tsr-off-still.png` · `tools/qa-out/forest-600-tsr-off-still.png`
+- `/tmp/tsr-fast/forest-600-tsr-quality-still.png` · `tools/qa-out/forest-600-tsr-quality-still.png`
+- `/tmp/tsr-fast/forest-600-tsr-quality-motion.png` · `tools/qa-out/forest-600-tsr-quality-motion.png`
+
+**Files:** `js/gfx/tsr-upscaler.js` · `js/gfx/browser-reconstruct-sdk/index.js` · `js/game.js` · `js/main.js` · `index.html`
+
+**Boot:** `http://127.0.0.1:8766/` → `js/main.js?v=923` → `game.js?v=923` · `browser-reconstruct-sdk/index.js?v=923` · `tsr-upscaler.js?v=923`
+
+**URL:** `http://127.0.0.1:8766/index.html?tsr=quality&recon=1`
+
+**Not touched:** `config.js`. Preview :8766 left running. IDE browser left unlocked.
+
+## Browser reconstruct SDK (2026-10-03)
+
+**Player-facing:** none new. Pause stays IMAGE / REFINE. This is a drop-in factory for other Three r160 WebGL2 games — our MIT reconstruct, **not** NVIDIA DLSS / NGX / Streamline.
+
+**API:** `createBrowserReconstruct(renderer, { mode, guided })` → `setMode` / `setSize` / `render(scene, camera, { dynamicRoots })` / `presentScene` / `outputTarget` / `reset` / `dispose`. Wraps `TsrUpscaler` + `createReconstruct` (re-exported, not rewritten). Factory default follows `TSR_DEFAULT_MODE` (**quality** as of the 30 fps pass above). Guided is opt-in for other hosts.
+
+**Game hook:** `RallyGame` now constructs through the factory (`this.tsr` is the SDK; `this.recon` is `sdk.guided`). `_render` calls `tsr.render(scene, camera, { dynamicRoots, measureGuided })`.
+
+**Files:** `js/gfx/browser-reconstruct-sdk/index.js` · `README.md` · `LICENSE` · `js/game.js` · `js/main.js` · `index.html`
+
+**Boot:** `http://127.0.0.1:8766/` → `js/main.js?v=922` → `game.js?v=922` · `browser-reconstruct-sdk/index.js?v=922`
+
+**Not touched:** `config.js`, Pause labels, NVIDIA trademarks. Preview :8766 left running.
+
+## 3D-guided reconstruct (2026-10-02)
+
+**Player-facing name:** IMAGE / reconstruct / Pause **REFINE**. Never "DLSS 5". Legal: our GLSL + hand-authored kernels in `js/gfx/recon-weights.js`. No NVIDIA DLSS/NGX/Streamline, no leaked weights.
+
+**Verdict: ON for desktop + TSR (Quality), behind `?recon=0` / Pause REFINE.** Cost is under the 1.0 ms cut. Shipped hook on Desert ~400 m (`?tsr=quality&recon=1`) presents a clean frame — not black, no ghost car, no crawling rear edge. A stale-tab inject that used a *second* `three.module.js` instance went black; that is **not** the shipped path (`RallyGame._applyReconToTsr` taps TSR `histOut` into a separate `_reconRT`).
+
+**What the player sees that TSR-alone does not:** residual only on same-surface taps. Car vs cactus/tree silhouettes stop picking the far colour (halo). Wheel/road contact gets a small extra punch. Sky and far horizon skip the residual so they do not ring. Cheap normals are depth derivatives — no extra MeshNormalMaterial pass.
+
+**Default:** on when `!isPhonePlay()` and TSR is supported (the pass no-ops if IMAGE is Off). `?recon=0` / `off` / Pause REFINE off. `?recon=1` forces on.
+
+**Measured (40 rAF samples, ignore >200 ms):**
+- Desert ~400 m shipped tab, guided on, mid-throttle: p50 **16.1 ms** / p95 **16.6 ms** (40/40 kept). Progress 400→410 m at ~13 m/s.
+- Forest ~600 m: p50 **16.8 ms** / p95 **33.3 ms** (40 kept).
+- Pass-only (`gl.finish`, n=40, Desert 1788×1006): p50 **0.00 ms** / p95 **0.10 ms** — under `GUIDED_RECON_BUDGET_MS = 1.0`
+
+**Screenshots:**
+- Forest 600 TSR-only / guided stills: `/tmp/guided/forest-600-tsr-still.png` · `forest-600-guided-still.png`
+- Forest 2× crops: `/tmp/guided/forest-600-{tsr,guided}-crop-{car,road,canopy,horizon}.png`
+- Desert 400 TSR-only / guided stills: `/tmp/guided/desert-400-tsr-still.png` · `desert-400-guided-still.png`
+- Desert 400 guided mid-motion 2 s throttle: `/tmp/guided/desert-400-guided-motion.png` — one car, no ghost, no crawling wing
+- Desert 2× crops: `/tmp/guided/desert-400-{tsr,guided}-crop-{car,road,canopy,horizon}.png`
+- Copies under `tools/qa-out/guided-*.png`
+
+**Tool:** `tools/qa-guided-reconstruct.mjs` (`RALLY_QA_ALLOW_CHROME=1 CHROME_PATH=<headless-shell>` from Terminal.app — Cursor sandbox SIGSEGVs chrome-headless-shell).
+
+**Files:** `js/gfx/neural-reconstruct.js` · `js/gfx/recon-weights.js` · `js/game.js` · `js/main.js` · `index.html` · `tools/qa-guided-reconstruct.mjs`
+
+**Boot:** `http://127.0.0.1:8766/` → `js/main.js?v=919` → `game.js?v=919` · `neural-reconstruct.js?v=4` · `recon-weights.js?v=2`
+
+**Not touched:** `config.js`. Preview :8766 left running. IDE browser left unlocked.
+
+## TSR default off (2026-10-02)
+
+Quality stays available (`?tsr=quality`, Pause → IMAGE). Default is **off** because Forest 600 m Quality p50 **65.8 ms** missed the studio bar (must be ≥1.5 ms faster than Off **33.7 ms**). Persist only on a Pause IMAGE change — constructor `setMode` no longer writes `localStorage`, so a leftover Quality key from the old default is ignored unless the player chose IMAGE. URL still wins for the session.
+
+**Boot:** `http://127.0.0.1:8766/` → `js/main.js?v=919` → `game.js?v=919` · `tsr-upscaler.js?v=919`
+
+**Not touched:** `config.js`, `lighting-rig.js`, `postfx.js` (sceneRT depth still belongs to PhotoRealPost / nshade). Preview :8766 left running.
+
+## Legal TSR reconstruct (2026-10-02)
+
+**Verdict: SHIP Quality.** In-engine temporal super-resolution is on and presenting a clean full-res frame. NVIDIA DLSS / NGX / Streamline is not loaded (illegal in a browser). Pause IMAGE and `?tsr=` drive the same path. One-time note: this is a DLSS-class reconstruct; the player control is IMAGE / TSR.
+
+**Player moment:** Forest ~600 m chase, Celica, same spawn. Native (`?tsr=off`) and Quality (0.77 internal → 1788×1006 present) both read as a solid car on the road. History reset on spawn/GO leaves no smear. Mid-motion drive: no car trails.
+
+**Why Quality stays the default:** the Quality still is not softer than native in a way that hurts the drive, and it does not ghost. `TSR_DEFAULT_MODE = quality`. URL `?tsr=` still wins; Pause IMAGE persists in `localStorage` `rally-tsr-mode`.
+
+**Measured (Cursor IDE tab, Forest 600 m, 40 rAF samples, ignore dt > 200 ms):**
+- Off / native: p50 **33.7 ms** (40/40 kept, 0 gaps)
+- Quality: p50 **65.8 ms** (40/40 kept, 0 gaps) — extra resolve + velocity passes in a throttled webview; not a headed GPU probe
+- Quality RT: low **1377×775** → out **1788×1006**, DPR 0.93 (unchanged), sun shadow **1536** (unchanged)
+- Velocity meshes: 214 (player + pack)
+- History resets: 2 at plant, +1 after a blocked-evaluate hitch (cut detect)
+- `TypeError: Cannot create property 'fx' on number '0'`: not seen on this path (`combinedTire` already guards a missing `out` bag)
+
+**Screenshots:**
+- `/tmp/tsr/forest-600-tsr-off-still.png` · `tools/qa-out/forest-600-tsr-off-still.png`
+- `/tmp/tsr/forest-600-tsr-quality-still.png` · `tools/qa-out/forest-600-tsr-quality-still.png`
+- `/tmp/tsr/forest-600-tsr-quality-motion.png` · `tools/qa-out/forest-600-tsr-quality-motion.png`
+
+**Files:** `js/gfx/tsr-upscaler.js` · `js/game.js` · `js/main.js` · `index.html` · `tools/qa-tsr-reconstruct.mjs` · `docs/QA-REPORT.md`
+
+**Boot:** `main.js?v=918` · `game.js?v=918` · `tsr-upscaler.js?v=3`
+
+**Remaining:** IDE-tab p50 is not a ship-GPU number (headed `qa-frame-probe` still needed). Forest 600 m is a sparse verge in this spawn — that is the stage, not TSR. Far tree cards stay cheap. Playwright headless-shell SEGV'd under the sandbox; proof is the IDE tab above.
+
+**Not shipped:** NVIDIA weights, Streamline, NGX, or a player-facing "DLSS 5" label.
+
+**NeuralShade hook is live** (2026-10-02): `PhotoRealPost.render()` calls `NeuralShade.apply(renderer, sceneRT.texture, sceneRT.depthTexture, camera)` after scene fill, before AO/SSGI/bloom; `?nshade=0` off, default on unless `quality==='low'`. Boot `main.js?v=914` · `postfx.js?v=40`.
+
+## Stage lighting (2026-10-02)
+
+**Player moment:** Desert 400 m and Forest 600 m now read as daylight — a sun key, sky-colored bounce, and haze that matches the horizon — instead of a flat fill wash and a dirty fog band.
+
+**What was wrong:** After `_seatSunShadows` Desert sat at sun 1.89 / fill 0.60 / hemi 0.73 / ambient 0.41 (almost 1:1 key-to-sky). `_updateLights` reset fog to raw `L.fog` every frame, so Forest dissolved into gray `#8a9aa0` under a blue sky and Desert into yellow `#e8d090`. Hemi used a separate fill colour, not the sky photo.
+
+**Shipped (ACES kept):**
+- `lighting-rig.js` `applyHemiFromSky` — hemi sky = authored sky lobe pulled toward `skyHorizon` (not the dark zenith; that linear lerp went muddy).
+- `horizonFogColor` / `applyDaylightLook` — fog = horizon (+ a little `horizonGlow`). Desert open fill capped at 0.40, ambient 0.28, hemi 0.52–0.66 so the Kelvin sun still sculpts.
+- Forest / Mountain floors unchanged: ambient ≥0.2, fill ≥0.32, hemi ≥0.62.
+- `game.js` `_applyLighting` / `_updateLights` call the helpers after `_seatSunShadows`. **`this.sun.intensity *= 1 - 0.22 * open` left alone.** Tone mapping still `ACESFilmicToneMapping` (4).
+
+**Not touched:** `config.js`, `track.js`, `vehicle.js`, `tsr-upscaler.js`. No extra lights or passes.
+
+**Player sees:**
+- **Desert 400 m:** deeper blue sky (clouds no longer blown), cream horizon haze that matches the dunes, car and sand sculpted by the sun instead of a yellow wash.
+- **Forest 600 m:** pale-blue horizon (`#aecfe4`) instead of a gray band; sky bounce on the roof; floors held (amb 0.20 / fill 0.344 / hemi 0.62). Road albedo is still dark — that is content, not this pass.
+
+**Proof:** `/tmp/light-desert-before.png` · `/tmp/light-desert-after.png` · `/tmp/light-forest-before.png` · `/tmp/light-forest-after.png`  
+Preview: `http://127.0.0.1:8766/index.html?v=913`
+
+**p50** (paused, serial `_render` + `gl.finish`, 1788×1006). Uncontended / hitch-trimmed (`<12 ms`); raw median is the occluded webview (many ≥20 ms frames), not this pass.
+
+| Stage | Before p50 | After clean p50 | After min | Floors / ACES |
+|---|---|---|---|---|
+| Desert 400 m | 6.1 ms | 3.1 ms | 2.3 ms (was 3.6) | sun 1.888 · fill 0.40 · hemi 0.66 · amb 0.28 · tone 4 |
+| Forest 600 m | 4.4 ms | 2.8 ms | 1.9 ms (was 2.5) | sun 1.56 · fill 0.344 · hemi 0.62 · amb 0.20 · tone 4 |
+
+p50 did not worsen >0.5 ms. Lighting is colour/intensity only.
+
+**Boot:** `main.js?v=913` · `game.js?v=913` · `lighting-rig.js?v=29`
+
+## Legal GI-look pass (2026-10-02)
+
+**Hook is live:** `PhotoRealPost.render()` after `r.render` into `sceneRT` (colour+depth), before AO/SSGI/bloom/composite; `?nshade=0` off; default on except `quality==='low'` / title pad.
+
+**Player moment:** Tree wells and the shade under the car read as contact, not a brighter grade. Forest at ~600 m stays a dirt crest — the pass does not lift the plate.
+
+**Legal:** our GLSL, MIT. No NVIDIA DLSS 5, no leaked weights, no 147 MB download, no TensorFlow train, no three-gpu pathtracer capture.
+
+**Shipped:** `js/gfx/neural-shade.js` — half-res screen-space contact GI / horizon occlusion / albedo-tinted bounce. Inputs are PhotoRealPost `sceneRT` colour + `DepthTexture`. Composite multiplies openness then adds tint, then **clamps luma so the pass cannot brighten**. `?nshade=0` off, `?nshade=1` on. Default **on** (desktop PhotoRealPost path only; skipped on title pad and `quality==='low'`).
+
+**Exact hook (live / TSR-safe):** `PhotoRealPost.render()` after `r.render(scene, camera)` into `this.sceneRT` (colour + `this.sceneRT.depthTexture`), **before** AO / SSGI / bloom / composite. Call `NeuralShade.apply(renderer, color, depth, camera)`. **Do not hook `RallyGame._render` (TSR workers).** Constant: `NSHADE_HOOK` in `neural-shade.js`.
+
+**Harness:** `tools/neural-shade/harness.html` — 1 off / 2 on / 3 field.
+
+**Measured (harness, 1098×975, `gl.finish` around `apply` only, n=80 after warmup):** p50 **0.0 ms** (timer quantum), p90 **0.10 ms**. Under the 1.0 ms bar — default stays on, not gated.
+
+**Screenshots:** `/tmp/nshade/harness-on.png`, `harness-off.png`, `harness-field.png` (field: open floor is even grey; trunks darker; faint red bounce on the deck). `/tmp/nshade/forest-600-off.png` is the Forest 600 m chase crest (hero trees exist off-axis; this metre is an open rise). A live-tab overlay A/B was attempted and discarded (black frame) — the shipped path is the PhotoRealPost hook, not a post-present blit.
+
+**Not touched:** `lighting-rig.js`, `tsr-upscaler.js`, `vehicle.js`, `config.js`, `game.js` `_render` (TSR). `game.js` bumps `postfx.js?v=40`.
+
+**Boot:** `postfx.js?v=40` · `neural-shade.js?v=6` · harness as above.
+
+**Boot pointer (2026-10-02):** `http://127.0.0.1:8766/` → `js/main.js?v=914` → `game.js?v=914` · `vehicle.js?v=174` · `celica.js?v=214` · `collide.js?v=61` · `ai.js?v=200` · `tsr-upscaler.js?v=3` · `neural-reconstruct.js?v=1` (combinedTire bags + pitch-plant / noteNoseDip intact; no importer split).
+
+## Vehicle feel (2026-10-02)
+
+**Player moment:** Brake into a hairpin and the nose dives while the tires stay on the deck. Floor it off the line and the tail squats. A wall or rival hit nods the body. Gravel still takes longer to stop than tarmac.
+
+**What was broken:** Pacejka-lite and sprung-body pitch already lived in `vehicle.js`, but `applyWheelPose` zeroed hub extension and never cancelled parent pitch. The rear lifted on the brakes, so the dive read as a hop or not at all. `collide.js` never wrote `_impactAx`, so the collision nod was dead.
+
+**Shipped:**
+- `celica.js` plants hubs with `z·tan(pitch)` (same idea as the existing roll plant) and keeps road compression for arch tuck. Dive/squat no longer depends on the `game.js` travel cap.
+- `vehicle.js` `_stepSuspension` uses the same pedal-intent blend as the tire loads, so dive starts when you hit the pedal. Visual pitch clamp widened to about 5–6° on a 100–0.
+- `collide.js` `noteNoseDip` hands along-nose Δv to `_impactAx` (head-on only).
+- No second `Track.query()`. Grip tables untouched. Slide-hop plant (`_chassisSliding`) untouched.
+
+**Feel:**
+- **Launch:** tail squats as soon as you bury the throttle (~3.6° on tarmac in the headless pull).
+- **Hairpin:** hard brake is a 5.5° nose-down on tarmac; front arches tuck; rear hubs reach the deck instead of floating.
+- **Gravel:** same dive language, looser stop — 37.3 m vs 31.5 m tarmac 100–0 (unchanged).
+
+**Headless (flat mock ribbon, Celica, before → after):**
+
+| | 0–100 tarmac | 0–100 gravel | 100–0 tarmac | 100–0 gravel | brake pitch | chassis hop |
+|---|---|---|---|---|---|---|
+| before | 2.90 s | 4.22 s | 31.5 m / 2.08 s | 37.3 m / 2.47 s | 4.0° / 3.5° | 0 |
+| after | 2.90 s | 4.22 s | 31.5 m / 2.08 s | 37.3 m / 2.47 s | 5.5° / 5.0° | 0 |
+
+Slide-hop script (brake + steer + handbrake, 3 s): max Y above deck **0 m**, no NaNs.
+
+**Browser:** Forest race, 20 s `_qaDrive` (8 s throttle → 6 s brake-turn → 3 s handbrake → 3 s out). No NaNs, 0 glitch hits. On-road hop in 2 s samples ≤ 1 cm. 22 cm peak was grass runoff, not the slide-hop defect.
+
+**Boot:** `main.js?v=910` · `game.js?v=910` (import cache only) · `vehicle.js?v=174` · `celica.js?v=214` · `collide.js?v=61` · `ai.js?v=200`
+
+## Legal spatial reconstruct (2026-10-02)
+
+**Player moment:** After TSR (or instead of it) the present can take a legal spatial residual. NVIDIA DLSS/NGX/Streamline is not used.
+
+**Verdict: ON-behind-flag.** `createReconstruct(renderer)` in `js/gfx/neural-reconstruct.js` — WebGL2 half-float 3×3 RCAS+EASU-style residual, hand-authored kernels in `js/gfx/recon-weights.js` (2.6 KB, MIT, in-repo). Missing extension → Catmull-Rom bicubic passthrough. Default off (`?recon=1`).
+
+**Game hook:** live behind `?recon=1` — after TSR resolve, `recon.render(tResolved, _reconRT)` then that colour is swapped back onto TSR's present quad into the existing post path. Default still off. `?tsr=off` stays harness-only (no scene-colour tap without rewriting PhotoRealPost after `r.render(scene, camera)` in `postfx.js`).
+
+**Harness:** `tools/neural/harness.html?view=split&res=1920x1080`. Residual path live. p50 **0.00 ms** / p95 **0.20 ms** at 1920×1080 (`gl.finish`, n=48) — under the 0.6 ms cut. ×8 abs-diff shows thin edge residual only (text, bar seams, 1 px grid); checker interiors stay black; no halo rings. Shots `/tmp/recon/{native,recon,split,diff}.png`.
+
+**Coordinator hook (do not land here):**
+```js
+import { createReconstruct, parseReconParams } from "./gfx/neural-reconstruct.js?v=1";
+this.recon = parseReconParams().enabled ? createReconstruct(this.renderer) : null;
+if (this.recon) this.recon.setSize(drawingBufferWidth, drawingBufferHeight);
+if (this.recon) this.recon.render(srcTex, this._reconRT); // srcTex = TSR resolved or post.sceneRT
+```
+
+## Neural GI-look (2026-10-02)
+
+**Player moment:** Screen-space GI in PhotoRealPost is the bounce we already ship. A second learned irradiance head is not in this build.
+
+**Verdict: CUT.** `js/gfx/neural-shade.js` is a 9-tap bilateral blur of `post.ssgiRT` (or a dark stub). No weights, no TensorFlow, no NVIDIA. Harness `tools/neural-shade/harness.html` at 1920×1080: p50 **2.10 ms** (`gl.finish`, n=40) over the 0.6 ms cut. Shots `/tmp/neural-shade/{native,shade,split}.png`.
+
+**Coordinator hook (do not land here):**
+```js
+import { createNeuralShade } from "./gfx/neural-shade.js?v=1";
+```
+
+Don't add it — CUT. SSGI stays the GI path.
+
+## Tire `fx` crash (2026-10-02)
+
+**Player moment:** After the unfinished Pacejka hook landed, every race frame threw `TypeError: Cannot create property 'fx' on number '0'` and the game loop overlay covered the stage.
+
+**Cause:** `combinedTire(..., curve, camber, out)` was called as `(..., peakA, surface, camberNumber)`, so `out` was a number.
+
+**Shipped:** Pass `tireCurve(surface)` and the reused `_tFL` / `_tRL` bags. Guard if `out` is not an object.
+
+**Boot:** `main.js?v=907` · `game.js?v=907` · `vehicle.js?v=173` · `ai.js?v=199`
+
+## TSR reconstruct (2026-10-02)
+
+**Player moment:** Native full-res present with no temporal reconstruct. NVIDIA DLSS 5 cannot load in a browser (no NGX/Streamline). The in-engine path is TSR: Halton jitter, 0.77/0.67/0.59/1.0 internal scale, car velocity, YCoCg clip, RCAS.
+
+**Shipped:** `TSR_DEFAULT_MODE = quality` (on for desktop WebGL2 + half-float). Pause → IMAGE selects Quality / Balanced / Performance / DLAA / Off, persisted in `localStorage`. History resets on spawn, reset, and lap. `gl_FragDepth` is WebGL2-native so AO still sees reconstructed depth. `?tsr=off` still forces the old pipeline.
+
+**Not shipped:** NVIDIA weights, neural shading, or a claim that this *is* DLSS 5.
+
+**Proof (Desert 400 m, Celica, `?v=907`):** TSR Quality is live (internal 845×751 → present 1098×975). Side-by-side screenshots `tsr-off-desert-400.png` / `tsr-quality-desert-400.png` — car edges stay clean, no ghost trail. Quality p50 16.7 ms. Off p50 on the same tab was 117 ms after a mode switch + spawn hitch — **not** used as a speed claim. Forest A/B still needs a clean headed pass after this tire fix.
+
+**Boot:** `main.js?v=907` · `game.js?v=907` · `tsr-upscaler.js?v=2` · `vehicle.js?v=173` · `css/game.css?v=52`
+
+## Forest tree LOD1 (2026-10-02)
+
+**Player moment:** Every Poly Haven hero tree inside the Stage 2 fog (~260 m) drew the full ~31k-tri mesh. Cards and coarse alpha meshes were rejected because the tree changed shape at the hand-off.
+
+**Shipped:** A true LOD1 per hero tree — same silhouette, same UVs, drawn with the LOD0 materials. `tools/bake-forest-lod1.mjs` drops a deterministic ~55 % of whole leaf cards (never the bounding-box cards, never large twig strands; kept cards grow 1.18× about their centre so the crown keeps its coverage) and runs bark/branches through the seam-aware meshopt simplifier (`gltf-transform`, with `vendor/SimplifyModifier.js` as the offline fallback). Output `assets/props/forest_hero_tree_[a-h]_lod1.glb` (0.7–1.25 MB each, geometry + material names only). `prop-kit.js` loads it beside the LOD0 with the same split / scale / re-ground fit (`FOREST_PARTS[kind].trunkLod1 / canopyLod1`; missing file → full mesh, silent; `?lod1=0` disables for A/B). `track.js` `_instanceBatch` builds the non-casting `midMesh` from LOD1 when `_addLodTrees` passes `lod1Geo`; the casting hero mesh beside the car keeps the full geometry. No `?v=` bump in this pass — coordinator bumps after the concurrent track/game edits land.
+
+**Measured (headless, `node tools/bake-forest-lod1.mjs --check`):** UVs present on every primitive; bounding box within 1.3 % of source on all kinds.
+
+| kind | source tris | LOD1 tris | ratio |
+|---|---|---|---|
+| a | 31 569 | 13 695 | 43.4 % |
+| b | 31 038 | 13 776 | 44.4 % |
+| c | 31 776 | 13 854 | 43.6 % |
+| d | 28 677 | 13 133 | 45.8 % |
+| e | 31 895 | 14 441 | 45.3 % |
+| f | 31 465 | 14 133 | 44.9 % |
+| g | 31 553 | 14 963 | 47.4 % |
+| h | 31 088 | 12 852 | 41.3 % |
+
+**Measured (browser, Forest, Celica, `?lod1=1`):** `[prop-kit] forest hero LOD1 8/8`; all 196 hero `midMesh` batches hold LOD1 geometry (44.5 % of the hi triangle count), bounding spheres set, `castShadow` false, same material objects, no console errors from the LOD path. Per frame at 280 / 900 / 1600 m with 64 mid trees drawn: **−1.05 to −1.09 M triangles** (e.g. 5.61 M → 4.52 M at 900 m, ≈ −19 %). Screenshots `tools/qa-out/forest-lod1-on.png` vs `forest-lod1-off.png` (same camera, mids swapped to full geometry) are indistinguishable — no shape pop at the 50 m hand-off.
+
+**p50 not confirmed:** the Cursor webview was throttled to 1 fps (occluded), so rAF frame deltas were ~1000 ms and unusable. Forced `_render()` + `gl.finish()` serial timing (CPU+GPU, no physics) was ~2.5–3.0 ms with LOD1 and ~2.5–2.8 ms with full mids at 1098×975 DPR 1 and at an emulated 1788×1006 DPR 2 — this dev GPU is not vertex-bound, so the triangle saving did not move wall time here. Needs a headed frame probe (`node tools/qa-frame-probe.mjs`) on the machine that showed 17–21 ms.
+
+**Pre-existing, not fixed here (P1):** `THREE.WebGLProgram` vertex shader error `'uv1' : undeclared identifier` on `tree_small_02_branches` (kind `e` trunk). The Poly Haven material maps use `texCoord: 1`, but `normalizeForMerge` only carries `uv`, so the `e` trunk program fails to compile. Also present before this pass (reproduced with the cached, pre-LOD1 `prop-kit.js`). Fix candidate: pin `map/normalMap/roughnessMap/metalnessMap.channel = 0` in `adoptPackMaterial` for hero trees.
+
+## Forest floor read (2026-10-02)
+
+**Player moment:** The Stage 2 verge read as a flat lime lawn from the chase cam.
+
+**Shipped:** The painted green wash now sits lightly over a muted litter base so the Poly Haven floor photo carries the ground. Renderer already runs ACES, PBR, IBL, SSAO, photo road/land sets, and hero trees; this pass changed no lighting numbers.
+
+**Still open (content, not code):** land mesh is ~10.7 m cells so the verge has no small relief; no 3D understory; Desert/Mountain scatter is still Kenney.
+
+**Boot:** `main.js?v=904` · `track.js?v=402`
+
+## Forest tree count (2026-10-02)
+
+**Player moment:** Stage 2 frame time collapsed in the tree corridor.
+
+**Shipped:** Fewer trees along the verge and in the far scatter. Clumps are one extra tree of a different species. All eight forest models are used evenly. Near trees stay the full mesh.
+
+**Boot:** `main.js?v=902` · `track.js?v=400`
+
+## Tunnel walls solid (2026-10-02)
+
+**Player moment:** Inside the Forest bore the lining was invisible, so the outer rock shell showed through the walls.
+
+**Shipped:** Inner faces point into the cabin. Outer faces point out. The chase view hits solid rock.
+
+**Boot:** `main.js?v=900` · `forest-tunnel.js?v=13`
+
+## Race readout (2026-10-02)
+
+**Player moment:** Course, time, and position sat in the middle of the view.
+
+**Shipped:** The course line is gone. Time and position sit at the top of the screen.
+
+**Boot:** `css/game.css?v=51`
+
+## Slide hop (2026-10-02)
+
+**Player moment:** The car bounced off the road when drifting, braking, or using the handbrake.
+
+**Cause:** A slide yaws the axle probes onto the shoulder. That false ramp lifted the chassis and kicked the nose up.
+
+**Shipped:** During a drift, brake-turn, or handbrake the car stays on the deck under its centre. Pitch follows the road grade. Jumps are unchanged.
+
+**Boot:** `main.js?v=899` · `game.js?v=899` · `vehicle.js?v=172`
+
+## Forest overpass clip at 2514 m (2026-10-01)
+
+**Player moment:** Stage 2, about 2514 m. The finish-road crest runs through the rock tunnel from the earlier bore, and the car drove through that arch.
+
+**Shipped:** Where a later road crosses above the Forest bore, the tube crown and the wall colliders stop below that deck. The roadway at the crest is clear. The bore itself stays tall enough to drive.
+
+**Boot:** `main.js?v=898` · `game.js?v=898` · `track.js?v=397` · `forest-tunnel.js?v=12` · `collide.js?v=60`
+
+## Forest tree pop-in (2026-09-30)
+
+**Player moment:** On stage 2 the foliage changed into a different tree as you drove up to it. Bushes and other scenery did the same at the coarse-copy line.
+
+**Shipped:** Forest keeps the real crown and the real prop out to the fog. The far card and the coarse stand-in no longer take over while the tree is still visible. Shadow casters stay the near copies of that same crown.
+
+**Proof:** Forest practice at 800 m, fog 260 m. Card instances in view: 0. Coarse stand-ins in view: 0. Full crowns to the fog (shadow casters inside ~53 m, same crown without a shadow out to ~287 m). Frame time at that open stretch averaged ~21 ms. Dense tree corridors can still sit near 30 fps.
+
+**Boot:** `main.js?v=897` · `game.js?v=897`
+
+## Desert final-turn blocks (2026-09-30)
+
+**Player moment:** Stage 1 dropped frames from just before 2471 m through the last turn. The outside of that sweeper was a wall of cubes, chips, and fence rails.
+
+**Shipped:** That wall is gone. The finale keeps a few stones on the outside of the bend, resting on a face instead of standing on a corner. Desert scatter rocks use the same rest pose. The 89k-triangle fence is no longer repeated along the road.
+
+**Boot:** `main.js?v=896` · `game.js?v=896` · `track.js?v=396`
+
+## Camera angle blend (2026-09-30)
+
+**Player moment:** Pressing C cut from bumper, chase, and far. The move should travel.
+
+**Shipped:** C records the live lens and eases into the next angle over about 0.7 s, or about 0.95 s when a view is the cockpit. The cabin and the gauges swap once the lens reaches the seat or has cleared the trunk.
+
+**Boot:** `main.js?v=893` · `game.js?v=893`
+
+## Rear-tire dirt grains (2026-09-30)
+
+**Player moment:** Dirt should flick up off the rear tires as small pieces and fall back to the road.
+
+**Shipped:** Desktop spray is centimetre grains from the rear contact patches. Each grain takes the wheel's backward throw, then falls under gravity, slows in the air, and bounces or sticks. Front tires only flick when they are sliding. Phones still draw no dust. The old 8 cm floor and the soft puff sprite are gone, so a point stays a few pixels wide.
+
+**Boot:** `main.js?v=892` · `game.js?v=892` · `effects.js?v=94`
+
+## Soft-road indentations (2026-09-30)
+
+**Player moment:** Trails behind the car on mud, dirt, gravel, and sand should be grooves, not stripes painted on the surface.
+
+**Shipped:** The rut mesh cuts a floor below the road and piles a lip above it. Mud is the deepest, then dirt, sand, and a shallow gravel groove. Repeat passes dig down to the surface cap. A narrow dark tread sits in the floor. The old glowing strip and the wide lid over the trench are gone. Tarmac still only smears when the tire is working.
+
+**Boot:** `main.js?v=890` · `game.js?v=890` · `effects.js?v=92` · `surface-deform.js?v=11`
+
+## Turn signs, floating verge, shade (2026-09-30)
+
+**Player moment:** Boards stood on the outside of the big corners. Rocks, bushes, flags, and people sat above the dirt. Forest shade was a black verge under a bright sky.
+
+**Shipped:** Landmark boards (Bowl, Glade, Hairpin, Lakeside) are gone. Start and kilometre boards stay. Roadside props, flags, gantry feet, and the verge crowd use the same height as the visible land, and the sole of each mesh sits on that surface. Forest and mountain open shade keeps a sky fill and a ground bounce so the road still reads.
+
+**Boot:** `main.js?v=888` · `game.js?v=888` · `track.js?v=391`
+
+## Forest foliage pop-in (2026-09-30)
+
+**Player moment:** On Forest, trees and undergrowth appeared beside the car instead of already standing down the road.
+
+**Cause:** The slice you are driving was treated as near, so the far tree cards were switched off. The full crown only drew inside about 40 m, and the coarse canopy copy dropped the leaf texture, so the foliage was empty until it was close.
+
+**Shipped:** Cards stay loaded with the slice. On Forest the full crown holds out to about half the fog (around 130 m in the open, tighter in the bore). Copies past the shadow map use the same crown without joining the shadow pass. Past that, the card is already there. Bushes keep a solid coarse shape so the clump does not vanish before the leaves.
+
+**Boot:** `main.js?v=887` · `game.js?v=887` · `track.js?v=390`
+
+## Player ruts, instant camera, Android boot (2026-09-29)
+
+**Player moment:** The car leaves a dark pair of ruts you can see behind you. C cuts the view on the same frame. An Android phone can open the title and tap start.
+
+**Shipped:** Tire marks sit above the road (draw order 8, stronger offset, 4.5 cm lift) with a dark center and a light lip, including on sand. Phones draw the player’s ruts only — dust stays off. C sets a cut flag and snaps pose, yaw, and field of view together. Phones wait to start WebGL until the first tap, the boot watchdog gives a slow radio 22 seconds, and the page uses the visible screen height so the start button is not under the browser bar.
+
+**Boot:** `main.js?v=885` · `game.js?v=885` · `effects.js?v=90` · `game.css?v=49`
+
+## Desert start gate (2026-09-29)
+
+**Player moment:** Desert practice should leave the line under a start banner, with flags along both verges.
+
+**Shipped:** The car is placed just before the Desert start banner. Five cloth flags stand on each side, each a different colour, in the stage wind. START and FINISH both carry an overhead banner and a checker stripe on the road. Finish still has the ten checkered flags.
+
+**Boot:** `main.js?v=883`
+
+## Speedometer read high (2026-09-29)
+
+**Player moment:** The cluster sat near 120 while the car was not doing 120 mph.
+
+**Cause:** The dial and the digital readout were kilometers per hour. 120 km/h is about 75 mph. The tach also followed wheelspin, so it could sit near the redline while the car was slower than that.
+
+**Shipped:** Ground speed is shown in mph on the digital readout, the chase dial, and the in-car speedo. The tach follows road speed in the current gear. The engine sound still uses the driveline, including wheelspin.
+
+**Boot:** `main.js?v=882`
+
+## Stage fold was a frame cliff (2026-09-29)
+
+**Player moment:** Around 1900 m on Desert the lap folds back toward the town and the long sweeper. The frame rate fell off a cliff there, and the same pile-up can happen anywhere a stage loops inside the fog.
+
+**Cause:** Rocks, bushes, barriers, and the chain-link fence are full-detail meshes. When the course folds, the fog contains several of those stretches at once, so the GPU drew the full mesh for all of them.
+
+**Shipped:** The full mesh stays for about 40 m, which is what casts the sun shadow. Past that, the same prop draws as a coarse copy. Clustering corners alone left the old triangle list in place, so the coarse copy was discarded and the fold still drew the full mesh. Collapsed triangles are removed before that copy is kept, and a second, wider cluster runs only when that copy is still huge. Forest near-tree batches use the same split. The far tree cards are unchanged. Shadow map size, pixel ratio, and post are unchanged.
+
+**Boot:** `main.js?v=881` · `game.js?v=881` · `track.js?v=388`
+
+Measured in the IDE browser, practice, shadow map 1536, post on, pixel ratio 0.93. Desert: about 60 fps at the start and at 1899 m. Mountain: about 30 fps at the start, about 60 fps at 900 m. Forest: about 30 fps at the start and at 1400 m. The trees beside the car on Forest are still the full models.
+
+## Hidden props were still drawn (2026-09-29)
+
+**Player moment:** Desert was stuttering. The picture was already at full resolution, 1536 shadows, and high post.
+
+**Cause:** Roadside slices were submitted in full, including copies the fog already hid. Those meshes had also been expanded so every triangle corner was its own vertex, about three times the work for the same shape.
+
+**Shipped:** Hidden copies stay out of the draw. Shared corners are welded back together, so the shape is unchanged and the GPU transforms each corner once. Pixel ratio, the 1536 shadow map, and post stay where they are.
+
+**Boot:** `main.js?v=874` · `game.js?v=874`
+
+## Less camera pop (2026-09-28)
+
+**Player moment:** The title view should not jump, and the chase camera should not buzz on sand.
+
+**Cause:** The showroom cut between frozen shots every few seconds, then cut again when the shadow hold ended. Desert chase shake was high enough to read as a glitch.
+
+**Shipped:** One slow title camera. Chase vibration on loose ground is smaller. Landings still punch. Rival shadows stay on so a car does not lose its shade at a distance line.
+
+**Boot:** `main.js?v=872` · `game.js?v=872`
+
+## Easier first drive (2026-09-28)
+
+**Player moment:** A first Desert lap should slide and come back, and a messy run should still reach the finish clock.
+
+**Shipped:** Wider catch on opposite lock, softer bump throw, a little more sand grip, a slower pack, and more time on every stage clock. The slide is still how you take a corner.
+
+**Boot:** `main.js?v=871` · `game.js?v=871`
+
 ## Race presents at 60 (2026-09-27)
 
 **Player moment:** The race was drawing at 30 frames a second even when the picture was already paid for.
@@ -10,15 +479,35 @@
 
 **Boot:** `main.js?v=847` · `game.js?v=847` · `perf-tier.js?v=53`
 
-## Stable shadow under the cars (2026-09-27)
+## Showroom contact (2026-09-28)
 
-**Player moment:** The dark shape under each car jumped, swam, and flickered while driving.
+**Player moment:** On arrival, the title car sits on the pad and its shadow is on the asphalt beside it.
 
-**Cause:** The sun shadow map redrew every other frame while the light kept following the car, so the body silhouette sheared. A second disc re-sampled the road every frame and popped on small height changes.
+**Cause:** The shadow only darkened the sun. Sky light, the camera fill, and a high sun left a short contact hidden under the body.
 
-**Shipped:** Each car has one flat oval on the road, glued to the car's filtered pose. It is a simple solid contact shadow so it cannot stair-step or cut the road into jumping diamonds. Cars no longer cast a second silhouette into the sun map, which was redrawing every other frame and shearing. Scenery shadows stay on the same refresh rate, but the sun does not move between refreshes, and it steps in whole texels so those edges do not crawl.
+**Shipped:** The pad shadow also darkens sky bounce under the car. The showroom sun is a little lower than the stage sun, so the shape reaches the open asphalt. Arrival camera frames that side. Race lighting is unchanged.
 
-**Boot:** `main.js?v=846` · `game.js?v=846` · `lighting-rig.js?v=27`
+**Boot:** `main.js?v=870` · `game.js?v=870`
+
+**Proof:** IDE browser, `index.html?v=870`, title hold. Shadow map 1024, floor shader contains `mix( 0.14`. Arrival frame shows the full car and a soft contact on the asphalt to its side.
+
+## Open daylight (2026-09-28)
+
+**Player moment:** Desert sun should feel like open sky. Shade under the car stays a soft step down, not a black cut.
+
+**Shipped:** The black bars behind the car were the tire trenches, painted too dark and then fully shadowed. They are sandy now, and the sun shadow on the ground stays open instead of clipping to black.
+
+**Boot:** `main.js?v=861` · `game.js?v=861` · `effects.js?v=88`
+
+## Real sun shadows (2026-09-27)
+
+**Player moment:** The dark shape under each car was a hard black oval. It did not match the car.
+
+**Cause:** Cars were taken out of the sun shadow map, and a painted disc was drawn on the road instead. Trees and props had the same disc under meshes that already cast a real shadow.
+
+**Shipped:** The player car, the ghost, and nearby rivals cast a sun silhouette (body and wheels). The atlas redraws every race frame and steps in whole texels, so the shape stays under the car and scenery edges do not crawl. The painted discs are gone, on the cars and under the trees. Ground fill is pulled back so that silhouette stays visible on the sand instead of being washed out. Far rivals still drop the silhouette past the existing distance band.
+
+**Boot:** `main.js?v=852` · `game.js?v=852` · `track.js?v=381` · `trees.js?v=45` · `perf-tier.js?v=54`
 
 ## No fake walls on any roadway (2026-09-27)
 

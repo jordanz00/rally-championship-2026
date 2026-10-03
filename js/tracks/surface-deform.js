@@ -34,10 +34,18 @@ const DEPTH_CAP = {
  * Compressed / damp tire-track earth — muted browns, not desert-yellow paint.
  */
 const RUT_TINT = {
-  sand: 0x5c4634,
-  dirt: 0x32261c,
-  mud: 0x181410,
-  gravel: 0x3c3834,
+  sand: 0x8a6844,
+  dirt: 0x1c120e,
+  mud: 0x100e0c,
+  gravel: 0x2c2a28,
+};
+
+/** Loose soil pushed out of the groove. Lighter than the road so the lip reads. */
+const RUT_LIP = {
+  sand: 0xe6d4b2,
+  dirt: 0x8d6a48,
+  mud: 0x5a4636,
+  gravel: 0xa39b92,
 };
 
 /** Pack ix,iz into one int key — avoids `"ix,iz"` string allocs on the hot path. */
@@ -223,17 +231,17 @@ export class WheelDeformField {
 
 /** Lateral trench profile (berm → wall → floor → wall → berm). */
 const RUT_RINGS = [
-  { u: -1.28, shade: 0.98 },
-  { u: -1.1, shade: 1.14 },
-  { u: -0.9, shade: 0.78 },
-  { u: -0.55, shade: 0.52 },
-  { u: -0.22, shade: 0.42 },
-  { u: 0.0, shade: 0.38 },
-  { u: 0.22, shade: 0.42 },
-  { u: 0.55, shade: 0.52 },
-  { u: 0.9, shade: 0.78 },
-  { u: 1.1, shade: 1.14 },
-  { u: 1.28, shade: 0.98 },
+  { u: -1.28, shade: 1.0 },
+  { u: -1.1, shade: 1.05 },
+  { u: -0.9, shade: 0.98 },
+  { u: -0.55, shade: 0.96 },
+  { u: -0.22, shade: 0.94 },
+  { u: 0.0, shade: 0.92 },
+  { u: 0.22, shade: 0.94 },
+  { u: 0.55, shade: 0.96 },
+  { u: 0.9, shade: 0.98 },
+  { u: 1.1, shade: 1.05 },
+  { u: 1.28, shade: 1.0 },
 ];
 
 /**
@@ -256,12 +264,14 @@ export class WheelRutMesh {
     this.geo.setAttribute("normal", new THREE.BufferAttribute(this.norm, 3));
     this.mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.94,
+      roughness: 0.96,
       metalness: 0,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
       flatShading: false,
       polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
+      polygonOffsetFactor: -8,
+      polygonOffsetUnits: -8,
     });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = true;
@@ -357,7 +367,6 @@ export class WheelRutMesh {
     const nx = dz / len;
     const nz = -dx / len;
     const hw = Math.max(0.12, halfW);
-    const tint = RUT_TINT[surface] || 0x3f3024;
     const cap = DEPTH_CAP[surface] || 0.06;
     const throt = load && load.throttle != null ? load.throttle : 0;
     const brake = load && load.brake != null ? load.brake : 0;
@@ -367,23 +376,37 @@ export class WheelRutMesh {
       1.4,
       0.5 + slip * 0.65 + drift * 0.7 + throt * 0.25 + brake * 0.3 + digBoost * 0.35 + Math.min(0.3, speed * 0.004)
     );
-    /** Immediate visual dig so the trail reads before the height field fills. */
-    const liveDig = Math.max(0.022, cap * pressure * 1.05);
+    // A rolling pass has to read from the chase camera. Mud cuts a trench.
+    // Gravel only shoves a shallow groove and a stone lip.
+    const visualMin = surface === "mud" ? 0.14 : surface === "sand" ? 0.09 : surface === "dirt" ? 0.11 : 0.05;
+    const liveDig = Math.min(cap, Math.max(visualMin, cap * pressure * 0.72));
     const field = this.field;
-    const digShade = 0.86 - Math.min(0.32, slip * 0.14 + drift * 0.16 + digBoost * 0.12);
     const rings = RUT_RINGS;
 
     const yAt = (x, z, baseY, u) => {
-      const fieldY = field.sample(x, z);
       const shaped = trenchProfile(u) * liveDig;
-      // Prefer the deeper of accumulated field vs this segment's live trench.
-      return baseY + Math.min(fieldY, shaped);
+      const fieldY = field.sample(x, z);
+      // Floor goes down. The lip of displaced soil goes up. Repeat passes
+      // dig deeper until the surface cap, they do not fill the groove back in.
+      let delta = shaped < 0 ? Math.min(shaped, fieldY) : Math.max(shaped, fieldY, 0);
+      if (delta < -cap) delta = -cap;
+      if (delta > cap * 0.7) delta = cap * 0.7;
+      return baseY + delta;
+    };
+    const shadeAt = (u) => {
+      const a = Math.abs(u);
+      if (a < 0.32) return surface === "mud" ? 0.28 : 0.4;
+      if (a < 0.7) return 0.62;
+      if (a < 1.08) return surface === "sand" ? 1.28 : 1.12;
+      return 0.9;
     };
 
     for (let r = 0; r < rings.length - 1; r++) {
       const u0 = rings[r].u;
       const u1 = rings[r + 1].u;
-      const shade = (rings[r].shade + rings[r + 1].shade) * 0.5 * digShade;
+      const shade = (shadeAt(u0) + shadeAt(u1)) * 0.5;
+      const lip = (Math.abs(u0) + Math.abs(u1)) * 0.5 > 0.82;
+      const tint = lip ? RUT_LIP[surface] || 0x8a7058 : RUT_TINT[surface] || 0x3f3024;
       const ax0 = a.x + nx * (u0 * hw);
       const az0 = a.z + nz * (u0 * hw);
       const ax1 = a.x + nx * (u1 * hw);

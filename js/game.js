@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=169";
+import { Vehicle } from "./physics/vehicle.js?v=174";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=89";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=212";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=214";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
-import { Track } from "./tracks/track.js?v=380";
+import { Track } from "./tracks/track.js?v=403";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
-import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=48";
-import { Opponent } from "./ai.js?v=195";
+import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=53";
+import { Opponent } from "./ai.js?v=200";
 import { RallyAudio } from "./audio/engine.js?v=78";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=46";
@@ -27,15 +27,22 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=41";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=87";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=59";
+} from "./ui/hud.js?v=42";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=94";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=15";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
-import { PhotoRealPost } from "./gfx/postfx.js?v=38";
-import { createPerfTier } from "./gfx/perf-tier.js?v=53";
+import { PhotoRealPost } from "./gfx/postfx.js?v=40";
+import {
+  createBrowserReconstruct,
+  parseTsrParams,
+  persistTsrMode,
+  parseReconParams,
+  persistReconEnabled,
+} from "./gfx/browser-reconstruct-sdk/index.js?v=924";
+import { createPerfTier } from "./gfx/perf-tier.js?v=54";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=3";
@@ -59,13 +66,56 @@ import {
   VISUAL,
   STREAM,
   TITLE_SHOWROOM,
+  ARCADE_ASSIST,
+  AI,
+  SURFACES,
 } from "./config.js?v=241";
+
+/**
+ * First-drive ease. The slide is still the tool. A miss on Desert comes back,
+ * bumps do not throw the car away, the pack is beatable, and a messy lap
+ * still makes the clock. These objects are the live config every module shares.
+ */
+function easeFirstDrive() {
+  ARCADE_ASSIST.yawAssist = 0.38;
+  ARCADE_ASSIST.recoveryAssist = 1.35;
+  ARCADE_ASSIST.recoverableSlide = 20;
+  ARCADE_ASSIST.driftStability = 0.85;
+  ARCADE_ASSIST.landingAssist = 0.78;
+  ARCADE_ASSIST.tireSlideSoft = 4.2;
+  ARCADE_ASSIST.tirePeakHold = 1.2;
+  ARCADE_ASSIST.tireRecoverFloor = 0.56;
+  ARCADE_ASSIST.tirePeakBoost = 1.14;
+  HANDLING.bumpSteerAmplify = 1.08;
+  HANDLING.bumpYawGain = 0.016;
+  if (SURFACES.sand) {
+    SURFACES.sand.muPeak = 0.9;
+    SURFACES.sand.gripSnap = 1.48;
+  }
+  AI.skillFloor = 0.64;
+  AI.skillCeiling = 0.82;
+  AI.cornerMargin = 0.86;
+  AI.rubberBand = 0.05;
+  if (AI.skillByCourse) {
+    AI.skillByCourse.desert = 0;
+    AI.skillByCourse.forest = 0.02;
+    AI.skillByCourse.mountain = 0.04;
+    AI.skillByCourse.lakeside = 0.06;
+  }
+  CHAMPIONSHIP.checkpointBonus = 34;
+  CHAMPIONSHIP.stageTime.desert = 130;
+  CHAMPIONSHIP.stageTime.forest = 114;
+  CHAMPIONSHIP.stageTime.mountain = 108;
+  CHAMPIONSHIP.stageTime.lakeside = 74;
+}
+easeFirstDrive();
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {
   applyStageLights,
+  applyDaylightLook,
   applyShadowQualityContract,
   configurePBRRenderer,
   isolateLocalLights,
@@ -77,11 +127,91 @@ import {
   updateRaceLightFollow,
   updateShadowFrustum,
   snapShadowCamera,
-} from "./gfx/lighting-rig.js?v=27";
-import { shadowGeometry, carShadowMaterial } from "./tracks/trees.js?v=44";
+  horizonFogColor,
+} from "./gfx/lighting-rig.js?v=29";
 
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
+/**
+ * Race sun ortho half-width in metres. The 1536 atlas spends its texels on
+ * the car and the near road. Farther scenery simply falls out of the map.
+ */
+const SUN_SHADOW_EXTENT = 28;
+/** Direct sun kept in full shade, so the sand does not drop to black. */
+const SUN_SHADOW_LIFT = 0.5;
+
+/**
+ * Body and wheels cast. Lamps and glass do not — a cabin pane is a box and
+ * would paint a solid block under the car.
+ * @param {THREE.Object3D} obj
+ * @returns {boolean}
+ */
+function meshCastsSunShadow(obj) {
+  if (!obj || !obj.isMesh) return false;
+  if (obj.userData.brake || obj.userData.head) return false;
+  const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+  for (let i = 0; i < mats.length; i++) {
+    const mat = mats[i];
+    if (mat && mat.userData && mat.userData.kind === "glass") return false;
+  }
+  return true;
+}
+
+/**
+ * Open the sun shadow on the ground. The sun stays blocked, but enough of it
+ * remains that shade reads as sky light instead of a black cut.
+ * Title passes skyLift so the car also blocks sky bounce. A sun-only cut
+ * disappears into the hemisphere and the reflection on the pad.
+ * @param {THREE.Material} mat
+ * @param {number} [lift] direct sun kept in full shade (0–1)
+ * @param {number} [skyLift] sky, fill-ambient, and reflection kept in full shade
+ */
+function armGroundShadowContact(mat, lift, skyLift) {
+  if (!mat || mat.userData.shadowContact) return;
+  mat.userData.shadowContact = true;
+  const keep = lift == null ? SUN_SHADOW_LIFT : lift;
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => "";
+  const needle =
+    "getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] )";
+  const line =
+    "directLight.color *= ( directLight.visible && receiveShadow ) ? " + needle + " : 1.0;";
+  let lifted = THREE.ShaderChunk.lights_fragment_begin;
+  let endChunk = null;
+  if (skyLift != null) {
+    const sky = Number(skyLift).toFixed(2);
+    lifted = lifted.replace(
+      "IncidentLight directLight;",
+      "IncidentLight directLight;\nfloat contactShadow = 1.0;"
+    );
+    lifted = lifted.replace(
+      line,
+      "contactShadow = " + needle + ";\n\t\tdirectLight.color *= ( directLight.visible && receiveShadow ) ? mix( " +
+        keep.toFixed(2) + ", 1.0, contactShadow ) : 1.0;"
+    );
+    endChunk = THREE.ShaderChunk.lights_fragment_end
+      .replace(
+        "#if defined( RE_IndirectDiffuse )",
+        "#if defined( RE_IndirectDiffuse )\n\tirradiance *= mix( " + sky + ", 1.0, contactShadow );"
+      )
+      .replace(
+        "#if defined( RE_IndirectSpecular )",
+        "#if defined( RE_IndirectSpecular )\n\tradiance *= mix( " + sky + ", 1.0, contactShadow );\n\tiblIrradiance *= mix( " + sky + ", 1.0, contactShadow );"
+      );
+  } else {
+    lifted = lifted.replace(needle, "mix( " + keep.toFixed(2) + ", 1.0, " + needle + " )");
+  }
+  const key = "-sunopen-" + keep.toFixed(2) + (skyLift == null ? "" : "-sky" + Number(skyLift).toFixed(2));
+  mat.onBeforeCompile = (shader) => {
+    if (prev) prev(shader);
+    shader.fragmentShader = shader.fragmentShader.replace("#include <lights_fragment_begin>", lifted);
+    if (endChunk) {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <lights_fragment_end>", endChunk);
+    }
+  };
+  mat.customProgramCacheKey = () => prevKey() + key;
+  mat.needsUpdate = true;
+}
 
 /**
  * Yield so the loading screen can paint and Chrome stays responsive.
@@ -285,8 +415,9 @@ export class RallyGame {
     this._povHudFade = 0;
     /** Keep large HTML gauges off until the pull-out from POV has settled. */
     this._gaugeHoldPov = false;
-    /** Seconds remaining of intentional C-key blend (no hard snaps). */
+    /** Seconds remaining of a C-key pose blend. */
     this._camBlendT = 0;
+    this._camCut = false;
     this._camBlendDur = 0.58;
     this._camBlendToPov = false;
     this._camBlendFromPov = false;
@@ -412,21 +543,24 @@ export class RallyGame {
     this._gfxBootPromise = null;
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
-    // Bind Start first, paint the splash, then mount the showroom on the next
-    // frames. Rival LOD is HTML-preloaded; the 7 MB hero waits for PRESS START.
+    // Phones paint the HTML title first. Starting WebGL, the sky, and the
+    // showroom car before the first tap was killing Android tabs (blank page,
+    // or a frozen splash that never took the tap).
     const bootGfx = async () => {
       if (!(await this._bootGfx())) return;
       if (this.state === "title" || this.state === "menu") this._setupTitleStage();
     };
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      bootGfx().catch((err) => {
-        this._gfxFailed = true;
-        console.error(err);
-        this._fatal("Graphics failed to start.", err);
-      });
-    }));
-    // Light HTTP cache only. Props + stage meshes wait for PRESS START.
-    this._startBackgroundWarm();
+    const phone = isPhonePlay();
+    if (!phone || window.__rallyLeftTitle) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        bootGfx().catch((err) => {
+          this._gfxFailed = true;
+          console.error(err);
+          this._fatal("Graphics failed to start.", err);
+        });
+      }));
+    }
+    if (!phone) this._startBackgroundWarm();
   }
 
   /**
@@ -509,7 +643,7 @@ export class RallyGame {
     configurePBRRenderer(this.renderer);
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = false;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.autoClear = true;
     this.canvas = this.renderer.domElement;
@@ -544,6 +678,37 @@ export class RallyGame {
     }
     this.post = post;
     this.pipeline = new RenderPipeline({ renderer: this.renderer, post: this.post });
+    // Browser reconstruct SDK wraps TsrUpscaler + guided residual.
+    // Default IMAGE is Quality on desktop (Forest 600 m IDE p50 matches Off).
+    this.tsr = null;
+    this.recon = null;
+    this._reconRT = null;
+    this._reconSize = null;
+    if (!isPhonePlay()) {
+      try {
+        const tsrOpts = parseTsrParams();
+        // Always create the residual pass so Pause REFINE can toggle.
+        // Mode stays off unless URL / IMAGE says otherwise.
+        const sdk = createBrowserReconstruct(this.renderer, {
+          mode: tsrOpts.mode,
+          guided: true,
+          debug: tsrOpts.debug,
+        });
+        if (sdk.supported) {
+          this.tsr = sdk;
+          this.recon = sdk.guided || sdk.recon;
+          if (this.recon) this.recon.enabled = parseReconParams().enabled;
+        } else {
+          sdk.dispose();
+        }
+      } catch (err) {
+        console.warn("[boot] reconstruct SDK skipped", err);
+        this.tsr = null;
+        this.recon = null;
+      }
+    }
+    this._bindTsrControl();
+    this._syncTsrPresentSharp();
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x4a7ab8);
@@ -1042,11 +1207,12 @@ export class RallyGame {
   _warmRaceSystems() {
     if (!this.scene) return;
     try {
-      // Phones skip dust + tire-mark buffers — cinema grit was a brown wall.
+      // Phones skip the dust plume — cinema grit was a brown wall.
+      // Player tire ruts stay on; they are a few decals, not a particle storm.
       if (!isPhonePlay()) {
         if (!this.dust) this.dust = new Dust(this.scene);
-        if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
       }
+      if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
       if (!this.sparks) this.sparks = new ImpactSparks(this.scene);
     } catch (err) {
       console.warn("[warm] race systems", err);
@@ -1468,10 +1634,54 @@ export class RallyGame {
     }
   }
 
+  /**
+   * Pause-menu IMAGE reconstruct + Refine. Wired after the WebGL renderer exists.
+   */
+  _bindTsrControl() {
+    const tsrSel = document.getElementById("opt-tsr");
+    if (tsrSel && tsrSel.dataset.bound !== "1") {
+      tsrSel.dataset.bound = "1";
+      if (this.tsr) {
+        tsrSel.value = this.tsr.mode;
+        tsrSel.addEventListener("change", () => {
+          this.tsr.setMode(tsrSel.value);
+          persistTsrMode(this.tsr.mode);
+          this.tsr.reset();
+        });
+      } else {
+        tsrSel.value = "off";
+        tsrSel.disabled = true;
+      }
+    }
+    const reconChk = document.getElementById("opt-recon");
+    const reconVal = document.getElementById("opt-recon-val");
+    if (reconChk && reconChk.dataset.bound !== "1") {
+      reconChk.dataset.bound = "1";
+      const on = !!(this.recon && this.recon.enabled);
+      reconChk.checked = on;
+      if (reconVal) reconVal.textContent = on ? "ON" : "OFF";
+      if (!this.recon) {
+        reconChk.disabled = true;
+      } else {
+        reconChk.addEventListener("change", () => {
+          this.recon.enabled = !!reconChk.checked;
+          persistReconEnabled(this.recon.enabled);
+          if (reconVal) reconVal.textContent = this.recon.enabled ? "ON" : "OFF";
+          this._syncTsrPresentSharp();
+        });
+      }
+    }
+  }
+
   _leaveTitle() {
     window.__rallyLeftTitle = true;
     if (this.state !== "title") return;
     this.state = "menu";
+    if (!this.renderer && !this._gfxBooting) {
+      void this._bootGfx().then((ok) => {
+        if (ok && (this.state === "menu" || this.state === "title")) this._setupTitleStage();
+      });
+    }
     try {
       this.audio.unlock();
       this.codriver.warm(this.audio);
@@ -1717,16 +1927,19 @@ export class RallyGame {
         color: 0xffffff,
         map: asphaltMaps.color,
         roughnessMap: asphaltMaps.roughness,
-        roughness: 0.48,
-        metalness: 0.12,
-        envMapIntensity: 1.05,
+        roughness: 0.84,
+        metalness: 0.03,
+        envMapIntensity: 0.36,
       })
     );
+    asphalt.material.userData.lockEnv = true;
     asphalt.rotation.x = -Math.PI / 2;
     asphalt.receiveShadow = true;
+    asphalt.castShadow = false;
     asphalt.position.y = 0;
     group.add(asphalt);
     this._titleFloor = asphalt;
+    armGroundShadowContact(asphalt.material, 0.22, 0.14);
 
     const kerbGeo = new THREE.RingGeometry(9.32, 9.88, 48, 1);
     kerbGeo.rotateX(-Math.PI / 2);
@@ -1752,12 +1965,15 @@ export class RallyGame {
         vertexColors: true,
         roughness: 0.36,
         metalness: 0.08,
-        envMapIntensity: 0.72,
+        envMapIntensity: 0.42,
       })
     );
+    kerb.material.userData.lockEnv = true;
     kerb.position.y = 0.03;
     kerb.receiveShadow = true;
+    kerb.castShadow = false;
     group.add(kerb);
+    armGroundShadowContact(kerb.material, 0.22, 0.14);
 
     const sandMap = makeTitleSandMap();
     sandMap.anisotropy = aniso;
@@ -1766,13 +1982,16 @@ export class RallyGame {
       map: sandMap,
       roughness: 0.9,
       metalness: 0.03,
-      envMapIntensity: 0.38,
+      envMapIntensity: 0.32,
     });
+    sandMat.userData.lockEnv = true;
     const sand = new THREE.Mesh(new THREE.RingGeometry(9.78, 26, 72, 1), sandMat);
     sand.rotation.x = -Math.PI / 2;
     sand.position.y = -0.035;
     sand.receiveShadow = true;
+    sand.castShadow = false;
     group.add(sand);
+    armGroundShadowContact(sand.material, 0.22, 0.14);
 
     const groundMap = makeTitleSandMap();
     groundMap.repeat.set(14, 14);
@@ -1787,14 +2006,23 @@ export class RallyGame {
         envMapIntensity: 0.22,
       })
     );
+    ground.material.userData.lockEnv = true;
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.12;
     ground.receiveShadow = true;
+    ground.castShadow = false;
     group.add(ground);
+    armGroundShadowContact(ground.material, 0.22, 0.14);
 
     this.scene.add(group);
     this._titleWorld = group;
     enableLocalLightReceiver(group, TITLE_LIGHT_LAYER);
+    // Rim and kick live on the title layer so the car reads. They also
+    // paint the pad from the shadow side and wipe the contact out.
+    asphalt.layers.disable(TITLE_LIGHT_LAYER);
+    kerb.layers.disable(TITLE_LIGHT_LAYER);
+    sand.layers.disable(TITLE_LIGHT_LAYER);
+    ground.layers.disable(TITLE_LIGHT_LAYER);
     this._plantTitleRocks();
   }
 
@@ -1885,6 +2113,12 @@ export class RallyGame {
     }
     this.renderer.toneMappingExposure = L.exposure;
     this.renderer.shadowMap.enabled = true;
+    // Small atlas, tight on the pad. The hero casts a real contact shadow.
+    // Do not shrink an existing race map here — that dispose hitches the splash.
+    if (this.sun) {
+      this.sun.castShadow = true;
+      if (!this.sun.shadow.map) this._setShadowMapSize(1024, true);
+    }
     if (!this.sky) {
       this.sky = createSky();
       this.scene.add(this.sky);
@@ -1951,20 +2185,20 @@ export class RallyGame {
     this.hemi.intensity = L.hemi;
     this.sun.color.setHex(L.sun);
     this.sun.intensity = L.sunInt;
-    this._titleSunDir.set(L.sunDir[0], L.sunDir[1], L.sunDir[2]).normalize();
+    // Showroom sun sits a little lower than the stage sun so the contact
+    // stretches onto the pad. The race sun is untouched.
+    this._titleSunDir.set(0.68, 0.34, 0.46).normalize();
     this.fill.color.setHex(L.fill);
-    this.fill.intensity = L.fillInt;
+    this.fill.intensity = L.fillInt * 2.4;
     this.ambient.color.setHex(L.ambient);
     this.ambient.intensity = L.ambientInt;
     this._titleRim.color.setHex(L.rim);
     this._titleRim.intensity = L.rimInt;
     this._titleKick.color.setHex(L.kick);
-    this._titleKick.intensity = L.kickInt;
+    this._titleKick.intensity = L.kickInt * 0.28;
     this.caveLight.intensity = 0;
     for (const lamp of this._wallLights) lamp.intensity = 0;
-    // Pad: no sun atlas. Baking a 1024 shadow map every few presents was the
-    // orbit hitch; contact blob + key light is enough behind the menus.
-    this.sun.castShadow = false;
+    this.sun.castShadow = true;
     this._titleShadowFrustReady = false;
     this._titleShadowArmed = true;
     this._tunnelBlend = 0;
@@ -2001,11 +2235,8 @@ export class RallyGame {
     });
     this.playerMesh.traverse((o) => {
       if (!o.isMesh) return;
-      // Cars do not cast into the sun atlas. That map refreshes on a cadence
-      // while the light follows the car, so a body silhouette jumps and swims.
-      // The contact disc under the chassis is the shadow the player reads.
-      o.castShadow = false;
       o.receiveShadow = false;
+      o.castShadow = meshCastsSunShadow(o);
     });
   }
 
@@ -2022,9 +2253,9 @@ export class RallyGame {
     this.sun.position.set(p.x + d.x * 36, p.y + d.y * 36, p.z + d.z * 36);
     this.sun.target.position.set(p.x, p.y + 0.55, p.z);
     this.sun.target.updateMatrixWorld();
-    this.sun.intensity = L.sunInt;
-    this.hemi.intensity = L.hemi;
-    this.ambient.intensity = L.ambientInt;
+    this.sun.intensity = L.sunInt * 0.9;
+    this.hemi.intensity = L.hemi * 1.45;
+    this.ambient.intensity = Math.max(L.ambientInt * 4, 0.16);
     this.renderer.toneMappingExposure = L.exposure;
 
     if (this.camera) {
@@ -2035,7 +2266,10 @@ export class RallyGame {
     } else {
       this.fill.position.set(p.x - d.x * 22, p.y + 16, p.z - d.z * 22);
     }
-    this.fill.intensity = L.fillInt;
+    this.fill.intensity = L.fillInt * 2.4;
+    // Fill sits on the camera. On the pad it paints out the contact.
+    // The car still receives it; the asphalt does not.
+    if (this.fill.layers) this.fill.layers.set(TITLE_LIGHT_LAYER);
 
     this._titleRim.position.set(p.x - d.x * 28, p.y + 14, p.z - d.z * 28);
     this._titleRim.target.position.set(p.x, p.y + 0.5, p.z);
@@ -2053,9 +2287,9 @@ export class RallyGame {
       this.sun.shadow.camera.near = 8;
       this.sun.shadow.camera.far = 80;
       this.sun.shadow.camera.updateProjectionMatrix();
-      this.sun.shadow.bias = -0.0004;
-      this.sun.shadow.normalBias = 0.08;
-      this.sun.shadow.radius = 2.2;
+      this.sun.shadow.bias = -0.00022;
+      this.sun.shadow.normalBias = 0.018;
+      this.sun.shadow.radius = 2.6;
       this._titleShadowFrustReady = true;
     }
   }
@@ -2221,6 +2455,7 @@ export class RallyGame {
         const dist = 16 + slot * spacing;
         if (slot === playerSlot) {
           this.player.spawn(this.track, dist, this._gridLane(place));
+          if (this.tsr) this.tsr.reset();
         } else {
           const gridPlace = slot + 1;
           const ai = new Opponent(this.track, aiIndex, dist, {
@@ -2237,7 +2472,8 @@ export class RallyGame {
       }
       report(0.98, "Grid ready…");
     } else {
-      this.player.spawn(this.track, 8, 0);
+      this.player.spawn(this.track, this._startLineDist(), 0);
+      if (this.tsr) this.tsr.reset();
       for (let i = 0; i < n; i++) {
         const dist = 16 + i * spacing;
         const ai = new Opponent(this.track, i, dist, {
@@ -2295,6 +2531,8 @@ export class RallyGame {
     if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
     if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
     if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
+    // Feather the sun edge. A one-texel kernel read as a hard cut on the sand.
+    if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
     report(1, "Ready");
   }
 
@@ -2306,7 +2544,7 @@ export class RallyGame {
     if (!this.player || !this.playerMesh) return;
     this.playerMesh.visible = true;
     this._syncPackMeshes();
-    this._silenceCarSunShadows();
+    this._armCarSunShadows();
     this._camSnap = true;
     this._chaseCam(1 / 60);
     this._syncWorldStream();
@@ -2326,8 +2564,8 @@ export class RallyGame {
 
   /**
    * Near / mid / far presentation cost for the 14-car pack.
-   * Physics is unchanged. Far uses STREAM.rivalShadowFar. No car casts a
-   * sun silhouette — the contact disc is the under-car shadow. Mid still
+   * Physics is unchanged. Far uses STREAM.rivalShadowFar and drops the
+   * sun silhouette. Near and mid cars cast a real body shadow. Mid still
    * drops expensive dust and marks.
    */
   _applyRivalLod() {
@@ -2361,7 +2599,12 @@ export class RallyGame {
       if (o.vehicle) o.vehicle.envCheap = band === 2;
       if (mesh.userData.lodFar === far) continue;
       mesh.userData.lodFar = far;
-      if (!mesh.userData.lodShadowCasters) {
+      if (!mesh.userData.lodShadowCasters || !mesh.userData.lodShadowCasters.length) {
+        mesh.traverse((obj) => {
+          if (!obj.isMesh) return;
+          obj.receiveShadow = false;
+          obj.castShadow = meshCastsSunShadow(obj);
+        });
         const list = [];
         mesh.traverse((obj) => {
           if (obj.isMesh && obj.castShadow) list.push(obj);
@@ -2369,26 +2612,25 @@ export class RallyGame {
         mesh.userData.lodShadowCasters = list;
       }
       const list = mesh.userData.lodShadowCasters;
-      // Same contract as the player: rivals do not cast a sun silhouette.
-      for (let j = 0; j < list.length; j++) list[j].castShadow = false;
+      for (let j = 0; j < list.length; j++) list[j].castShadow = true;
     }
   }
 
   /**
-   * Turn sun-atlas casting off on every car. Safe to call more than once.
-   * Under-car read is the contact disc in _syncContactBlobs.
+   * Player and ghost cast a sun silhouette. Rivals are armed in the LOD pass
+   * so cars past the far band can stay out of the atlas.
    */
-  _silenceCarSunShadows() {
-    const kill = (root) => {
+  _armCarSunShadows() {
+    const arm = (root) => {
       if (!root || !root.traverse) return;
       root.traverse((o) => {
-        if (o.isMesh) o.castShadow = false;
+        if (!o.isMesh) return;
+        o.receiveShadow = false;
+        o.castShadow = meshCastsSunShadow(o);
       });
     };
-    kill(this.playerMesh);
-    if (this.ghostMesh) kill(this.ghostMesh);
-    if (!this.opponents) return;
-    for (let i = 0; i < this.opponents.length; i++) kill(this.opponents[i].mesh);
+    arm(this.playerMesh);
+    if (this.ghostMesh) arm(this.ghostMesh);
   }
 
   /** Remember the sun pose that matches the shadow map currently in the atlas. */
@@ -2443,189 +2685,19 @@ export class RallyGame {
   }
 
   /**
-   * Dark core with a short soft edge, so the chase view reads a shadow
-   * behind the bumper instead of a faint ring.
-   * @returns {THREE.CanvasTexture}
-   */
-  _carContactMap() {
-    if (this._carContactTex) return this._carContactTex;
-    const size = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const g = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.5);
-    g.addColorStop(0, "rgba(0,0,0,1)");
-    g.addColorStop(0.55, "rgba(0,0,0,0.9)");
-    g.addColorStop(0.78, "rgba(0,0,0,0.42)");
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.NoColorSpace;
-    tex.needsUpdate = true;
-    this._carContactTex = tex;
-    return tex;
-  }
-
-  /**
-   * Soft contact discs under the nearest cars. On the road the disc uses the
-   * car's filtered pose. A fresh ground sample made it pop and z-fight.
+   * The sun atlas is the shadow. Painted discs are not drawn.
    */
   _initContactBlobs() {
     this._contactBlobs = [];
-    const geo = shadowGeometry();
-    const map = this._carContactMap();
-    for (let i = 0; i < 8; i++) {
-      const mat = carShadowMaterial();
-      // The road is pulled toward the camera, so a normal transparent disc
-      // loses the depth test and flickers in thin diamonds. An opaque cutout
-      // drawn after the road stays a solid oval and cannot swim.
-      mat.map = map;
-      mat.transparent = false;
-      mat.alphaTest = 0.2;
-      mat.depthWrite = true;
-      mat.depthTest = true;
-      mat.side = THREE.FrontSide;
-      mat.polygonOffset = true;
-      mat.polygonOffsetFactor = -2;
-      mat.polygonOffsetUnits = -4;
-      mat.opacity = 1;
-      mat.color.setHex(0x000000);
-      mat.needsUpdate = true;
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 3;
-      mesh.userData.blob = {
-        y: null,
-        sx: 1,
-        sz: 1,
-        op: 1,
-        baseOp: i === 0 ? 1 : 0.85,
-      };
-      this.scene.add(mesh);
-      this._contactBlobs.push(mesh);
-    }
   }
 
   /**
-   * Soft oval under each car. Flat on the road, shifted toward the rear so
-   * the chase camera sees it behind the bumper. Pitch is not applied: a
-   * tilted disc cuts the road and the cut line jumps.
-   * @param {number} alpha
+   * @param {number} _alpha draw blend, unused — the oval path is gone
    */
-  _syncContactBlobs(alpha) {
+  _syncContactBlobs(_alpha) {
     const blobs = this._contactBlobs;
-    if (!blobs || !this.player) return;
-    const pack = this._blobPack || (this._blobPack = []);
-    pack.length = 0;
-    pack.push(this.player);
-    const nSlots = blobs.length - 1;
-    if (nSlots > 0 && this.opponents.length) {
-      const cx = this.camera ? this.camera.position.x : this.player.position.x;
-      const cz = this.camera ? this.camera.position.z : this.player.position.z;
-      const cand = this._blobCand || (this._blobCand = []);
-      const dist = this._blobDist || (this._blobDist = []);
-      cand.length = 0;
-      dist.length = 0;
-      for (let i = 0; i < this.opponents.length; i++) {
-        const v = this.opponents[i].vehicle;
-        if (!v) continue;
-        const dx = v.position.x - cx;
-        const dz = v.position.z - cz;
-        cand.push(v);
-        dist.push(dx * dx + dz * dz);
-      }
-      for (let s = 0; s < nSlots; s++) {
-        let best = -1;
-        let bestD = Infinity;
-        for (let i = 0; i < dist.length; i++) {
-          if (dist[i] < bestD) {
-            bestD = dist[i];
-            best = i;
-          }
-        }
-        if (best < 0) break;
-        pack.push(cand[best]);
-        dist[best] = Infinity;
-      }
-    }
-
-    const track = this.track;
-    const q = this._blobQuery;
-    const step = Math.max(1 / 120, FIXED_DT);
-    const airFollow = 1 - Math.exp(-12 * step);
-    const scaleFollow = 1 - Math.exp(-12 * step);
-    for (let i = 0; i < blobs.length; i++) {
-      const mesh = blobs[i];
-      const st = mesh.userData.blob;
-      const v = pack[i];
-      if (!v) {
-        mesh.visible = false;
-        continue;
-      }
-      const d = v.drawPose(alpha);
-      const onPad = this._titleShowcase || this.state === "title" || this.state === "menu";
-      if (onPad) {
-        if (i !== 0) {
-          mesh.visible = false;
-          continue;
-        }
-        st.y = 0;
-        mesh.visible = true;
-        mesh.position.set(d.x, 0.04, d.z);
-        mesh.rotation.set(0, d.yaw, 0);
-        mesh.scale.set(1.55, 1, 2.95);
-        if (mesh.material) mesh.material.opacity = 0.52;
-        continue;
-      }
-      const grounded = !!v.onGround;
-      // The chase camera sits low, so the road directly behind the bumper is
-      // below the frame. A wide oval under the chassis shows on the sand
-      // beside the car, which is the shadow the player can actually see.
-      const back = i === 0 ? 0.45 : 0.4;
-      const lift = 0.07;
-      if (grounded) {
-        st.y = d.y;
-        st.sx = i === 0 ? 1.75 : 1.45;
-        st.sz = i === 0 ? 1.15 : 1.0;
-        st.op = st.baseOp;
-        mesh.visible = true;
-        mesh.scale.set(st.sx, 1, st.sz);
-        mesh.position.set(d.x, d.y + lift, d.z);
-        mesh.rotation.set(0, d.yaw, 0);
-        mesh.translateZ(-back);
-      } else {
-        let groundY = st.y != null ? st.y : d.y;
-        if (track && track.query) {
-          const hit = track.query(d.x, d.z, q, v.progress);
-          if (hit && Number.isFinite(hit.height)) groundY = hit.height;
-        }
-        if (st.y == null) st.y = groundY;
-        else {
-          const err = groundY - st.y;
-          st.y += Math.abs(err) > 1.2 ? err : err * airFollow;
-        }
-        const hover = Math.max(0, d.y - st.y);
-        const wantSx = (i === 0 ? 1.75 : 1.45) / (1 + hover * 0.12);
-        const wantSz = (i === 0 ? 1.15 : 1.0) / (1 + hover * 0.12);
-        const wantOp = st.baseOp / (1 + hover * 0.2);
-        st.sx += (wantSx - st.sx) * scaleFollow;
-        st.sz += (wantSz - st.sz) * scaleFollow;
-        st.op += (wantOp - st.op) * scaleFollow;
-        mesh.visible = true;
-        mesh.scale.set(st.sx, 1, st.sz);
-        mesh.position.set(d.x, st.y + 0.07, d.z);
-        mesh.rotation.set(0, d.yaw, 0);
-        mesh.translateZ(-(i === 0 ? 0.45 : 0.4));
-      }
-      if (mesh.material && mesh.material.opacity !== st.op) {
-        mesh.material.opacity = st.op;
-      }
-    }
+    if (!blobs) return;
+    for (let i = 0; i < blobs.length; i++) blobs[i].visible = false;
   }
 
   _racePack() {
@@ -2878,6 +2950,7 @@ export class RallyGame {
     if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
     if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
     if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
+    if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
 
     // Title pad leaves a soft DPR floor and cheap sky/post. Reset before warm
     // draws so the first HUD frame already matches race (no snap at "1"/GO).
@@ -2893,7 +2966,7 @@ export class RallyGame {
     this._raceWarmFrames = 32;
     this._shadowTick = 0;
     this._shadowHold = null;
-    this._silenceCarSunShadows();
+    this._armCarSunShadows();
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
@@ -3465,8 +3538,9 @@ export class RallyGame {
         }
         if (this.countdown <= 0) {
           this.state = "race";
-          // Lights-out: drop any leftover collide / env Δv before the first
-          // race step. Mountain (stage 3) uphill cobble made this visible.
+          // Lights-out: drop leftover collide / env Δv and TSR history so the
+          // GO camera ease cannot smear the car from the frozen 3-2-1 pose.
+          if (this.tsr) this.tsr.reset();
           this._armLightsOut();
           this._camSnap = false;
           this._raceWarmFrames = Math.max(this._raceWarmFrames || 0, 48);
@@ -3533,6 +3607,7 @@ export class RallyGame {
     }
     if (this.input.reset) {
       this.player.spawn(this.track, Math.max(4, this.player.progress - 8), 0);
+      if (this.tsr) this.tsr.reset();
     }
 
     this._physAccum = Math.min((this._physAccum || 0) + dt, FIXED_DT * MAX_SUBSTEPS);
@@ -3610,16 +3685,16 @@ export class RallyGame {
     }
     if (this.dust && !isPhonePlay()) this.dust.step(dt, this.track);
     if (this.sparks) this.sparks.step(dt);
-    // Soft tire stamps also read as a brown smear on phone — skip on mobile.
-    if (!isPhonePlay()) {
-      if (this.tireMarks) this.tireMarks.emit(this.player, this.track, dt);
-      for (const o of this.opponents) {
-        if (o.fxBand !== 0) continue;
-        if (this.tireMarks) this.tireMarks.emit(o.vehicle, this.track, dt);
+    if (this.tireMarks) {
+      this.tireMarks.mesh.visible = true;
+      this.tireMarks.emit(this.player, this.track, dt);
+      if (!isPhonePlay()) {
+        for (const o of this.opponents) {
+          if (o.fxBand !== 0) continue;
+          this.tireMarks.emit(o.vehicle, this.track, dt);
+        }
       }
-      if (this.tireMarks) this.tireMarks.step(dt);
-    } else if (this.tireMarks && this.tireMarks.mesh) {
-      this.tireMarks.mesh.visible = false;
+      this.tireMarks.step(dt);
     }
     if (this.track && this.track.wheelRuts && this.track.wheelRuts.flush) {
       this.track.wheelRuts.flush();
@@ -3640,7 +3715,8 @@ export class RallyGame {
     if (this.player.progress > (this.track.finishDist || this.track.length - 12) && this.raceTime > 8) {
       if (this.mode === "practice" && this.lap < CHAMPIONSHIP.practiceLaps) {
         this.lap += 1;
-        this.player.spawn(this.track, 8, 0);
+        this.player.spawn(this.track, this._startLineDist(), 0);
+        if (this.tsr) this.tsr.reset();
         this.hud.flashMessage("LAP 2");
       } else {
         this._finish(pos);
@@ -3724,8 +3800,9 @@ export class RallyGame {
 
     const h = this._hudState;
     h.speedKmh = this.player.speedKmh();
+    h.speedMph = this.player.speedMph();
     h.gear = this.player.gear;
-    h.rpm = this.player.rpm;
+    h.rpm = this.player.roadRpm();
     h.redline = this.player.spec.redline;
     h.position = pos;
     h.timeLeft = this.timeLeft;
@@ -3945,6 +4022,17 @@ export class RallyGame {
     }
   }
 
+  /**
+   * Where the player car is placed on the stage.
+   * Desert lines up a car-length before the start banner, inside the flags.
+   * @returns {number}
+   */
+  _startLineDist() {
+    const gate = this.track && this.track.startDist;
+    if (this.courseId === "desert" && gate) return Math.max(4, gate - 7);
+    return 8;
+  }
+
   /** Championship grid lateral slot aligned with rival lanes. */
   _gridLane(place) {
     // Staggered start grooves — pack leaves on distinct lines, not one rail.
@@ -4026,8 +4114,8 @@ export class RallyGame {
       setBrakeLights(this.playerMesh, braking);
     }
     updateCockpit(this.playerMesh, {
-      speedKmh: p.speedKmh(),
-      rpm: p.rpm,
+      speedMph: p.speedMph(),
+      rpm: p.roadRpm(),
       redline: p.spec.redline,
       steer: d.steer,
       dt: 1 / 60,
@@ -4060,10 +4148,13 @@ export class RallyGame {
    * Never sync-compile here — load/`_warmPov` already baked cabin shaders.
    */
   _cycleCamera() {
-    const prev = CAMERA.views[this.camMode];
+    const from = CAMERA.views[this.camMode] || null;
     this.camMode = (this.camMode + 1) % CAMERA.views.length;
     const next = CAMERA.views[this.camMode];
-    this._startCamBlend(prev, next);
+    // Record the live lens and ease into the next view. Cabin seats later,
+    // once the lens has reached the car, so the body does not pop mid-move.
+    this._camCut = false;
+    this._startCamBlend(from, next);
     if (this.state === "race" || this.state === "countdown") {
       this.hud.flashMessage(next.label);
     }
@@ -4096,8 +4187,9 @@ export class RallyGame {
     }
     const povBlend =
       (fromMode && fromMode.id === "pov") || (toMode && toMode.id === "pov");
-    const base = CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.28;
-    const povExtra = CAMERA.viewBlendTimePov != null ? CAMERA.viewBlendTimePov : 0.32;
+    // Config times are a short snap. A toggle should read as a camera move.
+    const base = Math.max(0.72, CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.72);
+    const povExtra = Math.max(0.95, CAMERA.viewBlendTimePov != null ? CAMERA.viewBlendTimePov : 0.95);
     const dur = povBlend ? Math.max(base, povExtra) : base;
     this._camBlendDur = dur;
     this._camBlendT = dur;
@@ -4233,13 +4325,13 @@ export class RallyGame {
     const surfId = p.surfaceId || "";
     const surfShake =
       surfId === "tarmac" || surfId === "cobble"
-        ? 0.45
+        ? 0.35
         : surfId === "gravel" || surfId === "dirt" || surfId === "sand"
-          ? 1.28
-          : 1;
+          ? 0.6
+          : 0.7;
     if (shakeMul <= 0) this._shake = 0;
     else {
-      const chatterCap = 0.2 * shakeMul * surfShake;
+      const chatterCap = 0.08 * shakeMul * surfShake;
       const impulseFloor = Math.max(landImpulse, hitMag > 0.45 ? Math.min(0.28, 0.08 + hitMag * 0.14) : 0);
       this._shake = Math.min(Math.max(this._shake, impulseFloor), Math.max(chatterCap, impulseFloor));
     }
@@ -4248,8 +4340,7 @@ export class RallyGame {
   }
 
   /**
-   * Attract-mode cinema: slow orbit with hero / three-quarter / low sweeps
-   * so the showroom car reads like a presentation reel, not a turntable.
+   * Attract camera. One slow move around the shadow side. No shot cuts.
    * @param {number} dt
    */
   _titleCam(dt) {
@@ -4260,60 +4351,44 @@ export class RallyGame {
     }
     if (this._cabinFill) this._cabinFill.intensity = 0;
     const p = this.player;
-    const t = performance.now() * 0.00018;
-    // Shot cycle ~18 s: front ¾ → side → rear ¾ → low hero.
-    const shot = (t * 0.055) % 1;
-    let yawBias = 0;
-    let elev = 2.05;
-    let radius = 6.35;
-    let fov = 40;
-    let lookY = p.position.y + 0.72;
-    if (shot < 0.28) {
-      yawBias = -0.55;
-      elev = 1.92;
-      radius = 5.85;
-      fov = 38;
-      lookY = p.position.y + 0.68;
-    } else if (shot < 0.52) {
-      yawBias = 0.15;
-      elev = 2.28;
-      radius = 6.55;
-      fov = 42;
-    } else if (shot < 0.76) {
-      yawBias = 2.35;
-      elev = 2.05;
-      radius = 6.2;
-      fov = 39;
-      lookY = p.position.y + 0.82;
-    } else {
-      yawBias = -0.2;
-      elev = 1.55;
-      radius = 5.55;
-      fov = 36;
-      lookY = p.position.y + 0.55;
-    }
-    p.yaw = -t * 0.62 + Math.sin(t * 0.28) * 0.08 + yawBias * 0.08;
+    const step = dt > 0 && dt < 0.1 ? dt : 0.016;
+    this._titleCamT = (this._titleCamT || 0) + step;
+    const t = this._titleCamT * 0.18;
+    const d = this._titleSunDir;
+    const ux = d ? d.x : 0.62;
+    const uz = d ? d.z : 0.46;
+    const sl = Math.hypot(ux, uz) || 1;
+    const sx = ux / sl;
+    const sz = uz / sl;
+    const drift = Math.sin(t) * 0.38;
+    const c = Math.cos(drift);
+    const s = Math.sin(drift);
+    const ox = -sx * c + sz * s;
+    const oz = -sz * c - sx * s;
+    p.yaw = 1.45 + drift * 0.22;
     p.pitch = 0;
-    p.roll = Math.sin(t * 0.5) * 0.014;
-    p.steer = Math.sin(t * 0.95) * 0.18;
+    p.roll = Math.sin(t * 0.55) * 0.008;
+    p.steer = Math.sin(t * 0.7) * 0.05;
     this._syncPlayerMesh();
     setHeadlights(this.playerMesh, false);
     this._syncContactBlobs(1);
-
-    const r = radius + Math.sin(t * 0.42) * 0.12;
-    const ang = t + yawBias;
-    this.camera.up.set(0, 1, 0);
-    if (this.camera.near !== 0.16 || Math.abs(this.camera.fov - fov) > 0.05) {
+    if (this.camera.near !== 0.16 || Math.abs(this.camera.fov - 32) > 0.05) {
       this.camera.near = 0.16;
-      this.camera.fov = fov;
+      this.camera.fov = 32;
       this.camera.updateProjectionMatrix();
     }
+    this.camera.up.set(0, 1, 0);
+    const dist = 7.5 + Math.sin(t * 0.45) * 0.15;
     this.camera.position.set(
-      p.position.x + Math.sin(ang) * r,
-      p.position.y + elev + Math.sin(t * 0.36) * 0.06,
-      p.position.z + Math.cos(ang) * r
+      p.position.x + ox * dist,
+      p.position.y + 2.2 + Math.sin(t * 0.35) * 0.04,
+      p.position.z + oz * dist
     );
-    this.camera.lookAt(p.position.x, lookY, p.position.z);
+    this.camera.lookAt(
+      p.position.x + ox * 0.4,
+      p.position.y + 0.42,
+      p.position.z + oz * 0.4
+    );
   }
 
   /**
@@ -4766,7 +4841,15 @@ export class RallyGame {
     );
     const wantFov = (rig && wantPov ? rig.fov : mode.fov) + punch + this._camFovKick * (wantPov ? 0.55 : 1);
     const wantNear = (rig && wantPov ? rig.near : mode.near) || 0.2;
-    if (blending) {
+    if (this._camCut) {
+      this._camFovSmooth = wantFov;
+      this._camNearSmooth = wantNear;
+      this._camFovSpring.snap(wantFov);
+      this.camera.fov = wantFov;
+      this.camera.near = wantNear;
+      this.camera.updateProjectionMatrix();
+      this._camCut = false;
+    } else if (blending) {
       this._camFovSmooth = this._camBlendFromFov + (wantFov - this._camBlendFromFov) * ease;
       this._camNearSmooth = this._camBlendFromNear + (wantNear - this._camBlendFromNear) * ease;
       this._camFovSpring.snap(this._camFovSmooth);
@@ -4788,11 +4871,13 @@ export class RallyGame {
     }
 
     const detachDist = CAMERA.povDetachDist != null ? CAMERA.povDetachDist : 1.6;
-    const seatEase = CAMERA.povSeatEase != null ? CAMERA.povSeatEase : 0.18;
+    // Along the car: negative is behind the bumper. Cabin stays hidden until
+    // the lens is actually at the seat, and stays on until the lens has left.
+    const alongCam =
+      (this._camPos.x - px) * Math.sin(yaw) + (this._camPos.z - pz) * Math.cos(yaw);
     if (mesh) {
       if (wantPov) {
-        // Camera eases in first; seat the cabin late so body→interior is not a mid-move pop.
-        const seatIn = !blending || ease >= seatEase;
+        const seatIn = !blending || alongCam > -1.05 || ease >= 0.86;
         if (seatIn && !this._cockpitLive) {
           setCockpitView(mesh, true, this.camera, this.renderer);
           this._cockpitLive = true;
@@ -4807,7 +4892,7 @@ export class RallyGame {
         }
         if (this._cockpitLive) updatePovRoofClip(mesh);
       } else if (this._cockpitLive) {
-        const seatOut = !blending || ease >= seatEase * 0.55 || dist > detachDist;
+        const seatOut = !blending || alongCam < -1.55 || (ease >= 0.62 && dist < detachDist);
         if (seatOut) {
           setCockpitView(mesh, false, this.camera, this.renderer);
           this._cockpitLive = false;
@@ -4816,10 +4901,8 @@ export class RallyGame {
       }
       updatePovHudFade(mesh, this._cockpitLive ? 1 : 0);
     }
-    let showChase = !wantPov;
-    if (blending && wantPov) showChase = ease < seatEase;
-    if (blending && !wantPov) showChase = ease > seatEase * 0.45;
-    this.hud.setChaseGauges(showChase);
+    // Gauges follow the cabin, so they swap when the lens arrives, not on the click.
+    this.hud.setChaseGauges(!this._cockpitLive);
     this._gaugeHoldPov = false;
     if (this._cabinFill) {
       if (wantPov && this._cockpitLive) {
@@ -4849,13 +4932,9 @@ export class RallyGame {
       this.scene.fog.near = L.fogNear;
       this.scene.fog.far = L.fogFar;
     }
-    // Haze leans toward horizon glow so land dissolve matches the sky photo.
+    // Fog = horizon so distant land dissolves into the sky photo, not a band.
     const fogCol = this.scene.fog.color;
-    fogCol.setHex(L.fog);
-    if (L.horizonGlow != null) {
-      const hs = Math.max(0, Math.min(1, Number(L.horizonStrength) || 0));
-      fogCol.lerp(new THREE.Color(L.horizonGlow), Math.min(0.28, hs * 0.5));
-    }
+    horizonFogColor(L, fogCol);
     if (!this.scene.background || !this.scene.background.isColor) {
       this.scene.background = new THREE.Color(L.skyBack || L.fog);
     } else {
@@ -4899,6 +4978,55 @@ export class RallyGame {
   }
 
   /**
+   * Open daylight. Ease the key and lift sky bounce so shade stays lit.
+   * Tunnel intensities are left on the authored ramp.
+   */
+  _seatSunShadows() {
+    if (this.fill && this.fill.layers) this.fill.layers.set(0);
+    const open = 1 - (this._tunnelBlend || 0);
+    if (this.sun) this.sun.intensity *= 1 - 0.22 * open;
+    if (this.fill) this.fill.intensity *= 1 + 1.15 * open;
+    if (this.ambient) this.ambient.intensity *= 1 + 0.7 * open;
+    if (this.hemi) this.hemi.intensity *= 1 + 0.22 * open;
+    const root = this.track && this.track.group;
+    if (!root) return;
+    if (this._shadowGroundRoot !== root) {
+      this._shadowGroundRoot = root;
+      this._shadowGroundMats = null;
+    }
+    let list = this._shadowGroundMats;
+    if (!list) {
+      list = [];
+      root.traverse((obj) => {
+        if (!obj.isMesh || !obj.material) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (let i = 0; i < mats.length; i++) {
+          const mat = mats[i];
+          if (!mat) continue;
+          const kind = mat.userData.kind;
+          if (kind !== "road" && kind !== "terrain") continue;
+          if (mat.userData._shadowEnvBase == null) {
+            mat.userData._shadowEnvBase =
+              mat.userData.dryEnv != null ? mat.userData.dryEnv : mat.envMapIntensity;
+          }
+          armGroundShadowContact(mat);
+          if (list.indexOf(mat) < 0) list.push(mat);
+        }
+      });
+      if (!list.length) return;
+      this._shadowGroundMats = list;
+    }
+    const rutMat = this.track.wheelRuts && this.track.wheelRuts.mat;
+    if (rutMat) armGroundShadowContact(rutMat);
+    for (let i = 0; i < list.length; i++) {
+      const mat = list[i];
+      const base = mat.userData._shadowEnvBase;
+      if (base == null) continue;
+      mat.envMapIntensity = base * (1 - 0.08 * (1 - (this._tunnelBlend || 0)));
+    }
+  }
+
+  /**
    * One directional sun as the key. Hemisphere/ambient are fill only.
    * Tunnel shade is a look-ahead along the racing line (dim before
    * the entrance, restore sun with an ease-out near the exit) then
@@ -4936,8 +5064,28 @@ export class RallyGame {
         tunnelLightingFor(this.courseId)
       );
       if (this.renderer.shadowMap.enabled) {
-        updateShadowFrustum(this.sun, GFX.shadowExtentRace, GFX.shadowNear, GFX.shadowFar);
+        updateShadowFrustum(this.sun, SUN_SHADOW_EXTENT, GFX.shadowNear, GFX.shadowFar);
       }
+      this._seatSunShadows();
+      if (this.courseId === "forest" || this.courseId === "mountain") {
+        if (this.ambient.intensity < 0.2) this.ambient.intensity = 0.2;
+        if (this.fill.intensity < 0.32) this.fill.intensity = 0.32;
+        if (this.hemi.intensity < 0.62) this.hemi.intensity = 0.62;
+      }
+      applyDaylightLook(
+        {
+          sun: this.sun,
+          fill: this.fill,
+          hemi: this.hemi,
+          ambient: this.ambient,
+          skyRim: VISUAL.pbrSkyRim !== false ? this._skyRim : null,
+        },
+        this.scene.fog && this.scene.fog.color,
+        L,
+        this._tunnelBlend || 0,
+        this._tunnelFog,
+        this.courseId
+      );
       this._enforcePresentFreeze();
       return;
     }
@@ -4972,11 +5120,34 @@ export class RallyGame {
       TC
     );
     if (this.renderer.shadowMap.enabled) {
-      updateShadowFrustum(this.sun, GFX.shadowExtentRace, GFX.shadowNear, GFX.shadowFar);
+      updateShadowFrustum(this.sun, SUN_SHADOW_EXTENT, GFX.shadowNear, GFX.shadowFar);
     }
+    this._seatSunShadows();
     const boost = TC.exposureBoost != null ? TC.exposureBoost : 1.04;
     // V1: near-unity boost — lamps + sun dim own the tunnel look, not ACES pump.
     this.renderer.toneMappingExposure = L.exposure * (1 + (boost - 1) * t);
+    // Forest and mountain shade was a black verge under a bright sky.
+    // Open daylight keeps a sky fill and a ground bounce so the road reads,
+    // without raising the sun or blowing the clouds.
+    if (t < 0.15 && (this.courseId === "forest" || this.courseId === "mountain")) {
+      if (this.ambient.intensity < 0.2) this.ambient.intensity = 0.2;
+      if (this.fill.intensity < 0.32) this.fill.intensity = 0.32;
+      if (this.hemi.intensity < 0.62) this.hemi.intensity = 0.62;
+    }
+    applyDaylightLook(
+      {
+        sun: this.sun,
+        fill: this.fill,
+        hemi: this.hemi,
+        ambient: this.ambient,
+        skyRim: VISUAL.pbrSkyRim !== false ? this._skyRim : null,
+      },
+      this.scene.fog && this.scene.fog.color,
+      L,
+      t,
+      this._tunnelFog,
+      this.courseId
+    );
 
     this.caveLight.position.set(p.x, p.y + 5.8, p.z);
     const yaw = this.player ? this.player.yaw : 0;
@@ -5010,8 +5181,7 @@ export class RallyGame {
     }
 
     if (this.scene.fog) {
-      this._fogColor.setHex(L.fog);
-      this.scene.fog.color.lerpColors(this._fogColor, this._tunnelFog, t);
+      this._fogColor.copy(this.scene.fog.color);
       const tn = TC.fogNear != null ? TC.fogNear : 32;
       const tf = TC.fogFar != null ? TC.fogFar : 320;
       this.scene.fog.near = L.fogNear * (1 - t) + tn * t;
@@ -5101,7 +5271,7 @@ export class RallyGame {
       this.renderer.shadowMap.enabled = shadowsWanted;
       if (this.sun) this.sun.castShadow = shadowsWanted;
       if (shadowsWanted) {
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
     }
 
@@ -5176,6 +5346,16 @@ export class RallyGame {
       this.renderer.setSize(w, h, false);
       if (this.post && !onTitle) this.post.setSize(w, h, pr);
     }
+    if (this.tsr && typeof this.tsr.setSize === "function") {
+      const bufW = Math.max(1, Math.floor(w * pr));
+      const bufH = Math.max(1, Math.floor(h * pr));
+      this.tsr.setSize(bufW, bufH);
+    } else if (this.recon) {
+      const bufW = Math.max(1, Math.floor(w * pr));
+      const bufH = Math.max(1, Math.floor(h * pr));
+      this.recon.setSize(bufW, bufH);
+      this._ensureReconRT(bufW, bufH);
+    }
     if (this.hud && this.hud.resizeGauges) this.hud.resizeGauges();
     if (this._mirrorRT && (this._mirrorRT.width < 8 || this._mirrorRT.height < 8)) {
       this._ensureMirrorRT();
@@ -5183,6 +5363,71 @@ export class RallyGame {
         setCockpitMirrorMap(this.playerMesh, this._mirrorRT.texture);
       }
     }
+  }
+
+  /**
+   * Half-float (or byte) colour target for the legal reconstruct pass.
+   * @param {number} w
+   * @param {number} h
+   */
+  _ensureReconRT(w, h) {
+    const rw = Math.max(1, Math.floor(w));
+    const rh = Math.max(1, Math.floor(h));
+    if (this._reconRT && this._reconRT.width === rw && this._reconRT.height === rh) return;
+    if (this._reconRT) {
+      this._reconRT.dispose();
+      this._reconRT = null;
+    }
+    const half = !!(this.recon && this.recon.supported);
+    this._reconRT = new THREE.WebGLRenderTarget(rw, rh, {
+      type: half ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      format: THREE.RGBAFormat,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+      generateMipmaps: false,
+    });
+  }
+
+  /**
+   * Tap TSR's resolved colour, reconstruct, and hand that texel back to the
+   * present quad so PhotoRealPost still owns bloom / AO / grade.
+   * No tap when TSR is off — scene colour only exists inside PhotoRealPost.
+   */
+  _applyReconToTsr() {
+    if (this.tsr && typeof this.tsr.applyGuided === "function") {
+      this.tsr.applyGuided({ camera: this.camera, measure: !!this._reconMeasure });
+      return;
+    }
+    const tsr = this.tsr;
+    const recon = this.recon;
+    if (!recon || !recon.enabled || !tsr || !tsr.presentMaterial) return;
+    const u = tsr.presentMaterial.uniforms;
+    const srcTex = u && u.tResolved ? u.tResolved.value : null;
+    if (!srcTex || !this.renderer) return;
+    this._reconSize = this._reconSize || new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(this._reconSize);
+    recon.setSize(this._reconSize.x, this._reconSize.y);
+    this._ensureReconRT(this._reconSize.x, this._reconSize.y);
+    if (!this._reconRT) return;
+    const depthTex = u.tDepth ? u.tDepth.value : null;
+    const guide = {
+      depth: depthTex || undefined,
+      velocity: tsr.velocityTexture || undefined,
+      depthWidth: tsr.stats ? tsr.stats.lowW : 0,
+      depthHeight: tsr.stats ? tsr.stats.lowH : 0,
+      jitter: u.uJitter ? u.uJitter.value : null,
+      near: this.camera ? this.camera.near : 0.18,
+      far: this.camera ? this.camera.far : 1400,
+    };
+    if (this._reconMeasure && typeof recon.measure === "function") {
+      recon.measure(srcTex, this._reconRT, guide);
+    } else {
+      recon.render(srcTex, this._reconRT, guide);
+    }
+    u.tResolved.value = this._reconRT.texture;
   }
 
   /**
@@ -5685,6 +5930,285 @@ export class RallyGame {
     cam.layers.enable(TITLE_LIGHT_LAYER);
   }
 
+  /**
+   * Stop drawing prop copies the camera cannot see.
+   * A slice mesh is one draw of every copy in that slice. Copies past the
+   * fog, and copies outside the lens, still ran through the vertex shader.
+   * The near picture, the shadow atlas, and the rearview stay. Pixel ratio,
+   * shadow map size, and post are unchanged.
+   */
+  _cullHiddenProps() {
+    const track = this.track;
+    const cam = this.camera;
+    if (!track || !track.group || !cam) return;
+    if (this._propCullTrack !== track) {
+      const list = [];
+      track.group.traverse((obj) => {
+        if (!obj.isInstancedMesh || !obj.userData.envProp || !obj.geometry) return;
+        const geo = obj.geometry;
+        const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+        // Far tree cards are small meshes. They still have to be culled per
+        // copy, or the whole slice draws on top of the near crowns.
+        if (tris < 2500 && obj.userData.lod !== "lo" && obj.userData.lod !== "hi") return;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        list.push(obj);
+      });
+      const portals = [];
+      track.group.traverse((obj) => {
+        if (!obj.isMesh || obj.isInstancedMesh || !obj.userData.tunnelPortal || !obj.geometry) return;
+        const geo = obj.geometry;
+        const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+        if (tris < 8000) return;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        portals.push(obj);
+      });
+      this._propCullList = list;
+      this._portalCullList = portals;
+      this._propCullTrack = track;
+    }
+    const list = this._propCullList;
+    if (!list || !list.length) return;
+    if (!this._cullFrustum) this._cullFrustum = new THREE.Frustum();
+    if (!this._cullVP) this._cullVP = new THREE.Matrix4();
+    cam.updateMatrixWorld();
+    this._cullVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this._cullFrustum.setFromProjectionMatrix(this._cullVP);
+    const planes = this._cullFrustum.planes;
+    const fog = this.scene.fog;
+    const fogFar = (fog && fog.far ? fog.far : 520) + 80;
+    const fog2 = fogFar * fogFar;
+    const cx = cam.position.x;
+    const cy = cam.position.y;
+    const cz = cam.position.z;
+    const car = this.player ? this.player.position : cam.position;
+    const shadowR = SUN_SHADOW_EXTENT * 1.8;
+    const shadow2 = shadowR * shadowR;
+    // Full mesh only inside the clear air. Past this, the coarse copy draws.
+    // 40 m is a few car lengths of full detail. Farther than that, a folded
+    // stage or a dense forest would stack full trunks into one view. A short
+    // fog (the forest bore) pulls this in further, because there is no clear
+    // air out at 40 m.
+    const fogFarRaw = fog && fog.far ? fog.far : 520;
+    const heroR = Math.min(40, Math.max(22, fogFarRaw * 0.42));
+    const hero2 = heroR * heroR;
+    // Stage 2 keeps one mesh out to the fog. A card or a coarse stand-in is
+    // a different tree, and the handoff reads as foliage popping in.
+    const forestStage = this.courseId === "forest";
+    const forestHold = fogFar + 8;
+    const forestHold2 = forestHold * forestHold;
+    const foliageR = forestStage ? forestHold : heroR;
+    const foliage2 = foliageR * foliageR;
+    for (let m = 0; m < list.length; m++) {
+      const mesh = list[m];
+      const farMesh = mesh.userData.farMesh;
+      if (!mesh.visible && !mesh.castShadow) {
+        if (farMesh) farMesh.visible = false;
+        if (mesh.userData.midMesh) mesh.userData.midMesh.visible = false;
+        continue;
+      }
+      const ud = mesh.userData;
+      const srcMat = mesh.instanceMatrix.array;
+      if (!ud._instMaster) {
+        ud._instMaster = new Float32Array(srcMat);
+        ud._instFull = mesh.count;
+        if (mesh.instanceColor) ud._instColor = new Float32Array(mesh.instanceColor.array);
+      }
+      const master = ud._instMaster;
+      const full = ud._instFull;
+      const colMaster = ud._instColor;
+      const colArr = mesh.instanceColor ? mesh.instanceColor.array : null;
+      const localR = mesh.geometry.boundingSphere ? mesh.geometry.boundingSphere.radius : 2;
+      const idx = ud._cullIdx || (ud._cullIdx = new Uint16Array(full));
+      const farIdx = farMesh ? ud._farIdx || (ud._farIdx = new Uint16Array(full)) : null;
+      let kept = 0;
+      let farKept = 0;
+      let sig = 2166136261;
+      let farSig = 2166136261;
+      const cast = !!mesh.castShadow;
+      const foliageHero = ud.lod === "hi";
+      const foliageCard = ud.lod === "lo";
+      const split2 = foliageHero || foliageCard ? foliage2 : hero2;
+      const midMesh = foliageHero ? ud.midMesh : null;
+      const midIdx = midMesh ? ud._midIdx || (ud._midIdx = new Uint16Array(full)) : null;
+      let midKept = 0;
+      let midSig = 2166136261;
+      for (let i = 0; i < full; i++) {
+        const o = i * 16;
+        const x = master[o + 12];
+        const y = master[o + 13];
+        const z = master[o + 14];
+        const dx = x - cx;
+        const dy = y - cy;
+        const dz = z - cz;
+        const dist2 = dx * dx + dy * dy + dz * dz;
+        const nearCar = cast && (x - car.x) * (x - car.x) + (y - car.y) * (y - car.y) + (z - car.z) * (z - car.z) <= shadow2;
+        let show = nearCar;
+        if (!show && dist2 <= fog2) {
+          const scale = Math.max(
+            Math.hypot(master[o], master[o + 1], master[o + 2]),
+            Math.hypot(master[o + 4], master[o + 5], master[o + 6]),
+            Math.hypot(master[o + 8], master[o + 9], master[o + 10])
+          );
+          const margin = localR * scale + 8;
+          show = true;
+          for (let p = 0; p < 6; p++) {
+            const pl = planes[p];
+            if (pl.normal.x * x + pl.normal.y * y + pl.normal.z * z + pl.constant < -margin) {
+              show = false;
+              break;
+            }
+          }
+        }
+        if (!show) continue;
+        if (foliageCard) {
+          const carD2 =
+            (x - car.x) * (x - car.x) + (y - car.y) * (y - car.y) + (z - car.z) * (z - car.z);
+          if (dist2 <= split2 || carD2 <= shadow2) continue;
+          idx[kept] = i;
+          sig = Math.imul(sig ^ (i + 1), 16777619);
+          kept++;
+          continue;
+        }
+        if (foliageHero) {
+          const carD2 =
+            (x - car.x) * (x - car.x) + (y - car.y) * (y - car.y) + (z - car.z) * (z - car.z);
+          if (dist2 > split2 && carD2 > shadow2) continue;
+          if (midMesh && carD2 > shadow2) {
+            midIdx[midKept] = i;
+            midSig = Math.imul(midSig ^ (i + 1), 16777619);
+            midKept++;
+          } else {
+            idx[kept] = i;
+            sig = Math.imul(sig ^ (i + 1), 16777619);
+            kept++;
+          }
+          continue;
+        }
+        const heroLimit2 = forestStage ? forestHold2 : hero2;
+        const hero = !farMesh || dist2 <= heroLimit2 || nearCar;
+        if (hero) {
+          idx[kept] = i;
+          sig = Math.imul(sig ^ (i + 1), 16777619);
+          kept++;
+        } else {
+          farIdx[farKept] = i;
+          farSig = Math.imul(farSig ^ (i + 1), 16777619);
+          farKept++;
+        }
+      }
+      if (sig !== ud._cullSig || kept !== ud._cullKept) {
+        for (let k = 0; k < kept; k++) {
+          const i = idx[k];
+          const o = i * 16;
+          srcMat.set(master.subarray(o, o + 16), k * 16);
+          if (colMaster && colArr) colArr.set(colMaster.subarray(i * 3, i * 3 + 3), k * 3);
+        }
+        mesh.count = kept;
+        ud._cullKept = kept;
+        ud._cullSig = sig;
+        const matAttr = mesh.instanceMatrix;
+        matAttr.clearUpdateRanges();
+        matAttr.addUpdateRange(0, Math.max(16, kept * 16));
+        matAttr.needsUpdate = true;
+        if (mesh.instanceColor && colMaster) {
+          const colAttr = mesh.instanceColor;
+          colAttr.clearUpdateRanges();
+          colAttr.addUpdateRange(0, Math.max(3, kept * 3));
+          colAttr.needsUpdate = true;
+        }
+        if (kept > 0) mesh.computeBoundingSphere();
+      }
+      if (foliageHero || foliageCard) mesh.visible = kept > 0;
+      if (midMesh) {
+        midMesh.visible = midKept > 0;
+        if (midSig !== ud._midSig || midKept !== ud._midKept) {
+          const midArr = midMesh.instanceMatrix.array;
+          const midCol = midMesh.instanceColor ? midMesh.instanceColor.array : null;
+          for (let k = 0; k < midKept; k++) {
+            const i = midIdx[k];
+            const o = i * 16;
+            midArr.set(master.subarray(o, o + 16), k * 16);
+            if (colMaster && midCol) midCol.set(colMaster.subarray(i * 3, i * 3 + 3), k * 3);
+          }
+          midMesh.count = midKept;
+          ud._midKept = midKept;
+          ud._midSig = midSig;
+          const midAttr = midMesh.instanceMatrix;
+          midAttr.clearUpdateRanges();
+          midAttr.addUpdateRange(0, Math.max(16, midKept * 16));
+          midAttr.needsUpdate = true;
+          if (midMesh.instanceColor && colMaster) {
+            const colAttr = midMesh.instanceColor;
+            colAttr.clearUpdateRanges();
+            colAttr.addUpdateRange(0, Math.max(3, midKept * 3));
+            colAttr.needsUpdate = true;
+          }
+          if (midKept > 0) midMesh.computeBoundingSphere();
+        }
+      }
+      if (!farMesh) continue;
+      farMesh.visible = farKept > 0 && mesh.visible;
+      if (farSig === ud._farSig && farKept === ud._farKept) continue;
+      const farMat = farMesh.instanceMatrix.array;
+      const farCol = farMesh.instanceColor ? farMesh.instanceColor.array : null;
+      for (let k = 0; k < farKept; k++) {
+        const i = farIdx[k];
+        const o = i * 16;
+        farMat.set(master.subarray(o, o + 16), k * 16);
+        if (colMaster && farCol) farCol.set(colMaster.subarray(i * 3, i * 3 + 3), k * 3);
+      }
+      farMesh.count = farKept;
+      ud._farKept = farKept;
+      ud._farSig = farSig;
+      const farAttr = farMesh.instanceMatrix;
+      farAttr.clearUpdateRanges();
+      farAttr.addUpdateRange(0, Math.max(16, farKept * 16));
+      farAttr.needsUpdate = true;
+      if (farMesh.instanceColor && colMaster) {
+        const colAttr = farMesh.instanceColor;
+        colAttr.clearUpdateRanges();
+        colAttr.addUpdateRange(0, Math.max(3, farKept * 3));
+        colAttr.needsUpdate = true;
+      }
+      if (farKept > 0) farMesh.computeBoundingSphere();
+    }
+    // Tunnel mouths are a handful of full boulders, not a streamed batch.
+    // The far mouth was still drawing from the other end of the stage.
+    const portals = this._portalCullList;
+    if (portals && portals.length) {
+      for (let i = 0; i < portals.length; i++) {
+        const obj = portals[i];
+        obj.updateWorldMatrix(true, false);
+        const bs = obj.geometry.boundingSphere;
+        const e = obj.matrixWorld.elements;
+        const c = bs.center;
+        const x = e[0] * c.x + e[4] * c.y + e[8] * c.z + e[12];
+        const y = e[1] * c.x + e[5] * c.y + e[9] * c.z + e[13];
+        const z = e[2] * c.x + e[6] * c.y + e[10] * c.z + e[14];
+        const scale = Math.max(
+          Math.hypot(e[0], e[1], e[2]),
+          Math.hypot(e[4], e[5], e[6]),
+          Math.hypot(e[8], e[9], e[10])
+        );
+        const margin = bs.radius * scale + 4;
+        const dx = x - cx;
+        const dy = y - cy;
+        const dz = z - cz;
+        let show = dx * dx + dy * dy + dz * dz <= (fogFar + margin) * (fogFar + margin);
+        if (show) {
+          for (let p = 0; p < 6; p++) {
+            const pl = planes[p];
+            if (pl.normal.x * x + pl.normal.y * y + pl.normal.z * z + pl.constant < -margin) {
+              show = false;
+              break;
+            }
+          }
+        }
+        obj.visible = show;
+      }
+    }
+  }
+
   _render(dt) {
     if (this.weather && this.camera) {
       const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
@@ -5746,6 +6270,7 @@ export class RallyGame {
     // Real play: countdown uses the race present (post/shadow/mirror) so GO
     // does not grade-pop. Webdriver/SwiftShader only: skip cinema cost.
     const countdownLite = this.state === "countdown" && countdownLitePresent();
+    if (!onPad) this._cullHiddenProps();
     if (this.post && this.post.setLocked30) {
       this.post.setLocked30(!!(this.perfTier && this.perfTier.locked30));
     }
@@ -5756,38 +6281,22 @@ export class RallyGame {
     // No live cube refresh while present-frozen — settle already baked one.
     else if (!countdownLite && !this._presentFrozen) this._updateReflections();
     if (!onPad) this._paintBlockingPack(1);
-    // Frozen present uses the race-tier shadow cadence from settle (no
-    // every=1 → every=2 flip at GO). Loading-only still bakes every frame.
-    // Pad samples rarely. Lite path (webdriver) stays cheap.
-    const padShadowEvery =
-      (TITLE_SHOWROOM && TITLE_SHOWROOM.shadowEvery) || 6;
-    const frozenEvery =
-      this._presentFreeze && this._presentFreeze.shadowEvery
-        ? this._presentFreeze.shadowEvery
-        : this._qualityShadowEvery || GFX.shadowEvery || 1;
-    let every = countdownLite
-      ? 6
-      : this._presentFrozen
-        ? Math.max(1, frozenEvery | 0)
-        : this.state === "loading"
-          ? 1
-          : onPad
-            ? Math.max(2, padShadowEvery | 0)
-            : Math.max(1, this._qualityShadowEvery || GFX.shadowEvery | 0 || 1);
-    // Do not throttle the sun atlas further on lock-30 — a slow refresh
-    // used to leave a ghost of the car. Cars no longer cast into this map.
-    // On a skipped frame the sun stays where the map was baked, then snaps
-    // to whole texels on the next bake, so scenery shadows do not shear.
+    // Race and the showroom both bake every present. The pad atlas is 512
+    // and only covers the car, so the orbit shadow stays with the body.
+    const padShadowEvery = 1;
+    let every = countdownLite ? 6 : onPad ? padShadowEvery : 1;
+    // Texel snap on each bake keeps scenery edges from crawling while the
+    // light follows the car.
     this._shadowTick = (this._shadowTick || 0) + 1;
     if (this.renderer.shadowMap.enabled) {
       const bake = this._shadowTick % every === 0;
-      const raceAtlas = !onPad && this.sun && this.sun.castShadow;
-      if (raceAtlas && (bake || !this._shadowHold)) {
+      const liveAtlas = this.sun && this.sun.castShadow && !countdownLite;
+      if (liveAtlas && (bake || !this._shadowHold)) {
         const mapSize = this.sun.shadow.mapSize && this.sun.shadow.mapSize.x;
         snapShadowCamera(this.sun, mapSize);
         this._holdSunShadowPose();
         this.renderer.shadowMap.needsUpdate = true;
-      } else if (raceAtlas) {
+      } else if (liveAtlas) {
         this._restoreSunShadowPose();
         this.renderer.shadowMap.needsUpdate = false;
       } else {
@@ -5796,11 +6305,29 @@ export class RallyGame {
     }
     const prevMask = this.camera.layers.mask;
     this._armPresentLayers(this.camera);
+    // Race present through TSR: jittered low-res scene + temporal resolve, then
+    // the normal post / pipeline path treats the reconstructed quad as the scene.
+    const paused = this.state === "paused";
+    const useTsr = !!(this.tsr && this.tsr.active && !onPad && !countdownLite);
+    if (useTsr && !paused) {
+      this._tsrRoots = this._tsrRoots || [];
+      this._tsrRoots.length = 0;
+      if (this.playerMesh) this._tsrRoots.push(this.playerMesh);
+      for (let i = 0; i < this.opponents.length; i++) this._tsrRoots.push(this.opponents[i].mesh);
+      this.tsr.render(this.scene, this.camera, {
+        dynamicRoots: this._tsrRoots,
+        measureGuided: !!this._reconMeasure,
+      });
+    }
+    const presentScene = useTsr ? this.tsr.presentScene : this.scene;
     // Attract pad: always a single present (no post RTs) — keeps PRESS START at 60.
     if (this.pipeline) {
-      this.pipeline.present(this.scene, this.camera, {
+      this.pipeline.present(presentScene, this.camera, {
         usePost: !(onPad || countdownLite),
       });
+    } else if (useTsr) {
+      if (this.post && this.post.enabled) this.post.render(presentScene, this.camera);
+      else this.renderer.render(presentScene, this.camera);
     } else if (onPad || countdownLite || !this.post || !this.post.enabled) {
       this.renderer.render(this.scene, this.camera);
     } else {
@@ -5808,6 +6335,14 @@ export class RallyGame {
     }
     this.camera.layers.mask = prevMask;
     this._renderPovHudOverlay();
+  }
+
+  /**
+   * Guided reconstruct already runs RCAS. Stacking TSR's present RCAS just
+   * costs a full-res 5-tap and over-sharpens.
+   */
+  _syncTsrPresentSharp() {
+    if (this.tsr) this.tsr.skipPresentSharp = !!(this.recon && this.recon.enabled);
   }
 
   /**
@@ -5842,6 +6377,34 @@ export class RallyGame {
       finite: typeof p._isFinitePose === "function" ? p._isFinitePose() : true,
       glitchHits: p._glitchHits || 0,
       glitchLog: p._glitchLog || [],
+      tsr: this.tsr
+        ? {
+            mode: this.tsr.mode,
+            active: !!this.tsr.active,
+            supported: !!this.tsr.supported,
+            lowW: this.tsr.stats.lowW,
+            lowH: this.tsr.stats.lowH,
+            outW: this.tsr.stats.outW,
+            outH: this.tsr.stats.outH,
+            resets: this.tsr.stats.resets,
+            velMeshes: this.tsr.stats.velMeshes,
+            velScanned: this.tsr.stats.velScanned || 0,
+            cheap: this.tsr.stats.cheap || 0,
+            velMs: this.tsr.stats.velMs || 0,
+            resolveMs: this.tsr.stats.resolveMs || 0,
+          }
+        : null,
+      recon: this.recon
+        ? {
+            enabled: !!this.recon.enabled,
+            supported: !!this.recon.supported,
+            fallback: this.recon.fallback,
+            guided: !!(this.recon.stats && this.recon.stats.guided),
+            lastMs: this.recon.stats ? this.recon.stats.lastMs : 0,
+            w: this.recon.stats ? this.recon.stats.w : 0,
+            h: this.recon.stats ? this.recon.stats.h : 0,
+          }
+        : null,
     };
   }
 }

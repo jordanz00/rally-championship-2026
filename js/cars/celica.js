@@ -2699,6 +2699,10 @@ function tagWheelLayout(root, hubs) {
     root.worldToLocal(p);
     hub.userData.front = p.z >= zMid - 0.05;
     hub.userData.side = p.x >= 0 ? 1 : -1;
+    // Chassis-local plant offsets. Local restPos* is parent-relative and
+    // wrong once the knuckle is nested; pitch/roll plant needs these.
+    hub.userData.chassisX = p.x;
+    hub.userData.chassisZ = p.z;
     // Default: same signed axle spin for both sides (mirrored tire meshes).
     if (hub.userData.spinSign == null) hub.userData.spinSign = 1;
   }
@@ -2863,6 +2867,10 @@ const ACKERMANN = 0.12;
  * contact origin). Subtract `x·tan(roll)` from local Y so tread stays on the
  * deck while the body leans — otherwise drifts read as floating tires.
  *
+ * Body pitch (+Rx = nose down) does the same along Z. Physics already puts
+ * dive / squat into `this.pitch`; if the hubs ignore that parent rotation
+ * the rear lifts on the brakes and the weight transfer never reads.
+ *
  * Front lock uses a small Ackermann split so the inner wheel turns a little
  * more than the outer. Physics steer is not modified.
  *
@@ -2904,28 +2912,57 @@ export function chassisDeckEmbed(vehicle, drawY, mesh) {
   return Math.max(-0.02, Math.min(0.06, signed));
 }
 
-/** Pose wheels: spin, steer, roll plant, and `deckLift` from `chassisDeckEmbed`. */
+/** Walk to the car root that owns `userData.wheels` (the pitched / rolled mesh). */
+function chassisRootOf(wheel) {
+  let n = wheel;
+  while (n) {
+    if (n.userData && n.userData.wheels) return n;
+    n = n.parent;
+  }
+  return wheel && wheel.parent ? wheel.parent : null;
+}
+
+/** Pose wheels: spin, steer, roll/pitch plant, and `deckLift` from `chassisDeckEmbed`. */
 export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
   const lift = Math.max(-0.02, Math.min(0.06, Number.isFinite(deckLift) ? deckLift : 0));
+  const root = wheels && wheels[0] ? chassisRootOf(wheels[0]) : null;
+  const pitch = root && Number.isFinite(root.rotation.x) ? root.rotation.x : 0;
+  const pitchClamped = Math.max(-0.35, Math.min(0.35, pitch));
+  const tanPitch = Math.tan(pitchClamped);
   for (let i = 0; i < wheels.length; i++) {
     const w = wheels[i];
     if (!w || !w.quaternion) continue;
     const data = w.userData || {};
     if (data.restPosY == null && w.position) data.restPosY = w.position.y;
     if (data.restPosX == null && w.position) data.restPosX = w.position.x;
+    if (data.restPosZ == null && w.position) data.restPosZ = w.position.z;
     if (data.restPosY != null) {
       const travelRaw = wheelY && wheelY[i] != null ? wheelY[i] : 0;
-      // Extension (hub down) through a flat ribbon reads as clipping.
-      // Compression into the arch stays; the deck kiss is chassisDeckEmbed.
-      const travel = Math.min(0, travelRaw);
-      // Cancel parent-roll world lift so rubber stays on the roadway.
-      const xLat = data.restPosX != null ? data.restPosX : 0;
+      const xLat =
+        data.chassisX != null
+          ? data.chassisX
+          : data.restPosX != null
+            ? data.restPosX
+            : 0;
+      const zLong =
+        data.chassisZ != null
+          ? data.chassisZ
+          : data.restPosZ != null
+            ? data.restPosZ
+            : 0;
+      // Parent +Rx (nose down) lowers the front and lifts the tail. Plant
+      // hubs by z·tan(pitch) so the body can dive without floating rears.
+      const pitchPlant = Math.max(-0.16, Math.min(0.16, tanPitch * zLong));
+      // Travel already includes sprung-body pitch. Keep road compression
+      // (arch tuck); pitch plant owns the dive/squat reach — so a travel
+      // cap in the caller cannot hide the weight.
+      const roadComp = Math.min(0, travelRaw + pitchPlant);
       const rollPlant = Math.max(-0.14, Math.min(0.14, tanRoll * xLat));
-      w.position.y = data.restPosY - travel - rollPlant + lift;
+      w.position.y = data.restPosY - roadComp - rollPlant + lift + pitchPlant;
     }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;
@@ -4985,8 +5022,8 @@ const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
 /** In-car analog dials (~110 mm) so the needles read at seated FOV. */
 const POV_GAUGE_R = 0.055;
-/** Same km/h scale as chase HUD + digital readout (covers all garage Vmax). */
-const POV_SPEED_MAX_KMH = 280;
+/** Same mph scale as the chase HUD (180 mph covers the garage Vmax). */
+const POV_SPEED_MAX_MPH = 180;
 /** Rearview overlay — 25% smaller than the original 0.32 × 0.082 glass. */
 const POV_MIRROR_SCALE = 0.75;
 /** Three.js layer for camera-locked POV HUD (rendered after post, ungraded). */
@@ -5638,8 +5675,8 @@ function gaugeFace(kind, maxVal, redFrom) {
   }
   g.textAlign = "center";
   g.textBaseline = "middle";
-  const major = kind === "rpm" ? 1 : 40;
-  const minor = kind === "rpm" ? 1 : 20;
+  const major = kind === "rpm" ? 1 : maxVal > 200 ? 40 : 20;
+  const minor = kind === "rpm" ? 1 : maxVal > 200 ? 20 : 10;
   const steps = Math.round(maxVal / minor);
   for (let i = 0; i <= steps; i++) {
     const v = i * minor;
@@ -5663,7 +5700,7 @@ function gaugeFace(kind, maxVal, redFrom) {
   }
   g.fillStyle = "rgba(232,228,216,0.62)";
   g.font = "bold 15px sans-serif";
-  g.fillText(kind === "rpm" ? "RPM" : "km/h", cx, cy - r * 0.08);
+  g.fillText(kind === "rpm" ? "RPM" : "MPH", cx, cy - r * 0.08);
   if (kind === "rpm") {
     g.font = "12px sans-serif";
     g.fillStyle = "rgba(232,228,216,0.42)";
@@ -5914,7 +5951,7 @@ function attachCockpit(root) {
 
   const cluster = new THREE.Group();
   cluster.name = "gauge-cluster";
-  const speedDial = makeDial("speed", POV_SPEED_MAX_KMH, 240);
+  const speedDial = makeDial("speed", POV_SPEED_MAX_MPH, 150);
   const rpmDial = makeDial("rpm", rpmMax, rpmRed);
   // Tach left, speedo right — ST205 / chase HUD layout.
   rpmDial.group.position.set(-POV_GAUGE_R * 1.28, 0, 0);
@@ -5980,7 +6017,7 @@ function attachCockpit(root) {
   root.userData.speedNeedle = speedDial.needle;
   root.userData.rpmNeedle = rpmDial.needle;
   if (!root.userData.steerWheel) root.userData.steerWheel = null;
-  root.userData.gaugeVmax = POV_SPEED_MAX_KMH;
+  root.userData.gaugeVmax = POV_SPEED_MAX_MPH;
   root.userData.gaugeRpmMax = rpmMax;
   root.userData._spdGauge = { x: -GAUGE_START, v: 0 };
   root.userData._rpmGauge = { x: -GAUGE_START, v: 0 };
@@ -6528,16 +6565,16 @@ function springNeedle(state, target, dt, wn, zeta) {
 /**
  * Analog gauges: needles lag like real instruments, then settle on speed/RPM.
  * @param {THREE.Object3D} root
- * @param {{speedKmh:number, rpm:number, redline:number, steer:number, dt:number}} state
+ * @param {{speedMph:number, rpm:number, redline:number, steer:number, dt:number}} state
  */
 export function updateCockpit(root, state) {
   if (!root || !root.userData.speedNeedle) return;
   const dt = Math.max(0.001, Math.min(0.05, state.dt || 1 / 60));
-  const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_KMH;
+  const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_MPH;
   const rpmMax = root.userData.gaugeRpmMax || 9;
-  const kmh = Math.max(0, state.speedKmh || 0);
+  const mph = Math.max(0, state.speedMph || 0);
   const rpmN = Math.max(0, (state.rpm || 0) / 1000);
-  const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, kmh / vmax)));
+  const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, mph / vmax)));
   const rpmT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1.04, rpmN / rpmMax)));
   if (root.userData.speedNeedle) {
     root.userData.speedNeedle.rotation.z = springNeedle(root.userData._spdGauge, spdT, dt, 26, 1.15);

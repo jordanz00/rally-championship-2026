@@ -84,8 +84,8 @@ check(
 );
 check(
   "chase-scale particle sizes",
-  /size:\s*\[\s*0\.0[5-9]/.test(effects) && /uScale:\s*\{\s*value:\s*phone \? 60 : \d{3}/.test(effects),
-  "small metre sizes so roost stays at the tire"
+  /size:\s*\[\s*0\.00[6-9]/.test(effects) && /uMaxPx:\s*\{\s*value:\s*phone \? 3 : 7/.test(effects),
+  "centimetre grains, a few pixels wide"
 );
 check(
   "HDR skybox armed",

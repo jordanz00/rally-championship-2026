@@ -97,10 +97,10 @@ function buildLadder(gfx) {
   const capShadow = Math.min(QUALITY_CAPS.maxShadowMap, gfx.shadowMap || QUALITY_CAPS.maxShadowMap);
   const minDpr = Math.max(0.5, Math.min(1, gfx.minPixelRatio || 0.55));
   const lowShadow = Math.min(capShadow, gfx.integratedShadowMap || 1024);
-  // `shadowEvery` is the sun atlas re-render interval in presented frames. The
-  // shadow pass is a second full geometry pass over the visible world. Soft
-  // PCF hides a skipped bake. High/medium bake every 2nd present (M1 fill-rate);
-  // min disables the atlas in game.js when shadow ≤ 512.
+  // `shadowEvery` is the sun atlas re-render interval in presented frames.
+  // The race path bakes every present so a car silhouette cannot trail the
+  // body. These values stay at 1 so a tier apply cannot put the map back
+  // on a skipped bake.
   return [
     {
       id: "high",
@@ -110,7 +110,7 @@ function buildLadder(gfx) {
       post: "high",
       sky: "high",
       mirrorEvery: 2,
-      shadowEvery: 2,
+      shadowEvery: 1,
     },
     {
       id: "medium",
@@ -120,7 +120,7 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "medium",
       mirrorEvery: 4,
-      shadowEvery: 2,
+      shadowEvery: 1,
     },
     {
       id: "low",
@@ -130,7 +130,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "low",
       mirrorEvery: 4,
-      shadowEvery: 2,
+      shadowEvery: 1,
     },
     {
       id: "min",
@@ -140,7 +140,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "min",
       mirrorEvery: 6,
-      shadowEvery: 4,
+      shadowEvery: 1,
     },
   ];
 }

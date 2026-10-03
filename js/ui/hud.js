@@ -3,14 +3,14 @@
  *
  * WHO THIS IS FOR: overlay DOM in index.html.
  * WHAT IT DOES: updates speed, gear, position, timer, surface, and draws
- *   km/h / RPM gauges in medium and far camera views (same units as digital HUD).
+ *   mph / RPM gauges in medium and far camera views (same units as digital HUD).
  */
 
 /** Sweep from 7:30 to 4:30 (canvas radians, 0 = 3 o’clock). */
 const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
-/** Face scale — covers Celica/Delta/Stratos Vmax without pegging early. */
-const SPEED_DIAL_MAX_KMH = 280;
+/** Face scale — 180 mph covers a ~290 km/h Vmax without pegging early. */
+const SPEED_DIAL_MAX_MPH = 180;
 
 export class Hud {
   constructor() {
@@ -55,11 +55,11 @@ export class Hud {
     this._rpmShown = 0;
     this._chase = false;
     this.mphDial = new AnalogDial(document.getElementById("gauge-mph"), {
-      label: "km/h",
-      max: SPEED_DIAL_MAX_KMH,
-      major: 40,
-      minor: 20,
-      redFrom: 240,
+      label: "MPH",
+      max: SPEED_DIAL_MAX_MPH,
+      major: 20,
+      minor: 10,
+      redFrom: 150,
     });
     this.rpmDial = new AnalogDial(document.getElementById("gauge-rpm"), {
       label: "×1000",
@@ -87,15 +87,15 @@ export class Hud {
    * @param {number} [s.dt] frame delta seconds — needle lerp is dt-scaled
    */
   update(s) {
-    const kmh = s.speedKmh || 0;
+    const mph = s.speedMph != null ? s.speedMph : (s.speedKmh || 0) * 0.621371;
     const rpm = s.rpm || 0;
     const redline = s.redline || 7500;
-    const speedTxt = String(Math.round(kmh)).padStart(3, "0");
+    const speedTxt = String(Math.round(mph)).padStart(3, "0");
     if (this._speedTxt !== speedTxt) {
       this._speedTxt = speedTxt;
       this.speed.textContent = speedTxt;
     }
-    this.speed.dataset.fast = kmh > 140 ? "1" : "0";
+    this.speed.dataset.fast = mph > 90 ? "1" : "0";
     const gearTxt = s.gear === 0 ? "N" : String(s.gear);
     if (this._gearTxt !== gearTxt) {
       this._gearTxt = gearTxt;
@@ -197,13 +197,13 @@ export class Hud {
     if (this.clusterSurface) this.clusterSurface.hidden = false;
 
     if (!this._chase) return;
-    const kmhShown = Math.max(0, kmh);
+    const mphShown = Math.max(0, mph);
     const dt = s.dt > 0 ? s.dt : 1 / 60;
     // Track digital readout closely — laggy needles read as "wrong speed".
-    this._speedShown += (kmhShown - this._speedShown) * (1 - Math.exp(-28 * dt));
+    this._speedShown += (mphShown - this._speedShown) * (1 - Math.exp(-28 * dt));
     this._rpmShown += (rpm - this._rpmShown) * (1 - Math.exp(-32 * dt));
     this.rpmDial.setRedFrom(redline / 1000);
-    const speedRead = Math.round(kmhShown);
+    const speedRead = Math.round(mphShown);
     this.mphDial.draw(this._speedShown, speedRead);
     this.rpmDial.draw(this._rpmShown / 1000, Math.round(this._rpmShown));
   }
