@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=174";
+import { Vehicle } from "./physics/vehicle.js?v=175";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=89";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=214";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=90";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=215";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
 import { Track } from "./tracks/track.js?v=403";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=53";
-import { Opponent } from "./ai.js?v=200";
+import { Opponent } from "./ai.js?v=202";
 import { RallyAudio } from "./audio/engine.js?v=78";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=46";
@@ -32,16 +32,18 @@ import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=94";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
-import { StageWeather, courseWantsRain } from "./weather/rain.js?v=15";
+import { StageWeather, courseWantsRain } from "./weather/rain.js?v=18";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=40";
 import {
-  createBrowserReconstruct,
+  createWebTsr,
   parseTsrParams,
   persistTsrMode,
   parseReconParams,
   persistReconEnabled,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=924";
+  parseAppearParams,
+  persistAppearEnabled,
+} from "./gfx/browser-reconstruct-sdk/index.js?v=929";
 import { createPerfTier } from "./gfx/perf-tier.js?v=54";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -682,22 +684,31 @@ export class RallyGame {
     // Default IMAGE is Quality on desktop (Forest 600 m IDE p50 matches Off).
     this.tsr = null;
     this.recon = null;
+    this.appear = null;
     this._reconRT = null;
     this._reconSize = null;
     if (!isPhonePlay()) {
       try {
         const tsrOpts = parseTsrParams();
-        // Always create the residual pass so Pause REFINE can toggle.
-        // Mode stays off unless URL / IMAGE says otherwise.
-        const sdk = createBrowserReconstruct(this.renderer, {
+        const appearOpts = parseAppearParams();
+        // Residual + appearance are created so Pause REFINE / LOOK can toggle.
+        const sdk = createWebTsr(this.renderer, {
           mode: tsrOpts.mode,
           guided: true,
+          appearance: true,
           debug: tsrOpts.debug,
         });
         if (sdk.supported) {
           this.tsr = sdk;
           this.recon = sdk.guided || sdk.recon;
+          this.appear = sdk.appear;
           if (this.recon) this.recon.enabled = parseReconParams().enabled;
+          if (this.appear) {
+            this.appear.enabled = appearOpts.enabled === true;
+            if (appearOpts.enabled === true && typeof this.appear.pin === "function") {
+              this.appear.pin(true);
+            }
+          }
         } else {
           sdk.dispose();
         }
@@ -705,6 +716,7 @@ export class RallyGame {
         console.warn("[boot] reconstruct SDK skipped", err);
         this.tsr = null;
         this.recon = null;
+        this.appear = null;
       }
     }
     this._bindTsrControl();
@@ -1667,6 +1679,24 @@ export class RallyGame {
           this.recon.enabled = !!reconChk.checked;
           persistReconEnabled(this.recon.enabled);
           if (reconVal) reconVal.textContent = this.recon.enabled ? "ON" : "OFF";
+          this._syncTsrPresentSharp();
+        });
+      }
+    }
+    const appearChk = document.getElementById("opt-appear");
+    const appearVal = document.getElementById("opt-appear-val");
+    if (appearChk && appearChk.dataset.bound !== "1") {
+      appearChk.dataset.bound = "1";
+      const on = !!(this.appear && this.appear.enabled);
+      appearChk.checked = on;
+      if (appearVal) appearVal.textContent = on ? "ON" : "OFF";
+      if (!this.appear) {
+        appearChk.disabled = true;
+      } else {
+        appearChk.addEventListener("change", () => {
+          this.appear.enabled = !!appearChk.checked;
+          persistAppearEnabled(this.appear.enabled);
+          if (appearVal) appearVal.textContent = this.appear.enabled ? "ON" : "OFF";
           this._syncTsrPresentSharp();
         });
       }
@@ -6342,7 +6372,12 @@ export class RallyGame {
    * costs a full-res 5-tap and over-sharpens.
    */
   _syncTsrPresentSharp() {
-    if (this.tsr) this.tsr.skipPresentSharp = !!(this.recon && this.recon.enabled);
+    if (this.tsr) {
+      this.tsr.skipPresentSharp = !!(
+        (this.recon && this.recon.enabled) ||
+        (this.appear && this.appear.enabled)
+      );
+    }
   }
 
   /**
@@ -6392,6 +6427,10 @@ export class RallyGame {
             cheap: this.tsr.stats.cheap || 0,
             velMs: this.tsr.stats.velMs || 0,
             resolveMs: this.tsr.stats.resolveMs || 0,
+            normalMs: this.tsr.stats.normalMs || 0,
+            writeNormals: this.tsr.tsr ? !!this.tsr.tsr.writeNormals : false,
+            feedMPs: this.tsr.stats.feedMPs || 0,
+            spp1Ms: this.tsr.stats.spp1Ms || 0,
           }
         : null,
       recon: this.recon
@@ -6403,6 +6442,14 @@ export class RallyGame {
             lastMs: this.recon.stats ? this.recon.stats.lastMs : 0,
             w: this.recon.stats ? this.recon.stats.w : 0,
             h: this.recon.stats ? this.recon.stats.h : 0,
+          }
+        : null,
+      appear: this.appear
+        ? {
+            enabled: !!this.appear.enabled,
+            supported: !!this.appear.supported,
+            lastMs: this.appear.lastMs || 0,
+            p50Ms: this.appear.p50Ms || 0,
           }
         : null,
     };

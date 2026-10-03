@@ -465,7 +465,7 @@
             <label class="vol-row">
               <span>IMAGE</span>
               <select id="opt-tsr" aria-label="Image reconstruct">
-                <option value="quality">Quality · reconstruct</option>
+                <option value="quality">Quality · TSR</option>
                 <option value="balanced">Balanced</option>
                 <option value="performance">Performance</option>
                 <option value="dlaa">DLAA · native AA</option>
@@ -475,6 +475,10 @@
             <label class="vol-row vol-row-check" for="opt-recon">
               <span>REFINE <strong id="opt-recon-val">ON</strong></span>
               <input id="opt-recon" type="checkbox" checked aria-label="3D image refine" />
+            </label>
+            <label class="vol-row vol-row-check" for="opt-appear">
+              <span>LOOK <strong id="opt-appear-val">OFF</strong></span>
+              <input id="opt-appear" type="checkbox" aria-label="3D appearance residual" />
             </label>
           </div>
           <div class="ui-cards ui-cards-compact" role="list">
@@ -535,6 +539,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=924" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=934" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

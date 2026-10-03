@@ -1,5 +1,11 @@
 /**
- * TSR upscaler — temporal super-resolution in the style of DLSS SR / DLAA / UE5 TSR.
+ * TSR upscaler — legal browser clone of Unreal Engine Temporal Super Resolution.
+ *
+ * Capability classes from Epic's public TSR docs (not their .usf, not Streamline):
+ *   History, Parallax Disocclusion, Shading Rejection, Flickering Temporal
+ *   Analysis, History Resurrection, Spatial Anti-Aliaser (FXAA-style on
+ *   rejected pixels). Nyquist 200% history is NOT shipped — 4× resolve cost
+ *   would miss the Forest 33 ms gate. This is our GLSL. Not Unreal Engine.
  *
  * WHO THIS IS FOR: the race present path (RallyGame._render).
  * WHAT IT DOES: renders the scene at a reduced internal resolution with a
@@ -41,6 +47,25 @@ export const TSR_MODES = Object.freeze({
  */
 export const TSR_DEFAULT_MODE = "quality";
 
+/**
+ * History sample count per output pixel (Epic r.TSR.History.SampleCount).
+ * Does not grow memory — only the minimum current-frame weight (1/N).
+ * Quality uses 16 (Epic default). Rally clamps motion to 2.0 like Fortnite.
+ */
+export const TSR_HISTORY_SAMPLES = Object.freeze({
+  off: 0,
+  dlaa: 8,
+  quality: 16,
+  balanced: 12,
+  performance: 8,
+});
+
+/** Epic r.TSR.Velocity.WeightClampingSampleCount — rally wants sharp cars. */
+export const TSR_VEL_CLAMP_SAMPLES = 2.0;
+
+/** Persistent-frame interval (Epic default is 31, must be odd). */
+export const TSR_RESURRECT_INTERVAL = 31;
+
 /** Pause-menu persistence. Written only from Pause → IMAGE, never constructor. */
 export const TSR_STORAGE_KEY = "rally-tsr-mode";
 
@@ -60,6 +85,8 @@ const VEL_NEAR_M = 48;
 const VEL_MESH_CAP = 18;
 /** Rescan body/wheel list this often (plus on reset / pack change). */
 const VEL_SCAN_EVERY = 90;
+/** Drop the G-buffer override if the extra walk costs more than this. */
+const NORMAL_BUDGET_MS = 1.5;
 
 /** Output pixels of screen motion at which accumulation length starts to drop. */
 const MOTION_SOFT_PX = 10;
@@ -139,6 +166,13 @@ uniform float uHistoryOn;
 uniform float uClipOn;
 uniform float uReset;
 uniform float uCheap;
+uniform sampler2D tResurrect;
+uniform float uResurrectOn;
+uniform float uFlickerOn;
+uniform float uSpatialOn;
+uniform float uShadeRejectOn;
+uniform float uThinOn;
+uniform float uVelClampN;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
@@ -305,6 +339,51 @@ void main() {
   n *= valid;
 
   vec3 histCC = toYCoCg(karis(hist.rgb));
+  float highFreq = length(bmax - bmin);
+
+  // History Resurrection (FAQ): use the oldest persistent frame only when
+  // (1) it matches current better than last frame AND (2) last frame does
+  // not match enough. No optical flow — moving cars stay on velocity.
+  if (uResurrectOn > 0.5 && valid > 0.5) {
+    vec4 rez = texture2D(tResurrect, prevUv);
+    rez.rgb = sane(rez.rgb);
+    float nRez = (rez.a == rez.a) ? clamp(rez.a, 0.0, uMaxN) : 0.0;
+    if (nRez > 2.0) {
+      vec3 rezCC = toYCoCg(karis(rez.rgb));
+      float dHist = length(histCC - curCC);
+      float dRez = length(rezCC - curCC);
+      if (dHist > 0.08 && dRez + 0.02 < dHist) {
+        hist = rez;
+        histCC = rezCC;
+        n = min(nRez, uMaxN * 0.8) * valid;
+      }
+    }
+  }
+
+  // Thin Geometry Detection (UE5 r.TSR.ThinGeometryDetection): depth-edge
+  // + high-contrast line → relax ClampBlend so Forest fences / tree edges
+  // do not boil. No GBuffer shading-model ID — depth + luma only.
+  float thin = 0.0;
+#if !CHEAP_RESOLVE
+  if (uThinOn > 0.5 && closeD < 0.999) {
+    float zC = linZ(closeD);
+    float zL = linZ(texelFetch(tDepth, clamp(closeI + ivec2(-1, 0), ivec2(0), maxI), 0).r);
+    float zR = linZ(texelFetch(tDepth, clamp(closeI + ivec2( 1, 0), ivec2(0), maxI), 0).r);
+    float zU = linZ(texelFetch(tDepth, clamp(closeI + ivec2(0, -1), ivec2(0), maxI), 0).r);
+    float zD = linZ(texelFetch(tDepth, clamp(closeI + ivec2(0,  1), ivec2(0), maxI), 0).r);
+    float zJump = max(max(abs(zL - zC), abs(zR - zC)), max(abs(zU - zC), abs(zD - zC)));
+    float edge = step(0.28, zJump);
+    float line = step(0.11, highFreq);
+    thin = max(edge, line);
+    if (thin > 0.5) {
+      vec3 widen = (bmax - bmin) * 0.32 + vec3(0.035);
+      bmin -= widen;
+      bmax += widen;
+    }
+  }
+#endif
+
+  // ClampBlend (UE4 TAA-style) — keep history inside the current AABB.
   vec3 clipped = histCC;
   if (uClipOn > 0.5) {
     clipped = clipAabb(bmin, bmax, histCC);
@@ -312,15 +391,42 @@ void main() {
     n *= 1.0 / (1.0 + 6.0 * moved);
   }
 
-  // Fast screen motion shortens the accumulation so trails cannot form.
   float motionPx = length((vUv - prevUv) * uOutSize);
   if (motionPx > MOTION_KILL_PX_F) { valid = 0.0; n = 0.0; }
-  float nCap = mix(uMaxN, 2.0, clamp((motionPx - 1.5) / MOTION_SOFT_PX_F, 0.0, 1.0));
+  // Velocity weight clamp (FAQ / Fortnite 2.0): sharpness in motion.
+  float nCap = mix(uMaxN, uVelClampN, clamp((motionPx - 1.5) / MOTION_SOFT_PX_F, 0.0, 1.0));
   n = min(n, nCap);
+
+  float yDelta = abs(curCC.x - histCC.x);
+  float still = 1.0 - clamp((motionPx - 0.6) / 3.0, 0.0, 1.0);
+  // FAQ: flicker analysis is off on moving objects / big parallax (pink).
+  float flickerOk = still * (1.0 - step(0.5, vel.a));
+  if (uFlickerOn > 0.5 && flickerOk > 0.55 && thin < 0.5 && highFreq > 0.07 && yDelta > 0.035 && valid > 0.5) {
+    clipped = mix(clipped, histCC, 0.62);
+    n = min(n + 2.0, uMaxN);
+  } else if (uShadeRejectOn > 0.5 && still > 0.7 && thin < 0.5 && yDelta > 0.16) {
+    // BlendFinal = 1 (FAQ): drop history, spatial AA hides the native sample.
+    n = 0.0;
+    clipped = curCC;
+  }
+
+  if (uSpatialOn > 0.5 && n < 2.4) {
+    vec2 texel = 1.0 / max(uLowSize, vec2(1.0));
+    vec2 cuv = q / uLowSize;
+    vec3 sL = sane(texture2D(tColor, cuv + vec2(-texel.x, 0.0)).rgb);
+    vec3 sR = sane(texture2D(tColor, cuv + vec2( texel.x, 0.0)).rgb);
+    vec3 sU = sane(texture2D(tColor, cuv + vec2(0.0, -texel.y)).rgb);
+    vec3 sD = sane(texture2D(tColor, cuv + vec2(0.0,  texel.y)).rgb);
+    float eH = abs(luma(sL) - luma(sR));
+    float eV = abs(luma(sU) - luma(sD));
+    vec3 fx = eH > eV ? 0.5 * (sL + sR) : 0.5 * (sU + sD);
+    cur = mix(cur, fx, 0.52);
+    curCC = toYCoCg(karis(cur));
+  }
 
   float wCur = conf + 0.02;
   float nNew = n + wCur;
-  vec3 outCC = (clipped * n + curCC * wCur) / nNew;
+  vec3 outCC = (clipped * n + curCC * wCur) / max(nNew, 1.0e-4);
   vec3 outC = karisInv(fromYCoCg(outCC));
   gl_FragColor = vec4(sane(outC), min(nNew, uMaxN));
 }
@@ -575,8 +681,26 @@ export class TsrUpscaler {
     this._needReset = true;
     this._lowRT = [null, null];
     this._velRT = null;
+    this._normalRT = null;
     this._histRT = [null, null];
+    this._resurrectRT = null;
     this._nativeRT = null;
+    this._copyMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null } },
+      vertexShader: VERT,
+      fragmentShader: "varying vec2 vUv; uniform sampler2D tSrc; void main(){ gl_FragColor = texture2D(tSrc, vUv); }",
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NoBlending,
+      toneMapped: false,
+    });
+    /** Low-res MeshNormalMaterial override. Off if the pass exceeds 1.5 ms. */
+    this.writeNormals = opts.writeNormals !== false;
+    this._normalMat = new THREE.MeshNormalMaterial({ fog: false });
+    this._normalClear = new THREE.Color(0x8080ff);
+    this._normalMsSum = 0;
+    this._normalMsN = 0;
+    this._normalsAborted = false;
     this._histIndex = 0;
     this._jitter = new THREE.Vector2();
     this._prevJitter = new THREE.Vector2();
@@ -616,8 +740,11 @@ export class TsrUpscaler {
       velMeshes: 0,
       velScanned: 0,
       velMs: 0,
+      normalMs: 0,
       resolveMs: 0,
       cheap: 0,
+      feedMPs: 0,
+      spp1Ms: 0,
     };
 
     this._quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -649,6 +776,13 @@ export class TsrUpscaler {
       uClipOn: { value: 1 },
       uReset: { value: 1 },
       uCheap: { value: 0 },
+      tResurrect: { value: null },
+      uResurrectOn: { value: 1 },
+      uFlickerOn: { value: 1 },
+      uSpatialOn: { value: 1 },
+      uShadeRejectOn: { value: 1 },
+      uThinOn: { value: 1 },
+      uVelClampN: { value: TSR_VEL_CLAMP_SAMPLES },
     };
     const resolveOpts = {
       uniforms: resolveUniforms,
@@ -712,6 +846,11 @@ export class TsrUpscaler {
     return this._velRT ? this._velRT.texture : null;
   }
 
+  /** Packed view-space normals at TSR internal size, or null if the pass aborted. */
+  get normalTexture() {
+    return this.writeNormals && this._normalRT ? this._normalRT.texture : null;
+  }
+
   /**
    * @param {string} mode off|dlaa|quality|balanced|performance
    */
@@ -721,8 +860,7 @@ export class TsrUpscaler {
     this.mode = m;
     this.scale = TSR_MODES[m];
     this.jitterCount = this.scale >= 0.999 ? 8 : 16;
-    // Short accumulation — long history is what reads as car trails.
-    this.maxHistory = this.scale >= 0.999 ? 8 : this.scale >= 0.75 ? 10 : 8;
+    this.maxHistory = TSR_HISTORY_SAMPLES[m] != null ? TSR_HISTORY_SAMPLES[m] : 8;
     this._disposeTargets();
     this._needReset = true;
     this._havePrevCam = false;
@@ -792,7 +930,8 @@ export class TsrUpscaler {
       this._allocate(outW, outH);
     }
     const now = performance.now();
-    if (this._lastFrameAt > 0 && now - this._lastFrameAt > 250) this._needReset = true;
+    const frameDt = this._lastFrameAt > 0 ? now - this._lastFrameAt : 16.7;
+    if (this._lastFrameAt > 0 && frameDt > 250) this._needReset = true;
     this._lastFrameAt = now;
     this._detectCut(camera);
     const motionPx = this._cameraMotionPx(camera);
@@ -851,7 +990,10 @@ export class TsrUpscaler {
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     }
 
-    // 2. Velocity pass for cars — same jittered lens so depth texels line up.
+    // 2. Low-res view-space normals (appearance net). Same jittered lens.
+    this._renderNormals(scene, camera);
+
+    // 3. Velocity pass for cars — same jittered lens so depth texels line up.
     this._renderVelocity(scene, camera, lowRT, jNdcX, jNdcY);
 
     for (let i = 0; i < 16; i++) {
@@ -859,7 +1001,7 @@ export class TsrUpscaler {
       pi[i] = this._savedInv[i];
     }
 
-    // 3. Temporal resolve into the history ping-pong.
+    // 4. Temporal resolve into the history ping-pong.
     const histIn = this._histRT[this._histIndex];
     const histOut = this._histRT[this._histIndex ^ 1];
     const u = this._resolveMat.uniforms;
@@ -884,6 +1026,13 @@ export class TsrUpscaler {
     u.uClipOn.value = this._dbg("noclip") ? 0 : 1;
     u.uReset.value = this._needReset ? 1 : 0;
     u.uCheap.value = cheap ? 1 : 0;
+    u.tResurrect.value = this._resurrectRT ? this._resurrectRT.texture : histIn.texture;
+    u.uResurrectOn.value = this._dbg("noresurrect") ? 0 : 1;
+    u.uFlickerOn.value = this._dbg("noflicker") ? 0 : 1;
+    u.uSpatialOn.value = this._dbg("nospatial") || cheap ? 0 : 1;
+    u.uShadeRejectOn.value = this._dbg("noreject") ? 0 : 1;
+    u.uThinOn.value = this._dbg("nothin") ? 0 : 1;
+    u.uVelClampN.value = this._dbg("novclamp") ? this.maxHistory : TSR_VEL_CLAMP_SAMPLES;
     this._quad.material = cheap ? this._resolveMatCheap : this._resolveMat;
     const tResolve = performance.now();
     r.setRenderTarget(histOut);
@@ -892,8 +1041,15 @@ export class TsrUpscaler {
     this.stats.resolveMs = performance.now() - tResolve;
     this.stats.cheap = cheap ? 1 : 0;
     this._histIndex ^= 1;
+    // Persistent frame every 31 (Epic r.TSR.Resurrection.PersistentFrameInterval).
+    if (!this._needReset && this._resurrectRT && this.frame % TSR_RESURRECT_INTERVAL === 0) {
+      this._copyMat.uniforms.tSrc.value = histOut.texture;
+      this._quad.material = this._copyMat;
+      r.setRenderTarget(this._resurrectRT);
+      r.render(this._quadScene, this._quadCam);
+    }
 
-    // 4. Arm the present quad (RCAS + depth) for post / canvas.
+    // 5. Arm the present quad (RCAS + depth) for post / canvas.
     const pm = this.presentMaterial.uniforms;
     pm.tResolved.value = histOut.texture;
     pm.tDepth.value = lowRT.depthTexture;
@@ -913,12 +1069,54 @@ export class TsrUpscaler {
     r.autoClear = prevAutoClear;
 
     if (this._needReset) this.stats.resets += 1;
+    const fps = frameDt > 1 && frameDt < 200 ? 1000 / frameDt : 30;
+    const lowPx = this._lowW * this._lowH;
+    this.stats.feedMPs = (lowPx * fps) / 1e6;
+    const sp2 = this.scale * this.scale;
+    this.stats.spp1Ms = sp2 > 1e-4 ? 1000 / (sp2 * fps) : 0;
     this._needReset = false;
     this._prevJitter.copy(this._jitter);
     this._prevViewProj.copy(this._viewProj);
     this._prevCamPos.copy(camera.position);
     this._prevCamQuat.copy(camera.quaternion);
     this._havePrevCam = true;
+  }
+
+  /**
+   * Packed view-space normals at TSR internal size. Extra scene walk —
+   * auto-off if p50 exceeds NORMAL_BUDGET_MS. No albedo (that would blow
+   * the 1.5 ms cap on Forest).
+   * @param {THREE.Scene} scene
+   * @param {THREE.Camera} camera
+   */
+  _renderNormals(scene, camera) {
+    const r = this.renderer;
+    if (!this.writeNormals || !this._normalRT || !r) {
+      this.stats.normalMs = 0;
+      return;
+    }
+    const prevOverride = scene.overrideMaterial;
+    const prevBg = scene.background;
+    const prevFog = scene.fog;
+    const t0 = performance.now();
+    scene.overrideMaterial = this._normalMat;
+    scene.background = this._normalClear;
+    scene.fog = null;
+    r.setRenderTarget(this._normalRT);
+    r.clear();
+    r.render(scene, camera);
+    scene.overrideMaterial = prevOverride;
+    scene.background = prevBg;
+    scene.fog = prevFog;
+    const ms = performance.now() - t0;
+    this.stats.normalMs = ms;
+    this._normalMsN += 1;
+    // Frame 1 is shader compile. Frame 2+ is the real walk — abort immediately
+    // if it misses the 1.5 ms budget (Forest override is ~47 ms).
+    if (this._normalMsN >= 2 && ms > NORMAL_BUDGET_MS) {
+      this.writeNormals = false;
+      this._normalsAborted = true;
+    }
   }
 
   /**
@@ -1174,18 +1372,30 @@ export class TsrUpscaler {
       stencilBuffer: false,
       generateMipmaps: false,
     });
+    this._normalRT = new THREE.WebGLRenderTarget(lw, lh, {
+      type: THREE.UnsignedByteType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+      generateMipmaps: false,
+      depthTexture: mkDepth(lw, lh),
+    });
+    const histOpts = {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+      generateMipmaps: false,
+    };
     for (let i = 0; i < 2; i++) {
-      this._histRT[i] = new THREE.WebGLRenderTarget(outW, outH, {
-        type: THREE.HalfFloatType,
-        format: THREE.RGBAFormat,
-        colorSpace: THREE.LinearSRGBColorSpace,
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
-        depthBuffer: false,
-        stencilBuffer: false,
-        generateMipmaps: false,
-      });
+      this._histRT[i] = new THREE.WebGLRenderTarget(outW, outH, histOpts);
     }
+    this._resurrectRT = new THREE.WebGLRenderTarget(outW, outH, histOpts);
     if (this._dbg("split")) {
       this._nativeRT = new THREE.WebGLRenderTarget(outW, outH, { ...colorOpts, depthTexture: mkDepth(outW, outH) });
     }
@@ -1204,8 +1414,10 @@ export class TsrUpscaler {
     touch(this._lowRT[0]);
     touch(this._lowRT[1]);
     touch(this._velRT);
+    touch(this._normalRT);
     touch(this._histRT[0]);
     touch(this._histRT[1]);
+    touch(this._resurrectRT);
     touch(this._nativeRT);
     r.setClearColor(this._clearColor, prevAlpha);
     r.setRenderTarget(prevTarget);
@@ -1213,7 +1425,7 @@ export class TsrUpscaler {
     this._needReset = true;
     const lowPx = lw * lh;
     const outPx = outW * outH;
-    let bytes = 2 * lowPx * (8 + 4) + lowPx * 8 + 2 * outPx * 8;
+    let bytes = 2 * lowPx * (8 + 4) + lowPx * 8 + lowPx * 8 + 3 * outPx * 8;
     if (this._nativeRT) bytes += outPx * (8 + 4);
     this.stats.lowW = lw;
     this.stats.lowH = lh;
@@ -1238,6 +1450,15 @@ export class TsrUpscaler {
       this._velRT.dispose();
       this._velRT = null;
     }
+    if (this._resurrectRT) {
+      this._resurrectRT.dispose();
+      this._resurrectRT = null;
+    }
+    if (this._normalRT) {
+      this._normalRT.depthTexture?.dispose();
+      this._normalRT.dispose();
+      this._normalRT = null;
+    }
     if (this._nativeRT) {
       this._nativeRT.depthTexture?.dispose();
       this._nativeRT.dispose();
@@ -1256,6 +1477,8 @@ export class TsrUpscaler {
     this._velMeshes.length = 0;
     this._resolveMat.dispose();
     if (this._resolveMatCheap) this._resolveMatCheap.dispose();
+    if (this._copyMat) this._copyMat.dispose();
+    if (this._normalMat) this._normalMat.dispose();
     this.presentMaterial.dispose();
     this._quad.geometry.dispose();
     this._presentQuad.geometry.dispose();

@@ -7,15 +7,19 @@
  * HOW IT CONNECTS: game.js constructs StageWeather once, enables it on
  *   Mountain, and steps after the chase camera. Does not touch Track.query.
  *
- * BUDGET: 360 line segments + ≤260 2D droplets on a 512 canvas. POV only.
+ * BUDGET: ~700 line segments (near sheet + mid volume) + ≤280 2D droplets.
  */
 
 import * as THREE from "../../vendor/three.module.js";
 import { setWorldRoadWetness } from "../gfx/pbr.js?v=55";
 
-const STREAK_COUNT = 360;
-const DROP_MAX = 260;
-const FALL = new THREE.Vector3(-0.12, -1, 0.04).normalize();
+/** Same layer as cockpit gauges — composited after the world pass. */
+const POV_HUD_LAYER = 1;
+
+const NEAR_COUNT = 300;
+const FAR_COUNT = 400;
+const DROP_MAX = 280;
+const FALL = new THREE.Vector3(-0.1, -1, 0.03).normalize();
 const WIPER_FAR = 1.26;
 const WIPER_PARK = 0.08;
 /** Angular half-width of the rubber (rad) — thick enough to clear a visible path. */
@@ -71,25 +75,50 @@ export class StageWeather {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._a = new THREE.Vector3();
+    this._screenPane = null;
+    this._screenCam = null;
 
-    this.pos = new Float32Array(STREAK_COUNT * 6);
-    this.life = new Float32Array(STREAK_COUNT);
-    this.geo = new THREE.BufferGeometry();
-    this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
-    this.mat = new THREE.LineBasicMaterial({
-      color: 0xb8c8d6,
+    this.near = this._makeStreakLayer(NEAR_COUNT, {
+      color: 0xeef6fc,
+      depthTest: false,
+      renderOrder: 6,
+    });
+    this.far = this._makeStreakLayer(FAR_COUNT, {
+      color: 0xc8d8e6,
+      depthTest: true,
+      renderOrder: 4,
+    });
+    this.lines = this.near.lines;
+    this.mat = this.near.mat;
+    this.pos = this.near.pos;
+    this.geo = this.near.geo;
+
+    for (let i = 0; i < NEAR_COUNT; i++) this._respawnLayer(this.near, i, true, true);
+    for (let i = 0; i < FAR_COUNT; i++) this._respawnLayer(this.far, i, true, false);
+  }
+
+  /**
+   * @param {number} count
+   * @param {{color:number, depthTest:boolean, renderOrder:number}} spec
+   */
+  _makeStreakLayer(count, spec) {
+    const pos = new Float32Array(count * 6);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: spec.color,
       transparent: true,
       opacity: 0,
       depthWrite: false,
-      fog: true,
+      depthTest: spec.depthTest,
+      fog: false,
     });
-    this.lines = new THREE.LineSegments(this.geo, this.mat);
-    this.lines.frustumCulled = false;
-    this.lines.renderOrder = 4;
-    this.lines.visible = false;
-    scene.add(this.lines);
-
-    for (let i = 0; i < STREAK_COUNT; i++) this._respawn(i, true);
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.frustumCulled = false;
+    lines.renderOrder = spec.renderOrder;
+    lines.visible = false;
+    this.scene.add(lines);
+    return { count, pos, geo, mat, lines };
   }
 
   /**
@@ -100,10 +129,17 @@ export class StageWeather {
     this.active = !!on;
     if (!this.active) {
       this.intensity = 0;
-      this.lines.visible = false;
-      this.mat.opacity = 0;
+      this.near.lines.visible = false;
+      this.far.lines.visible = false;
+      this.near.mat.opacity = 0;
+      this.far.mat.opacity = 0;
       this._drops.length = 0;
+      if (this._screenPane) this._screenPane.visible = false;
       if (trackGroup) setWorldRoadWetness(trackGroup, 0);
+    } else {
+      this.intensity = Math.max(this.intensity, 0.62);
+      this.near.lines.visible = true;
+      this.far.lines.visible = true;
     }
   }
 
@@ -132,22 +168,21 @@ export class StageWeather {
     }
 
     this._cycle += t;
-    // Intermittent showers: build, peak, fade, lull — not a constant grey wall.
-    const per = 26;
+    // Shower that stays readable — never a dry lull on Mountain.
+    const per = 22;
     const u = (this._cycle % per) / per;
-    let target = 0.18;
-    if (u < 0.18) target = 0.2 + (u / 0.18) * 0.45;
-    else if (u < 0.42) target = 0.65 + Math.sin((u - 0.18) * 12) * 0.12;
-    else if (u < 0.62) target = 0.72 - ((u - 0.42) / 0.2) * 0.4;
-    else if (u < 0.78) target = 0.22;
-    else target = 0.08;
-    this.intensity += (target - this.intensity) * Math.min(1, t * 1.8);
+    let target = 0.55;
+    if (u < 0.22) target = 0.48 + (u / 0.22) * 0.42;
+    else if (u < 0.55) target = 0.82 + Math.sin((u - 0.22) * 14) * 0.1;
+    else if (u < 0.78) target = 0.7 - ((u - 0.55) / 0.23) * 0.18;
+    else target = 0.48;
+    this.intensity += (target - this.intensity) * Math.min(1, t * 2.2);
 
     const wet = 0.28 + this.intensity * 0.72;
     if (opts.trackGroup) setWorldRoadWetness(opts.trackGroup, wet);
     if (opts.audio && opts.audio.setRain) opts.audio.setRain(this.intensity);
 
-    this._stepStreaks(t, opts.camera, opts.speed || 0);
+    this._stepStreaks(t, opts.camera, opts.speed || 0, !!opts.pov);
     this._stepWipers(t, opts.car, opts.pov, this.intensity, opts);
   }
 
@@ -156,7 +191,7 @@ export class StageWeather {
    * @param {THREE.Camera} camera
    * @param {number} speedMs
    */
-  _stepStreaks(dt, camera, speedMs) {
+  _stepStreaks(dt, camera, speedMs, pov) {
     if (!camera) return;
     camera.getWorldPosition(this._cam);
     camera.getWorldDirection(this._fwd);
@@ -165,49 +200,83 @@ export class StageWeather {
     this._up.crossVectors(this._right, this._fwd).normalize();
 
     const kmh = Math.max(0, speedMs) * 3.6;
-    const speed = 14 + this.intensity * 18 + kmh * 0.06;
-    const len = 0.28 + this.intensity * 0.38 + Math.min(0.45, kmh * 0.004);
+    // Relative wind: gravity plus the camera punching through the shower.
+    const sx = FALL.x - this._fwd.x * (0.08 + kmh * 0.011);
+    const sy = FALL.y - this._fwd.y * (0.04 + kmh * 0.004) - 0.12;
+    const sz = FALL.z - this._fwd.z * (0.08 + kmh * 0.011);
+    const sl = Math.hypot(sx, sy, sz) || 1;
+    const dir = { x: sx / sl, y: sy / sl, z: sz / sl };
+    const show = this.intensity > 0.04;
+    this._advectLayer(this.near, dt, kmh, dir, true, 12 + this.intensity * 16 + kmh * 0.14, 0.85 + Math.min(2.4, kmh * 0.018));
+    this._advectLayer(this.far, dt, kmh, dir, false, 16 + this.intensity * 22 + kmh * 0.1, 0.7 + Math.min(1.6, kmh * 0.01));
+    // Near sheet has no depth test — chase only. In POV it would rain through the roof.
+    this.near.lines.visible = show && !pov;
+    this.far.lines.visible = show;
+    this.near.mat.opacity = show && !pov ? 0.42 + this.intensity * 0.48 : 0;
+    this.far.mat.opacity = show ? 0.22 + this.intensity * 0.38 : 0;
+  }
+
+  /**
+   * @param {{count:number, pos:Float32Array, geo:THREE.BufferGeometry}} layer
+   * @param {number} dt
+   * @param {number} kmh
+   * @param {{x:number,y:number,z:number}} dir
+   * @param {boolean} near
+   * @param {number} speed
+   * @param {number} len
+   */
+  _advectLayer(layer, dt, kmh, dir, near, speed, len) {
+    const maxR2 = near ? 90 : 420;
+    const minY = near ? -3.2 : -5;
     let live = 0;
-    for (let i = 0; i < STREAK_COUNT; i++) {
+    for (let i = 0; i < layer.count; i++) {
       const i6 = i * 6;
-      this.pos[i6 + 1] += FALL.y * speed * dt;
-      this.pos[i6] += FALL.x * speed * dt;
-      this.pos[i6 + 2] += FALL.z * speed * dt;
-      this.pos[i6 + 3] = this.pos[i6] + FALL.x * len;
-      this.pos[i6 + 4] = this.pos[i6 + 1] + FALL.y * len;
-      this.pos[i6 + 5] = this.pos[i6 + 2] + FALL.z * len;
-      const dx = this.pos[i6] - this._cam.x;
-      const dy = this.pos[i6 + 1] - this._cam.y;
-      const dz = this.pos[i6 + 2] - this._cam.z;
-      if (dy < -5 || dx * dx + dz * dz > 520) {
-        this._respawn(i, false);
+      layer.pos[i6] += dir.x * speed * dt;
+      layer.pos[i6 + 1] += dir.y * speed * dt;
+      layer.pos[i6 + 2] += dir.z * speed * dt;
+      layer.pos[i6 + 3] = layer.pos[i6] + dir.x * len;
+      layer.pos[i6 + 4] = layer.pos[i6 + 1] + dir.y * len;
+      layer.pos[i6 + 5] = layer.pos[i6 + 2] + dir.z * len;
+      const dx = layer.pos[i6] - this._cam.x;
+      const dy = layer.pos[i6 + 1] - this._cam.y;
+      const dz = layer.pos[i6 + 2] - this._cam.z;
+      if (dy < minY || dx * dx + dz * dz > maxR2) {
+        this._respawnLayer(layer, i, false, near);
       } else {
         live++;
       }
     }
-    this.geo.attributes.position.needsUpdate = true;
-    const show = this.intensity > 0.06 && live > 0;
-    this.lines.visible = show;
-    this.mat.opacity = show ? 0.1 + this.intensity * 0.22 : 0;
+    layer.geo.attributes.position.needsUpdate = true;
+    return live;
   }
 
   /**
+   * @param {{pos:Float32Array}} layer
    * @param {number} i
    * @param {boolean} scatter
+   * @param {boolean} near
    */
-  _respawn(i, scatter) {
-    const along = 2 + Math.random() * 22;
-    const side = (Math.random() - 0.5) * 16;
-    const lift = scatter ? (Math.random() - 0.2) * 10 : 6 + Math.random() * 7;
+  _respawnLayer(layer, i, scatter, near) {
+    const along = near
+      ? 0.9 + Math.random() * (scatter ? 8 : 6.5)
+      : 5 + Math.random() * (scatter ? 18 : 14);
+    const side = (Math.random() - 0.5) * (near ? 7.2 : 13);
+    // Keep streaks in the chase look-at cone (around the car), not only in the sky.
+    const lift = near
+      ? -1.6 + Math.random() * 4.6
+      : scatter
+        ? -2.2 + Math.random() * 8
+        : -1.4 + Math.random() * 7;
     this._a.copy(this._cam).addScaledVector(this._fwd, along).addScaledVector(this._right, side);
     this._a.y = this._cam.y + lift;
     const i6 = i * 6;
-    this.pos[i6] = this._a.x;
-    this.pos[i6 + 1] = this._a.y;
-    this.pos[i6 + 2] = this._a.z;
-    this.pos[i6 + 3] = this._a.x + FALL.x * 0.45;
-    this.pos[i6 + 4] = this._a.y + FALL.y * 0.45;
-    this.pos[i6 + 5] = this._a.z + FALL.z * 0.45;
+    layer.pos[i6] = this._a.x;
+    layer.pos[i6 + 1] = this._a.y;
+    layer.pos[i6 + 2] = this._a.z;
+    const sl = near ? 0.72 : 0.5;
+    layer.pos[i6 + 3] = this._a.x + FALL.x * sl;
+    layer.pos[i6 + 4] = this._a.y + FALL.y * sl;
+    layer.pos[i6 + 5] = this._a.z + FALL.z * sl;
   }
 
   /**
@@ -262,6 +331,7 @@ export class StageWeather {
     if (right) right.rotation.z = parkR - ang;
 
     this._setWeatherVisible(car, !!pov);
+    this._syncScreenGlass(opts.camera, car, !!pov);
     if (!pov) return;
 
     const dyn = {
@@ -279,6 +349,51 @@ export class StageWeather {
     this._slideDrops(dt, dyn);
     if (this._wipeOn) this._wipeDrops(car);
     this._paintDrops(car, false);
+  }
+
+  /**
+   * Camera-locked pane so beads read on the glass the player actually looks through
+   * (authored windshield fits can sit off-axis on swapped GLBs).
+   * @param {THREE.Camera|null|undefined} camera
+   * @param {THREE.Object3D} car
+   * @param {boolean} pov
+   */
+  _syncScreenGlass(camera, car, pov) {
+    const tex = car && car.userData && car.userData.povRainTex;
+    if (!pov || !camera || !tex) {
+      if (this._screenPane) this._screenPane.visible = false;
+      return;
+    }
+    if (!this._screenPane) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false,
+      });
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.72), mat);
+      pane.name = "pov-rain-screen";
+      pane.frustumCulled = false;
+      pane.renderOrder = 8;
+      pane.layers.set(POV_HUD_LAYER);
+      this._screenPane = pane;
+    } else if (this._screenPane.material && this._screenPane.material.map !== tex) {
+      this._screenPane.material.map = tex;
+      this._screenPane.material.needsUpdate = true;
+    }
+    if (this._screenCam !== camera) {
+      if (this._screenPane.parent) this._screenPane.parent.remove(this._screenPane);
+      camera.add(this._screenPane);
+      this._screenCam = camera;
+    }
+    // Sit in the windshield opening: above the dash, below the mirror.
+    this._screenPane.position.set(0, 0.1, -0.46);
+    this._screenPane.rotation.set(-0.12, 0, 0);
+    this._screenPane.visible = true;
   }
 
   /**
@@ -307,13 +422,15 @@ export class StageWeather {
       this._spawnAcc -= 1;
       const big = Math.random() > 0.8;
       // Prefer the lower / mid glass — leave the mirror band empty.
-      const v0 = MIRROR_BAND_V + 0.02 + Math.random() * (0.96 - MIRROR_BAND_V);
+      // Impact mostly on the lower / mid pane — ram-air then drives them up.
+      const v0 = 0.42 + Math.random() * 0.52;
+      const climb0 = kmh > 16 ? -(0.18 + Math.random() * 0.42 + (kmh / 140) * 0.55) : 0.02;
       this._drops.push({
-        u: 0.04 + Math.random() * 0.92,
-        v: v0,
-        r: big ? 0.0048 + Math.random() * 0.006 : 0.0018 + Math.random() * 0.0034,
-        vx: 0,
-        vy: 0,
+        u: 0.05 + Math.random() * 0.9,
+        v: Math.min(0.97, v0),
+        r: big ? 0.0044 + Math.random() * 0.0042 : 0.0022 + Math.random() * 0.0028,
+        vx: (Math.random() - 0.5) * 0.04,
+        vy: climb0,
         life: 0.85 + Math.random() * 0.55,
         trail: 0,
       });
@@ -331,21 +448,23 @@ export class StageWeather {
    */
   _slideDrops(dt, dyn) {
     const kmh = Math.max(0, dyn.speed) * 3.6;
-    const aero = clamp01((kmh - 14) / 120);
+    // Ram-air on a raked screen: above ~22 km/h beads streak toward the roof
+    // (−v). Parked / crawling, gravity wins (+v toward the cowl).
+    const aero = clamp01((kmh - 8) / 70);
     const brake = clamp01(dyn.brake || 0);
     const throttle = clamp01(dyn.throttle || 0);
     const ax = dyn.ax || 0;
     const accel = Math.max(0, ax);
     const decel = Math.max(0, -ax);
-    const g = 0.48 + Math.max(-0.1, Math.min(0.16, (dyn.pitch || 0) * 0.3));
-    // Flooring it / building speed throws beads toward the roof (up the POV glass).
+    const g = 0.22 + Math.max(-0.06, Math.min(0.1, (dyn.pitch || 0) * 0.22));
     const climb =
-      aero * aero * 1.35 +
-      throttle * (0.62 + aero * 0.45) +
-      accel * 0.08 +
-      brake * 0.18;
-    const down = g * (1 - aero * 1.4) + decel * 0.02;
-    const out = 0.06 + aero * 0.32 + throttle * 0.04;
+      aero * 2.15 +
+      aero * aero * 1.4 +
+      throttle * (0.35 + aero * 0.55) +
+      accel * 0.06 +
+      brake * 0.08;
+    const down = kmh < 18 ? g * (1 - aero) : g * 0.08;
+    const out = 0.04 + aero * 0.38 + throttle * 0.03;
     const yaw = (dyn.slide || 0) * 0.55 + (dyn.yawRate || 0) * 0.09;
     for (let i = this._drops.length - 1; i >= 0; i--) {
       const d = this._drops[i];
@@ -426,7 +545,7 @@ export class StageWeather {
 
     // Soft wet sheen only below the mirror band — never a full-pane haze.
     const sheenTop = Math.floor(h * MIRROR_BAND_V);
-    const wet = 0.03 + this.intensity * 0.05;
+    const wet = 0.018 + this.intensity * 0.028;
     ctx.fillStyle = `rgba(140,160,178,${wet.toFixed(3)})`;
     ctx.fillRect(0, sheenTop, w, h - sheenTop);
 
@@ -440,31 +559,29 @@ export class StageWeather {
       const y = d.v * h;
       const rx = Math.max(1.05, d.r * w);
       const spd = Math.hypot(d.vx || 0, d.vy || 0);
-      const elong = 1 + spd * 10 + (d.trail || 0) * 4;
+      const elong = 1 + Math.min(2.6, spd * 7 + (d.trail || 0) * 2.4);
       const ang = Math.atan2((d.vy || 0) * h, (d.vx || 0) * w);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(ang);
-      // Body
-      ctx.fillStyle = "rgba(186,206,222,0.52)";
-      ctx.strokeStyle = "rgba(230,240,248,0.45)";
-      ctx.lineWidth = 0.6;
+      // Slender bead along velocity — ram-air reads as a climb, not a soap blob.
+      ctx.fillStyle = "rgba(198,216,230,0.48)";
+      ctx.strokeStyle = "rgba(236,244,250,0.55)";
+      ctx.lineWidth = 0.55;
       ctx.beginPath();
-      ctx.ellipse(0, 0, rx * (0.45 + elong * 0.55), rx * (0.92 / Math.sqrt(elong)), 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, rx * (0.55 + elong * 0.85), Math.max(0.65, rx * 0.36), 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      // Spec highlight
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.beginPath();
-      ctx.ellipse(-rx * 0.2, -rx * 0.28, rx * 0.18, rx * 0.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(rx * 0.12, -rx * 0.08, rx * 0.16, rx * 0.08, 0, 0, Math.PI * 2);
       ctx.fill();
-      // Thin motion streak behind big beads
-      if (spd > 0.08) {
-        ctx.strokeStyle = "rgba(170,190,210,0.28)";
-        ctx.lineWidth = Math.max(0.5, rx * 0.35);
+      if (spd > 0.06) {
+        ctx.strokeStyle = "rgba(176,196,214,0.26)";
+        ctx.lineWidth = Math.max(0.45, rx * 0.22);
         ctx.beginPath();
-        ctx.moveTo(-rx * elong * 0.9, 0);
-        ctx.lineTo(-rx * 0.2, 0);
+        ctx.moveTo(-rx * elong * 1.05, 0);
+        ctx.lineTo(-rx * 0.15, 0);
         ctx.stroke();
       }
       ctx.restore();

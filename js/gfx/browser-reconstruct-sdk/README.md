@@ -4,7 +4,7 @@ MIT. Our algorithm. A drop-in reconstruct path for **Three.js r160 + WebGL2**.
 
 Portfolio write-up: [`docs/WEBTSR.md`](../../../docs/WEBTSR.md). Isolated lab: `tools/webtsr-lab.html`.
 
-This is **not** NVIDIA DLSS. It is **not** RTX-only. It does **not** load NGX, Streamline, or any vendor DLL / leaked weights. The temporal resolve lives in `../tsr-upscaler.js` and the optional depth-guided residual lives in `../neural-reconstruct.js`. Both are original GLSL we ship.
+This is **not** NVIDIA DLSS and **not** Unreal Engine. It is a legal browser clone of the *capability classes* in Epic's public Temporal Super Resolution docs (history, parallax disocclusion, shading rejection, flicker analysis, resurrection, spatial AA). It does **not** load NGX, Streamline, Epic `.usf`, or leaked weights. The temporal resolve lives in `../tsr-upscaler.js`, the optional depth-guided residual in `../neural-reconstruct.js`, and the optional appearance residual in `../appearance-net.js`. All are original GLSL we ship.
 
 ## What you get
 
@@ -27,15 +27,17 @@ Default mode follows `TSR_DEFAULT_MODE` in the upscaler (**currently `quality`**
    - `js/gfx/tsr-upscaler.js`
    - `js/gfx/neural-reconstruct.js`
    - `js/gfx/recon-weights.js`
+   - `js/gfx/appearance-net.js`
 2. Point the `three.module.js` imports at **your** Three r160 build (import map or edit the relative `vendor/` path). Use one Three instance — a second copy of the module will black-screen the targets.
 3. You need WebGL2 and a renderable half-float colour target.
 
 ```js
-import { createBrowserReconstruct } from "./browser-reconstruct-sdk/index.js";
+import { createWebTsr } from "./browser-reconstruct-sdk/index.js";
 
-const recon = createBrowserReconstruct(renderer, {
+const recon = createWebTsr(renderer, {
   mode: "off",       // stay off until you prove Quality wins
   guided: false,     // set true to create the residual pass
+  appearance: false, // set true for the luma-clamped look residual
 });
 
 function onResize(w, h, pixelRatio) {
@@ -73,17 +75,18 @@ If the host already has a post stack (bloom / AO / grade), present `recon.presen
 ## Public API
 
 ```js
-createBrowserReconstruct(renderer, { mode, guided })
+createWebTsr(renderer, { mode, guided, appearance })
   .setMode('off'|'dlaa'|'quality'|'balanced'|'performance')
   .setSize(w, h)
   .render(scene, camera, { dynamicRoots })
   .presentScene          // Three.Scene quad for your present / post
-  .outputTarget          // residual RT after render, or null
+  .outputTarget          // last residual / appearance RT, or null
+  .appear                // appearance handle, or null
   .reset()               // camera cuts
   .dispose()
 ```
 
-Re-exports (unchanged modules): `TsrUpscaler`, `parseTsrParams`, `persistTsrMode`, `createReconstruct`, `parseReconParams`, `persistReconEnabled`, and the mode / storage constants.
+`createBrowserReconstruct` is an alias of `createWebTsr`. Re-exports: `TsrUpscaler`, `parseTsrParams`, `persistTsrMode`, `createReconstruct`, `parseReconParams`, `persistReconEnabled`, `createAppearance`, `parseAppearParams`, `persistAppearEnabled`, and the mode / storage constants.
 
 ## License
 

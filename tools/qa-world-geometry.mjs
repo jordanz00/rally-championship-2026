@@ -41,6 +41,8 @@ check("forest ≥2 checkpoints", f.pieces.filter((p) => p.checkpoint).length >= 
 check("mountain 3 checkpoint flags", m.pieces.filter((p) => p.checkpoint).length === 3);
 check("mountain has no desert-style tunnel", !m.pieces.some((p) => p.tunnel));
 check("mountain starts in the village", m.pieces[0] && m.pieces[0].surface === "cobble");
+check("mountain road is wide enough to slide", (m.startWidth || 0) >= 14.5);
+check("mountain has alpine jumps", m.pieces.filter((p) => p.type === "jump").length >= 2);
 
 const kinds = describeTrackRhythm(MOUNTAIN_DEFINITION).map((r) => r.kind);
 check("has hairpin", kinds.includes("hairpin"));

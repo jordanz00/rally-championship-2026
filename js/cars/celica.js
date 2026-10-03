@@ -3844,7 +3844,7 @@ function assembleLoftCar(spec) {
   mirL.position.x = -0.94;
   g.add(mirR, mirL);
 
-  const wiper = box(0.55, 0.012, 0.012, 0x222226, 0.12, 0.72, 0.5 + zShift);
+  const wiper = box(0.4125, 0.009, 0.009, 0x222226, 0.12, 0.72, 0.5 + zShift);
   wiper.rotation.z = 0.18;
   g.add(wiper);
 
@@ -6176,10 +6176,10 @@ function attachPovWeatherGlass(root) {
     roughness: 0.95,
     metalness: 0.02,
   });
-  // Tandem GT-Four style: pivots on the cowl, arm + blade reach most of the pane.
-  const reach = Math.min(gw * 0.78, Math.hypot(gw * 0.58, gh * 0.98));
-  const armLen = Math.max(0.16, reach * 0.4);
-  const bladeLen = Math.max(0.3, reach * 0.82);
+  // Tandem GT-Four style: pivots on the cowl. 25% shorter than the first fit.
+  const reach = Math.min(gw * 0.78, Math.hypot(gw * 0.58, gh * 0.98)) * 0.75;
+  const armLen = Math.max(0.12, reach * 0.4);
+  const bladeLen = Math.max(0.22, reach * 0.82);
   const totalLen = armLen * 0.95 + bladeLen;
   const makeArm = (side) => {
     const pivot = new THREE.Group();
@@ -6187,13 +6187,13 @@ function attachPovWeatherGlass(root) {
     // Sit on the lower cowl edge, inboard enough that parked blades meet near centre.
     pivot.position.set(side * gw * 0.26, -gh * 0.48, 0.014);
 
-    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.014, 12), armMat);
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.0082, 0.0098, 0.0105, 12), armMat);
     boss.rotation.x = Math.PI * 0.5;
     boss.userData.povHud = true;
     boss.userData.povWiper = true;
     markPovHudMesh(boss, 5, { depthTest: false });
 
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.0075, 0.0055), armMat);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.0056, 0.0041), armMat);
     arm.position.set(armLen * 0.5, 0.001, 0.003);
     arm.userData.povHud = true;
     arm.userData.povWiper = true;
@@ -6204,20 +6204,20 @@ function attachPovWeatherGlass(root) {
     joint.position.set(armLen * 0.94, 0.001, 0.004);
     joint.rotation.z = side * 0.1;
 
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.012, 0.004), bladeMat);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.009, 0.003), bladeMat);
     blade.position.set(bladeLen * 0.5, 0, 0);
     blade.userData.povHud = true;
     blade.userData.povWiper = true;
     markPovHudMesh(blade, 5, { depthTest: false });
 
-    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.97, 0.0045, 0.0028), rubberMat);
-    rubber.position.set(bladeLen * 0.5, -0.007, 0.001);
+    const rubber = new THREE.Mesh(new THREE.BoxGeometry(bladeLen * 0.97, 0.0034, 0.0021), rubberMat);
+    rubber.position.set(bladeLen * 0.5, -0.0052, 0.001);
     rubber.userData.povHud = true;
     rubber.userData.povWiper = true;
     markPovHudMesh(rubber, 5, { depthTest: false });
 
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.01, 0.005), bladeMat);
-    tip.position.set(bladeLen - 0.004, 0, 0);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.0075, 0.0038), bladeMat);
+    tip.position.set(bladeLen - 0.003, 0, 0);
     tip.userData.povHud = true;
     tip.userData.povWiper = true;
     markPovHudMesh(tip, 5, { depthTest: false });

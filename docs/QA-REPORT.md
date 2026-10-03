@@ -1,5 +1,66 @@
 # QA report — quality-control pass
 
+## Slide / brake / turn hop (2026-10-03)
+
+**Player moment:** Drifting, power-sliding, braking, or turning must stay on the tarmac. No hop, bounce, or chassis glitch.
+
+**Cause:** Plant only armed after a full slide. Mountain banked sweepers lift a steered wheel 20–70 cm; that false ramp threw the hull. `land` / `crest` also skipped the glue, so a slide after a jump bounced.
+
+**Shipped:** `_keepDeckPlanted()` on any steer / brake / handbrake / yaw / slide. Pin Y to the road centre. Axle mid-height ignores bank samples over 10 cm. No land-spring rebound during a maneuver. Jumps (`ramp` / `gap`) unchanged.
+
+**Boot:** `main.js?v=934` · `vehicle.js?v=175`
+
+## Mountain Stage 3 — wider drift / jump layout (2026-10-03)
+
+**Player moment:** Stage 3 is a wide alpine tarmac you can power-slide, not a 9 m hairpin gauntlet. Village cobble start stays. One landmark hairpin (r22, room to slide). Three crest jumps. Linked S-bend drift pairs.
+
+**What changed:** Road 9.0–10.2 m → **14.4–15.6 m**. Tight-corner pile-up cut; long banked sweepers + two S-bends. Jumps 0 → 3. Physics unchanged (`vehicle.js` left alone) — the road now lets the existing arcade slide breathe. 3 CPs, no tunnel.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-world-geometry.mjs` · `qa-validate.mjs` — Mountain ✓ ~2097 m, 3 CP, 3 jumps.
+
+**Boot:** `main.js?v=933` · `courses.js?v=90` · `mountain-definition.js?v=10`
+
+## Mountain rain visibility + glass climb (2026-10-03)
+
+**Player moment:** Stage 3 (Mountain) shower is readable from chase, and POV beads streak **up** the raked screen under ram-air. Wipers are 25% shorter.
+
+**What changed:** Near rain sheet (depth-test off, in the look-at cone) + mid volume; no fog on streaks; intensity floor ~0.48. Windshield spawn seeds climb velocity; gravity only wins below ~18 km/h. POV / title wipers ×0.75.
+
+**Boot:** `main.js?v=932` · `rain.js?v=18` · `celica.js?v=215`. `?rain=1` forces the shower on any cup. POV also gets a camera-locked glass overlay so beads read when the authored pane sits off-axis.
+
+## Epic TSR FAQ + thin geometry (2026-10-03)
+
+**Player moment:** Forest fence / tree-edge boil and car sharpness in motion. Resolve now follows Epic’s public FAQ: BlendFinal reject, velocity clamp 2.0, resurrection only when last frame mismatches, thin-geo depth-edge relax. No frame gen. No 200% history.
+
+**Boot:** `main.js?v=929` · `?tsrdebug=nothin,novclamp` to A/B.
+
+**Lab:** Quality still compiles; HUD shows feed MP/s and 1spp.
+
+## WebTSR Suite plan close (2026-10-03)
+
+**Player moment:** Pause IMAGE Quality TSR is live. Pause LOOK (DLSS-class appearance residual) exists but **defaults OFF**.
+
+**Plan gate:** appearance ON only if Forest ~600 m p50 ≤ 33 ms. That A/B was not completed (Forest load wait hung the last headed probe). Measured instead:
+
+| Probe | Result |
+|---|---|
+| Quality TSR, Forest 600, pre-LOOK (prior) | **32.7 ms** |
+| G-buffer override, Forest | ~47 ms → abort after 2 frames |
+| LOOK compile spike | ~20 ms (warmup now ignored) |
+| Isolated lab Quality + LOOK checkbox | **16.6 ms** (cube, not Forest) |
+
+**Default:** `APPEAR_DEFAULT = false`. `?appear=1` / Pause LOOK still work. No stacked RCAS. Shadows 1536. `main.js?v=928`.
+
+**SDK:** `createWebTsr(renderer, { mode, guided, appearance })` · `presentScene` unchanged.
+
+## UE5-class TSR clone (2026-10-03)
+
+**Player moment:** Forest fences and car silhouettes after a camera cut. WebTSR now clones the *capability classes* of [Unreal Temporal Super Resolution](https://dev.epicgames.com/documentation/unreal-engine/temporal-super-resolution-in-unreal-engine): shading rejection, flicker stabilize, history resurrection (31-frame persistent), FXAA-style spatial AA on rejected pixels. Not Epic shaders. Not NVIDIA DLSS. Nyquist 200% history **cut** (4× cost).
+
+**Boot:** `main.js?v=927` · `tsr-upscaler.js?v=927` · Pause IMAGE **Quality · TSR**
+
+**Proof:** isolated lab `tools/webtsr-lab.html` (no Forest hang). Full Forest 600 / Desert 400 A/B is still the open LOOK gate from the prior sprint — do not treat this row as that p50.
+
 ## Motion-guided residual (2026-10-03)
 
 **Player moment:** DLSS-class reconstruct — do not spatially sharpen a sliding car. Residual now reads TSR car velocity and fades gain along motion. Depth + derived normals still gate silhouettes.

@@ -1330,6 +1330,21 @@ export class Vehicle {
       this._keepChassisOnRoad(this._axles, pit);
     }
     this.confirmOnRoad(track);
+    // Last word: a steer / brake / slide must finish the tick on the deck.
+    // Sweep / never-fall-through can re-lift to a shoulder sample after the pin.
+    if (
+      this.onGround &&
+      this._keepDeckPlanted() &&
+      this._q &&
+      this._q.jumpKind !== "gap" &&
+      this._q.jumpKind !== "ramp" &&
+      Number.isFinite(this._q.height)
+    ) {
+      this.position.y = this._q.height - TIRE_PLANT;
+      this.velY = 0;
+      this._groundVy = 0;
+      this._climbVel = 0;
+    }
     // Stash only after collision resolve succeeded. An underground pose
     // must never become the recovery point.
     if (this._canStashValidTransform()) {
@@ -1560,7 +1575,9 @@ export class Vehicle {
       }
 
       let chatter = 0;
-      const onJumpApproach = kind === "ramp" || kind === "crest" || kind === "land";
+      // Only the rising lip / hole may skip the maneuver plant. Crest and
+      // land are still roadway — treating them as air was the post-slide hop.
+      const onJumpApproach = kind === "ramp" || kind === "gap";
       // Chassis Y no longer adds HF bobble — query micro already lives in
       // the ribbon, and stacking chatter on a hard plant read as throttle jerk.
       // Wheels still read ruts via corner probes. Keep the call so QA can see it.
@@ -1583,7 +1600,7 @@ export class Vehicle {
       if (!Number.isFinite(plantDeck)) plantDeck = prevY;
       // A slide used to ride the deck filter. The filter hangs above a
       // dropping probe, then drops — that is the hop on brake and handbrake.
-      if (this._chassisSliding() && !onJumpApproach) {
+      if (this._keepDeckPlanted() && !onJumpApproach) {
         const glued = Number.isFinite(q2.height) ? q2.height - TIRE_PLANT : plantDeck;
         this.position.y = glued;
         this._deckFilt = glued;
@@ -2063,17 +2080,17 @@ export class Vehicle {
     if (!Number.isFinite(floor)) return;
     if (
       this.onGround &&
-      this._chassisSliding() &&
+      this._keepDeckPlanted() &&
       this._q &&
       this._q.jumpKind !== "gap" &&
       this._q.jumpKind !== "ramp" &&
-      this._q.jumpKind !== "crest" &&
       Number.isFinite(this._q.height)
     ) {
-      const deck = this._q.height - TIRE_PLANT;
-      if (this.position.y > deck + 0.012) this.position.y = deck + 0.012;
-      else if (this.position.y < deck - 0.012) this.position.y = deck - 0.012;
+      const glued = this._q.height - TIRE_PLANT;
+      this.position.y = glued;
       this.velY = 0;
+      this._groundVy = 0;
+      this._climbVel = 0;
       return;
     }
     const slack = tightDeckPlant(kind, this._landLock) ? 0 : DECK_FOLLOW_SLACK;
@@ -2933,6 +2950,8 @@ export class Vehicle {
     const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 0.86;
     let x = this._landCompress || 0;
     let v = this._landCompressVel || 0;
+    // A slide or brake after touchdown must not get a second hop from rebound.
+    if (this._keepDeckPlanted() && v > 0) v *= 0.15;
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
@@ -3113,16 +3132,19 @@ export class Vehicle {
           ? AXLE_SINK_MAX
           : DECK_FOLLOW_SLACK;
 
-    // Shoulder probes are higher than the deck under the car. Lifting to
-    // them is the hop during a drift, brake, or handbrake.
-    if (
+    // Shoulder / bank probes sit higher than the deck under the car.
+    // Lifting to them is the hop during a drift, brake, turn, or handbrake.
+    const pinManeuver =
       this.onGround &&
-      this._chassisSliding() &&
+      this._keepDeckPlanted() &&
       kind !== "gap" &&
-      kind !== "ramp" &&
-      kind !== "crest" &&
-      kind !== "land"
-    ) {
+      kind !== "ramp";
+    if (pinManeuver && this._q && Number.isFinite(this._q.height)) {
+      const glued = this._q.height - TIRE_PLANT;
+      this.position.y = glued;
+      this.velY = 0;
+      this._groundVy = 0;
+      this._climbVel = 0;
       return;
     }
 
@@ -3182,16 +3204,27 @@ export class Vehicle {
   }
 
   /**
-   * True while a drift, brake-turn, or handbrake should stay planted.
-   * A real jump (ramp, crest, gap) is not a slide.
+   * Steer, brake, drift, or handbrake — axle probes sit on the shoulder or
+   * the high side of a bank. Those samples must not lift the hull.
+   * @returns {boolean}
+   */
+  _keepDeckPlanted() {
+    if (!this.onGround) return false;
+    if (this.handbrake > 0.06) return true;
+    if (this.brake > 0.1) return true;
+    if (Math.abs(this.steer) > 0.06) return true;
+    if (Math.abs(this.driftAngle) > 0.035 || this.drifting) return true;
+    if ((this._slidePct || 0) > 0.08) return true;
+    if (this._rearSlide && Math.abs(this.speed) > 3) return true;
+    if (Math.abs(this.yawRate || 0) > 0.28) return true;
+    return false;
+  }
+
+  /**
    * @returns {boolean}
    */
   _chassisSliding() {
-    if (this.handbrake > 0.18) return true;
-    if (Math.abs(this.driftAngle) > 0.1 || this.drifting) return true;
-    if (this._rearSlide && Math.abs(this.steer) > 0.12 && Math.abs(this.speed) > 6) return true;
-    if (this.brake > 0.4 && Math.abs(this.steer) > 0.15 && Math.abs(this.speed) > 6) return true;
-    return false;
+    return this._keepDeckPlanted();
   }
 
   /**
@@ -3203,9 +3236,9 @@ export class Vehicle {
    * @param {{height?:number, dist?:number, jumpKind?:string}} q2
    */
   _plantSlideDeck(track, axles, q2) {
-    if (!this.onGround || !axles || axles.bothGap || !this._chassisSliding()) return;
+    if (!this.onGround || !axles || axles.bothGap || !this._keepDeckPlanted()) return;
     const kind = (q2 && q2.jumpKind) || "";
-    if (kind === "gap" || kind === "ramp" || kind === "crest" || kind === "land") return;
+    if (kind === "gap" || kind === "ramp") return;
     const center = q2 && Number.isFinite(q2.height) ? q2.height : null;
     if (Number.isFinite(center) && Number.isFinite(axles.midH) && Math.abs(axles.midH - center) > 0.03) {
       axles.midH = center;
@@ -3341,13 +3374,18 @@ export class Vehicle {
     if (
       this._q &&
       this._q.jumpKind !== "gap" &&
+      !frontGap &&
+      !rearGap &&
       Number.isFinite(center) &&
-      Number.isFinite(midH) &&
-      Math.abs(midH - center) > 2.2
+      Number.isFinite(midH)
     ) {
-      midH = center;
-      front.height = center;
-      rear.height = center;
+      // Banked sweepers and yawed probes read 20–70 cm high. That used to
+      // lift the whole car. A 2.2 m gate only caught jump-pit nonsense.
+      if (Math.abs(midH - center) > 0.1) {
+        midH = center;
+        if (Math.abs((front.height || 0) - center) > 0.18) front.height = center;
+        if (Math.abs((rear.height || 0) - center) > 0.18) rear.height = center;
+      }
     }
     const ax = this._axles;
     ax.L = L;
@@ -3430,7 +3468,7 @@ export class Vehicle {
       if (Math.abs(raw) < 0.014) raw = 0;
       // A slide yaws the hubs onto the shoulder. That is not suspension travel,
       // and letting it through pumps the body while the car is still on the road.
-      if (this._chassisSliding() && Math.abs(raw) > 0.02) raw *= 0.2;
+      if (this._keepDeckPlanted() && Math.abs(raw) > 0.016) raw *= 0.12;
       wants[i] = clamp(raw, -maxT, maxT * 0.72);
     }
     // Soft anti-roll: resist left/right travel difference (Group A bars).
@@ -3457,7 +3495,11 @@ export class Vehicle {
     const trackW = Math.max(1.2, (this.spec.trackFront || 1.5) * 0.5 + (this.spec.trackRear || 1.5) * 0.5);
     const rollRoad = Math.atan2((fl - fr) * 0.58 + (rl - rr) * 0.42, trackW);
     const rollGain = HANDLING.roadRollGain != null ? HANDLING.roadRollGain : 1.05;
-    this._roadRoll += (rollRoad * rollGain - this._roadRoll) * (1 - Math.exp(-9 * step));
+    let wantRoll = rollRoad * rollGain;
+    // Yawed hubs on a banked sweeper read as a 30° lean. That rocked the
+    // body like a hop. Keep a readable lean, not a trampoline.
+    if (this._keepDeckPlanted()) wantRoll = clamp(wantRoll, -0.055, 0.055);
+    this._roadRoll += (wantRoll - this._roadRoll) * (1 - Math.exp(-9 * step));
     return travel;
   }
 
