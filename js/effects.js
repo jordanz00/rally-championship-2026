@@ -965,6 +965,38 @@ export class ImpactSparks {
   }
 
   /**
+   * Burnout dump wake — orange spray off the tail. Cheap, reused spark pool.
+   * @param {{position:{x:number,y?:number,z:number},yaw:number,velocity?:{x:number,z:number}}} car
+   * @param {number} heat
+   */
+  wake(car, heat) {
+    if (!car || !car.position || !(heat > 0.12)) return;
+    const n = heat > 0.55 ? 5 : 3;
+    const fx = Math.sin(car.yaw || 0);
+    const fz = Math.cos(car.yaw || 0);
+    const px = car.position.x - fx * 1.55;
+    const py = (car.position.y || 0.6) + 0.28;
+    const pz = car.position.z - fz * 1.55;
+    const vx = car.velocity ? car.velocity.x : fx * 20;
+    const vz = car.velocity ? car.velocity.z : fz * 20;
+    for (let k = 0; k < n; k++) {
+      const i = this.i % this.count;
+      this.i += 1;
+      this.pos[i * 3] = px + (Math.random() - 0.5) * 0.35;
+      this.pos[i * 3 + 1] = py + Math.random() * 0.22;
+      this.pos[i * 3 + 2] = pz + (Math.random() - 0.5) * 0.35;
+      this.vel[i * 3] = vx * 0.35 - fx * (8 + heat * 10) + (Math.random() - 0.5) * 3;
+      this.vel[i * 3 + 1] = 0.6 + Math.random() * 2.4;
+      this.vel[i * 3 + 2] = vz * 0.35 - fz * (8 + heat * 10) + (Math.random() - 0.5) * 3;
+      this.maxLife[i] = 0.16 + Math.random() * 0.2;
+      this.life[i] = this.maxLife[i];
+      this.size[i] = 8 + heat * 10 + Math.random() * 8;
+    }
+    this.alive = 1;
+    this.geo.attributes.aSize.needsUpdate = true;
+  }
+
+  /**
    * @param {number} dt
    */
   step(dt) {
@@ -991,6 +1023,132 @@ export class ImpactSparks {
   }
 }
 
+const WAKE_FRAG = /* glsl */ `
+varying float vLife;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float d = dot(p, p);
+  if (d > 1.0) discard;
+  float core = exp(-d * 2.05) * vLife;
+  vec3 hot = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.94, 0.62), clamp(1.0 - d, 0.0, 1.0));
+  gl_FragColor = vec4(hot, core);
+}
+`;
+
+/**
+ * Paradise-scale boost wake — thick orange ribbon off the tail.
+ * Phones skip it. Sparks.wake stays as extra glitter.
+ */
+export class BoostWake {
+  /**
+   * @param {THREE.Scene} scene
+   */
+  constructor(scene) {
+    this.count = isPhonePlay() ? 0 : 128;
+    this.pos = new Float32Array(this.count * 3);
+    this.vel = new Float32Array(this.count * 3);
+    this.life = new Float32Array(this.count);
+    this.maxLife = new Float32Array(this.count);
+    this.size = new Float32Array(this.count);
+    this.fade = new Float32Array(this.count);
+    this.geo = new THREE.BufferGeometry();
+    this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
+    this.geo.setAttribute("aSize", new THREE.BufferAttribute(this.size, 1));
+    this.geo.setAttribute("aLife", new THREE.BufferAttribute(this.fade, 1));
+    this.mat = particleMaterial({
+      vertexShader: SPARK_VERT,
+      fragmentShader: WAKE_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    this.points = new THREE.Points(this.geo, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 7;
+    this.points.visible = this.count > 0 && RENDER_CAPS.glslCustom;
+    if (scene && this.count) scene.add(this.points);
+    this.i = 0;
+    this.alive = 0;
+    for (let i = 0; i < this.count; i++) this.pos[i * 3 + 1] = -80;
+  }
+
+  /**
+   * @param {{position:{x:number,y?:number,z:number},yaw:number,velocity?:{x:number,z:number}}} car
+   * @param {number} heat
+   * @param {number} [fire]
+   */
+  emit(car, heat, fire = 0) {
+    if (!this.count || !car || !car.position) return;
+    if (!(heat > 0.08 || fire > 0.12)) return;
+    const n = fire > 0.45 ? 16 : heat > 0.55 ? 11 : 7;
+    const fx = Math.sin(car.yaw || 0);
+    const fz = Math.cos(car.yaw || 0);
+    const px = car.position.x - fx * 1.72;
+    const py = (car.position.y || 0.6) + 0.22;
+    const pz = car.position.z - fz * 1.72;
+    const vx = car.velocity ? car.velocity.x : fx * 22;
+    const vz = car.velocity ? car.velocity.z : fz * 22;
+    for (let k = 0; k < n; k++) {
+      const i = this.i % this.count;
+      this.i += 1;
+      const lane = (Math.random() - 0.5) * (0.55 + fire * 0.35);
+      this.pos[i * 3] = px + lane * fz;
+      this.pos[i * 3 + 1] = py + Math.random() * 0.28;
+      this.pos[i * 3 + 2] = pz - lane * fx;
+      const shove = 12 + heat * 18 + fire * 10;
+      this.vel[i * 3] = vx * 0.22 - fx * shove + (Math.random() - 0.5) * 2.2;
+      this.vel[i * 3 + 1] = 0.35 + Math.random() * 1.6 + fire * 0.8;
+      this.vel[i * 3 + 2] = vz * 0.22 - fz * shove + (Math.random() - 0.5) * 2.2;
+      this.maxLife[i] = 0.32 + Math.random() * 0.42 + fire * 0.16;
+      this.life[i] = this.maxLife[i];
+      this.size[i] = 16 + heat * 26 + fire * 18 + Math.random() * 14;
+    }
+    this.alive = 1;
+    this.geo.attributes.aSize.needsUpdate = true;
+  }
+
+  /**
+   * @param {number} dt
+   */
+  step(dt) {
+    if (!this.count || !this.alive) return;
+    let live = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      if (this.life[i] <= 0) {
+        this.pos[i * 3 + 1] = -80;
+        this.fade[i] = 0;
+        continue;
+      }
+      live += 1;
+      this.vel[i * 3] *= 0.96;
+      this.vel[i * 3 + 2] *= 0.96;
+      this.vel[i * 3 + 1] -= 8 * dt;
+      this.pos[i * 3] += this.vel[i * 3] * dt;
+      this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
+      this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.fade[i] = this.life[i] / (this.maxLife[i] || 1);
+    }
+    this.alive = live;
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aLife.needsUpdate = true;
+  }
+
+  reset() {
+    if (!this.count) return;
+    for (let i = 0; i < this.count; i++) {
+      this.life[i] = 0;
+      this.pos[i * 3 + 1] = -80;
+      this.fade[i] = 0;
+    }
+    this.alive = 0;
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aLife.needsUpdate = true;
+  }
+}
+
 const MARK_VERT = /* glsl */ `
 attribute float aAlpha;
 attribute vec3 aColor;
@@ -1006,8 +1164,8 @@ void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
   vWorldXZ = wp.xz;
   gl_Position = projectionMatrix * viewMatrix * wp;
-  // Pull the rut toward the camera so the road ribbon cannot cover it.
-  gl_Position.z -= 0.0015 * gl_Position.w;
+  // Nudge off the ribbon only. A 0.0015 pull put ruts in front of the car.
+  gl_Position.z -= 0.00035 * gl_Position.w;
 }
 `;
 
@@ -1167,19 +1325,22 @@ export class TireMarks {
           fragmentShader: MARK_FRAG,
           transparent: true,
           depthWrite: false,
+          depthTest: true,
           polygonOffset: true,
-          polygonOffsetFactor: -12,
-          polygonOffsetUnits: -12,
+          polygonOffsetFactor: -3,
+          polygonOffsetUnits: -3,
           toneMapped: false,
         })
       : new THREE.MeshBasicMaterial({
           transparent: true,
           opacity: 0,
           depthWrite: false,
+          depthTest: true,
         });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 8;
+    // After the road (0), before the cars (3). Order 8 painted ruts on hulls.
+    this.mesh.renderOrder = 1;
     this.mesh.visible = true;
     scene.add(this.mesh);
     this.i = 0;

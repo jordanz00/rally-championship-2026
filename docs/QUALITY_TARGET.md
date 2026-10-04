@@ -22,7 +22,7 @@ The game already has the **right foundation** (modes, cars, courses, controls, c
 | Communicate physics through camera, suspension, dust, audio, road | Pretty scenery that doesn’t read weight/slip |
 | Obey [`PERFORMANCE_RULES.md`](PERFORMANCE_RULES.md) | Parallel “clean” renderer that forks the game |
 
-**North-star sentence:** After one clean Desert run you want *one more run* — not another menu option.
+**North-star sentence:** After one Desert pack run you say *“it’s Burnout, but rally”* — and you want one more run. Binding identity: [`BURNOUT_RALLY_DIRECTION.md`](BURNOUT_RALLY_DIRECTION.md).
 
 ---
 
@@ -33,7 +33,7 @@ The game already has the **right foundation** (modes, cars, courses, controls, c
 
                     GAMEPLAY
                        │
-                 Sega Rally DNA
+           Burnout-style rally + arcade dirt
                        │
            ┌───────────┴───────────┐
            │                       │
@@ -60,12 +60,12 @@ The game already has the **right foundation** (modes, cars, courses, controls, c
 
 ## Priority order (product)
 
-1. Rebuild/tune **driving model** around Sega Rally feel (AM3)  
-2. Make the **camera** substantially more physical  
+1. Keep **arcade dirt handling**; grow **Rush / near-miss / GO** (Burnout juice)  
+2. Make the **camera** sell speed and weight without shrinking the car  
 3. Make **road/terrain** visually richer (road first)  
-4. Make **cars** read as hero assets (materials + suspension + dirt), not “dropped GLBs”  
-5. Make **dust / gravel / marks / suspension / surface** react to wheel physics  
-6. Improve **lighting / materials / reflections**  
+4. Make **cars** read as hero candy (materials + suspension + dirt), not “dropped GLBs”  
+5. Make **dust / gravel / marks / rush heat / surface** react to wheel physics  
+6. Improve **hot grade / materials / reflections** (Burnout present, Lakeside pulled)  
 7. Mature **LOD / instancing / streaming** (evolve what exists — don’t invent from zero)  
 8. Strengthen **dynamic performance manager**  
 9. Polish **menus / HUD / audio**  

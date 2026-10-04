@@ -25,7 +25,7 @@
 <body>
   <div id="hud">
     <h1>WebTSR lab</h1>
-    <p>Original WebGL2 reconstruct SDK. Not NVIDIA DLSS. Moving cube = velocity test. Game default LOOK is OFF (`?appear=1` to opt in).</p>
+    <p>Original WebGL2 reconstruct SDK. Not NVIDIA DLSS. Moving cube = velocity test. Lab LOOK stays off so you can A/B. Game default LOOK is ON.</p>
     <label>IMAGE
       <select id="mode">
         <option value="off">Off · native</option>
@@ -41,7 +41,7 @@
   </div>
   <script type="module">
     import * as THREE from "../vendor/three.module.js";
-    import { createWebTsr } from "../js/gfx/browser-reconstruct-sdk/index.js?v=988";
+    import { createWebTsr } from "../js/gfx/browser-reconstruct-sdk/index.js?v=1033";
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));

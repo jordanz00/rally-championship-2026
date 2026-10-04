@@ -27,7 +27,7 @@ function check(label, ok, detail = "") {
 
 console.log(`STAGE LENGTH  ·  ${new Date().toISOString()}\n`);
 
-check("straight scale in compiler", /PLAY_STRAIGHT = 1\.45/.test(defSrc) && /PLAY_FINISH_PAD/.test(defSrc));
+check("straight scale in compiler", /PLAY_STRAIGHT = 1\.72/.test(defSrc) && /PLAY_FINISH_PAD/.test(defSrc));
 check("desert waits until jump 3", /jumps >= 3/.test(defSrc));
 check("game imports courses.js?v=95+", Number((gameSrc.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 95);
 

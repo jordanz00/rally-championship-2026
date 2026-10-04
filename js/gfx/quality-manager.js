@@ -11,16 +11,16 @@
 
 const TARGET_MS = 16.7;
 const SAMPLE_CLAMP = 48;
-const DOWN_HOLD = 36;
-const UP_HOLD = 120;
+const DOWN_HOLD = 10;
+const UP_HOLD = 90;
 
 export class QualityManager {
   constructor() {
-    this.renderScale = 1;
+    this.renderScale = 0.9;
     this._ema = TARGET_MS;
     this._down = 0;
     this._up = 0;
-    this.minScale = 0.78;
+    this.minScale = 0.62;
     this.maxScale = 1;
   }
 
@@ -63,7 +63,7 @@ export class QualityManager {
     return { changed, renderScale: this.renderScale };
   }
 
-  reset(scale = 1) {
+  reset(scale = 0.9) {
     this.renderScale = scale;
     this._ema = TARGET_MS;
     this._down = 0;

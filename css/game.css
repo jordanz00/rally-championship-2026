@@ -850,6 +850,108 @@ button.ghost {
   animation: flashGo 1.25s ease-out;
 }
 
+#hud-flash.show.is-rush {
+  top: 20%;
+  font-size: 56px;
+  letter-spacing: 0.32em;
+  color: #ffb000;
+  text-shadow: 0 0 28px rgba(255, 140, 0, 0.8), 3px 3px 0 #000;
+}
+
+#hud-flash.show.is-fire {
+  top: 16%;
+  font-size: 68px;
+  letter-spacing: 0.36em;
+  color: #fff4c8;
+  text-shadow: 0 0 36px rgba(255, 90, 0, 0.95), 0 0 12px #ff6a00, 4px 4px 0 #000;
+}
+
+#hud-flash.show.is-miss {
+  top: 22%;
+  font-size: 42px;
+  letter-spacing: 0.22em;
+  color: #ff8a1a;
+  text-shadow: 0 0 22px rgba(255, 120, 0, 0.7), 3px 3px 0 #000;
+}
+
+#hud-flash.show.is-sick {
+  top: 18%;
+  font-size: 62px;
+  letter-spacing: 0.34em;
+  color: #ffe14a;
+  text-shadow: 0 0 32px rgba(255, 160, 0, 0.9), 4px 4px 0 #000;
+}
+
+#hud-flash.show.is-unreal {
+  top: 16%;
+  font-size: 70px;
+  letter-spacing: 0.38em;
+  color: #fff4c8;
+  text-shadow: 0 0 36px rgba(255, 70, 0, 0.95), 4px 4px 0 #000;
+}
+
+#hud-rush {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  width: min(340px, 52vw);
+  pointer-events: none;
+  text-align: center;
+}
+
+#hud-rush .label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  color: #ffb000;
+  margin-bottom: 4px;
+}
+
+.rush-bar {
+  height: 9px;
+  border: 1px solid rgba(255, 176, 0, 0.55);
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+#hud-rush-fill {
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, #ff5a00, #ffd200 70%, #fff4c8);
+}
+
+#hud-rush[data-hot="1"] .label,
+#hud-rush[data-hot="1"] #hud-rush-fill {
+  filter: brightness(1.28);
+  box-shadow: 0 0 16px rgba(255, 120, 0, 0.6);
+}
+
+#hud-rush[data-fire="1"] .label {
+  color: #fff4c8;
+  letter-spacing: 0.4em;
+  text-shadow: 0 0 18px rgba(255, 80, 0, 0.9);
+}
+
+#hud-rush[data-fire="1"] #hud-rush-fill {
+  filter: brightness(1.45);
+  box-shadow: 0 0 22px rgba(255, 70, 0, 0.85);
+  animation: rushFirePulse 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes rushFirePulse {
+  from { filter: brightness(1.25); }
+  to { filter: brightness(1.65); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hud-rush[data-fire="1"] #hud-rush-fill {
+    animation: none;
+  }
+}
+
 /* Navigator is audio — on-screen calls sat in the sightline. */
 #hud-pace {
   display: none;
@@ -971,15 +1073,19 @@ button.ghost {
 }
 
 #hud-speed {
-  font-size: 68px;
-  line-height: 0.8;
-  color: var(--yellow);
-  letter-spacing: 0.04em;
+  font-size: 82px;
+  line-height: 0.78;
+  color: #ffb000;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 22px rgba(255, 140, 0, 0.5), 0 3px 0 #000;
 }
 
 #hud-speed[data-fast="1"] {
-  color: #fff4a8;
-  text-shadow: 0 0 18px rgba(255, 210, 0, 0.45), 0 2px 0 #000;
+  color: #fff6c4;
+  text-shadow:
+    0 0 28px rgba(255, 180, 0, 0.78),
+    0 0 48px rgba(255, 80, 0, 0.38),
+    0 3px 0 #000;
 }
 
 #hud-pos[data-place="1"] {
@@ -1408,6 +1514,11 @@ body.is-mobile .hud-top {
 
 body.is-mobile #hud-speed {
   font-size: 42px;
+}
+
+body.is-mobile #hud-rush {
+  bottom: 92px;
+  width: min(220px, 56vw);
 }
 
 body.is-mobile #minimap {

@@ -41,7 +41,7 @@ import {
   GUIDED_RECON_BUDGET_MS,
   RECON_FLAG,
   RECON_STORAGE_KEY,
-} from "../neural-reconstruct.js?v=5";
+} from "../neural-reconstruct.js?v=6";
 import {
   createAppearance,
   parseAppearParams,
@@ -51,7 +51,7 @@ import {
   APPEAR_BUDGET_MS,
   APPEAR_LUMA_HEADROOM,
   APPEAR_DEFAULT,
-} from "../appearance-net.js?v=1011";
+} from "../appearance-net.js?v=1033";
 import {
   createMobilePresent,
 } from "../mobile-present.js?v=982";
@@ -106,7 +106,7 @@ export const WEBTSR_MODES = TSR_MODES;
 
 /**
  * Suite contract for hosts and QA. No frame generation. presentScene stays
- * the present hook. Appearance is an opt-in residual, default off in-game.
+ * the present hook. This title defaults LOOK on (`APPEAR_DEFAULT`).
  */
 export const WEBTSR_SUITE = {
   name: "WebTSR",

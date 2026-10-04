@@ -6566,17 +6566,38 @@ export function setCockpitView(root, on, _camera, renderer) {
   const want = !!on;
   // Force a hide-cache rebuild when the POV shell tag set changes.
   if (root.userData._povHideVer !== 4) root.userData._povHideReady = false;
-  if (root.userData._cockpitOn === want && root.userData._povHideReady) {
+  // C-key path: cache + clip + driver already warmed — visibility flip only.
+  if (root.userData._povHideReady && root.userData._povClipPrepared) {
+    if (root.userData._cockpitOn !== want) {
+      root.userData._cockpitOn = want;
+      const hideFast = root.userData._povHide || [];
+      for (let i = 0; i < hideFast.length; i++) {
+        const obj = hideFast[i];
+        if (want) obj.visible = false;
+        else obj.visible = !obj.userData.interiorKeepHidden;
+      }
+      const keepFast = root.userData._povKeepHidden || [];
+      for (let i = 0; i < keepFast.length; i++) keepFast[i].visible = false;
+      const steerFast = root.userData._povSteer || [];
+      for (let i = 0; i < steerFast.length; i++) steerFast[i].visible = want;
+      const glbWheelFast = root.userData.glbSteerWheel;
+      if (glbWheelFast) glbWheelFast.visible = want;
+      const cabFast = root.userData.cockpit;
+      if (cabFast) cabFast.visible = want;
+      const mirFast = root.userData.mirror;
+      if (mirFast) mirFast.visible = want;
+      if (want && !root.userData.povDriver) attachPovDriverArms(root);
+      const driverFast = root.userData.povDriver;
+      if (driverFast) {
+        if (driverFast.root) driverFast.root.visible = want;
+        if (driverFast.shoulders) driverFast.shoulders.visible = want;
+      }
+    }
     setPovRoofClip(root, want, renderer);
-    const weather = root.userData.povWeather || root.userData.povRainGlass;
-    if (weather) weather.visible = want;
+    const weatherFast = root.userData.povWeather || root.userData.povRainGlass;
+    if (weatherFast) weatherFast.visible = want;
     if (root.userData.wiperL) root.userData.wiperL.visible = want;
     if (root.userData.wiperR) root.userData.wiperR.visible = want;
-    const driverFast = root.userData.povDriver;
-    if (driverFast) {
-      if (driverFast.root) driverFast.root.visible = want;
-      if (driverFast.shoulders) driverFast.shoulders.visible = want;
-    }
     return;
   }
   root.userData._cockpitOn = want;

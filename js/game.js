@@ -7,16 +7,16 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=184";
+import { Vehicle } from "./physics/vehicle.js?v=192";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=228";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=229";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=9";
-import { Track } from "./tracks/track.js?v=424";
-import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
+import { Track } from "./tracks/track.js?v=430";
+import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=217";
-import { RallyAudio } from "./audio/engine.js?v=80";
+import { Opponent } from "./ai.js?v=226";
+import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
 import {
@@ -27,14 +27,15 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=43";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=98";
+} from "./ui/hud.js?v=47";
+import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=101";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
-import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
+import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
-import { StageWeather, courseWantsRain } from "./weather/rain.js?v=28";
+import { StageWeather, courseWantsRain } from "./weather/rain.js?v=29";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
-import { PhotoRealPost } from "./gfx/postfx.js?v=40";
+import { PhotoRealPost } from "./gfx/postfx.js?v=43";
+import { RallyRush } from "./gameplay/rally-rush.js?v=7";
 import {
   createWebTsr,
   createMobilePresent,
@@ -46,11 +47,11 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=1011";
-import { createPerfTier } from "./gfx/perf-tier.js?v=54";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1033";
+import { createPerfTier } from "./gfx/perf-tier.js?v=55";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
-import { QualityManager } from "./gfx/quality-manager.js?v=3";
+import { QualityManager } from "./gfx/quality-manager.js?v=4";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { Spring1, Spring3, criticalDamp } from "./camera/camera-spring.js?v=1";
 import { createPerformanceMonitor } from "./debug/performance-monitor.js?v=4";
@@ -86,7 +87,7 @@ function easeFirstDrive() {
   ARCADE_ASSIST.recoveryAssist = 1.35;
   ARCADE_ASSIST.recoverableSlide = 20;
   ARCADE_ASSIST.driftStability = 0.85;
-  ARCADE_ASSIST.landingAssist = 0.78;
+  ARCADE_ASSIST.landingAssist = 0.86;
   ARCADE_ASSIST.tireSlideSoft = 4.2;
   ARCADE_ASSIST.tirePeakHold = 1.2;
   ARCADE_ASSIST.tireRecoverFloor = 0.56;
@@ -117,27 +118,27 @@ easeFirstDrive();
 
 /**
  * Forest TUNNEL_FOREST in config is a black cabin (fog 8–70 m, wallInt 16).
- * Do not edit config.js — lift the bore here so wall sconces light rock + road.
+ * Do not edit config.js — lift the bore here so ceiling sodiums light rock + road.
  * @param {string} [courseId]
  */
 function raceTunnelLighting(courseId) {
   const TC = tunnelLightingFor(courseId);
   if (courseId === "forest") {
     return Object.assign({}, TC, {
-      ambientFloor: 0.4,
+      ambientFloor: 0.46,
       hemiRetain: 0.58,
       fillRetain: 0.34,
-      caveInt: 22,
-      wallInt: 62,
-      wallDistance: 76,
-      wallDecay: 0.96,
-      wallColor: 0xffe0a8,
+      caveInt: 30,
+      wallInt: 92,
+      wallDistance: 72,
+      wallDecay: 0.88,
+      wallColor: 0xffc878,
       fog: 0x3c362c,
       fogNear: 22,
       fogFar: 230,
       exposureBoost: 1.0,
       // Config Forest beams were a white-out (1850). Keep the tunnel boost;
-      // drop candela ~30% so the sconces and the rock still read.
+      // drop candela ~30% so the pendants and the rock still read.
       headEmissive: 34,
       headBeam: 1295,
     });
@@ -173,7 +174,7 @@ import {
   updateShadowFrustum,
   snapShadowCamera,
   horizonFogColor,
-} from "./gfx/lighting-rig.js?v=31";
+} from "./gfx/lighting-rig.js?v=33";
 
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
@@ -280,7 +281,7 @@ function yieldFrame() {
  * Load-time budget for linking start-grid shaders. The old full-stage
  * showAllChunks pass turned a 0.6 s mid-race hitch into a multi-second load.
  */
-const PRECOMPILE_BUDGET_MS = 220;
+const PRECOMPILE_BUDGET_MS = 140;
 
 /**
  * Pin STREAM veg/LOD budgets from settle tier before Track.create (build-once).
@@ -296,6 +297,34 @@ function armVegBudget(tierId) {
   // past ~360–720 m; skip-present compile warms the next slice. Do not drop
   // below 2 — lakeside fog is 720 m and still needs one extra ahead.
   if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
+}
+
+/**
+ * Tighter stream + settle so load and the first km draw less world.
+ * Fog still hides the far slice. Do not edit config.js.
+ */
+function armStreamBudget() {
+  const phone = typeof isPhonePlay === "function" && isPhonePlay();
+  let android = false;
+  try {
+    android = phone && /Android/i.test(navigator.userAgent || "");
+  } catch {
+    android = false;
+  }
+  STREAM.prefetchChunks = android ? 1 : 2;
+  STREAM.lookaheadSeconds = phone ? 2.0 : 2.6;
+  STREAM.settleLookaheadMeters = android ? 360 : phone ? 420 : 620;
+  STREAM.countdownLoadRadius = android ? 360 : phone ? 420 : 560;
+  STREAM.loadRadius = android ? 480 : phone ? 560 : 720;
+  STREAM.unloadRadius = android ? 560 : phone ? 640 : 800;
+  STREAM.minLoadRadius = phone ? 220 : 260;
+  try {
+    if (typeof window !== "undefined") {
+      window.__rallyHiMaps = !phone && raceStartTier() === "high";
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -483,6 +512,7 @@ export class RallyGame {
     this._camFovKick = 0;
     /** Seconds of lights-out camera / rumble sustain after GO. */
     this._goFeel = 0;
+    this.rush = new RallyRush();
     this._wasAir = false;
     /** Phase 1 — spring chase (non-POV). */
     this._camPosSpring = new Spring3();
@@ -497,9 +527,10 @@ export class RallyGame {
     this.pipeline = null;
     this.qualityMgr = new QualityManager();
     this.qualityMgr.configure({
-      minScale: GFX.softScaleMin != null ? GFX.softScaleMin : 0.78,
+      minScale: isPhonePlay() ? 0.5 : GFX.softScaleMin != null ? Math.min(GFX.softScaleMin, 0.62) : 0.62,
       maxScale: 1,
     });
+    armStreamBudget();
     /** Soft fill-rate scale from QualityManager (1 = full). */
     this._softRenderScale = 1;
     this._pack = [];
@@ -595,6 +626,8 @@ export class RallyGame {
     this.weather = null;
     this.dust = null;
     this.tireMarks = null;
+    this.sparks = null;
+    this.boostWake = null;
     this.sky = null;
     this._gfxFailed = false;
     /** @type {Promise<boolean>|null} */
@@ -675,11 +708,13 @@ export class RallyGame {
       GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 384 : 768);
       // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
       if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
+      armStreamBudget();
     } else {
       // Desktop presents at 60. Do not trade the frame for a 30 Hz lock,
       // and do not shrink the framebuffer or the shadow atlas to get there.
       GFX.preferLock30 = false;
       GFX.forceLock30AtSettle = false;
+      armStreamBudget();
     }
     const created = await createGameRenderer({
       antialias: !wantPost && !isPhonePlay(),
@@ -1260,6 +1295,7 @@ export class RallyGame {
       }
       if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
       if (!this.sparks) this.sparks = new ImpactSparks(this.scene);
+      if (!this.boostWake && !isPhonePlay()) this.boostWake = new BoostWake(this.scene);
     } catch (err) {
       console.warn("[warm] race systems", err);
     }
@@ -1310,8 +1346,7 @@ export class RallyGame {
     this._preloadQueue = this._preloadQueue.filter((id) => id !== courseId);
     if (priority) this._preloadQueue.unshift(courseId);
     else this._preloadQueue.push(courseId);
-    const scenery = COURSES[courseId] && COURSES[courseId].scenery;
-    if (scenery === "forest" || scenery === "mountain" || courseId === "forest" || courseId === "mountain") {
+    if (priority && courseId === "forest") {
       prefetchForestHeroTrees().catch(() => {});
     }
 
@@ -1696,6 +1731,7 @@ export class RallyGame {
         guided: true,
         appearance: true,
         debug: tsrOpts.debug,
+        appear: { gain: 1.2 },
       });
       if (sdk.supported) {
         this.tsr = sdk;
@@ -1703,6 +1739,7 @@ export class RallyGame {
         this.appear = sdk.appear;
         if (this.recon) this.recon.enabled = parseReconParams().enabled;
         if (this.appear) {
+          this._appearDefaultOn = appearOpts.enabled === true;
           this.appear.enabled = appearOpts.enabled === true;
           if (appearOpts.enabled === true && typeof this.appear.pin === "function") {
             this.appear.pin(true);
@@ -1777,6 +1814,7 @@ export class RallyGame {
         tsrSel.value = this.tsr.mode;
         tsrSel.addEventListener("change", () => {
           if (!this.tsr) return;
+          this._tsrUserPinned = true;
           this.tsr.setMode(tsrSel.value);
           persistTsrMode(this.tsr.mode);
           this.tsr.reset();
@@ -1792,6 +1830,7 @@ export class RallyGame {
         tsrSel.dataset.listener = "1";
         tsrSel.addEventListener("change", () => {
           if (!this.tsr) return;
+          this._tsrUserPinned = true;
           this.tsr.setMode(tsrSel.value);
           persistTsrMode(this.tsr.mode);
           this.tsr.reset();
@@ -1842,6 +1881,7 @@ export class RallyGame {
       } else {
         appearChk.disabled = false;
         appearChk.addEventListener("change", () => {
+          this._appearUserPinned = true;
           this.appear.enabled = !!appearChk.checked;
           persistAppearEnabled(this.appear.enabled);
           if (appearVal) appearVal.textContent = this.appear.enabled ? "ON" : "OFF";
@@ -1863,6 +1903,7 @@ export class RallyGame {
       if (appearChk.dataset.listener !== "1") {
         appearChk.dataset.listener = "1";
         appearChk.addEventListener("change", () => {
+          this._appearUserPinned = true;
           this.appear.enabled = !!appearChk.checked;
           persistAppearEnabled(this.appear.enabled);
           if (appearVal) appearVal.textContent = this.appear.enabled ? "ON" : "OFF";
@@ -2644,24 +2685,33 @@ export class RallyGame {
     report(fromCache ? 0.96 : 0.9, "Spawning grid…");
     await tick();
 
-    const spacing =
+    const spacing = Math.min(
+      7.2,
       (CHAMPIONSHIP.gridSpacingByCourse && CHAMPIONSHIP.gridSpacingByCourse[courseId]) ||
-      CHAMPIONSHIP.gridSpacing;
+        CHAMPIONSHIP.gridSpacing
+    );
     let n = 0;
     if (!preview && this.mode === "championship") {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
     } else if (!preview && this.mode === "practice") {
-      n = CHAMPIONSHIP.practiceOpponents;
+      n = Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
 
     /**
      * Sprint 26 exclusive grid: player owns their championship slot; AI fill
      * every other slot. Sharing a progress with AI[0] after a 1st-place rollover
      * was shoving the car on GO — the stage 2/3/4 "glitch into place" bug.
+     * Practice uses the same pack grid — one ghost rival is not a race.
      */
-    if (!preview && this.mode === "championship" && n > 0) {
-      const place = this.champPlace || CHAMPIONSHIP.startPosition;
+    if (!preview && n > 0 && (this.mode === "championship" || this.mode === "practice")) {
+      const raw = this.champPlace || CHAMPIONSHIP.startPosition;
+      const place =
+        this.mode === "practice"
+          ? Math.min(3, n)
+          : this.stageIndex === 0 && raw >= 12
+            ? 6
+            : raw;
       const total = n + 1;
       const playerSlot = Math.min(n, Math.max(0, place - 1));
       let aiIndex = 0;
@@ -2891,7 +2941,9 @@ export class RallyGame {
       pack.push(this.ghostMesh);
     }
     const carPos = this.playerMesh ? this.playerMesh.position : this.camera.position;
-    updatePackSeeThrough(pack, this.camera.position, carPos, chase, dt);
+    if (this._qualityTierId !== "min") {
+      updatePackSeeThrough(pack, this.camera.position, carPos, chase, dt);
+    }
   }
 
   /**
@@ -3098,6 +3150,7 @@ export class RallyGame {
     holdGpuUploads();
     this._goPresentHold = 0;
     this._goFeel = 0;
+    if (this.rush) this.rush.reset();
     this.raceTime = 0;
     this._physAccum = 0;
     this.nextCp = 0;
@@ -3180,10 +3233,12 @@ export class RallyGame {
       ? /Android/i.test(navigator.userAgent || "")
         ? 0.62
         : 0.78
-      : 1;
-    this._softRenderScale = 1;
-    if (this.qualityMgr) this.qualityMgr.reset(1);
-    if (this.pipeline && this.pipeline.setRenderScale) this.pipeline.setRenderScale(1);
+      : 0.88;
+    this._softRenderScale = isPhonePlay() ? 0.78 : 0.9;
+    if (this.qualityMgr) this.qualityMgr.reset(this._softRenderScale);
+    if (this.pipeline && this.pipeline.setRenderScale) {
+      this.pipeline.setRenderScale(this._softRenderScale);
+    }
     this._lastPresentCost = 8;
     this._raceWarmFrames = 32;
     this._shadowTick = 0;
@@ -3230,7 +3285,7 @@ export class RallyGame {
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    await this._drainStreamCompileUnderOverlay(900);
+    await this._drainStreamCompileUnderOverlay(480);
     this._warmPackPhysics();
 
     const present = () => {
@@ -3663,9 +3718,17 @@ export class RallyGame {
             }
             const t = this.perfTier.tick(presentDelta);
             if (t.changed) this._applyQualityTier(t);
-            // Soft-scale setSize mid-race was a hitch with no visual upside when
-            // softScaleMin is pinned at 1. Keep QualityManager warm for probes
-            // but never reallocate the canvas during a race.
+            this._adaptPresentBudget(presentDelta);
+            if (this.qualityMgr && (this._raceWarmFrames || 0) <= 0) {
+              const q = this.qualityMgr.tick(presentDelta);
+              if (q.changed) {
+                this._softRenderScale = q.renderScale;
+                if (this.pipeline && this.pipeline.setRenderScale) {
+                  this.pipeline.setRenderScale(q.renderScale);
+                }
+                this._onResize();
+              }
+            }
           }
           this._lastPresent = now;
           // Presented frames over *wall* time. This used to sum `dt` only on
@@ -3777,10 +3840,14 @@ export class RallyGame {
           // Lights-out punch. Present is forced through `_launchHold` and
           // `_goPresentHold`, so this is a start snap — not the hitch that
           // used to stack a skipped frame onto launchBoost.
-          this._goFeel = 1.35;
-          this._camFovKick = Math.max(this._camFovKick || 0, 4.6);
-          this._shake = Math.max(this._shake || 0, 0.11);
-          this._camKickY = Math.max(this._camKickY || 0, 0.09);
+          this._goFeel = 1.8;
+          if (this.rush) {
+            this.rush.step(0.016, { player: this.player, opponents: this.opponents, go: true });
+            this.rush.step(0.016, { player: this.player, opponents: this.opponents, go: true });
+          }
+          this._camFovKick = Math.max(this._camFovKick || 0, 6.4);
+          this._shake = Math.max(this._shake || 0, 0.16);
+          this._camKickY = Math.max(this._camKickY || 0, 0.14);
           if (this.input && this.input.rumble) this.input.rumble(0.58, 150);
           this._goPresentHold = 96;
           // Countdown already hard-snaps the chase — do not re-snap on GO
@@ -3846,6 +3913,28 @@ export class RallyGame {
     if (this.perfMon) this.perfMon.beginPhysics();
     while (this._physAccum >= FIXED_DT) {
       this._physAccum -= FIXED_DT;
+      if (this.rush && this.player) {
+        const dump = this.rush.step(FIXED_DT, {
+          player: this.player,
+          opponents: this.opponents,
+        });
+        this.player.rushHeat = dump.heat;
+        this.player.rushDrive = dump.accel;
+        this.player.rushFire = dump.fire;
+        if (dump.justPass && this.hud) {
+          const n = dump.passStreak || 1;
+          this.hud.flashMessage(n >= 4 ? "UNREAL" : n >= 2 ? "SICK" : "NEAR MISS");
+        }
+        if (dump.justFire && this.hud) this.hud.flashMessage("ON FIRE");
+        else if (dump.justDump && this.hud) this.hud.flashMessage("RUSH");
+        if (dump.heat > 0.16 || dump.fire > 0.18) {
+          this._camFovKick = Math.max(
+            this._camFovKick || 0,
+            2.8 + dump.heat * 2.4 + dump.fire * 2.2
+          );
+          this._shake = Math.max(this._shake || 0, 0.055 * dump.heat + 0.04 * dump.fire);
+        }
+      }
       this.player.step(FIXED_DT, this.input, this.track);
       for (const o of this.opponents) o.step(FIXED_DT, this.player.progress, pack);
       this._collideCars();
@@ -3915,7 +4004,14 @@ export class RallyGame {
       if (near1 >= 0) this.dust.emit(this.opponents[near1].vehicle, dt, this.track);
     }
     if (this.dust && !isPhonePlay()) this.dust.step(dt, this.track);
-    if (this.sparks) this.sparks.step(dt);
+    if (this.sparks) {
+      if (this.player && this.player.rushHeat > 0.14) this.sparks.wake(this.player, this.player.rushHeat);
+      this.sparks.step(dt);
+    }
+    if (this.boostWake) {
+      if (this.player) this.boostWake.emit(this.player, this.player.rushHeat, this.player.rushFire);
+      this.boostWake.step(dt);
+    }
     if (this.tireMarks) {
       this.tireMarks.mesh.visible = true;
       this.tireMarks.emit(this.player, this.track, dt);
@@ -3982,6 +4078,7 @@ export class RallyGame {
     a.inTunnel = !!roadSample.tunnel;
     // Player hero powertrain only — rivals never feed RallyAudio (updateRivalEngines is a hard mute).
     this.audio.setState(a);
+    if (this.audio.setRush) this.audio.setRush(this.rush ? this.rush.heat : 0, this.rush ? this.rush.fire : 0);
     if (this.audio.updateRivalEngines) this.audio.updateRivalEngines(null);
     if (this.audio.updateCrowd && this.track && this.track.crowdPoints) {
       const yaw = this.player.yaw || 0;
@@ -4050,6 +4147,10 @@ export class RallyGame {
     h.gripUsed = this.player.gripUsed();
     h.slidePct = this.player.slidePct();
     h.drifting = this.player.drifting;
+    h.rush = this.rush ? this.rush.meter : 0;
+    h.rushHeat = this.rush ? this.rush.heat : 0;
+    h.rushFire = this.rush ? this.rush.fire : 0;
+    h.rushCombo = this.rush ? this.rush.combo : 1;
     h.progressM = this.player.progress;
     h.dt = dt;
     this.hud.update(h);
@@ -4187,7 +4288,14 @@ export class RallyGame {
     this._setPackVisible(true);
     this._poseReplayPack(this._broadcastPose, 0);
     if (this.ghostMesh) this.ghostMesh.visible = false;
-    if (this.playerMesh) setCockpitView(this.playerMesh, false);
+    if (this.playerMesh) setCockpitView(this.playerMesh, false, this.camera, this.renderer);
+    this._cockpitLive = false;
+    this._povHudFade = 0;
+    if (this.camera) this.camera.layers.disable(POV_HUD_LAYER);
+    if (this.weather && courseWantsRain(this.courseId)) {
+      this.weather.setActive(true, this.track && this.track.group);
+      this.weather.relocate(this.camera);
+    }
     this._paintBroadcastChrome(true);
   }
 
@@ -4197,6 +4305,7 @@ export class RallyGame {
    */
   _clearReplayTrails() {
     if (this.dust && this.dust.reset) this.dust.reset();
+    if (this.boostWake && this.boostWake.reset) this.boostWake.reset();
     if (this.tireMarks && this.tireMarks.reset) this.tireMarks.reset();
     if (this.track && this.track.resetWheelDeform) this.track.resetWheelDeform();
     if (this.tsr && this.tsr.reset) this.tsr.reset();
@@ -4232,6 +4341,9 @@ export class RallyGame {
         m.transparent = false;
         m.opacity = 1;
         m.depthWrite = true;
+        m.depthTest = true;
+        // Body after TireMarks (renderOrder 1) so ruts stay on the road.
+        if ((o.renderOrder || 0) < 8) o.renderOrder = 3;
       }
     });
   }
@@ -4469,6 +4581,7 @@ export class RallyGame {
       this.playerMesh.updateMatrixWorld(true);
     }
     this._poseReplayPack(pose, 0);
+    if (this.weather && this.weather.active) this.weather.relocate(this.camera);
     const pack = this.opponents || [];
     for (let i = 0; i < pack.length; i++) {
       if (pack[i] && pack[i].mesh) pack[i].mesh.updateMatrixWorld(true);
@@ -4802,16 +4915,14 @@ export class RallyGame {
   }
 
   /**
-   * Cycle POV → medium → far. C only records the from-pose. Cabin / HUD /
-   * mirror attach mid-blend in `_chaseCam` so this click never hitch-compiles.
-   * Never sync-compile here — load/`_warmPov` already baked cabin shaders.
+   * Cycle POV → medium → far. C only records the from-pose. Cabin visibility
+   * flips on the next `_chaseCam` tick — never `renderer.compile` here.
+   * Load/`_warmPov` already baked cabin, HUD, clip, and driver shaders.
    */
   _cycleCamera() {
     const from = CAMERA.views[this.camMode] || null;
     this.camMode = (this.camMode + 1) % CAMERA.views.length;
     const next = CAMERA.views[this.camMode];
-    // Record the live lens and ease into the next view. Cabin seats later,
-    // once the lens has reached the car, so the body does not pop mid-move.
     this._camCut = false;
     this._startCamBlend(from, next);
     if (this.state === "race" || this.state === "countdown") {
@@ -4846,12 +4957,12 @@ export class RallyGame {
     }
     const povBlend =
       (fromMode && fromMode.id === "pov") || (toMode && toMode.id === "pov");
-    // Config times are a short snap. A toggle should read as a camera move.
-    const base = Math.max(0.72, CAMERA.viewBlendTime != null ? CAMERA.viewBlendTime : 0.72);
-    const povExtra = Math.max(0.95, CAMERA.viewBlendTimePov != null ? CAMERA.viewBlendTimePov : 0.95);
-    const dur = povBlend ? Math.max(base, povExtra) : base;
-    this._camBlendDur = dur;
-    this._camBlendT = dur;
+    // Snap — a C press must feel instant. Config 0.28/0.32 already reads as a
+    // pause; the old 0.72/0.95 floor felt like the game froze on the key.
+    const SNAP = 0.12;
+    const SNAP_POV = 0.14;
+    this._camBlendDur = povBlend ? SNAP_POV : SNAP;
+    this._camBlendT = this._camBlendDur;
     this._camBlendToPov = !!(toMode && toMode.id === "pov");
     this._camBlendFromPov = !!(fromMode && fromMode.id === "pov");
   }
@@ -4930,7 +5041,7 @@ export class RallyGame {
     else if (p._feltBump > 0.04 && p.speed > 8) mag = Math.min(0.22, p._feltBump * p.speed * 0.012);
     if (mag > 0.05) this.input.rumble(mag, landed || hitMag > 0.45 ? 110 : 32);
     const bump = (p._feltBump || 0) * p.speed * 0.01 + (p._surfShock || 0) * 0.07;
-    const landShake = p._landLock > 0.08 ? 0.12 : 0;
+    const landShake = p._landLock > 0.1 ? 0.045 : 0;
     const target = Math.min(0.16, bump + landShake);
     this._shake += (target - this._shake) * (1 - Math.exp(-12 * dt));
     if (this._shake < 0.002) this._shake = 0;
@@ -4944,7 +5055,7 @@ export class RallyGame {
       mode.shakeMul != null ? mode.shakeMul : mode.lockHeight || stableBehind ? 0 : 1;
     if (this._goFeel > 0) {
       this._goFeel = Math.max(0, this._goFeel - dt);
-      const u = this._goFeel / 1.35;
+      const u = this._goFeel / 1.8;
       const floored = (p.throttle || 0) > 0.35;
       if (floored) {
         this._camFovKick = Math.max(this._camFovKick, 3.4 + u * 2.2);
@@ -4957,12 +5068,12 @@ export class RallyGame {
     if (landed) {
       const impact = Math.max(Math.abs(p.velY || 0), p.lastImpact || 0);
       const landScale = CAMERA.landKickScale != null ? CAMERA.landKickScale : 1.35;
-      this._camKickY = Math.min(0.48, (0.1 + impact * 0.042) * landScale * landKickMul);
+      this._camKickY = Math.min(0.22, (0.04 + impact * 0.02) * landScale * landKickMul);
       this._camFovKick = Math.min(
-        6.4,
-        (1.45 + impact * 0.28) * Math.min(1.3, landScale) * landFovMul
+        3.2,
+        (0.7 + impact * 0.14) * Math.min(1.15, landScale) * landFovMul
       );
-      landImpulse = Math.min(0.28, 0.1 + impact * 0.022);
+      landImpulse = Math.min(0.12, 0.04 + impact * 0.01);
       this._shake = Math.max(this._shake, landImpulse);
     }
     if (hitMag > 0.45) {
@@ -5002,9 +5113,11 @@ export class RallyGame {
     else {
       const chatterCap = 0.08 * shakeMul * surfShake;
       const goImpulse = this._goFeel > 0 ? Math.min(0.14, 0.05 + this._goFeel * 0.07) : 0;
+      const speedJuice = p.speed > 20 ? Math.min(0.075, (p.speed - 20) * 0.0024) : 0;
       const impulseFloor = Math.max(
         landImpulse,
         goImpulse,
+        speedJuice,
         hitMag > 0.45 ? Math.min(0.28, 0.08 + hitMag * 0.14) : 0
       );
       this._shake = Math.min(Math.max(this._shake, impulseFloor), Math.max(chatterCap, impulseFloor));
@@ -5372,7 +5485,7 @@ export class RallyGame {
         : mode.speedDropMax != null
           ? mode.speedDropMax
           : 0.48;
-      const heightDrop = Math.min(dropCap, p.speed * 0.015);
+      const heightDrop = Math.min(dropCap, p.speed * 0.028);
       const drift = Math.abs(p.driftAngle || 0);
       const sliding = !stableBehind && drift > 0.08 && p.speed > 6;
       const rx = Math.cos(this._camYaw);
@@ -5665,14 +5778,10 @@ export class RallyGame {
       this._camProjDirty = false;
     }
 
-    const detachDist = CAMERA.povDetachDist != null ? CAMERA.povDetachDist : 1.6;
-    // Along the car: negative is behind the bumper. Cabin stays hidden until
-    // the lens is actually at the seat, and stays on until the lens has left.
-    const alongCam =
-      (this._camPos.x - px) * Math.sin(yaw) + (this._camPos.z - pz) * Math.cos(yaw);
     if (mesh) {
       if (wantPov) {
-        const seatIn = !blending || alongCam > -1.05 || ease >= 0.86;
+        // Seat on the click. Waiting for ease 0.86 made C feel like a hang.
+        const seatIn = true;
         if (seatIn && !this._cockpitLive) {
           setCockpitView(mesh, true, this.camera, this.renderer);
           this._cockpitLive = true;
@@ -5688,17 +5797,14 @@ export class RallyGame {
         if (this._cockpitLive) updatePovRoofClip(mesh);
         this.camera.layers.enable(POV_HUD_LAYER);
       } else if (this._cockpitLive) {
-        const seatOut = !blending || alongCam < -1.55 || (ease >= 0.62 && dist < detachDist);
-        if (seatOut) {
-          setCockpitView(mesh, false, this.camera, this.renderer);
-          this._cockpitLive = false;
-          this._povHudFade = 0;
-          this.camera.layers.disable(POV_HUD_LAYER);
-        }
+        setCockpitView(mesh, false, this.camera, this.renderer);
+        this._cockpitLive = false;
+        this._povHudFade = 0;
+        this.camera.layers.disable(POV_HUD_LAYER);
       }
       updatePovHudFade(mesh, this._cockpitLive ? 1 : 0);
     }
-    // Gauges follow the cabin, so they swap when the lens arrives, not on the click.
+    // Gauges follow the cabin, which now seats on the C-key tick.
     this.hud.setChaseGauges(!this._cockpitLive);
     this._gaugeHoldPov = false;
     if (this._cabinFill) {
@@ -5781,8 +5887,14 @@ export class RallyGame {
    * @param {number} tunnelBlend
    */
   _applyHarshSpecClamp(L, tunnelBlend) {
-    if (!this.playerMesh) return;
-    applyHarshSpecClamp(this.playerMesh, harshEnvLook(L, tunnelBlend, this.courseId));
+    const look = harshEnvLook(L, tunnelBlend, this.courseId);
+    if (this.playerMesh) applyHarshSpecClamp(this.playerMesh, look);
+    if (this.courseId === "lakeside") {
+      const pack = this.opponents || [];
+      for (let i = 0; i < pack.length; i++) {
+        if (pack[i] && pack[i].mesh) applyHarshSpecClamp(pack[i].mesh, look);
+      }
+    }
   }
 
   /**
@@ -5840,7 +5952,7 @@ export class RallyGame {
    * the entrance, restore sun with an ease-out near the exit) then
    * dt-smoothed so enter and exit read as an environment change, not a
    * graphics-setting pop. Fast exit used to leave Desert mud near-black.
-   * Wall sconces stay on for the whole bore — they are not a pool that follows the car.
+   * Ceiling pendants stay on for the whole bore — they are not a pool that follows the car.
    */
   _updateLights(dt) {
     if (this.state === "title" || this.state === "menu") {
@@ -6053,6 +6165,41 @@ export class RallyGame {
    *
    * @param {{dpr:number, shadow:number, post:string, sky:string, mirrorEvery:number}} t
    */
+  /**
+   * Drop LOOK / Quality TSR when present interval proves the GPU is late.
+   * User pause-menu mode stays pinned. No config.js edit.
+   * @param {number} presentDelta
+   */
+  _adaptPresentBudget(presentDelta) {
+    const ms = Number.isFinite(presentDelta) ? presentDelta : 16.7;
+    this._presentEma = (this._presentEma || 16.7) * 0.86 + Math.min(40, ms) * 0.14;
+    const ema = this._presentEma;
+    // LOOK / Quality stay on through a 60 Hz hitch (compile, GO, cut).
+    // Shed only on a sustained 30 Hz present. Recover when the GPU is back.
+    if (this.appear && !this._appearUserPinned) {
+      if (ema > 28.5 && this.appear.enabled) {
+        this.appear.enabled = false;
+        const inner = this.tsr && this.tsr.tsr;
+        if (inner) inner.writeNormals = false;
+      } else if (ema < 20.4 && !this.appear.enabled && this._appearDefaultOn) {
+        this.appear.enabled = true;
+        const inner = this.tsr && this.tsr.tsr;
+        if (inner && !inner._normalsAborted) inner.writeNormals = true;
+      }
+    }
+    if (!this.tsr || this._tsrUserPinned || typeof this.tsr.setMode !== "function") return;
+    const mode = String(this.tsr.mode || "quality");
+    if (ema > 32 && mode !== "performance") {
+      this.tsr.setMode("performance");
+      if (this.tsr.reset) this.tsr.reset();
+    } else if (ema > 28 && mode === "quality") {
+      this.tsr.setMode("balanced");
+      if (this.tsr.reset) this.tsr.reset();
+    } else if (ema < 19.2 && mode !== "quality") {
+      this.tsr.setMode("quality");
+    }
+  }
+
   _applyQualityTier(t) {
     if (!t) return;
     // Cheap, reversible knobs — no GPU allocation, so these may follow the
@@ -6272,8 +6419,13 @@ export class RallyGame {
    */
   _applyWorldEnv(envMap, intensity) {
     if (!envMap || !VISUAL.realisticArcade) return;
+    let amt = intensity != null ? intensity : VISUAL.worldEnvIntensity;
+    if (this.courseId === "lakeside") {
+      const look = harshEnvLook(LIGHTING.lakeside, this._tunnelBlend || 0, "lakeside");
+      amt = Math.min(amt, look.worldEnvMax);
+    }
     if (this.track && this.track.group) {
-      applyEnvMap(this.track.group, envMap, intensity != null ? intensity : VISUAL.worldEnvIntensity);
+      applyEnvMap(this.track.group, envMap, amt);
     }
     if (this._titleWorld && this._titleShowcase) {
       const padEnv =
@@ -6479,7 +6631,11 @@ export class RallyGame {
     if (!mesh || !this.renderer) return;
     const wantPov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
     const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}`;
-    if (!force && this._povWarmKey === key) {
+    const cabinReady =
+      !!mesh.userData._povHideReady &&
+      !!mesh.userData._povClipPrepared &&
+      !!mesh.userData.povDriver;
+    if (!force && this._povWarmKey === key && cabinReady) {
       if (wantPov && !this._cockpitLive) {
         setCockpitView(mesh, true, this.camera, this.renderer);
         this._cockpitLive = true;
@@ -6489,19 +6645,21 @@ export class RallyGame {
     }
     getPovRig(mesh);
     this._ensureMirrorRT();
-    if (!this._mirrorRT || !this._mirrorCam) return;
+    // Cabin compile is mandatory. Mirror RT is optional — never skip the warm.
     const wasCockpit = !!this._cockpitLive;
     setCockpitView(mesh, true, this.camera, this.renderer);
-    setCockpitMirrorMap(mesh, this._mirrorRT.texture);
+    if (this._mirrorRT) setCockpitMirrorMap(mesh, this._mirrorRT.texture);
     try {
       this.renderer.compile(this.scene, this.camera);
       const prevMask = this.camera.layers.mask;
       this.camera.layers.enable(POV_HUD_LAYER);
       this.renderer.compile(this.scene, this.camera);
       this.camera.layers.mask = prevMask;
-      this._syncMirrorCam();
-      this.renderer.compile(this.scene, this._mirrorCam);
-      this._captureMirror(true);
+      if (this._mirrorCam) {
+        this._syncMirrorCam();
+        this.renderer.compile(this.scene, this._mirrorCam);
+        this._captureMirror(true);
+      }
       this._povWarmKey = key;
     } catch (err) {
       console.warn("POV warm failed", err);
@@ -6510,7 +6668,7 @@ export class RallyGame {
       this._cockpitLive = true;
       this._povHudFade = 1;
     } else {
-      // Restore chase body — warm was compile-only.
+      // Restore chase body — warm was compile-only. Clip/driver stay resident.
       setCockpitView(mesh, false, this.camera, this.renderer);
       this._cockpitLive = false;
       this._povHudFade = 0;
@@ -7031,11 +7189,15 @@ export class RallyGame {
 
   _render(dt) {
     if (this.weather && this.camera) {
-      const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
+      const broadcasting = !!(this.broadcast || this.state === "result");
+      const pov =
+        !broadcasting &&
+        !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
       this.weather.step(dt, {
         camera: this.camera,
         car: this.playerMesh,
         pov,
+        broadcast: broadcasting,
         audio: this.audio,
         trackGroup: this.track && this.track.group,
         speed: this.player ? this.player.speed : 0,
@@ -7100,6 +7262,16 @@ export class RallyGame {
     if (this.post && this.post.setLocked30) {
       this.post.setLocked30(!!(this.perfTier && this.perfTier.locked30));
     }
+    if (this.post && this.post.setDriveFeel) {
+      this.post.setDriveFeel({
+        speed: this.player && this.state !== "title" && this.state !== "menu" ? this.player.speed : 0,
+        courseId: this.courseId,
+        title: this.state === "title" || this.state === "menu",
+        tunnel: this._tunnelBlend || 0,
+        rush: this.rush && this.state === "race" ? this.rush.heat : 0,
+        fire: this.rush && this.state === "race" ? this.rush.fire : 0,
+      });
+    }
     if (!onPad && !countdownLite) this._renderMirror();
     // Cube / mirror captures first. They must not bake the sun shadow map
     // while the car is hidden, or the pad shadow strobes.
@@ -7110,7 +7282,11 @@ export class RallyGame {
     // Race and the showroom both bake every present. The pad atlas is 512
     // and only covers the car, so the orbit shadow stays with the body.
     const padShadowEvery = 1;
-    let every = countdownLite ? 6 : onPad ? padShadowEvery : 1;
+    let every = countdownLite
+      ? 6
+      : onPad
+        ? padShadowEvery
+        : Math.max(1, this._qualityShadowEvery || 1);
     // Texel snap on each bake keeps scenery edges from crawling while the
     // light follows the car.
     this._shadowTick = (this._shadowTick || 0) + 1;

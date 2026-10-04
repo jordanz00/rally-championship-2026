@@ -13,9 +13,9 @@ import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=241";
 
 const ASSET_V = "2";
-const BOOT_MS = 1600;
-const DETAIL_MS = 5000;
-const HI_MS = 12000;
+const BOOT_MS = 900;
+const DETAIL_MS = 4000;
+const HI_MS = 24000;
 
 /** @type {WeakMap<THREE.Texture, Set<THREE.Texture>>} */
 const FAMILY = new WeakMap();
@@ -69,7 +69,7 @@ async function pumpHi() {
     } catch {
       /* ignore missing 2k */
     }
-    await new Promise((r) => setTimeout(r, 16));
+    await new Promise((r) => setTimeout(r, 48));
   }
   hiBusy = false;
 }
@@ -81,6 +81,7 @@ async function pumpHi() {
 export function wantHiMaps() {
   if ((VISUAL.tier || 0) < 8) return false;
   try {
+    if (typeof window !== "undefined" && window.__rallyHiMaps === false) return false;
     if (typeof window !== "undefined" && window.__rallyRenderCaps?.lowPower) return false;
     const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
     if (/Android|iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return false;

@@ -1,5 +1,265 @@
 # QA report — quality-control pass
 
+## Lessons from the failed tries (2026-10-04)
+
+**Player moment:** Pack holds the door. Tarmac still stops; mud still slides first. START reads forwards from the grid. Cars are characters, not spec sheets.
+
+**Lessons closed:** Wider roads ≠ fun. Yielding AI empties the stage. Easy-slide that flattens surfaces kills AM3. START planted down-track reads backwards. Tech car labels are not a fantasy.
+
+**Shipped:** AI `PLAYER_RESPECT` 1.05 + keep rolling next to the player. Tarmac easy-slide needs more steer/speed. START and FINISH gantries face incoming. Celica / Delta / Stratos copy is character, not 4WD stats. No `config.js` / `Track.query()` rewrite.
+
+**Proof:** `node tools/qa-rally-rush.mjs` · `node tools/qa-go-punch.mjs` · `node tools/qa-start-finish-banner.mjs`
+
+**Boot:** `main.js?v=1034` · `vehicle.js?v=192` · `ai.js?v=226` · `flag-cloth.js?v=13`
+
+## WebTSR LOOK v2 + Quality hold (2026-10-04)
+
+**Player moment:** Desktop race badge stays `TSR QUALITY · REFINE · LOOK`. Paint, dirt contact, and tree wells read richer. A hitch no longer dumps LOOK or drops Quality to Balanced. HUD never says DLSS 5.
+
+**Cause:** The clone was wired, then adapt killed LOOK at 18.8 ms and Quality at 19.6 ms. The residual was too timid to see.
+
+**Shipped:** Same-surface albedo bleed + stronger LOOK kernels (headroom 1.06, gain 1.2). REFINE v3 (gain 0.26, contact 0.58). Adapt sheds only on a sustained 30 Hz present and recovers Quality / LOOK. Phones stay FXAA. No frame generation. No Nyquist 200%.
+
+**Proof:** `node tools/qa-webtsr-sdk.mjs` · `node tools/qa-car-ghost.mjs`
+
+**Boot:** `main.js?v=1033` · SDK `?v=1033` · `appearance-net.js?v=1033` · `neural-reconstruct.js?v=6`
+
+## Easy cool drive (2026-10-04)
+
+**Player moment:** Point + gas. Car slides. Hang it. Exit is faster. Lift saves it. Tarmac slides too. A scrape does not dump RUSH.
+
+**Shipped:** `easySlide` on all surfaces. V4 hang/convert/pitch/steer snap. Softer wall tax.
+
+**Proof:** `tools/qa-rally-rush.mjs`
+
+**Boot:** `main.js?v=1032`
+
+## Door-to-door + SICK (2026-10-04)
+
+**Player moment:** Practice P3 in a tight 11-car grid. Rivals hold their line. Thread two cars — SICK. Four — UNREAL. Rush bar shows combo.
+
+**Cause:** Pack yielded. Grid was spaced out. Cool passes did not yell.
+
+**Shipped:** 7.2 m grid. Practice 10 rivals, P3. AI holds the line. Streak callouts. Combo on the bar.
+
+**Proof:** `tools/qa-rally-rush.mjs`
+
+**Boot:** `main.js?v=1031` · `game.css?v=66`
+
+## Make it a race (2026-10-04)
+
+**Player moment:** PRACTICE. Nine cars. You are P4. GO hits, the car launches, the pack stays in the shot. Championship Desert opens P6, not last.
+
+**Cause:** Practice had 1 rival. Championship started 15th. GO was a polite nudge. Rubber band was a whisper.
+
+**Shipped:** Practice 8-car pack grid. Desert open P6. GO 2.05 s / 1.78× + fat rush fill. Pack clings inside 90 m. No `config.js` edit.
+
+**Proof:** `tools/qa-go-punch.mjs` · `tools/qa-rally-rush.mjs`
+
+**Boot:** `main.js?v=1030`
+
+## Fun is the pack + juice, not wider roads (2026-10-04)
+
+**Player moment:** Lights out. Pack stays with you. Gas fills RUSH. Camera sits down and buzzes at speed. Near-miss is easier. Slide still goes On Fire.
+
+**Cause:** Wider/longer stages felt empty. Rivals sagged. Rush hid behind long slides. Medium cam stayed polite.
+
+**Shipped:** AI pace 0.96. Rush earns from pace. On Fire lights sooner. Pass window 8.4 m. Height drop + speed shake. `speedFovScale: 0` stays.
+
+**Proof:** `tools/qa-rally-rush.mjs` · `tools/qa-stage-flow.mjs`
+
+**Boot:** `main.js?v=1029`
+
+## Speed-fun track rebuild (2026-10-04)
+
+**Player moment:** Every stage. Long sweepers, linked S, jump, slide, punch. Lakeside is a speed showcase. Forest hairpin is one hook, then a rush. Desert Safari land stays.
+
+**Cause:** Tight hooks killed speed. Fun is the bar.
+
+**Shipped:** Rebuilt post-Safari Desert, post-tunnel Forest, Mountain, and all of Lakeside. EasePlay 1.72 straights / wider sweepers. Desert 1654 gated. No `Track.query()` rewrite.
+
+**Proof:** `tools/qa-play-lane.mjs` · `tools/qa-stage-length.mjs` · `tools/qa-stage-flow.mjs` · `tools/qa-world-geometry.mjs`
+
+**Boot:** `main.js?v=1028` · `courses.js?v=98`
+
+## Saturn / OutRun slide + speed lanes (2026-10-04)
+
+**Player moment:** Steer + gas = powerslide. Car hangs like OutRun. Exit converts to speed like Saturn. Forest/Mountain/Lakeside (and Desert after Safari) sweep more and run longer.
+
+**Cause:** Slide still bled off. Mid corners still pinched. Fun needed hold + convert + room.
+
+**Shipped:** `burnout-drive` V3 — OutRun hang, Saturn convert, hotter pitch. Speed-lane radii after Desert jump 3 only. Hairpins stay hairpins. No `config.js` / `Track.query()` rewrite.
+
+**Proof:** `tools/qa-rally-rush.mjs` · `tools/qa-play-lane.mjs` · `tools/qa-stage-length.mjs` · `tools/qa-stage-flow.mjs`
+
+**Boot:** `main.js?v=1027` · `vehicle.js?v=189` · `courses.js?v=97`
+
+## Burnout-rally 10× juice (2026-10-04)
+
+**Player moment:** Desert pack. Slide until the bar says ON FIRE. Gas dumps a long shove. Tail throws a real orange wake. Cabin hisses. Grade goes white-hot. Lakeside still does not blow out.
+
+**Cause:** First rush pass was garnish — 3 sparks, a short shove, no draft, no fire state, no dedicated audio.
+
+**Shipped:** RallyRush On Fire + draft + pass streak. Dump ACCEL 18.5 / FIRE 24 through the drivetrain. Dedicated `BoostWake`. `setRush` cabin hiss. Fire grade/chroma/cam kick. HUD ON FIRE. No `config.js` / `Track.query()` rewrite.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rally-rush.mjs` · `tools/qa-burnout-look.mjs`
+
+**Boot:** `main.js?v=1026` · `game.js?v=1026` · `vehicle.js?v=188` · `effects.js?v=101` · `game.css?v=65`
+
+## Burnout-rally mechanics overhaul (2026-10-04)
+
+**Player moment:** Desert pack. Steer snaps like Saturn. Slides convert to speed. Gas dumps RUSH through the drivetrain (not a teleport shove). Tail lights a boost wake. NEAR MISS / RUSH flash.
+
+**Cause:** Rush was a post-physics velocity hack. Handling was muted photoreal. Boost was garnish.
+
+**Shipped:** `burnout-drive.js` raises launch/slide-keep/convert without editing config.js. Vehicle applies `rushTorqueMul` + `rushDrive`. RallyRush combo + air earn. Spark wake. No `Track.query()` rewrite.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rally-rush.mjs` · `tools/qa-burnout-look.mjs`
+
+**Boot:** `main.js?v=1025` · `game.js?v=1025` · `vehicle.js?v=187` · `effects.js?v=100`
+
+## CEO→CTO: Burnout-style rally is the identity (2026-10-04)
+
+**Player moment:** Every future sprint. The fantasy is “Burnout, but rally.” Handling stays arcade dirt. Juice is rush, near-miss, hot grade.
+
+**Shipped:** Binding brief `docs/BURNOUT_RALLY_DIRECTION.md`. Studio rule, game directive, quality target, stabilization brief, north star, and README point at it. No city / takedown scope. No `config.js` / `vehicle.js` rewrite.
+
+**Proof:** Read the brief. Runtime juice already in `tools/qa-rally-rush.mjs` · `tools/qa-burnout-look.mjs`.
+
+**Boot:** direction only — `main.js?v=1024` unchanged.
+
+## Rally Rush (2026-10-04)
+
+**Player moment:** Any stage with the pack. Slide, land, or thread a rival. The RUSH bar fills. Gas dumps it like Paradise boost — extra shove, hotter grade, NEAR MISS flash. Walls dump the tank.
+
+**Cause:** The Burnout grade was cosmetic. There was no arcade payoff for committed dirt.
+
+**Shipped:** `RallyRush` after Vehicle.step (no vehicle.js rewrite). Auto-spend on throttle. HUD bar + miss sting. Heat feeds burnout-look bloom/CA. Medium `speedFovScale: 0` stays.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rally-rush.mjs` · `tools/qa-burnout-look.mjs`
+
+**Boot:** `main.js?v=1024` · `game.js?v=1024` · `hud.js?v=44` · `postfx.js?v=42` · `game.css?v=63`
+
+## Burnout arcade present (2026-10-04)
+
+**Player moment:** Any race, especially Desert chase. The world looks like a glossy arcade racer — hot grade, candy paint, sun bloom, speed CA. Lakeside stays readable. Medium chase does not zoom the car away.
+
+**Cause:** Authored VISUAL grade was almost flat (sat 1.02, bloom 0.14, warmth 0.06). Speed FOV on medium is muted on purpose. The present read as a muted sim, not Burnout.
+
+**Shipped:** `burnout-look.js` overrides grade/bloom per stage in PhotoRealPost. Teal-amber split + speed chromatic + streak. Desert/Forest/Mountain car env lifted. Lakeside peaks and `speedFovScale: 0` stay. HUD speed glows. config.js untouched.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs` · `tools/qa-lakeside-light.mjs` · `tools/qa-lighting-harsh.mjs`
+
+**Boot:** `main.js?v=1023` · `game.js?v=1023` · `postfx.js?v=41` · `lighting-rig.js?v=33` · `game.css?v=62`
+
+## Forest tunnel ceiling lights (2026-10-04)
+
+**Player moment:** Stage 2 rock tunnel. Sodium pendants hang over the lane from the crown. The cabin is lit from above. Nothing floats on the side walls.
+
+**Cause:** After the 28 m bore, wall cages sat ~17 m off-center at 2.5 m high. Chase cam read them as boxes hanging in air.
+
+**Shipped:** Centerline pendants at 5.85 m, conduit into the horseshoe crown, emissive globe + dark housing. Point-light pool sits at the globes. Warmer Forest fill (`wallInt` 92, `wallColor` 0xffc878). Head beams stay 1295. Mouth rocks and bore width unchanged.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-tunnel-lights.mjs` · `tools/qa-forest-tunnel-bore.mjs` · `tools/qa-forest-headlights.mjs`
+
+**Boot:** `main.js?v=1022` · `game.js?v=1022` · `track.js?v=429` · `forest-tunnel.js?v=22`
+
+## Forest tunnel mouth rocks (2026-10-04)
+
+**Player moment:** Stage 2. Drive into the rock tunnel and out the other end. Big hero boulders flank both mouths. The hole stays clear.
+
+**Cause:** The bore went to 28 m (`clearHalf` ≈ 17). Mouth rocks used fixed laterals of 10–19 m and skipped anything under `clearHalf + 2.8`, so every boulder failed to plant.
+
+**Shipped:** Flanks sit at `clearHalf + 2.7…11 m`. Sixteen hero rocks per mouth, outside the drive floor. No generated primitives.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-tunnel-mouth.mjs` · `tools/qa-forest-tunnel-bore.mjs`
+
+**Boot:** `main.js?v=1021` · `track.js?v=428` · `forest-tunnel.js?v=21`
+
+## Lakeside exposure pull (2026-10-04)
+
+**Player moment:** Stage 4 / Lakeside. Sky keeps cloud structure. Paint and water still read. Nothing flashes white.
+
+**Cause:** Misty HDR sky + ACES 0.94 + seated fill ×2.15 + a 0.22 fill floor. Water bounce and IBL stacked on that key so the dome and lacquer clipped.
+
+**Shipped:** Lakeside peaks only — exposure 0.78, sun 1.22, fill 0.20, world/car env pulled. Skybox ×0.72. No fill floor. Forest/Mountain shade floors and the `sun *= 1 - 0.22 * open` line stay.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lakeside-light.mjs` · `tools/qa-lighting-harsh.mjs`
+
+**Boot:** `main.js?v=1020` · `game.js?v=1020` · `lighting-rig.js?v=32` · `sky.js?v=50`
+
+## Replay trails under the cars (2026-10-04)
+
+**Player moment:** Result tape. Tire marks stay on the asphalt. They do not paint over the hood, doors, or wheels.
+
+**Cause:** Marks used `renderOrder = 8` (after the cars), `polygonOffset -12`, and a 0.0015 clip-z pull. Low broadcast cameras then drew the rut in front of the hull.
+
+**Shipped:** Marks at order 1. Replay bodywork at order 3 with depth write. Offset / z-pull only unsticks the ribbon.
+
+**Proof:** `node tools/qa-replay-trails.mjs` · `node tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=1019` · `game.js?v=1019` · `effects.js?v=99`
+
+## Stage 3 replay rain (2026-10-04)
+
+**Player moment:** Finish Mountain. The result tape is still wet — streaks and road crowns stay in the broadcast shots.
+
+**Cause:** Replay used the race camera mode. A POV finish hid world rain (`show && !pov`). The shower also stayed at the finish lens after the tape jumped to t=0 and after each director cut.
+
+**Shipped:** Result / broadcast always step chase rain. Start and cuts call `weather.relocate`. A 40 m camera jump respawns the volume. Mountain weather stays active; the cabin is seated off.
+
+**Proof:** `node tools/qa-replay-rain.mjs` · `node tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=1018` · `game.js?v=1018` · `rain.js?v=29`
+
+## C-key camera snap (2026-10-04)
+
+**Player moment:** Press C. POV / medium / far switch in a snap. Entering the cabin does not freeze or hitch.
+
+**Cause:** `_startCamBlend` floored the ease at 0.72 s (0.95 s into POV). Cabin waited until ease 0.86, then `setCockpitView` rebuilt hide lists. `_warmPov` aborted before compile if the mirror RT was missing.
+
+**Shipped:** 0.12 s chase snap, 0.14 s POV snap. Cabin seats on the click. Hide / clip / driver stay warmed; C is a visibility flip. Warm always compiles cabin + HUD layer. Mirror is optional.
+
+**Proof:** `node tools/qa-cam-snap.mjs` · `node tools/qa-cam-blend.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Boot:** `main.js?v=1017` · `game.js?v=1017` · `celica.js?v=229` · `ai.js?v=218`
+
+## Load + frame budget (2026-10-04)
+
+**Player moment:** Title paints sooner. Stage load compiles less world. Race holds a steadier cadence — Quality TSR / LOOK drop only when the GPU is late. 2k maps wait until after GO.
+
+**Cause:** Splash prefetched a 2k HDR. Settle compiled ~900 m of ribbon. Race opened at native scale + Quality + LOOK and baked the sun atlas every present. Soft scale never applied mid-race.
+
+**Shipped:** Stream/settle budget. Faster quality down. Soft scale starts at 0.9. TSR steps Quality → Balanced → Performance from present interval. Shadows skip a frame on low/min. 2k PBR waits 24 s and stays off on phones. Forest hero GLBs wait until Forest is picked.
+
+**Proof:** `node tools/qa-boot-perf.mjs` · `node tools/qa-sprint76-perf.mjs`
+
+**Boot:** `main.js?v=1016` · `track.js?v=427` · `pbr-stream.js?v=6` · `quality-manager.js?v=4` · `perf-tier.js?v=55`
+
+## Forest 3241 restart / 3680 float (2026-10-04)
+
+**Player moment:** Stage 2. Drive through 3241 m and 3680 m to the finish. The car stays on the paint. It is not teleported back onto the course. The pack sits on the roadway.
+
+**Cause:** Finish-left was a 4.4% climb from 3229 m (into unswept walls) then a 4.4% drop after 3560 m. Land at 3680 was pulled to the tunnel bed, so cars sat on a plank over a trench. On-road glitches could still checkpoint-restore and zero speed.
+
+**Shipped:** One 8.60 m deck from 3180 m through the finish. Dirt banks follow that deck except over the bore. Collider scrub covers the whole lane. On paint: lift, never replace. Cars pin to the ribbon unless it is a jump.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3241.mjs` · `tools/qa-forest-3469.mjs` · `tools/qa-forest-3485.mjs`
+
+**Boot:** `main.js?v=1015` · `track.js?v=426` · `vehicle.js?v=186`
+
+## Jump → land — seamless kiss (2026-10-04)
+
+**Player moment:** Takeoff, hang, and arrival read as one motion. The car follows the lip, kisses the pad, and rolls onto the next straight without a thud or a rising kink.
+
+**Cause:** Land pads used ease-in, so grade was steepest at the exit onto the next road. Touchdown assigned chassis Y and snapped pitch in one frame. The chase cam punched on every kiss.
+
+**Shipped:** Land pads ease-in-out (flat arrival, flat exit). Ramp holds a constant lip grade. Deck follows the pad instead of teleporting. Land spring is overdamped. Camera kick is a nod, not a punch. Desert 1654 stay-put.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-jump-land.mjs` · `tools/qa-jump-banks.mjs` · `tools/qa-desert-1654.mjs`
+
+**Boot:** `main.js?v=1014` · `game.js?v=1014` · `track.js?v=425` · `vehicle.js?v=185` · `jump.js?v=36`
+
 ## Finish banner — not backwards (2026-10-04)
 
 **Player moment:** Drive at the finish gantry. FINISH and RALLY CHAMPIONSHIP read left-to-right, not mirrored.

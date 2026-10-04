@@ -8,9 +8,9 @@ WebTSR is a legal browser clone of [Unreal Engine Temporal Super Resolution](htt
 
 ## Live
 
-- Game (desktop Quality + LOOK on): `http://127.0.0.1:8766/index.html?v=1011`
+- Game (desktop Quality + LOOK on): `http://127.0.0.1:8766/index.html?v=1033`
 - Live badge: **TSR QUALITY · REFINE · LOOK** (never “DLSS 5”)
-- Isolated SDK lab (LOOK off so you can A/B): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=988`
+- Isolated SDK lab (LOOK off so you can A/B): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=1033`
 - Pause → **IMAGE**: Off / DLAA / Quality / Balanced / Performance
 - Pause → **REFINE**: depth + velocity residual. Pause → **LOOK**: appearance residual (`APPEAR_DEFAULT` true on desktop).
 - `?tsr=off` forces native. `?recon=0` kills Refine. `?appear=0` kills Look.
@@ -101,13 +101,13 @@ From [Temporal Super Resolution FAQ](https://dev.epicgames.com/documentation/unr
 | Quality WebTSR (pre-Look) | **32.7 ms** | 1377×775 → 1788×1006 |
 | Native off | **33.4 ms** | full buffer |
 
-Look A/B never cleared the Forest 33 ms gate (G-buffer walk ~47 ms then abort; first LOOK frames ~20 ms compile). Appearance defaults **off** (`APPEAR_DEFAULT = false`). Pause LOOK or `?appear=1` is the opt-in. Isolated lab `tools/webtsr-lab.html?v=988` Quality p50 **16.7 ms** (845×751 → 1098×975, LOOK off, n 0.00 ms). G-buffer override is opt-in and aborts after frame 2 if it exceeds 1.5 ms. Live cars drop history (`TSR_CAR_HISTORY_KILL`) so Quality cannot smear a chase-locked hull. Proof: `node tools/qa-webtsr-sdk.mjs` · `node tools/qa-car-ghost.mjs`.
+Desktop LOOK is **on** (`APPEAR_DEFAULT = true`). v2 residual adds same-surface albedo bleed, stronger contact / sheen, and 1.06 luma headroom. A single 60 Hz hitch no longer kills LOOK or drops Quality — adapt sheds only on a sustained 30 Hz present and recovers. Isolated lab `tools/webtsr-lab.html?v=1033` keeps LOOK off for A/B. G-buffer override aborts after frame 2 if it exceeds 1.5 ms. Live cars drop history (`TSR_CAR_HISTORY_KILL`) so Quality cannot smear a chase-locked hull. Proof: `node tools/qa-webtsr-sdk.mjs` · `node tools/qa-car-ghost.mjs`.
 
 ## Device policy
 
 | Surface | Present |
 |---|---|
-| Desktop (default) | Quality WebTSR + REFINE. LOOK opt-in. Lazy after first title frame. |
+| Desktop (default) | Quality WebTSR + REFINE + LOOK. Lazy after first title frame. |
 | Phone / iPhone / Android | Cheap FXAA `createMobilePresent`. No history, no LOOK compile, no WebGPU. |
 | `?perf=low\|min` | Same as phone. |
 | `?tsrforce=1` | Lab-only: force desktop WebTSR on a phone. |

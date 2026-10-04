@@ -96,6 +96,11 @@ function main() {
   must(src.appear.includes("let enabled = supported && APPEAR_DEFAULT"), "createAppearance starts at default");
   must(src.appear.includes("COMPOSE_FRAG") || src.appear.includes("Full-res compose"), "residual compose, not blit-replace");
   must(src.appear.includes("uPassthrough"), "LOOK first-frame passthrough");
+  must(src.appear.includes("Pixel-space appearance"), "LOOK v2 same-surface bleed");
+  must(src.appear.includes("APPEAR_LUMA_HEADROOM = 1.06"), "LOOK headroom 1.06");
+  must(src.game.includes("ema > 28.5"), "LOOK shed only on 30 Hz present");
+  must(src.game.includes("setMode(\"quality\")"), "Quality recovers when GPU is back");
+  must(src.game.includes("appear: { gain: 1.2 }"), "LOOK gain 1.2");
 
   must(src.mobile.includes("export function createMobilePresent"), "createMobilePresent factory");
   must(src.mobile.includes("FXAA"), "phone present is FXAA");
@@ -139,7 +144,8 @@ function main() {
   must(src.lab.includes("createWebTsr"), "lab uses createWebTsr");
   must(!/id="appear"[^>]*checked/.test(src.lab), "lab LOOK checkbox unchecked");
   must(src.lab.includes("recon.appear.enabled = false"), "lab forces appear off at boot");
-  must(/browser-reconstruct-sdk\/index\.js\?v=988/.test(src.lab), "lab cache-bust 988");
+  const labSdkV = Number((src.lab.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) || [])[1] || 0);
+  must(labSdkV >= 988, `lab cache-bust ${labSdkV} (>=988)`);
 
   must(src.docs.includes("APPEAR_DEFAULT"), "WEBTSR.md records APPEAR_DEFAULT");
   must(src.docs.includes("LOOK on") || src.docs.includes("LOOK ON") || src.docs.includes("LOOK is on"), "WEBTSR.md records desktop LOOK on");

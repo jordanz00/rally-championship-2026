@@ -7,8 +7,8 @@
  *   PLUS load transfer. Body roll and brake-dive are the UI of mass; wheels
  *   stay road-upright (AM3 / Model 2: cabinet tips, tires stay planted).
  *
- * FEEL CONTRACT: docs/SEGA_RALLY_DRIVING_MODEL.md (+ AM3-RESEARCH.md §2).
- *   Believable arcade — not hardcore sim, not floaty. ~70% physical / ~30% assist.
+ * FEEL CONTRACT: docs/BURNOUT_RALLY_DIRECTION.md + SEGA_RALLY_DRIVING_MODEL.md.
+ *   Burnout-style rally — Saturn snap, Paradise dump. ~70% physical / ~30% assist.
  * AM3 PRINCIPLES (win when conflicting with GTA IV):
  *   1. SURFACE IS THE MECHANIC — brake distance, breakaway, recovery per surface.
  *   2. Slide is a TOOL — brake on mud begins a power slide; catch = switch.
@@ -51,7 +51,22 @@ import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=241";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
-import { JumpModel } from "./jump.js?v=35";
+import { JumpModel } from "./jump.js?v=36";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=5";
+
+applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
+
+// Seamless takeoff → kiss → roll-out. config.js stays pinned at ?v=241.
+JUMP.springFraction = 0.09;
+JUMP.landVelAbsorb = 0.91;
+JUMP.landBounceImpact = 7.6;
+JUMP.landReairMin = 1.2;
+JUMP.landSettleMin = 0.2;
+JUMP.landSettleMax = 0.52;
+JUMP.landCompressZeta = 0.97;
+JUMP.landCompressWn = 15.5;
+JUMP.landSettleDamp = 4.6;
+JUMP.landImpactSquash = 0.014;
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
 const TMP = {
@@ -175,8 +190,8 @@ const LAUNCH_HOLD_S = 0.55;
  * Desert's first corner is still 220 m out. Drive reaches the dirt instead
  * of smoking the rears, then first-corner slides stay catchable.
  */
-const GO_RUSH_S = 1.18;
-const GO_RUSH_DRIVE = 1.22;
+const GO_RUSH_S = 2.05;
+const GO_RUSH_DRIVE = 1.78;
 /** Ignore sub-centimetre along-track noise when undoing a launch shove. */
 const LAUNCH_REVERSE_EPS = 0.015;
 /**
@@ -591,6 +606,10 @@ export class Vehicle {
     this._launchHold = 0;
     /** Seconds of extra launch hook-up after freezeLaunch / GO. */
     this._goRush = 0;
+    /** Player rush dump (0–1 heat, m/s² shove, On Fire). AI stays 0. */
+    this.rushHeat = 0;
+    this.rushDrive = 0;
+    this.rushFire = 0;
     /** Count of recovered warps / NaN / buried poses this race. */
     this._glitchHits = 0;
     /** @type {Array<Record<string, number|string>>} */
@@ -769,6 +788,9 @@ export class Vehicle {
     const p = track.sample(dist, this._sample);
     this.position.set(p.x + p.nx * lateral, p.y + ROAD_DECK - TIRE_PLANT, p.z + p.nz * lateral);
     this.velocity.set(0, 0, 0);
+    this.rushHeat = 0;
+    this.rushDrive = 0;
+    this.rushFire = 0;
     this.yaw = p.heading;
     this.yawRate = 0;
     this.roll = 0;
@@ -1117,7 +1139,7 @@ export class Vehicle {
     const selfAlign = (s.steerReturn || 88) + Math.abs(vx) * 0.26;
     const rack =
       Math.abs(steerTarget) > Math.abs(this.steer)
-        ? (s.steerSpeed || 96) * lerp(1.62, 0.82, speed01 * speed01)
+        ? (s.steerSpeed || 96) * lerp(1.62, 0.82, speed01 * speed01) * BURNOUT_STEER_SNAP
         : selfAlign;
     this.steer += (steerTarget - this.steer) * (1 - Math.exp(-rack * dt));
     if (Math.abs(steerIn) < 0.04 && Math.abs(this.steer) < 0.012) this.steer = 0;
@@ -1656,13 +1678,18 @@ export class Vehicle {
       if (bumpVy > 0.35 && !onJumpApproach) {
         this._suspCompress = Math.min(0.55, this._suspCompress + bumpVy * 0.06);
       }
-      // Contact patch on the painted deck. The filter used to lag a rising
-      // land ramp and leave the tires in the asphalt or hovering above it.
+      // Follow the painted deck. A hard assign on landLock was the landing thud.
       if (this._landLock > 0 || onJumpApproach) {
-        this.position.y = plantDeck;
-        this._deckFilt = plantDeck;
-        this._deckSmoothY = plantDeck;
-        if (this._landLock > 0 && this._landSettle <= 0 && Math.abs(this._landCompress || 0) <= 0.004) {
+        const landing = this._landLock > 0;
+        const snapRate = landing ? 22 : 38;
+        const u = 1 - Math.exp(-snapRate * dt);
+        this.position.y = prevY + (plantDeck - prevY) * u;
+        const hover = landing ? 0.02 : 0.006;
+        if (this.position.y > plantDeck + hover) this.position.y = plantDeck + hover;
+        if (this.position.y < plantDeck - 0.012) this.position.y = plantDeck - 0.012;
+        this._deckFilt = this.position.y;
+        this._deckSmoothY = this.position.y;
+        if (landing && this._landSettle <= 0 && Math.abs(this._landCompress || 0) <= 0.004) {
           this._snapPitchToRoad(axles);
         }
       } else {
@@ -1713,7 +1740,7 @@ export class Vehicle {
         this._groundVy = 0;
         this._deckSmoothY = floorY;
         this._deckFilt = floorY;
-        this._landLock = 0.11;
+        this._landLock = 0.16;
         this._armLandPad(track, q2.dist, floorY);
         this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
         return;
@@ -1758,7 +1785,7 @@ export class Vehicle {
         this.velY = 0;
         this.onGround = true;
         this._airTime = 0;
-        this._landLock = 0.1 + impact * 0.008;
+        this._landLock = 0.16 + impact * 0.006;
       }
     }
   }
@@ -1988,7 +2015,7 @@ export class Vehicle {
     const hint =
       this._landPadArmed && this._landPadEndDist > (this.progress || 0) + 2
         ? this._landPadEndDist
-        : (this.progress || 0) + 80;
+        : this.progress || 0;
     const raw = track.query(this.position.x, this.position.z, this._qSolid, hint);
     const q = this._preferSolidRoad(track, raw);
     if (q && q.jumpKind !== "gap") return q;
@@ -2157,7 +2184,46 @@ export class Vehicle {
    * Velocity is cleared only here — reaching a location does not reset it.
    * @param {import('../tracks/track.js').Track} track
    */
+  /**
+   * True when XZ is still on the driven ribbon. A painted deck is never a
+   * teleport target — lift the hull, keep the speed.
+   * @param {import('../tracks/track.js').Track} track
+   * @returns {boolean}
+   */
+  _onPaintedDeck(track) {
+    if (!track || typeof track.sample !== "function") return false;
+    if (!Number.isFinite(this.progress) || !this._isFinitePose()) return false;
+    const line = track.sample(this.progress, this._sample);
+    if (!line || !Number.isFinite(line.x) || line.jumpKind === "gap") return false;
+    const lat = Math.abs(
+      (this.position.x - line.x) * (line.nx || 0) + (this.position.z - line.z) * (line.nz || 0)
+    );
+    return lat <= (line.width || 12) * 0.5 + 1.6;
+  }
+
+  /**
+   * Pin the chassis to the current ribbon. Not a replace — XZ and speed stay.
+   * @param {import('../tracks/track.js').Track} track
+   * @returns {boolean}
+   */
+  _liftOntoPaintedDeck(track) {
+    if (!this._onPaintedDeck(track)) return false;
+    const line = track.sample(this.progress, this._sample);
+    if (!line || !Number.isFinite(line.y)) return false;
+    const want = line.y + ROAD_DECK - TIRE_PLANT;
+    this._noteGlitch("deck-lift", { from: this.position.y, to: want, progress: this.progress });
+    this.position.y = want;
+    this.velY = 0;
+    this.onGround = true;
+    this._airTime = 0;
+    this._deckFilt = want;
+    this._deckSmoothY = want;
+    this._landLock = Math.max(this._landLock || 0, 0.08);
+    return true;
+  }
+
   _restoreLastValidTransform(track) {
+    if (this._liftOntoPaintedDeck(track)) return;
     if (!this._hasGoodPose || !Number.isFinite(this._goodX) || !Number.isFinite(this._goodProgress)) {
       if (track) this.spawn(track, Math.max(4, this.progress || 8), 0);
       return;
@@ -2242,6 +2308,25 @@ export class Vehicle {
       return;
     }
     this._guardBuried(track, this._prevY);
+    this._pinToRibbonIfFloating(track);
+  }
+
+  /**
+   * Grounded cars on paint sit on the ribbon. Hover is a glitch, not airtime.
+   * @param {import('../tracks/track.js').Track} track
+   */
+  _pinToRibbonIfFloating(track) {
+    if (!this.onGround || !this._onPaintedDeck(track)) return;
+    const line = track.sample(this.progress, this._sample);
+    if (!line || !Number.isFinite(line.y)) return;
+    if (line.jump || line.jumpKind) return;
+    const want = line.y + ROAD_DECK - TIRE_PLANT;
+    if (this.position.y > want + 0.08) {
+      this.position.y = want;
+      this.velY = 0;
+      this._deckFilt = want;
+      this._deckSmoothY = want;
+    }
   }
 
   /** Finite pose + velocity. Alias kept so the tick invariant reads clearly. */
@@ -2555,6 +2640,7 @@ export class Vehicle {
     const drop = floor - this.position.y;
     if (drop <= 0.12) return;
     if (this.onGround && drop > VOID_RECOVER_M) {
+      if (this._liftOntoPaintedDeck(track)) return;
       const solid = this._querySolidAtCar(track);
       if (solid && solid.jumpKind !== "gap" && this._xzOnRibbon(track, solid.dist, 12).on) {
         this._noteGlitch("under-world", {
@@ -2564,9 +2650,12 @@ export class Vehicle {
           progress: this.progress,
           pipe: { ...this._pipe },
         });
-        this.progress = solid.dist;
-        this.lapDist = solid.dist;
-        if (solid !== this._q) this._copyQuery(this._q, solid);
+        const along = Math.abs((solid.dist || 0) - (this.progress || 0));
+        if (along < 28) {
+          this.progress = solid.dist;
+          this.lapDist = solid.dist;
+          if (solid !== this._q) this._copyQuery(this._q, solid);
+        }
         this._resolveTrackContact(floor);
         this._landLock = Math.max(this._landLock || 0, 0.12);
         this._snapPitchToRoad(this._axles);
@@ -2813,6 +2902,7 @@ export class Vehicle {
       pipe: { ...this._pipe },
     });
     if (pen > VOID_RECOVER_M) {
+      if (this._liftOntoPaintedDeck(track)) return;
       this._restoreCheckpoint(track);
       return;
     }
@@ -2890,7 +2980,7 @@ export class Vehicle {
     const noseDown = clamp(impact * (JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.02), 0, 0.07);
     this._landPitchOff = clamp(this._landPitchOff + noseDown, -pitchMax, pitchMax);
     const wantPitch = roadPitch + this._landPitchOff;
-    const snap = this.ai ? 0.58 : 0.82;
+    const snap = this.ai ? 0.42 : 0.4;
     this.pitch += (wantPitch - this.pitch) * snap;
     // Kill leftover air rates so the chassis does not keep tumbling after kiss.
     this.pitchRate = (this.jump.noseUpRate || 0) * -0.12 + (wantPitch - this.pitch) * 6.5;
@@ -3085,7 +3175,7 @@ export class Vehicle {
       const tightPlant = tightDeckPlant(roadKind, this._landLock);
       const roadPitch = flat ? 0 : -grade;
       this._roadPitch = roadPitch;
-      if (flat || tightPlant) this._visPitch = roadPitch;
+      if ((flat || tightPlant) && !(this._landSettle > 0)) this._visPitch = roadPitch;
       this._slope = flat ? 0 : grade;
       // Sprung-body pitch (dive / squat / impact dip) rides on top of the
       // road plane everywhere. The hubs in _stepSuspension compensate it, so
@@ -4066,13 +4156,15 @@ export class Vehicle {
     const split = ctx.axleSplit;
     const hbEnter = HANDLING.handbrakeEnter != null ? HANDLING.handbrakeEnter : 0.12;
     const loose = ease >= 0.8;
-    // Throttle + steer on loose = power-slide intent (arcade initiation without e-brake).
+    // Easy slide stays on. Tarmac still needs more steer / speed than mud
+    // (AM3: brake on tarmac stops you; brake on mud starts the slide).
+    const tarmacEasy = HANDLING.easySlide && !loose;
     const slideIntent =
-      loose &&
+      (loose || HANDLING.easySlide) &&
       hb < hbEnter + 0.04 &&
-      this.throttle > 0.035 &&
-      Math.abs(st) > 0.022 &&
-      Math.abs(vx) > 2.8;
+      this.throttle > (tarmacEasy ? HANDLING.easySlideTarmacThrottle || 0.07 : 0.035) &&
+      Math.abs(st) > (tarmacEasy ? HANDLING.easySlideTarmacSteer || 0.048 : 0.022) &&
+      Math.abs(vx) > (tarmacEasy ? HANDLING.easySlideTarmacSpeed || 4.8 : 2.8);
 
     // AM3 headline: brake on tarmac and you stop; brake on mud and you begin a
     // power slide. brakeYaw decides which of those two the pedal does here.
@@ -4186,6 +4278,9 @@ export class Vehicle {
     }
     if (this._goRush > 0 && this.throttle > 0.2 && this.brake < 0.25) {
       tqDrive *= lerp(1, GO_RUSH_DRIVE, this._goRush / GO_RUSH_S);
+    }
+    if (this.rushHeat > 0.04 && this.throttle > 0.28 && this.brake < 0.35) {
+      tqDrive *= rushTorqueMul(this.rushHeat, this.rushFire);
     }
 
     // Arcade keep-speed — throttle in a yaw slide must pull, not bleed.
@@ -4553,9 +4648,13 @@ export class Vehicle {
         : HANDLING.driftBleedMul != null
           ? HANDLING.driftBleedMul
           : 0.048;
-      // Throttle sustains the slide — classic arcade power-slide hold.
+      // Throttle sustains the slide — OutRun hang + Sega Rally powerslide.
       if (this.throttle > 0.1) bleedMul *= 0.1;
       else if (this.throttle > 0.02) bleedMul *= 0.32;
+      if (!hbSlide && this.throttle > 0.28) {
+        const hang = HANDLING.outrunHang != null ? HANDLING.outrunHang : 0;
+        if (hang > 0) bleedMul *= Math.max(0.04, 1 - hang);
+      }
     }
     const hold = Math.exp(-holdRate * bleedMul * dt);
     let dvyCap = maxDvy;
@@ -4573,6 +4672,9 @@ export class Vehicle {
     if (this.throttle > 0.14 && Math.abs(vy) > 1.1 && Math.abs(vx) > 4) {
       const conv = HANDLING.slideSpeedConvert != null ? HANDLING.slideSpeedConvert : 0.55;
       vx += Math.sign(vx || 1) * Math.abs(vy) * conv * this.throttle * dt;
+    }
+    if (this.rushDrive > 0 && this.throttle > 0.28 && this.brake < 0.3) {
+      vx += Math.sign(vx || 1) * this.rushDrive * dt;
     }
 
     this._rearSlide =

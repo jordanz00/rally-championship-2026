@@ -69,7 +69,7 @@ check(
 check("HARSH_PEAKS desert exposure cap", HARSH_PEAKS.desert.exposureMax <= 0.92 && HARSH_PEAKS.desert.exposureMax >= 0.84);
 check("HARSH_PEAKS forest exposure cap", HARSH_PEAKS.forest.exposureMax <= 0.88 && HARSH_PEAKS.forest.exposureMax >= 0.8);
 check("HARSH_PEAKS mountain exposure cap", HARSH_PEAKS.mountain.exposureMax <= 0.92 && HARSH_PEAKS.mountain.exposureMax >= 0.84);
-check("HARSH_PEAKS lakeside exposure cap", HARSH_PEAKS.lakeside.exposureMax <= 0.92 && HARSH_PEAKS.lakeside.exposureMax >= 0.84);
+check("HARSH_PEAKS lakeside exposure cap", HARSH_PEAKS.lakeside.exposureMax <= 0.82 && HARSH_PEAKS.lakeside.exposureMax >= 0.72);
 check("desert fill peak is under the old 0.40 wash", HARSH_PEAKS.desert.fillMax <= 0.38 && HARSH_PEAKS.desert.fillMax >= 0.3);
 check("forest hemi floor is not re-blacked", HARSH_PEAKS.forest.hemiMin >= 0.62);
 
@@ -103,6 +103,16 @@ check(
   "mountain open exposure is under authored 0.96 (no rain strobe)",
   mountainOpen <= HARSH_PEAKS.mountain.exposureMax + 1e-6,
   `ev=${mountainOpen.toFixed(3)}`
+);
+const lakeOpen = clampRaceExposure(LIGHTING.lakeside, 0, 1, "lakeside");
+check(
+  "lakeside open exposure is pulled under authored 0.94",
+  lakeOpen <= HARSH_PEAKS.lakeside.exposureMax + 1e-6 && lakeOpen < LIGHTING.lakeside.exposure,
+  `ev=${lakeOpen.toFixed(3)} authored=${LIGHTING.lakeside.exposure}`
+);
+check(
+  "lakeside does not floor fill after seat",
+  !/lights\.fill\.intensity, 0\.22\)/.test(rig) && /pk\.sunMax/.test(rig)
 );
 
 const desertSpec = harshEnvLook(LIGHTING.desert, 0, "desert");

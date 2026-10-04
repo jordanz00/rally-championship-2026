@@ -11,7 +11,7 @@
 
 ## Objective
 
-Create an extremely polished modern 3D **arcade** rally racing game inspired by the gameplay philosophy of Sega Rally Championship.
+Create an extremely polished **Burnout-style rally**: Paradise juice on dirt, inspired by arcade rally handling (not a Sega rip, not a city crash-out). Binding: [`BURNOUT_RALLY_DIRECTION.md`](BURNOUT_RALLY_DIRECTION.md).
 
 The game must be:
 
@@ -39,9 +39,9 @@ The game must be:
 ## Product hierarchy (strict)
 
 ```
-Sega Rally fun
-  → modern racing-game feel
-    → AAA presentation
+Burnout-style rally fun
+  → arcade dirt feel
+    → AAA hot present
       → browser performance
 ```
 

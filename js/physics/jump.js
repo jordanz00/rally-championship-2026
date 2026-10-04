@@ -258,7 +258,7 @@ export class JumpModel {
       (0.72 + energy * 0.38) *
       (0.78 + fast * 0.28);
     this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
-    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod;
+    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod * 0.7;
     const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
     const bounce =
       Math.max(0, -fallSpeed) > need

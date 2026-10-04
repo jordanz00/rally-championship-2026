@@ -14,7 +14,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { armProjectedMaps } from "../gfx/pbr.js?v=58";
-import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=5";
+import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=6";
 
 const TEX_BASE = "assets/env/forest";
 /** Poly Haven boulder_01 tile size (metres) — unique UVs, not one stretch. */
@@ -38,9 +38,80 @@ export async function prepareForestTunnelPbr() {
   rockSet = await bootTunnelSet(loader, TEX_BASE);
 }
 
+/** Metres above paint to the sodium globe. Chase cam reads this as overhead. */
+export const FOREST_TUNNEL_HANG_H = 5.85;
+
 /**
- * Wall-mount pose for a Forest sconce. Origin sits on the inner rock face.
- * +Z of the fixture goes into the stone; the cage hangs into the cabin.
+ * Centerline ceiling pendant. Origin is the glowing globe over the lane.
+ * +Y of the fixture is the conduit into the rock crown — never a side float.
+ * @param {{x:number,y:number,z:number,nx?:number,nz?:number,heading?:number}} frame
+ * @param {number} ceilY world-Y of the horseshoe crown
+ * @param {number} [hangH]
+ * @returns {{x:number,y:number,z:number,ceilY:number,rod:number,nx:number,nz:number,fx:number,fz:number}}
+ */
+export function forestTunnelCeilingPose(frame, ceilY, hangH = FOREST_TUNNEL_HANG_H) {
+  const deck = frame.y || 0;
+  const crown = Number.isFinite(ceilY) ? ceilY : deck + hangH + 8;
+  const y = Math.min(deck + hangH, crown - 1.55);
+  const rod = Math.max(1.35, crown - y + 0.48);
+  return {
+    x: frame.x,
+    y,
+    z: frame.z,
+    ceilY: crown,
+    rod,
+    nx: frame.nx || 0,
+    nz: frame.nz || 0,
+    fx: Math.sin(frame.heading || 0),
+    fz: Math.cos(frame.heading || 0),
+  };
+}
+
+/**
+ * Dark hood + cage at the globe. Conduit and rose are separate so each
+ * lamp can scale to its own crown.
+ * @returns {THREE.BufferGeometry}
+ */
+export function createForestTunnelPendantHousingGeometry() {
+  const hood = new THREE.CylinderGeometry(0.12, 0.5, 0.22, 10);
+  hood.translate(0, 0.18, 0);
+  const neck = new THREE.CylinderGeometry(0.05, 0.05, 0.28, 6);
+  neck.translate(0, 0.38, 0);
+  const ring = new THREE.TorusGeometry(0.26, 0.035, 6, 10);
+  ring.rotateX(Math.PI / 2);
+  const bars = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const bar = new THREE.BoxGeometry(0.035, 0.34, 0.035);
+    bar.translate(Math.cos(a) * 0.22, -0.02, Math.sin(a) * 0.22);
+    bars.push(bar);
+  }
+  const parts = [hood, neck, ring, ...bars];
+  const geo = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return geo || new THREE.CylinderGeometry(0.12, 0.5, 0.22, 10);
+}
+
+/** Unit conduit — scale Y to the drop from globe to crown. */
+export function createForestTunnelPendantConduitGeometry() {
+  return new THREE.CylinderGeometry(0.042, 0.042, 1, 6);
+}
+
+/** Ceiling rose that embeds in the horseshoe crown. */
+export function createForestTunnelPendantPlateGeometry() {
+  return new THREE.BoxGeometry(0.72, 0.14, 0.72);
+}
+
+/**
+ * Sodium globe at the pendant origin.
+ * @returns {THREE.BufferGeometry}
+ */
+export function createForestTunnelPendantGlobeGeometry() {
+  return new THREE.SphereGeometry(0.2, 10, 8);
+}
+
+/**
+ * Wall-mount pose kept for Desert-style callers. Forest no longer plants these.
  * @param {{x:number,y:number,z:number,nx:number,nz:number,heading?:number}} frame
  * @param {number} clearHalf
  * @param {number} side -1 or 1
@@ -188,29 +259,34 @@ export function forestMouthBoulderPoses(ctx) {
   const fx = Math.sin(p.heading);
   const fz = Math.cos(p.heading);
   const bags = { a: [], b: [] };
-    const spots = [
-    [1, 10.8, 1.6, 11.2, "a"],
-    [-1, 11.0, 1.8, 10.8, "b"],
-    [1, 12.2, 3.8, 12.4, "b"],
-    [-1, 12.6, 4.0, 12.0, "a"],
-    [1, 14.8, 6.2, 13.6, "a"],
-    [-1, 15.2, 6.6, 13.2, "b"],
-    [1, 11.6, -2.4, 10.4, "b"],
-    [-1, 11.8, -2.6, 10.0, "a"],
-    [1, 16.8, 9.2, 15.0, "a"],
-    [-1, 17.2, 9.6, 14.4, "b"],
-    [1, 19.4, 4.5, 14.8, "b"],
-    [-1, 19.8, 5.0, 14.2, "a"],
-    [1, 13.4, 0.4, 11.6, "a"],
-    [-1, 13.8, 0.6, 11.2, "b"],
+  // Laterals are metres past the drive hole. Fixed 10–19 m spots vanished
+  // after the Forest bore went to 28 m (clearHalf ≈ 17, skip was 20).
+  const spots = [
+    [1, 2.7, 1.5, 13.2, "a"],
+    [-1, 2.9, 1.7, 12.8, "b"],
+    [1, 4.4, 3.6, 15.4, "b"],
+    [-1, 4.6, 3.8, 15.0, "a"],
+    [1, 6.4, 6.5, 17.2, "a"],
+    [-1, 6.8, 6.8, 16.8, "b"],
+    [1, 3.1, -2.2, 12.0, "b"],
+    [-1, 3.3, -2.4, 11.6, "a"],
+    [1, 8.6, 9.0, 18.4, "a"],
+    [-1, 9.0, 9.3, 17.8, "b"],
+    [1, 5.2, 0.3, 14.2, "a"],
+    [-1, 5.4, 0.5, 13.8, "b"],
+    [1, 10.6, 5.4, 16.4, "b"],
+    [-1, 11.0, 5.8, 16.0, "a"],
+    [1, 7.4, 2.0, 14.8, "a"],
+    [-1, 7.8, 2.2, 14.4, "b"],
   ];
   for (let i = 0; i < spots.length; i++) {
     const side = spots[i][0];
-    const lat = spots[i][1];
+    const beyond = spots[i][1];
     const along = spots[i][2];
     const tall = spots[i][3];
     const bag = spots[i][4];
-    if (lat < clearHalf + 2.8) continue;
+    const lat = clearHalf + beyond;
+    if (lat < clearHalf + 2.4) continue;
     const x = p.x + p.nx * side * lat + fx * outward * along;
     const z = p.z + p.nz * side * lat + fz * outward * along;
     if (inDrive && inDrive(x, z)) continue;
@@ -218,12 +294,12 @@ export function forestMouthBoulderPoses(ctx) {
     bags[bag].push({
       c: chunkOfDist(p.dist),
       x,
-      y: gy - 0.35,
+      y: gy - 0.42,
       z,
       s: 1,
       sy: tall,
-      sx: tall * (0.72 + (i % 3) * 0.08),
-      sz: tall * (0.78 + (i % 2) * 0.1),
+      sx: tall * (0.74 + (i % 3) * 0.08),
+      sz: tall * (0.8 + (i % 2) * 0.1),
       ry: p.heading + side * 0.18 + i * 0.31,
       rx: side * 0.06,
       rz: -side * 0.05,

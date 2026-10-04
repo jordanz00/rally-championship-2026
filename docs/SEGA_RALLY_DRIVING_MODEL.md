@@ -16,6 +16,7 @@ BELIEVABLE + RESPONSIVE + DRIFTABLE + FORGIVING + PHYSICAL + FAST + FUN
 **Easy to drive → difficult to master → spectacular when mastered.**
 
 Chase Sega Rally Championship **feel** (1995-era arcade rally): attack → slide → recover → accelerate.  
+Product identity is **Burnout-style rally** ([`BURNOUT_RALLY_DIRECTION.md`](BURNOUT_RALLY_DIRECTION.md)): Saturn snap + Paradise rush dump.  
 Do **not** chase 1995 technical implementation. Do **not** build a hardcore sim. Do **not** build floaty “move forward” arcade.
 
 **Design ratio (philosophy, not math):** ~**70% physical behavior** + ~**30% invisible game-design assistance**.

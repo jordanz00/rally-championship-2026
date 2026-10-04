@@ -59,15 +59,15 @@ const ISO = new Float32Array([
 ]);
 
 export const RECON_WEIGHTS = Object.freeze({
-  version: 2,
+  version: 3,
   license: "MIT",
-  origin: "hand-authored 2026-10-02 — not NVIDIA, not FidelityFX source dump",
-  /** Residual gain after the edge gate. Small on purpose — this is a polish pass. */
-  gain: 0.18,
+  origin: "hand-authored 2026-10-04 — not NVIDIA, not FidelityFX source dump",
+  /** Residual gain after the edge gate. v3 reads at chase distance. */
+  gain: 0.26,
   /** Luma contrast below this (soft knee) kills the residual. */
-  edgeKnee: 0.028,
+  edgeKnee: 0.024,
   /** RCAS-style lobe scale 0..1 (0.25 ≈ a light present sharpen). */
-  rcasSharp: 0.24,
+  rcasSharp: 0.30,
   /** Extra min/max slack. 0 = hard neighbourhood clamp (no ringing). */
   clampSlack: 0.0,
   /** Bilateral luma sigma — neighbours across a hard edge get ~0 weight. */
@@ -83,7 +83,7 @@ export const RECON_WEIGHTS = Object.freeze({
   horizonStartM: 160,
   horizonEndM: 480,
   /** Extra residual on contact-scale depth edges (wheel on road, trunk on dirt). */
-  contactBoost: 0.42,
+  contactBoost: 0.58,
   /** Strength of the depth gate (1 = full). */
   haloGate: 1.0,
   /** Min n·n to accept a neighbour. Depth-derived normals, not a G-buffer. */

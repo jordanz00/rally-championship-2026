@@ -71,8 +71,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.22,
     exposureMax: 0.9,
     exposureCeil: 0.97,
-    carEnvMax: 1.08,
-    coatEnvMax: 1.55,
+    carEnvMax: 1.22,
+    coatEnvMax: 1.7,
     worldEnvMax: 0.88,
   },
   forest: {
@@ -83,8 +83,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.2,
     exposureMax: 0.86,
     exposureCeil: 0.92,
-    carEnvMax: 1.12,
-    coatEnvMax: 1.65,
+    carEnvMax: 1.24,
+    coatEnvMax: 1.78,
     worldEnvMax: 0.88,
   },
   mountain: {
@@ -95,21 +95,22 @@ export const HARSH_PEAKS = {
     rimMax: 0.2,
     exposureMax: 0.9,
     exposureCeil: 0.96,
-    carEnvMax: 1.0,
-    coatEnvMax: 1.45,
+    carEnvMax: 1.18,
+    coatEnvMax: 1.62,
     worldEnvMax: 0.68,
   },
   lakeside: {
-    fillMax: 0.36,
-    ambientMax: 0.22,
-    hemiMin: 0.5,
-    hemiMax: 0.64,
-    rimMax: 0.2,
-    exposureMax: 0.9,
-    exposureCeil: 0.94,
-    carEnvMax: 1.08,
-    coatEnvMax: 1.55,
-    worldEnvMax: 0.7,
+    fillMax: 0.2,
+    ambientMax: 0.14,
+    hemiMin: 0.42,
+    hemiMax: 0.52,
+    rimMax: 0.14,
+    exposureMax: 0.78,
+    exposureCeil: 0.82,
+    carEnvMax: 0.82,
+    coatEnvMax: 1.2,
+    worldEnvMax: 0.52,
+    sunMax: 1.22,
   },
 };
 
@@ -230,9 +231,13 @@ export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, c
       if (lights.hemi && lights.hemi.intensity < fl.hemi) lights.hemi.intensity = fl.hemi;
       if (pk && lights.skyRim) lights.skyRim.intensity = Math.min(lights.skyRim.intensity, pk.rimMax);
     } else if (stage === "lakeside") {
+      // Water + misty HDR already bounce. Do not floor fill/ambient after seat.
       const pk = HARSH_PEAKS.lakeside;
-      if (lights.fill) lights.fill.intensity = Math.min(Math.max(lights.fill.intensity, 0.22), pk.fillMax);
-      if (lights.ambient) lights.ambient.intensity = Math.min(Math.max(lights.ambient.intensity, 0.14), pk.ambientMax);
+      if (lights.sun && pk.sunMax != null) {
+        lights.sun.intensity = Math.min(lights.sun.intensity, pk.sunMax);
+      }
+      if (lights.fill) lights.fill.intensity = Math.min(lights.fill.intensity, pk.fillMax);
+      if (lights.ambient) lights.ambient.intensity = Math.min(lights.ambient.intensity, pk.ambientMax);
       if (lights.hemi) {
         lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, pk.hemiMin), pk.hemiMax);
       }

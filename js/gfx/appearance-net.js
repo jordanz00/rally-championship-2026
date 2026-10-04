@@ -8,6 +8,7 @@
  *   that residual onto the full-res TSR buffer *before* ACES. Never stacked with TSR present RCAS.
  *   Never replaces the resolve with a
  *   bilinear upsample (that was softening LOOK).
+ *   v2 adds same-surface albedo bleed (pixel-space appearance).
  * HOW IT CONNECTS: createWebTsr({ appearance: true }) runs this after
  *   TSR + guided residual, then the host still presents presentScene.
  *
@@ -23,7 +24,7 @@ import * as THREE from "../../vendor/three.module.js";
 export const APPEAR_FLAG = "appear";
 export const APPEAR_STORAGE_KEY = "rally-appear-v1";
 export const APPEAR_BUDGET_MS = 1.8;
-export const APPEAR_LUMA_HEADROOM = 1.02;
+export const APPEAR_LUMA_HEADROOM = 1.06;
 /**
  * Desktop default ON — this is the DLSS-class appearance residual the
  * player asked to see. Phones never compile it (`wantsHeavyWebTsr`).
@@ -156,16 +157,30 @@ void main() {
   }
 
   float srcL = luma(src);
-  float wet = smoothstep(0.08, 0.28, srcL) * (1.0 - smoothstep(0.55, 0.88, srcL)) * nDotV;
+  float wet = smoothstep(0.08, 0.32, srcL) * (1.0 - smoothstep(0.58, 0.92, srcL)) * nDotV;
   // Ringing guard: do not push a residual along a hard luma edge.
   float ring = clamp(luma(edge) * 1.8, 0.0, 1.0);
   float still = (1.0 - motion) * distFade * (1.0 - ring * 0.65);
 
+  // Pixel-space appearance (DLSS-class, not NVIDIA): bleed albedo from
+  // same-surface neighbours. Depth gate keeps car / tree silhouettes.
+  float z10 = -perspectiveDepthToViewZ(texture2D(tDepth, lowUv + vec2(0.0, -nPx.y)).x, cameraNear, cameraFar);
+  float z01 = -perspectiveDepthToViewZ(texture2D(tDepth, lowUv + vec2(-nPx.x, 0.0)).x, cameraNear, cameraFar);
+  float z21 = -perspectiveDepthToViewZ(texture2D(tDepth, lowUv + vec2(nPx.x, 0.0)).x, cameraNear, cameraFar);
+  float z12 = -perspectiveDepthToViewZ(texture2D(tDepth, lowUv + vec2(0.0, nPx.y)).x, cameraNear, cameraFar);
+  float w10 = exp(-abs(z10 - dist) * 1.6);
+  float w01 = exp(-abs(z01 - dist) * 1.6);
+  float w21 = exp(-abs(z21 - dist) * 1.6);
+  float w12 = exp(-abs(z12 - dist) * 1.6);
+  vec3 bleed = (src + c10 * w10 + c01 * w01 + c21 * w21 + c12 * w12)
+    / max(1.0 + w10 + w01 + w21 + w12, 1.0);
+
   vec3 residual = vec3(0.0);
-  residual -= edge * (0.10 * still);
-  residual += (bounce - src) * (0.08 * still);
-  residual += sheen * (0.045 * wet * still);
-  residual += (contact - src) * (0.06 * still);
+  residual -= edge * (0.16 * still);
+  residual += (bounce - src) * (0.14 * still);
+  residual += sheen * (0.09 * wet * still);
+  residual += (contact - src) * (0.11 * still);
+  residual += (bleed - src) * (0.20 * still);
 
   if (uHasHist > 0.5) {
     vec3 hist = texture2D(tResHist, vUv).rgb;

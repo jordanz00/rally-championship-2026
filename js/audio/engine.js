@@ -127,6 +127,8 @@ export class RallyAudio {
     this._landRecipe = -1;
     /** Finish / DNF — looping beds stay muted until the next stage. */
     this._raceLoopsMuted = false;
+    this._rushHeat = 0;
+    this._rushFire = 0;
     /** performance.now() deadline while finish cheer owns crowd gains. */
     this._crowdBurstUntil = 0;
     this._crowdMuteTimer = 0;
@@ -646,9 +648,11 @@ export class RallyAudio {
        */
       const air = live ? Math.min(1.15, Math.max(0, (spd - 6) / 28)) : 0;
       const now = this.ctx.currentTime;
-      this._windGain.gain.setTargetAtTime(air * 0.28 * this.sfxVol, now, 0.08);
+      const rush = live ? this._rushHeat || 0 : 0;
+      const fire = live ? this._rushFire || 0 : 0;
+      this._windGain.gain.setTargetAtTime(air * (0.28 + rush * 0.62 + fire * 0.28) * this.sfxVol, now, 0.06);
       if (this._windFilt) {
-        this._windFilt.frequency.setTargetAtTime(420 + spd * 38, now, 0.12);
+        this._windFilt.frequency.setTargetAtTime(420 + spd * 38 + rush * 1100 + fire * 400, now, 0.1);
       }
     }
     if (this.cd) {
@@ -658,6 +662,16 @@ export class RallyAudio {
         rpm: s.rpm,
       });
     }
+  }
+
+  /**
+   * Cabin hiss while dumping / On Fire. Cheap — retargets the existing wind node.
+   * @param {number} heat 0–1
+   * @param {number} [fire] 0–1
+   */
+  setRush(heat, fire = 0) {
+    this._rushHeat = heat > 0 ? (heat < 1 ? heat : 1) : 0;
+    this._rushFire = fire > 0 ? (fire < 1 ? fire : 1) : 0;
   }
 
   /**

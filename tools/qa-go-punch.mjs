@@ -37,16 +37,16 @@ const main = read("js/main.js");
 const html = read("index.html");
 const config = read("js/config.js");
 
-check("GO rush window is 1.18 s", /const GO_RUSH_S = 1\.18/.test(veh));
-check("GO rush drive is 1.22×", /const GO_RUSH_DRIVE = 1\.22/.test(veh));
+check("GO rush window is 2.05 s", /const GO_RUSH_S = 2\.05/.test(veh));
+check("GO rush drive is 1.78×", /const GO_RUSH_DRIVE = 1\.78/.test(veh));
 check("freezeLaunch arms the rush", /this\._goRush = GO_RUSH_S/.test(veh));
 check("straight launch plants, steer still slides", /Math\.abs\(st\) < 0\.18/.test(veh) && /muR \*= lerp\(1, 1\.16/.test(veh));
 check("play-turn lock untouched", /maxSteer \* 1\.28/.test(veh) && /kus \*= 0\.55/.test(veh));
 check("rack bite untouched", /lerp\(1\.62, 0\.82/.test(veh));
 check("slide-bounce plant still the glue", /_pinManeuverDeck\(\)/.test(veh));
 
-check("GO feel lasts 1.35 s", /this\._goFeel = 1\.35/.test(game));
-check("GO FOV kick is 4.6°", /_camFovKick \|\| 0, 4\.6/.test(game));
+check("GO feel lasts 1.8 s", /this\._goFeel = 1\.8/.test(game));
+check("GO FOV kick is 6.4°", /_camFovKick \|\| 0, 6\.4/.test(game));
 check("GO shake survives chatter", /goImpulse/.test(game) && /0\.05 \+ this\._goFeel \* 0\.07/.test(game));
 check("first 30 s rush the lens", /raceTime < 30/.test(game) && /startRushFov/.test(game) && /min\(5\.2/.test(game));
 check("countersteer catches earlier", /Math\.abs\(st\) \/ 0\.2/.test(veh) && /counterAuthority \* snap \* 1\.18/.test(veh));
@@ -58,7 +58,7 @@ check("HUD marks GO!", /classList\.toggle\("is-go", text === "GO!"\)/.test(hud))
 check("GO banner is the big flash", /#hud-flash\.show\.is-go/.test(css) && /@keyframes flashGo/.test(css));
 
 check("AI floors the start town", /v\.progress < 82 && spd < 22 && Math\.abs\(d1\) < 0\.22/.test(ai));
-check("AI pack pace unchanged", /0\.78 \+ this\.skill \* 0\.15/.test(ai));
+check("AI pack pace is hot", /0\.96 \+ this\.skill \* 0\.14/.test(ai));
 
 check("game imports vehicle.js?v=183+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 183);
 check("game imports ai.js?v=215+", Number((game.match(/ai\.js\?v=(\d+)/) || [])[1]) >= 215);
@@ -67,7 +67,7 @@ check("boot cache is 982+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >
 check("index boots main.js?v=982+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 982);
 check("index css is 58+", Number((html.match(/game\.css\?v=(\d+)/) || [])[1]) >= 58);
 
-check("rain module not rewritten here", /rain\.js\?v=28/.test(game));
+check("rain module stays imported", /rain\.js\?v=\d+/.test(game));
 check("codriver import left alone", /codriver\.js\?v=\d+/.test(game));
 check("tsr sdk import is live WebTSR", Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) || [])[1]) >= 981);
 

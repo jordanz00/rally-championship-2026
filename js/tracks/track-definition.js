@@ -320,19 +320,21 @@ export function compileSegment(seg, ctx) {
  * Playable lane — wider ribbon, opened corners. Tight hooks open the most;
  * sweepers still ease so every stage turn is holdable.
  */
-const PLAY_WIDTH = 1.24;
+const PLAY_WIDTH = 1.34;
 const PLAY_TIGHT_RADIUS = 1.4;
-const PLAY_MEDIUM_RADIUS = 1.16;
-const PLAY_SWEEP_RADIUS = 1;
+const PLAY_MEDIUM_RADIUS = 1.28;
+const PLAY_SWEEP_RADIUS = 1.16;
+const PLAY_SPEED_TIGHT = 1.22;
+const PLAY_SPEED_SWEEP = 1.16;
 const PLAY_WIDTH_MIN = 6;
 const PLAY_WIDTH_MAX = 32;
 const PLAY_TUNNEL_EXTRA = 2.2;
-const PLAY_STRAIGHT = 1.45;
+const PLAY_STRAIGHT = 1.72;
 const PLAY_FINISH_PAD = {
-  desert: 180,
-  forest: 150,
-  mountain: 160,
-  lakeside: 140,
+  desert: 240,
+  forest: 220,
+  mountain: 220,
+  lakeside: 200,
   physlab: 48,
 };
 
@@ -349,10 +351,13 @@ export function easePlayWidth(w) {
  * @param {number} r
  * @returns {number}
  */
-export function easePlayRadius(r) {
+export function easePlayRadius(r, speedLane = false) {
   if (!Number.isFinite(r)) return r;
-  const s = r < 50 ? PLAY_TIGHT_RADIUS : r < 90 ? PLAY_MEDIUM_RADIUS : PLAY_SWEEP_RADIUS;
-  return Math.round(r * s * 10) / 10;
+  const mid = speedLane ? PLAY_MEDIUM_RADIUS : 1.16;
+  const sweep = speedLane ? PLAY_SWEEP_RADIUS : 1;
+  const s = r < 50 ? PLAY_TIGHT_RADIUS : r < 90 ? mid : sweep;
+  const extra = speedLane ? (r < 50 ? PLAY_SPEED_TIGHT : PLAY_SPEED_SWEEP) : 1;
+  return Math.round(r * s * extra * 10) / 10;
 }
 
 /**
@@ -361,10 +366,14 @@ export function easePlayRadius(r) {
  * @param {number} radius
  * @returns {number}
  */
-export function easePlayAngle(angle, radius) {
+export function easePlayAngle(angle, radius, speedLane = false) {
   if (!Number.isFinite(angle)) return angle;
   const a = Math.abs(angle);
   if (a >= 130) return angle;
+  if (speedLane && radius < 70 && a > 55) {
+    const eased = Math.max(46, a * 0.84);
+    return angle < 0 ? -eased : eased;
+  }
   if (radius < 50 && a > 62) {
     const eased = Math.max(48, a * 0.9);
     return angle < 0 ? -eased : eased;
@@ -390,7 +399,7 @@ export function easePlayLength(len) {
  * @param {boolean} [scaleStraight]
  * @returns {object}
  */
-export function easePlayPiece(piece, scaleStraight = true) {
+export function easePlayPiece(piece, scaleStraight = true, speedLane = false) {
   const out = { ...piece };
   if (out.width != null) {
     out.width = easePlayWidth(out.width);
@@ -400,8 +409,8 @@ export function easePlayPiece(piece, scaleStraight = true) {
   }
   if (out.radius != null) {
     const r0 = out.radius;
-    out.radius = easePlayRadius(r0);
-    if (out.angle != null) out.angle = easePlayAngle(out.angle, r0);
+    out.radius = easePlayRadius(r0, speedLane);
+    if (out.angle != null) out.angle = easePlayAngle(out.angle, r0, speedLane);
   }
   if (scaleStraight && out.type === "straight" && out.length) {
     out.length = easePlayLength(out.length);
@@ -428,9 +437,10 @@ export function easePlayCourse(course) {
       }
     }
   }
-  const next = pieces.map((p, i) =>
-    easePlayPiece(p, course.id !== "desert" || i >= scaleFrom)
-  );
+  const next = pieces.map((p, i) => {
+    const afterSafari = course.id !== "desert" || i >= scaleFrom;
+    return easePlayPiece(p, afterSafari, afterSafari);
+  });
   const pad = PLAY_FINISH_PAD[course.id] || 0;
   if (pad > 0 && next.length) {
     const last = next[next.length - 1];

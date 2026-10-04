@@ -178,6 +178,8 @@ export function applySky(mesh, L, stageId) {
     const tint = new THREE.Color(0xffffff);
     if (L.horizonGlow != null) tint.lerp(new THREE.Color(L.horizonGlow), amount);
     if (L.fog != null) tint.lerp(new THREE.Color(L.fog), amount * 0.4);
+    // Misty lakeside HDR + ACES was a white dome. Dim the skybox only.
+    if (id === "lakeside") tint.multiplyScalar(0.72);
     mesh.material.color.copy(tint);
   } else {
     void VISUAL;

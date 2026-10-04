@@ -1,12 +1,12 @@
 # Rally Championship 2026
 
-Browser arcade rally inspired by classic Sega Rally immediacy — original stages, three Group A rally cars (Celica GT-Four, Delta HF, Stratos HF), championship flow, cinema PBR lighting, co-driver calls, and power-slide handling.
+**Burnout-style rally** — Paradise juice on dirt. Original stages, three Group A cars (Celica GT-Four, Delta HF, Stratos HF), championship pack, rush / near-miss, hot arcade present, co-driver calls, power-slide handling. Binding: [`docs/BURNOUT_RALLY_DIRECTION.md`](docs/BURNOUT_RALLY_DIRECTION.md).
 
 ## Play online
 
 **https://jordanz00.github.io/rally-championship-2026/**
 
-Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=727` if assets look stale.
+Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=1034` if assets look stale.
 
 ## Controls
 
@@ -27,7 +27,7 @@ Serve the repo root over HTTP (ES modules require a server):
 python3 -m http.server 8765
 ```
 
-Open `http://127.0.0.1:8765/index.html?v=727`
+Open `http://127.0.0.1:8765/index.html?v=1034`
 
 ## QA (automated)
 

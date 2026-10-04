@@ -21,7 +21,7 @@ import {
   GUIDED_RECON_BUDGET_MS,
   RECON_FLAG,
   RECON_STORAGE_KEY,
-} from "./recon-weights.js?v=2";
+} from "./recon-weights.js?v=3";
 
 export { RECON_WEIGHTS, RECON_BUDGET_MS, GUIDED_RECON_BUDGET_MS, RECON_FLAG, RECON_STORAGE_KEY };
 

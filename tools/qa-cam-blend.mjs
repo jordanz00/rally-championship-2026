@@ -49,11 +49,21 @@ check(
 );
 
 check(
-  "C records blend origin; cabin seats mid-blend",
+  "C records blend origin; cabin seats on the click",
   /_startCamBlend\(/.test(game) &&
     /seatIn/.test(game) &&
+    /const seatIn = true/.test(game) &&
     !/if \(mode && mode\.id === "pov"\) this\._applyCockpitCam\(\)/.test(game),
   "pose eases; cabin must not hitch-compile on the C press"
+);
+
+check(
+  "C snap is 0.12–0.14s, not a 0.72s hang",
+  /const SNAP = 0\.12/.test(game) &&
+    /const SNAP_POV = 0\.14/.test(game) &&
+    !/Math\.max\(0\.72/.test(game) &&
+    !/Math\.max\(0\.95/.test(game),
+  "old 0.72/0.95 floor felt like the game froze on C"
 );
 
 check(
@@ -160,17 +170,17 @@ async function live() {
       };
     `);
     check(
-      "live C starts a blend without teleporting",
-      sample && sample.blendOnKey > 0.1 && sample.jumpedOnKey < 0.05,
+      "live C starts a snap blend without teleporting",
+      sample && sample.blendOnKey >= 0.1 && sample.blendOnKey <= 0.16 && sample.jumpedOnKey < 0.05,
       sample
         ? `blendT=${sample.blendOnKey && sample.blendOnKey.toFixed(3)} jump=${sample.jumpedOnKey && sample.jumpedOnKey.toFixed(3)}`
         : "no sample"
     );
     check(
-      "live pose eases (no single-frame cut)",
-      sample && sample.maxStep > 0.02 && sample.maxStep < 3.2 && sample.traveled > sample.maxStep * 1.4,
+      "live pose finishes the snap (no leftover hang)",
+      sample && sample.leftoverBlend < 0.01 && sample.traveled > 0.05,
       sample
-        ? `maxStep=${sample.maxStep && sample.maxStep.toFixed(3)} travel=${sample.traveled && sample.traveled.toFixed(2)}`
+        ? `left=${sample.leftoverBlend && sample.leftoverBlend.toFixed(3)} travel=${sample.traveled && sample.traveled.toFixed(2)}`
         : "no sample"
     );
   } finally {
@@ -182,6 +192,6 @@ async function live() {
 await live();
 
 console.log(
-  `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "camera eases, no cut"}`
+  `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "camera snaps, no hang"}`
 );
 process.exit(fail ? 1 : 0);

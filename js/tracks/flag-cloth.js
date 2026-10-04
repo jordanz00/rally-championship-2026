@@ -858,9 +858,8 @@ export function createGantryBanner(opts) {
   const rawSpan = Math.max(4.8, Math.hypot(dx, dz));
   const span = rawSpan + BANNER_SPAN_PAD * 2;
   const yaw = Math.atan2(-dz, dx);
-  // Printed face is +Z. Current yaw points that face down-track, so the
-  // approaching car reads the DoubleSide back (mirrored). Finish must
-  // face incoming traffic. Start stays as planted — the grid reads the front.
+  // Printed face is +Z. Yaw alone showed the mirrored back to the grid
+  // (attract START read backwards). START and FINISH face incoming.
   const face = Number.isFinite(opts.heading) ? opts.heading : yaw;
   const roadY = Number.isFinite(opts.roadY) ? opts.roadY : minY;
   const beamWorldY = Math.max(roadY, left.y, right.y) + GANTRY_CLEAR;
@@ -873,7 +872,7 @@ export function createGantryBanner(opts) {
   const group = new THREE.Group();
   group.name = `stage-gantry-${label}`;
   group.position.set(midX, minY, midZ);
-  group.rotation.y = label === "FINISH" ? face + Math.PI : yaw;
+  group.rotation.y = face + Math.PI;
   group.userData.clothFlag = true;
   group.userData.gantryBanner = true;
   group.userData.skipSeat = true;

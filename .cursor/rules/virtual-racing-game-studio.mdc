@@ -12,13 +12,13 @@ This repository is a browser rally racing game. For this repo, treat the AI as a
 - This rule governs work inside this repository.
 - This rule supersedes inherited workspace instructions when they refer to unrelated domains such as dashboards, advocacy copy, Power BI, healthcare, or print-report workflows.
 - Keep following general safety, security, and non-destructive editing rules, but use this file as the project-specific authority for product direction and execution.
-- **Visual / rendering constitution:** [`CURSOR_GAME_DIRECTIVE.md`](CURSOR_GAME_DIRECTIVE.md) + [`docs/STABILIZATION-BRIEF.md`](docs/STABILIZATION-BRIEF.md) + [`docs/ASSET-QUALITY-GATE.md`](docs/ASSET-QUALITY-GATE.md) + [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) + [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) + [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) + [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md). `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` are **SUPERSEDED** (do not treat six cars or `?v=320` / `v=652` as current). Do not interpret vague “make it realistic” as a rewrite or unbounded poly/texture spend. Prefer hero-zone quality, LOD/instancing/streaming, screen-space importance, and measured tiers. Engineering priority: gameplay feel → visual quality → performance → maintainability → sim complexity. Never degrade fun for sim accuracy. WebGPU preferred + WebGL2 fallback; prefer TSL for *new* shaders. Full WebGPU cutover only with explicit **Phase R.2 / Stage 2** approval. Do not create a parallel `src/**/*.ts` tree without user approval — evolve `js/`.
+- **Visual / rendering constitution:** [`docs/BURNOUT_RALLY_DIRECTION.md`](docs/BURNOUT_RALLY_DIRECTION.md) + [`CURSOR_GAME_DIRECTIVE.md`](CURSOR_GAME_DIRECTIVE.md) + [`docs/STABILIZATION-BRIEF.md`](docs/STABILIZATION-BRIEF.md) + [`docs/ASSET-QUALITY-GATE.md`](docs/ASSET-QUALITY-GATE.md) + [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) + [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) + [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) + [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md). `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` are **SUPERSEDED** (do not treat six cars or `?v=320` / `v=652` as current). Do not interpret vague “make it realistic” as a rewrite or unbounded poly/texture spend. Prefer hero-zone quality, LOD/instancing/streaming, screen-space importance, and measured tiers. Engineering priority: gameplay feel → visual quality → performance → maintainability → sim complexity. Never degrade fun for sim accuracy. WebGPU preferred + WebGL2 fallback; prefer TSL for *new* shaders. Full WebGPU cutover only with explicit **Phase R.2 / Stage 2** approval. Do not create a parallel `src/**/*.ts` tree without user approval — evolve `js/`.
 
 ## Executive Chain
 
 ### CEO / Executive Producer
 
-**Mandate: ruthless improvement.** The bar is a shippable arcade rally game, not a polite refactor log. Every sprint must leave the build **measurably better for the player** — or cut scope that does not.
+**Mandate: ruthless improvement.** The bar is a shippable **Burnout-style rally** — Paradise juice on dirt — not a polite refactor log. Every sprint must leave the build **measurably better for the player** — or cut scope that does not. Binding brief: [`docs/BURNOUT_RALLY_DIRECTION.md`](docs/BURNOUT_RALLY_DIRECTION.md).
 
 **Ruthless rules (non-negotiable):**
 
@@ -41,7 +41,7 @@ CEO questions (answer with evidence, not intent):
 ### Game Director
 
 - Translate vision into a concrete target for driving feel, visuals, environment, camera, and audio.
-- Keep the identity focused on fast, heavy, responsive, readable arcade realism.
+- Keep the identity focused on **Burnout-style rally**: fast, heavy, spectacular, readable arcade dirt. Not a muted sim. Not a city takedown game.
 - Resolve conflicts between departments and approve major direction changes.
 
 ### Development Manager
@@ -72,23 +72,25 @@ CEO questions (answer with evidence, not intent):
 
 ## Product Target
 
-The game should feel like a polished, modern browser rally game inspired by the immediacy and excitement of classic arcade rally racers while remaining original.
+The game should feel like **Burnout on a rally stage**: hot arcade present, rush from slides / landings / near-misses, original dirt championship. Handling stays arcade rally ([`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md)). The brand fantasy is Burnout juice, not a Sega clone and not a photoreal sim.
 
 Target qualities:
 - Fast
 - Heavy
+- Spectacular
 - Responsive
 - Physical
 - Readable
 - Predictable enough to master
 - Challenging without feeling unfair
-- Visually immersive even at rest
+- Visually expensive at speed (and still good at rest)
 
 Avoid:
 - Random feature churn
 - Tech-demo improvements with no gameplay value
 - Generic procedural worlds with no sense of place
-- Fake-looking lighting achieved only by boosting brightness, saturation, or bloom
+- Faking Burnout by only cranking bloom / saturation
+- City traffic / takedown systems unless the CEO explicitly adds them
 - Simulation complexity that hurts fun
 
 ## Development Principle
@@ -117,8 +119,11 @@ Use the real project files before making architectural claims:
 - `js/audio/engine.js` and `js/audio/codriver.js` — sound response and co-driver presentation
 - `docs/STABILIZATION-BRIEF.md` — current engine state, remaining P0/P1 order, what is already shipped
 - `docs/QA-REPORT.md` — newest hotfix log (read from the top)
-- `docs/AM3-RESEARCH.md` — project source-of-truth for inspiration and handling intent
-- `docs/SEGA_RALLY_DRIVING_MODEL.md` — binding Sega Rally–inspired driving model (arcade, not sim); Physics Lab contract
+- `docs/BURNOUT_RALLY_DIRECTION.md` — CEO→CTO product identity (Burnout-style rally)
+- `js/gameplay/rally-rush.js` — rush tank (extend this; do not invent a second boost)
+- `js/gfx/burnout-look.js` — arcade grade / speed CA
+- `docs/AM3-RESEARCH.md` — handling inspiration (arcade rally feel, not the brand)
+- `docs/SEGA_RALLY_DRIVING_MODEL.md` — binding arcade driving model; Physics Lab contract
 - Physics Lab: `?physlab=1` / F8 · torture track `COURSES.physlab` · do not tune by code alone
 
 Do not guess what the game uses. Inspect these files first.
@@ -130,9 +135,9 @@ Do not guess what the game uses. Inspect these files first.
 2. Is driving fun?
  - Fix steering, braking, acceleration, physics, camera, collisions, surface response.
 3. Does it feel fast and physical?
- - Improve camera motion, suspension, particles, audio, speed communication.
-4. Does it look believable?
- - Improve lighting, materials, terrain, vegetation, shadows, sky, atmosphere.
+ - Improve camera motion, rush, near-miss, suspension, particles, audio, speed communication.
+4. Does it look expensive at speed?
+ - Improve grade, bloom, paint, lighting, materials, terrain — Burnout-hot, not muted.
 5. Does the world feel alive?
  - Add trackside variation, landmarks, weather, signage, spectators, dynamic detail.
 6. Is there a reason to keep playing?
@@ -168,13 +173,14 @@ For any significant task, reason through this structure:
 
 ## Gameplay And Visual Standards
 
-- Target accessible arcade realism, not hardcore simulation.
+- Target **Burnout-style rally**: arcade dirt with spectacle, not hardcore simulation.
 - Surface differences must matter and be perceivable.
 - Vehicle mass should read through acceleration, braking, suspension, landings, and impacts.
-- The camera should enhance speed and weight without becoming uncomfortable.
+- Rush, near-miss, and GO should read as rewards. Walls tax the tank.
+- The camera should enhance speed and weight without becoming uncomfortable or shrinking the medium car.
 - The environment should communicate a real rally location, not just a color-swapped biome.
-- Lighting should add depth and integration, not just brightness.
-- The game should look good even when the player is not moving.
+- Lighting should be a designed hot grade, not a brightness crank.
+- The game should look expensive at speed and still good at rest.
 
 ## QA And Validation
 

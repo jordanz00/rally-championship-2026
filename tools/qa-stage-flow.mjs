@@ -41,7 +41,7 @@ check(
 check("slides stay catchable", /Math\.max\(0\.92, surface\.driftEase/.test(vehSrc));
 check("surface shock does not kick the hull", /shock \* 0\.4 \* dt/.test(vehSrc));
 check("AI looks further down the longer roads", /look = 14 \+ Math\.min\(26/.test(aiSrc));
-check("AI pack still races", /0\.78 \+ this\.skill \* 0\.15/.test(aiSrc));
+check("AI pack still races", /0\.96 \+ this\.skill \* 0\.14/.test(aiSrc));
 check("game imports vehicle.js?v=180+", Number((gameSrc.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 180);
 check("game imports track.js?v=416+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 416);
 check("game imports ai.js?v=212+", Number((gameSrc.match(/ai\.js\?v=(\d+)/) || [])[1]) >= 212);

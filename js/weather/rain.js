@@ -85,6 +85,7 @@ export class StageWeather {
     this._spawnAccR = 0;
     this._prevSpeed = 0;
     this._cam = new THREE.Vector3();
+    this._lastCam = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
@@ -179,6 +180,35 @@ export class StageWeather {
   }
 
   /**
+   * Snap every streak around a new lens. Broadcast cuts and the finish→replay
+   * jump leave the shower at the old camera, so Stage 3 replay looked dry.
+   * @param {THREE.Camera|null|undefined} camera
+   */
+  relocate(camera) {
+    if (!this.active || !camera) return;
+    camera.getWorldPosition(this._cam);
+    camera.getWorldDirection(this._fwd);
+    this._up.set(0, 1, 0);
+    this._right.crossVectors(this._fwd, this._up).normalize();
+    if (this._right.lengthSq() < 1e-6) this._right.set(1, 0, 0);
+    this._up.crossVectors(this._right, this._fwd).normalize();
+    this._lastCam.copy(this._cam);
+    for (let i = 0; i < NEAR_COUNT; i++) this._respawnLayer(this.near, i, true, true);
+    for (let i = 0; i < FAR_COUNT; i++) this._respawnLayer(this.far, i, true, false);
+    this.near.geo.attributes.position.needsUpdate = true;
+    this.far.geo.attributes.position.needsUpdate = true;
+    this.near.lines.visible = true;
+    this.far.lines.visible = true;
+    this.near.mat.opacity = 0.5 + this.intensity * 0.46;
+    this.far.mat.opacity = 0.26 + this.intensity * 0.4;
+    if (this.splash) {
+      this.splash.life.fill(0);
+      this._parkSplashes();
+      this.splash.points.visible = this.intensity > 0.04;
+    }
+  }
+
+  /**
    * Wipe every rain canvas and hide wipers / side panes. Call when the
    * stage is dry so Mountain beads cannot sit on Lakeside glass.
    * @param {THREE.Object3D|null|undefined} car
@@ -204,6 +234,7 @@ export class StageWeather {
    *   camera: THREE.Camera,
    *   car?: THREE.Object3D|null,
    *   pov?: boolean,
+   *   broadcast?: boolean,
    *   audio?: {setRain?: Function}|null,
    *   trackGroup?: THREE.Object3D|null,
    *   speed?: number,
@@ -248,7 +279,7 @@ export class StageWeather {
 
     this._stepStreaks(t, opts);
     this._stepSplashes(t, opts);
-    this._stepWipers(t, opts.car, opts.pov, this.intensity, opts);
+    this._stepWipers(t, opts.car, !!opts.pov && !opts.broadcast, this.intensity, opts);
   }
 
   /**
@@ -263,15 +294,20 @@ export class StageWeather {
     this._up.set(0, 1, 0);
     this._right.crossVectors(this._fwd, this._up).normalize();
     this._up.crossVectors(this._right, this._fwd).normalize();
+    if (this._lastCam.lengthSq() > 1 && this._cam.distanceToSquared(this._lastCam) > 1600) {
+      this.relocate(camera);
+    } else {
+      this._lastCam.copy(this._cam);
+    }
     this._cacheCarFrame(opts.car);
     if (opts.car && opts.car.position) this._groundHint = opts.car.position.y;
     this._qTick = (this._qTick + 1) & 1;
     this._splashLeft = SPLASH_BUDGET;
 
     const kmh = Math.max(0, opts.speed || 0) * 3.6;
-    const pov = !!opts.pov;
-    // Gravity owns the fall. Wind from car speed shears the streak, it does
-    // not turn rain into a camera-locked screen effect.
+    // Broadcast / result is always an external lens — never hide world rain
+    // just because the race camera was still in POV.
+    const pov = !!opts.pov && !opts.broadcast;
     const sx = FALL.x - this._fwd.x * (0.03 + kmh * 0.006);
     const sy = FALL.y - 0.18;
     const sz = FALL.z - this._fwd.z * (0.03 + kmh * 0.006);
@@ -540,7 +576,7 @@ export class StageWeather {
   _stepSplashes(dt, opts) {
     const pool = this.splash;
     if (!pool) return;
-    const pov = !!opts.pov;
+    const pov = !!opts.pov && !opts.broadcast;
     let live = 0;
     for (let i = 0; i < pool.count; i++) {
       const i3 = i * 3;

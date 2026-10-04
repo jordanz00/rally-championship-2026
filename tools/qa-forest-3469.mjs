@@ -36,8 +36,8 @@ console.log(`FOREST 3469 STOP  ·  ${new Date().toISOString()}\n`);
 
 check("old 9.1% gate is rejected", GRADE_MAX < 0.091, `GRADE_MAX=${GRADE_MAX}`);
 check("linear 4.5% apron, not 12% smoothstep", /const GRADE = 0\.045/.test(trackSrc) && !/const GRADE = 0\.12/.test(trackSrc));
-check("3469 corridor is a flat deck", /_overpassFlatEnd/.test(trackSrc) && /3380/.test(trackSrc) && /3560/.test(trackSrc));
-check("validator 5% at 3440–3520", /b\.dist < 3440/.test(valSrc) && /g > 0\.05/.test(valSrc));
+check("3469 corridor is a flat deck", /_overpassFlatEnd/.test(trackSrc) && /3180/.test(trackSrc) && /flyover/.test(trackSrc));
+check("validator 5% at 3180–3900", /b\.dist < 3180/.test(valSrc) && /g > 0\.05/.test(valSrc));
 check("tunEnd stays function-scope", /let tunEnd = NaN/.test(trackSrc));
 
 const track = new Track(COURSES.forest, { deferBuild: true });

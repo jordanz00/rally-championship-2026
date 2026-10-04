@@ -7,7 +7,7 @@
 
 This document replaces `docs/GPT-OPTIMIZATION-BRIEF.md` and `docs/AI_EXECUTIVE_STATE.md` as **current engine state**. Those files are historical and marked SUPERSEDED.
 
-**Constitution:** [`CURSOR_GAME_DIRECTIVE.md`](../CURSOR_GAME_DIRECTIVE.md) · [`QUALITY_STANDARD.md`](QUALITY_STANDARD.md) · [`WORLD_GEOMETRY_RULES.md`](WORLD_GEOMETRY_RULES.md)  
+**Constitution:** [`BURNOUT_RALLY_DIRECTION.md`](BURNOUT_RALLY_DIRECTION.md) · [`CURSOR_GAME_DIRECTIVE.md`](../CURSOR_GAME_DIRECTIVE.md) · [`QUALITY_STANDARD.md`](QUALITY_STANDARD.md) · [`WORLD_GEOMETRY_RULES.md`](WORLD_GEOMETRY_RULES.md)  
 **Newest hotfix log:** [`QA-REPORT.md`](QA-REPORT.md) (read from the top)
 
 ---
@@ -22,7 +22,7 @@ If you are ChatGPT / Cursor: inspect the listed files, then patch. Do not invent
 
 ## 1. Product (current)
 
-Browser arcade rally inspired by Sega Rally Championship **feel** — original stages and cars, not a Sega rip, not a sim.
+**Burnout-style rally** — Paradise juice on dirt. Arcade rally **handling** (Sega Rally feel), original stages and cars. Not a Sega rip, not a sim, not a city takedown game. See [`BURNOUT_RALLY_DIRECTION.md`](BURNOUT_RALLY_DIRECTION.md).
 
 - Three cars: Celica GT-Four, Delta HF, Stratos HF (not six)
 - Four stages: Desert, Forest, Mountain, Lakeside (+ `?physlab=1` / F8)

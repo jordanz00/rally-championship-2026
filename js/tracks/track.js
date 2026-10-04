@@ -62,7 +62,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=60";
+} from "./forest-pbr.js?v=61";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -70,7 +70,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=60";
+} from "./desert-pbr.js?v=61";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -80,12 +80,15 @@ import {
   plantForestMouthBoulders,
   forestBoreCeiling,
   FOREST_BORE_INSET,
-  forestTunnelSconcePose,
-  createForestTunnelSconceGeometry,
-} from "./forest-tunnel.js?v=19";
+  forestTunnelCeilingPose,
+  createForestTunnelPendantHousingGeometry,
+  createForestTunnelPendantGlobeGeometry,
+  createForestTunnelPendantConduitGeometry,
+  createForestTunnelPendantPlateGeometry,
+} from "./forest-tunnel.js?v=22";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=12";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=13";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -523,14 +526,23 @@ export class Track {
           (rise / Math.max(ramp, 8)) * (8 / Math.max(lip, 4)) * (1 + drop * 0.04)
         );
         const easeInSine = (t) => 1 - Math.cos((t * Math.PI) / 2);
-        const pushPhase = (len, dyTotal, kind, ease) => {
+        const easeInOutSine = (t) => 0.5 - 0.5 * Math.cos(t * Math.PI);
+        // Ease-in, then linear so the lip holds a constant throw — no last-metre spike.
+        const easeRampLip = (t) => {
+          const cut = 0.68;
+          if (t <= cut) return easeInSine(t);
+          const kCut = easeInSine(cut);
+          return kCut + (1 - kCut) * ((t - cut) / (1 - cut));
+        };
+        const pushPhase = (len, dyTotal, kind, easeFn) => {
           const step = kind === "ramp" ? 1.05 : 1.35;
           const n = Math.max(2, Math.round(len / step));
+          const ease = typeof easeFn === "function" ? easeFn : null;
           for (let i = 0; i < n; i++) {
             const t0 = i / n;
             const t1 = (i + 1) / n;
-            const k0 = ease ? easeInSine(t0) : t0;
-            const k1 = ease ? easeInSine(t1) : t1;
+            const k0 = ease ? ease(t0) : t0;
+            const k1 = ease ? ease(t1) : t1;
             const dyi = dyTotal * (k1 - k0);
             const ds = len / n;
             x += Math.sin(heading) * ds;
@@ -549,11 +561,13 @@ export class Track {
             });
           }
         };
-        pushPhase(ramp, rise, "ramp", true);
-        pushPhase(Math.max(5, lip), 0, "crest", false);
-        pushPhase(dropFast, -drop, "gap", true);
-        pushPhase(flyover, 0, "gap", false);
-        pushPhase(land, drop * 0.18, "land", true);
+        pushPhase(ramp, rise, "ramp", easeRampLip);
+        pushPhase(Math.max(5, lip), 0, "crest", null);
+        pushPhase(dropFast, -drop, "gap", easeInOutSine);
+        pushPhase(flyover, 0, "gap", null);
+        // Ease-in-out: arrival is flat, exit onto the next road is flat.
+        // ease-in used to be steepest at the pad end — that was the landing kink.
+        pushPhase(land, drop * 0.18, "land", easeInOutSine);
       }
       if (piece.checkpoint) {
         this.checkpoints.push(dist);
@@ -566,6 +580,7 @@ export class Track {
     }
 
     this._smoothPlayRibbon(raw);
+    this._smoothJumpLandExits(raw);
 
     this.points = raw.map((p) => {
       const nx = Math.cos(p.heading);
@@ -628,6 +643,38 @@ export class Track {
     for (let i = 0; i < n; i++) {
       if (raw[i].jump || raw[i].jumpKind) continue;
       raw[i].width = Math.round(w[i] * 10) / 10;
+    }
+  }
+
+  /**
+   * Fade a steep land-pad exit into the following road. End Y is kept so
+   * Desert 1654 and later flyover skips stay on the authored deck.
+   * @param {Array<{jumpKind?:string,y:number,dist:number}>} raw
+   */
+  _smoothJumpLandExits(raw) {
+    if (!raw || raw.length < 4) return;
+    const n = raw.length;
+    for (let i = 1; i < n - 1; i++) {
+      if (raw[i].jumpKind !== "land" || raw[i + 1].jumpKind === "land") continue;
+      const prev = raw[i - 1];
+      if (!prev || prev.jumpKind !== "land") continue;
+      const landDs = Math.max(0.01, raw[i].dist - prev.dist);
+      const landG = (raw[i].y - prev.y) / landDs;
+      if (Math.abs(landG) < 0.025) continue;
+      const targetY = raw[i].y;
+      let j0 = i;
+      while (j0 > 0 && raw[j0].jumpKind === "land" && raw[i].dist - raw[j0].dist < 8) {
+        j0 -= 1;
+      }
+      if (raw[j0].jumpKind !== "land") j0 += 1;
+      const spanD = raw[i].dist - raw[j0].dist;
+      if (spanD < 2.5) continue;
+      const y0 = raw[j0].y;
+      for (let j = j0 + 1; j <= i; j++) {
+        const t = (raw[j].dist - raw[j0].dist) / spanD;
+        const k = t * t * (3 - 2 * t);
+        raw[j].y = y0 + (targetY - y0) * k;
+      }
     }
   }
 
@@ -757,8 +804,9 @@ export class Track {
 
   /**
    * Later ribbon that occupies a tunnel's XZ. One flat deck at CLEAR above the
-   * bore. Forest's finish-left keeps 3380–3560 at that deck so 3469 is not a
-   * 9–12% hill in the corridor (v987 left that climb; the car nearly stopped).
+   * bore. Forest's finish-left keeps 3180 → finish at that deck so 3241 and
+   * 3680 are the same road — not a climb into walls, then a descent that
+   * leaves cars floating over a sunken verge.
    * Linear ramps outside the pad stay at 4.5% — no smoothstep spike.
    */
   _separateTunnelOverpasses() {
@@ -807,21 +855,25 @@ export class Track {
       const target = tunY + CLEAR;
       let flat0 = j0;
       let flat1 = j1;
-      // Finish-left corridor: flatten the approach *before* 3469 so the car
-      // is already on the deck, not climbing 12% beside the bore walls.
-      const finishLeft = forest && pts[j0].dist > 3200 && pts[j1].dist < 3700;
+      // Finish-left: one deck from before 3241 through the finish so the
+      // climb/descent cannot restart a car or leave the pack in the air.
+      const finishLeft = forest && pts[j0].dist > 3000 && pts[j1].dist < 4000;
       if (finishLeft) {
-        flat0 = this._overpassFlatEnd(j0, -1, 3380);
-        flat1 = this._overpassFlatEnd(j1, 1, 3560);
+        flat0 = this._overpassFlatEnd(j0, -1, 3180);
+        flat1 = this._overpassFlatEnd(j1, 1, pts[pts.length - 1].dist + 8);
       }
       for (let j = flat0; j <= flat1; j++) {
         pts[j].y = target;
+        pts[j].flyover = true;
       }
-      this._gradeRampTo(flat0, -1, target, GRADE);
-      this._gradeRampTo(flat1, 1, target, GRADE);
+      const back = this._gradeRampTo(flat0, -1, target, GRADE);
+      const fwd = this._gradeRampTo(flat1, 1, target, GRADE);
+      const a = Math.min(flat0, back, flat1, fwd);
+      const b = Math.max(flat0, back, flat1, fwd);
+      for (let j = a; j <= b; j++) pts[j].flyover = true;
       this._overTunnelLanes.push({
-        dist0: pts[flat0].dist - 24,
-        dist1: pts[flat1].dist + 24,
+        dist0: pts[a].dist - 36,
+        dist1: pts[b].dist + 36,
       });
     }
   }
@@ -857,7 +909,7 @@ export class Track {
    */
   _gradeRampTo(fromIdx, dir, peakY, gradeMax) {
     const pts = this.points;
-    if (!pts || !pts[fromIdx]) return;
+    if (!pts || !pts[fromIdx]) return fromIdx;
     let farY = peakY;
     for (let s = 1; s <= 120; s++) {
       const k = fromIdx + dir * s;
@@ -877,7 +929,7 @@ export class Track {
       if (Math.abs(pts[fromIdx].dist - pts[k].dist) >= needRun) break;
     }
     const run = Math.abs(pts[fromIdx].dist - pts[end].dist);
-    if (run < 8) return;
+    if (run < 8) return fromIdx;
     const baseY = pts[end].y;
     const lo = Math.min(fromIdx, end);
     const hi = Math.max(fromIdx, end);
@@ -889,6 +941,7 @@ export class Track {
       if (pts[k].y < want) pts[k].y = want;
       if (pts[k].y > peakY) pts[k].y = peakY;
     }
+    return end;
   }
 
   /**
@@ -1503,6 +1556,8 @@ export class Track {
     let h = this._groundHeight(x, z, scenery, near);
     const bank = this._jumpBankTargetY(x, z, bedDrop);
     if (bank != null) return Math.max(h, bank);
+    const fly = this._flyoverBankTargetY(x, z, bedDrop);
+    if (fly != null) return Math.max(h, fly);
     {
       const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
       if (over < ROAD_VERGE + 2.4) h = Math.min(h, near.roadY - bedDrop);
@@ -6265,6 +6320,64 @@ export class Track {
   }
 
   /**
+   * Land / skirt Y beside a flyover deck. The bore crossing stays a hole so
+   * the tunnel still has a floor; everywhere else the dirt climbs with the
+   * ribbon so cars are not a plank over a 2 m trench (Forest 3680).
+   * @param {number} x
+   * @param {number} z
+   * @param {number} drop
+   * @returns {number|null}
+   */
+  _flyoverBankTargetY(x, z, drop) {
+    const pts = this.points;
+    if (!pts || pts.length < 2) return null;
+    if (this._xzOverTunnelRibbon(x, z)) return null;
+    let bestY = 0;
+    let bestLat = 1e6;
+    let bestW = 12;
+    let hit = false;
+    this._forNearbySegments(x, z, (i) => {
+      const p = pts[i];
+      if (!p.flyover) return;
+      const lat = Math.abs((x - p.x) * (p.nx || 0) + (z - p.z) * (p.nz || 0));
+      const verge = (p.width || 12) * 0.5;
+      if (lat > verge + 22) return;
+      if (lat < bestLat) {
+        bestLat = lat;
+        bestY = p.y;
+        bestW = p.width || 12;
+        hit = true;
+      }
+    });
+    if (!hit) return null;
+    const verge = bestW * 0.5;
+    const t = 1 - Math.max(0, bestLat - verge) / 22;
+    const k = t * t * (3 - 2 * t);
+    return bestY - drop + (1 - k) * -0.4;
+  }
+
+  /**
+   * True when XZ sits on a tunnel ribbon — the flyover above must not fill it.
+   * @param {number} x
+   * @param {number} z
+   * @returns {boolean}
+   */
+  _xzOverTunnelRibbon(x, z) {
+    let hit = false;
+    this._forNearbySegments(x, z, (i) => {
+      if (hit) return;
+      const p = this.points[i];
+      if (!p || !p.tunnel) return;
+      const lat = Math.abs((x - p.x) * (p.nx || 0) + (z - p.z) * (p.nz || 0));
+      const fx = Math.sin(p.heading);
+      const fz = Math.cos(p.heading);
+      const along = (x - p.x) * fx + (z - p.z) * fz;
+      if (Math.abs(along) <= 10 && lat < (p.width || 12) * 0.5 + 5) hit = true;
+    });
+    return hit;
+  }
+
+  /**
    * Land / skirt Y beside a ramp, crest, or land pad. The flight gap stays a
    * hole — only the banks that hug the deck rise with it.
    * @param {number} x
@@ -9260,15 +9373,22 @@ export class Track {
     this._addForestTunnelMouth(pts[start], -1, portalSpec, faceMat);
     this._addForestTunnelMouth(pts[end], 1, portalSpec, faceMat);
 
-    const lampMat = new THREE.MeshStandardMaterial({
+    const metalMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2c30,
+      roughness: 0.46,
+      metalness: 0.74,
+      envMapIntensity: 0.22,
+    });
+    const glowMat = new THREE.MeshStandardMaterial({
       color: 0xffe2a8,
-      emissive: 0xffc56a,
-      emissiveIntensity: 2.4,
-      roughness: 0.42,
-      metalness: 0.08,
+      emissive: 0xffb24a,
+      emissiveIntensity: 3.6,
+      roughness: 0.28,
+      metalness: 0.04,
     });
     const dummy = new THREE.Object3D();
     const lamps = [];
+    let lastLampDist = -999;
     for (let i = start; i <= end; i += 1) {
       const p = pts[i];
       const q = pts[Math.min(i + 1, end)];
@@ -9315,51 +9435,90 @@ export class Track {
           );
         }
       }
-      // Wall sconces bolt to the inner rock face — never planted on land.
-      if (i % 3 === 0) {
-        const sconceHalf = p.width * 0.5 + LINING_INSET;
-        for (const side of [-1, 1]) {
-          const pose = forestTunnelSconcePose(p, sconceHalf, side, openH);
+      // Overhead sodiums hang from the crown — never side-wall floaters.
+      if (i > start + 2 && i < end - 2) {
+        const along = p.dist != null ? p.dist : i * 6;
+        if (along - lastLampDist >= 9.2) {
+          lastLampDist = along;
+          const ceilY = forestBoreCeiling(p, pts, tubeSpec);
+          const pose = forestTunnelCeilingPose(p, ceilY);
           lamps.push(pose);
           this._tunnelLamps.push({
-            x: pose.x - pose.nx * 0.2,
-            y: pose.y - 0.04,
-            z: pose.z - pose.nz * 0.2,
+            x: pose.x,
+            y: pose.y - 0.14,
+            z: pose.z,
           });
         }
       }
     }
     if (lamps.length) {
-      const bulbs = new THREE.InstancedMesh(createForestTunnelSconceGeometry(), lampMat, lamps.length);
-      bulbs.castShadow = false;
-      bulbs.receiveShadow = false;
-      bulbs.userData.cameraFade = false;
-      bulbs.userData.tunnelBoreRib = true;
-      bulbs.userData.skipSeat = true;
-      bulbs.userData.tunnelPortal = true;
+      const housing = new THREE.InstancedMesh(
+        createForestTunnelPendantHousingGeometry(),
+        metalMat,
+        lamps.length
+      );
+      const globes = new THREE.InstancedMesh(
+        createForestTunnelPendantGlobeGeometry(),
+        glowMat,
+        lamps.length
+      );
+      const conduits = new THREE.InstancedMesh(
+        createForestTunnelPendantConduitGeometry(),
+        metalMat,
+        lamps.length
+      );
+      const plates = new THREE.InstancedMesh(
+        createForestTunnelPendantPlateGeometry(),
+        metalMat,
+        lamps.length
+      );
+      for (const mesh of [housing, globes, conduits, plates]) {
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.userData.cameraFade = false;
+        mesh.userData.tunnelBoreRib = true;
+        mesh.userData.skipSeat = true;
+        mesh.userData.tunnelPortal = true;
+        mesh.userData.forestTunnelPendant = true;
+      }
       const along = new THREE.Vector3();
       const up = new THREE.Vector3(0, 1, 0);
       const outward = new THREE.Vector3();
       for (let k = 0; k < lamps.length; k++) {
         const L = lamps[k];
-        outward.set(L.nx, 0, L.nz);
-        if (outward.lengthSq() < 1e-6) outward.set(L.fx, 0, L.fz);
-        outward.normalize();
-        along.crossVectors(up, outward);
-        if (along.lengthSq() < 1e-6) along.set(L.fx, 0, L.fz);
+        along.set(L.fx, 0, L.fz);
+        if (along.lengthSq() < 1e-6) along.set(1, 0, 0);
         along.normalize();
+        outward.crossVectors(along, up);
+        if (outward.lengthSq() < 1e-6) outward.set(0, 0, 1);
+        outward.normalize();
         dummy.matrix.makeBasis(along, up, outward);
         dummy.matrix.setPosition(L.x, L.y, L.z);
-        bulbs.setMatrixAt(k, dummy.matrix);
+        housing.setMatrixAt(k, dummy.matrix);
+        globes.setMatrixAt(k, dummy.matrix);
+        const drop = Math.max(1.2, L.ceilY - (L.y + 0.45));
+        dummy.matrix.makeBasis(along, up, outward);
+        dummy.matrix.scale(new THREE.Vector3(1, drop, 1));
+        dummy.matrix.setPosition(L.x, L.y + 0.45 + drop * 0.5, L.z);
+        conduits.setMatrixAt(k, dummy.matrix);
+        dummy.matrix.makeBasis(along, up, outward);
+        dummy.matrix.setPosition(L.x, L.ceilY, L.z);
+        plates.setMatrixAt(k, dummy.matrix);
       }
-      bulbs.instanceMatrix.needsUpdate = true;
-      this.group.add(bulbs);
+      housing.instanceMatrix.needsUpdate = true;
+      globes.instanceMatrix.needsUpdate = true;
+      conduits.instanceMatrix.needsUpdate = true;
+      plates.instanceMatrix.needsUpdate = true;
+      this.group.add(housing);
+      this.group.add(globes);
+      this.group.add(conduits);
+      this.group.add(plates);
     }
     this._markTunnelCabinReceivers(start, end);
   }
 
   /**
-   * Road chunks inside the bore must receive layer-2 sconces (walls already do).
+   * Road chunks inside the bore must receive layer-2 ceiling lamps (walls already do).
    * @param {number} start
    * @param {number} end
    */

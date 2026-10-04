@@ -46,8 +46,8 @@ check("one pin follow per tick", /this\._maneuverPinned/.test(src));
 check("query chatter is deadzoned", /Math\.abs\(err\) <= 0\.035/.test(src));
 check("per-tick Y follow is capped", /dy > 0\.006/.test(src));
 check("play-turn lock still lives", /maxSteer \* 1\.28/.test(src) && /kus \*= 0\.55/.test(src));
-check("GO rush window is 1.18 s", /const GO_RUSH_S = 1\.18/.test(src));
-check("GO rush drive is 1.22×", /const GO_RUSH_DRIVE = 1\.22/.test(src));
+check("GO rush window is 2.05 s", /const GO_RUSH_S = 2\.05/.test(src));
+check("GO rush drive is 1.78×", /const GO_RUSH_DRIVE = 1\.78/.test(src));
 
 /**
  * Drive the pin the way step() does: clear the once-per-tick flag, leave

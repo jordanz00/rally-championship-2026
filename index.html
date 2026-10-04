@@ -30,11 +30,10 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=61" />
-    <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
+    <link rel="stylesheet" href="css/game.css?v=66" />
+    <link rel="modulepreload" href="js/main.js?v=1034" />
+    <!-- Splash: title bed + rival-LOD Celica. Other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
-    <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
-    <link rel="prefetch" href="assets/sky/kloofendal_partly_cloudy_2k.hdr" as="fetch" crossorigin="anonymous" />
     <link rel="preload" href="assets/celica/rival.glb" as="fetch" type="model/gltf-binary" crossorigin="anonymous" />
     <script>
       window.__rallyLeftTitle = false;
@@ -296,19 +295,19 @@
           <p class="ui-lead hint" id="cars-hint">Hover a car to preview it on the pad. Confirm to lock it in.</p>
           <div class="ui-cards" role="list">
             <button type="button" class="ui-card" data-car="celica" role="listitem">
-              <span class="ui-card-kicker">Balanced</span>
+              <span class="ui-card-kicker">The hammer</span>
               <span class="ui-card-title">CELICA GT-FOUR</span>
-              <span class="ui-card-copy">All-rounder · grip + power · desert ready</span>
+              <span class="ui-card-copy">Plant it. Trust it. Safari car.</span>
             </button>
             <button type="button" class="ui-card" data-car="delta" role="listitem">
-              <span class="ui-card-kicker">Agile</span>
+              <span class="ui-card-kicker">The knife</span>
               <span class="ui-card-title">DELTA HF</span>
-              <span class="ui-card-copy">Sharp turn-in · forest rhythm · late brake</span>
+              <span class="ui-card-copy">Late brake. Flick. Forest rhythm.</span>
             </button>
             <button type="button" class="ui-card" data-car="stratos" role="listitem">
-              <span class="ui-card-kicker">Wild</span>
+              <span class="ui-card-kicker">The wild card</span>
               <span class="ui-card-title">STRATOS HF</span>
-              <span class="ui-card-copy">Light · slide happy · reward commitment</span>
+              <span class="ui-card-copy">Hang it. Or bin it.</span>
             </button>
           </div>
           <div class="ui-actions">
@@ -396,6 +395,10 @@
         </div>
         <canvas id="minimap" width="140" height="100"></canvas>
         <div id="hud-flash"></div>
+        <div id="hud-rush" hidden>
+          <span class="label">RUSH</span>
+          <div class="rush-bar"><div id="hud-rush-fill"></div></div>
+        </div>
         <div id="hud-pace" hidden></div>
         <div id="cluster" hidden>
           <canvas id="gauge-mph" width="280" height="280"></canvas>
@@ -565,6 +568,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1013" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1034" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

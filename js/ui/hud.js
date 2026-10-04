@@ -34,6 +34,9 @@ export class Hud {
     if (this.fps) this.fps.hidden = !this._debugHud;
     if (this.distanceWrap) this.distanceWrap.hidden = !this._debugHud;
     if (this.surfaceRow) this.surfaceRow.hidden = !this._debugHud;
+    this.rush = document.getElementById("hud-rush");
+    this.rushFill = document.getElementById("hud-rush-fill");
+    this.rushLabel = this.rush ? this.rush.querySelector(".label") : null;
     this.pace = document.getElementById("hud-pace");
     this.trans = document.getElementById("hud-trans");
     this.hudRoot = document.getElementById("screen-hud");
@@ -95,7 +98,21 @@ export class Hud {
       this._speedTxt = speedTxt;
       this.speed.textContent = speedTxt;
     }
-    this.speed.dataset.fast = mph > 90 ? "1" : "0";
+    this.speed.dataset.fast = mph > 90 || (s.rushHeat || 0) > 0.28 || (s.rushFire || 0) > 0.3 ? "1" : "0";
+    if (this.rush && this.rushFill) {
+      const tank = clamp01(s.rush != null ? s.rush : 0);
+      const hot = (s.rushHeat || 0) > 0.18 ? "1" : "0";
+      const fire = (s.rushFire || 0) > 0.35 ? "1" : "0";
+      this.rush.hidden = false;
+      this.rushFill.style.transform = `scaleX(${tank.toFixed(3)})`;
+      if (this.rush.dataset.hot !== hot) this.rush.dataset.hot = hot;
+      if (this.rush.dataset.fire !== fire) this.rush.dataset.fire = fire;
+      if (this.rushLabel) {
+        const combo = s.rushCombo > 1.2 ? ` x${Math.min(9, s.rushCombo).toFixed(1)}` : "";
+        const label = fire === "1" ? `ON FIRE${combo}` : `RUSH${combo}`;
+        if (this.rushLabel.textContent !== label) this.rushLabel.textContent = label;
+      }
+    }
     const gearTxt = s.gear === 0 ? "N" : String(s.gear);
     if (this._gearTxt !== gearTxt) {
       this._gearTxt = gearTxt;
@@ -217,6 +234,11 @@ export class Hud {
     if (!this.flash) return;
     this.flash.textContent = text;
     this.flash.classList.toggle("is-go", text === "GO!");
+    this.flash.classList.toggle("is-miss", text === "NEAR MISS");
+    this.flash.classList.toggle("is-sick", text === "SICK");
+    this.flash.classList.toggle("is-unreal", text === "UNREAL");
+    this.flash.classList.toggle("is-rush", text === "RUSH");
+    this.flash.classList.toggle("is-fire", text === "ON FIRE");
     // Restart the CSS flash without forcing a synchronous layout (offsetWidth hitch).
     this.flash.classList.remove("show");
     requestAnimationFrame(() => {

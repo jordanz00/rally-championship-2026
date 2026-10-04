@@ -18,6 +18,7 @@ import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=241";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 import { NeuralShade, nshadeWanted } from "./neural-shade.js?v=6";
+import { burnoutLookFor } from "./burnout-look.js?v=3";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -192,6 +193,9 @@ uniform float warmth;
 uniform float grain;
 uniform float time;
 uniform float highlightRolloff;
+uniform float tealLift;
+uniform float speedAmt;
+uniform float chroma;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -201,7 +205,16 @@ float hash(vec2 p) {
 }
 
 void main() {
-  vec3 color = texture2D(tDiffuse, vUv).rgb;
+  vec2 dir = vUv - vec2(0.5);
+  float ca = chroma * speedAmt;
+  vec3 color;
+  color.r = texture2D(tDiffuse, clamp(vUv + dir * ca, 0.0, 1.0)).r;
+  color.g = texture2D(tDiffuse, vUv).g;
+  color.b = texture2D(tDiffuse, clamp(vUv - dir * ca, 0.0, 1.0)).b;
+  if (speedAmt > 0.02) {
+    vec3 streak = texture2D(tDiffuse, clamp(vUv - dir * speedAmt * 0.015, 0.0, 1.0)).rgb;
+    color = mix(color, max(color, streak), speedAmt * 0.26);
+  }
   float ao = 1.0;
   if (aoStrength > 0.001) {
     ao = texture2D(tAO, vUv).r;
@@ -227,8 +240,12 @@ void main() {
   color = (color - 0.5) * contrast + 0.5;
   float l = luma(color);
   color = mix(vec3(l), color, saturation);
-  color.r += warmth * 0.035;
-  color.b -= warmth * 0.028;
+  vec3 teal = vec3(0.78, 0.94, 1.1);
+  vec3 amber = vec3(1.1, 0.96, 0.78);
+  color *= mix(teal, amber, smoothstep(0.16, 0.7, l));
+  color = mix(color, color * teal, (1.0 - smoothstep(0.1, 0.42, l)) * tealLift);
+  color.r += warmth * 0.04;
+  color.b -= warmth * 0.03;
   color = max(color, 0.0);
   if (highlightRolloff > 0.001) {
     float peak = max(max(color.r, color.g), color.b);
@@ -376,6 +393,9 @@ export class PhotoRealPost {
         grain: { value: VISUAL.filmGrain ?? 0 },
         time: { value: 0 },
         highlightRolloff: { value: VISUAL.highlightRolloff ?? 0.1 },
+        tealLift: { value: 0.14 },
+        speedAmt: { value: 0 },
+        chroma: { value: 0.0046 },
       },
       vertexShader: VERT,
       fragmentShader: COMPOSITE_FRAG,
@@ -402,6 +422,22 @@ export class PhotoRealPost {
 
     /** Legal GI-look field. Hook: NSHADE_HOOK in neural-shade.js. */
     this.nshade = nshadeWanted() ? new NeuralShade() : null;
+    this._driveFeel = { speed: 0, courseId: "desert", title: false, tunnel: 0, rush: 0, fire: 0 };
+  }
+
+  /**
+   * Per-frame arcade feel — speed CA / bloom punch. Does not rewrite VISUAL.
+   * @param {{speed?:number,courseId?:string,title?:boolean,tunnel?:number,rush?:number,fire?:number}} feel
+   */
+  setDriveFeel(feel = {}) {
+    this._driveFeel = {
+      speed: feel.speed || 0,
+      courseId: feel.courseId || "desert",
+      title: !!feel.title,
+      tunnel: feel.tunnel || 0,
+      rush: feel.rush || 0,
+      fire: feel.fire || 0,
+    };
   }
 
   /**
@@ -427,17 +463,25 @@ export class PhotoRealPost {
       RENDER_CAPS.glslCustom &&
       VISUAL.postFx !== false &&
       (VISUAL.tier || 0) >= 9;
+    const course =
+      (L && L.id) ||
+      (this._driveFeel && this._driveFeel.courseId) ||
+      "desert";
+    const look = burnoutLookFor(course, this._driveFeel || {});
     const u = this._compMat.uniforms;
-    u.bloomStrength.value = VISUAL.bloomStrength ?? 0.28;
+    u.bloomStrength.value = look.bloom;
     u.aoStrength.value = VISUAL.aoStrength ?? 0.55;
     if (u.ssgiStrength) u.ssgiStrength.value = ssgiAmount();
-    u.vignette.value = VISUAL.vignette ?? 0.85;
-    u.contrast.value = VISUAL.gradeContrast ?? 1.1;
-    u.saturation.value = VISUAL.gradeSaturation ?? 1.06;
-    u.warmth.value = L && L.gradeWarmth != null ? L.gradeWarmth : VISUAL.gradeWarmth ?? 0.28;
+    u.vignette.value = look.vig;
+    u.contrast.value = look.contrast;
+    u.saturation.value = look.sat;
+    u.warmth.value = look.warmth;
     u.grain.value = VISUAL.filmGrain ?? 0;
-    u.highlightRolloff.value = VISUAL.highlightRolloff ?? 0.1;
-    this._brightMat.uniforms.threshold.value = VISUAL.bloomThreshold ?? 0.72;
+    u.highlightRolloff.value = look.roll;
+    if (u.tealLift) u.tealLift.value = look.teal;
+    if (u.speedAmt) u.speedAmt.value = look.speedAmt;
+    if (u.chroma) u.chroma.value = look.chroma;
+    this._brightMat.uniforms.threshold.value = look.thresh;
     this._aoMat.uniforms.aoRadius.value = VISUAL.aoRadius ?? 1.35;
   }
 
@@ -604,9 +648,23 @@ export class PhotoRealPost {
       this._postCamQuat.copy(camera.quaternion);
     }
 
+    const look = burnoutLookFor(
+      (this._driveFeel && this._driveFeel.courseId) || "desert",
+      this._driveFeel || {}
+    );
     const bloomAmt = titlePad
-      ? 0.18
-      : (VISUAL.bloomStrength ?? 0.28) * (q === "high" ? 1 : 0.85);
+      ? Math.min(look.bloom, 0.22)
+      : look.bloom * (q === "high" ? 1 : 0.85);
+    const cu = this._compMat.uniforms;
+    cu.contrast.value = look.contrast;
+    cu.saturation.value = look.sat;
+    cu.warmth.value = look.warmth;
+    cu.vignette.value = titlePad ? Math.min(look.vig, 0.48) : look.vig;
+    cu.highlightRolloff.value = look.roll;
+    if (cu.tealLift) cu.tealLift.value = look.teal;
+    if (cu.speedAmt) cu.speedAmt.value = titlePad ? 0 : look.speedAmt;
+    if (cu.chroma) cu.chroma.value = titlePad ? 0 : look.chroma;
+    this._brightMat.uniforms.threshold.value = look.thresh;
     // Only composite SSGI from a bake this present — never a prior frame's colour field.
     const giComp =
       useSsgi && refreshGi

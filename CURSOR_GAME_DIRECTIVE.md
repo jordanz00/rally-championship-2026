@@ -2,7 +2,7 @@
 
 **Status:** Binding constitution for Cursor and human contributors.  
 **Live build:** https://jordanz00.github.io/rally-championship-2026/  
-**Companions:** [`docs/STABILIZATION-BRIEF.md`](docs/STABILIZATION-BRIEF.md) · [`docs/QA-REPORT.md`](docs/QA-REPORT.md) · [`docs/QUALITY_STANDARD.md`](docs/QUALITY_STANDARD.md) · [`docs/AAA_VISUAL_TARGET.md`](docs/AAA_VISUAL_TARGET.md) · [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) · [`docs/ART_DIRECTION.md`](docs/ART_DIRECTION.md) · [`docs/MULTI_AGENT_VISUAL_PRODUCTION.md`](docs/MULTI_AGENT_VISUAL_PRODUCTION.md) · [`docs/AAA_BROWSER_PRODUCTION_STANDARD.md`](docs/AAA_BROWSER_PRODUCTION_STANDARD.md) · [`docs/ALL_STAGES_AAA_STANDARD.md`](docs/ALL_STAGES_AAA_STANDARD.md) · [`docs/VISUAL_GAMEPLAY_NORTH_STAR.md`](docs/VISUAL_GAMEPLAY_NORTH_STAR.md) · [`docs/GAMER_WOW_CHECKLIST.md`](docs/GAMER_WOW_CHECKLIST.md) · [`docs/WORLD_GEOMETRY_RULES.md`](docs/WORLD_GEOMETRY_RULES.md) · [`docs/RENDERER_MIGRATION_ANALYSIS.md`](docs/RENDERER_MIGRATION_ANALYSIS.md) · [`docs/CURRENT_ENGINE_AUDIT.md`](docs/CURRENT_ENGINE_AUDIT.md) · [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) · [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) · [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) · [`docs/AM3-RESEARCH.md`](docs/AM3-RESEARCH.md) · [`.cursor/rules/virtual-racing-game-studio.mdc`](.cursor/rules/virtual-racing-game-studio.mdc)
+**Companions:** [`docs/BURNOUT_RALLY_DIRECTION.md`](docs/BURNOUT_RALLY_DIRECTION.md) · [`docs/STABILIZATION-BRIEF.md`](docs/STABILIZATION-BRIEF.md) · [`docs/QA-REPORT.md`](docs/QA-REPORT.md) · [`docs/QUALITY_STANDARD.md`](docs/QUALITY_STANDARD.md) · [`docs/AAA_VISUAL_TARGET.md`](docs/AAA_VISUAL_TARGET.md) · [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) · [`docs/ART_DIRECTION.md`](docs/ART_DIRECTION.md) · [`docs/MULTI_AGENT_VISUAL_PRODUCTION.md`](docs/MULTI_AGENT_VISUAL_PRODUCTION.md) · [`docs/AAA_BROWSER_PRODUCTION_STANDARD.md`](docs/AAA_BROWSER_PRODUCTION_STANDARD.md) · [`docs/ALL_STAGES_AAA_STANDARD.md`](docs/ALL_STAGES_AAA_STANDARD.md) · [`docs/VISUAL_GAMEPLAY_NORTH_STAR.md`](docs/VISUAL_GAMEPLAY_NORTH_STAR.md) · [`docs/GAMER_WOW_CHECKLIST.md`](docs/GAMER_WOW_CHECKLIST.md) · [`docs/WORLD_GEOMETRY_RULES.md`](docs/WORLD_GEOMETRY_RULES.md) · [`docs/RENDERER_MIGRATION_ANALYSIS.md`](docs/RENDERER_MIGRATION_ANALYSIS.md) · [`docs/CURRENT_ENGINE_AUDIT.md`](docs/CURRENT_ENGINE_AUDIT.md) · [`docs/QUALITY_TARGET.md`](docs/QUALITY_TARGET.md) · [`docs/PERFORMANCE_RULES.md`](docs/PERFORMANCE_RULES.md) · [`docs/RALLY_ENGINE_ROADMAP.md`](docs/RALLY_ENGINE_ROADMAP.md) · [`docs/AM3-RESEARCH.md`](docs/AM3-RESEARCH.md) · [`.cursor/rules/virtual-racing-game-studio.mdc`](.cursor/rules/virtual-racing-game-studio.mdc)
 
 **Repo reality:** Browser ES modules under `js/`, Three **r160 WebGL** production path, vendored `three.webgpu.js` (r170) for Phase R.2. Do **not** rewrite from scratch. Do **not** remove cars/tracks/modes. Do **not** create a parallel `src/**/*.ts` tree unless the user approved a TypeScript migration. Evolve existing modules. Measure before replacing. Judge visuals **at racing speed**, not screenshots.
 
@@ -25,7 +25,7 @@
 ## Core philosophy
 
 ```
-MODERN ARCADE RALLY · AAA PRESENTATION · SEGA RALLY DNA
+BURNOUT-STYLE RALLY · AAA ARCADE PRESENT · DIRT CHAMPIONSHIP
 ```
 
 ### Friend-test target
@@ -40,7 +40,7 @@ Permanent bar: [`docs/AAA_VISUAL_TARGET.md`](docs/AAA_VISUAL_TARGET.md) · [`doc
 ### Product hierarchy (strict)
 
 ```
-Sega Rally fun → modern racing-game feel → AAA presentation → browser performance
+Burnout-style rally fun → arcade dirt feel → AAA hot present → browser performance
 ```
 
 ### Primary goal
@@ -49,7 +49,8 @@ Sega Rally fun → modern racing-game feel → AAA presentation → browser perf
 - impressive to experienced gamers · browser-stable · believable, not obviously procedural  
 - cinematic without losing gameplay clarity  
 
-**Gameplay reference:** Sega Rally Championship philosophy — [`docs/AM3-RESEARCH.md`](docs/AM3-RESEARCH.md).
+**Product identity:** Burnout-style rally — [`docs/BURNOUT_RALLY_DIRECTION.md`](docs/BURNOUT_RALLY_DIRECTION.md).  
+**Handling reference:** arcade rally feel — [`docs/AM3-RESEARCH.md`](docs/AM3-RESEARCH.md) · [`docs/SEGA_RALLY_DRIVING_MODEL.md`](docs/SEGA_RALLY_DRIVING_MODEL.md).
 
 ### Do / do not
 

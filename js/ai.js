@@ -5,15 +5,15 @@
  * WHAT IT DOES: each rival owns a stable personal groove on the ribbon (similar
  *   racing line, not a shared rail), reads curvature at two look-ahead horizons,
  *   brakes for surface-aware corner speed, catches slides with human lag, makes
- *   occasional small mistakes, and yields to the player rather than through them.
+ *   occasional small mistakes, and hold their line next to the player.
  *   Traffic dodge is local and slow — pack cars do not thrash lanes every frame.
  * HOW IT CONNECTS: game.js steps every Opponent with the full vehicle pack.
  *
  * DESIGN RULES (docs/AM3-RESEARCH.md §2, §3)
  *  - Beatable. Pace tops out below what a good player can do on a clean lap.
  *  - Invisible rubber band. A few percent of throttle, nothing you can see.
- *  - No crash-out. A rival must never be the reason a championship run ends,
- *    so they respect the player far more than they respect each other.
+ *  - No crash-out. Glance, do not vanish. Empty-road yield made the pack
+ *    disappear — that lesson stays closed.
  *  - Deterministic. "Mistakes" come from a seeded per-rival wander, never
  *    Math.random, so the pack is reproducible from the same inputs.
  *
@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=184";
+import { Vehicle } from "./physics/vehicle.js?v=192";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=228";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=229";
 
 const G = 9.81;
 
@@ -42,8 +42,10 @@ const LINE_EDGE = 2.2;
 const LINE_APEX_FRAC = 0.52;
 /** Rival-vs-rival: only dodge when truly overlapping this many metres of lane. */
 const GROOVE_RIVAL = 1.15;
-/** Player berth is wider — championship must never be lost to a shunt. */
-const GROOVE_PLAYER = 2.45;
+/** Player berth is only a hair wider — hold the door, do not park. */
+const GROOVE_PLAYER = 1.38;
+/** Config playerRespect (1.85) emptied the road. Local override, no config.js edit. */
+const PLAYER_RESPECT = 1.05;
 
 /**
  * Deterministic per-rival noise. Same rival and same sample index always gives
@@ -203,7 +205,7 @@ export class Opponent {
      */
     const attack = 0.9 + (hashNoise(index + 53, 9) + 1) * 0.05;
     // Slower pack than a committed player — handbrake passes should stick.
-    this.pace = (0.78 + this.skill * 0.15) * (index === 0 ? 0.98 : attack);
+    this.pace = (0.96 + this.skill * 0.14) * (index === 0 ? 1.02 : attack);
     /** Reaction speed when the car steps out, 1/s. Slower rivals flail more. */
     this.reflex = 5.4 + this.skill * 6.2;
     /** How much opposite lock they feed in per radian of slide. */
@@ -425,12 +427,9 @@ export class Opponent {
     throttle *= traffic.lift;
     brake = Math.max(brake, traffic.brake);
 
-    // AI-AI traffic: never crawl. Dodge and keep rolling; only the player gets
-    // a hard yield. That is what stopped mid-road pack pile-ups.
-    if (!traffic.playerBlock) {
-      throttle = Math.max(throttle, traffic.minThrottle);
-      brake = Math.min(brake, traffic.maxBrake);
-    }
+    // Keep rolling next to the player. A hard yield emptied the road.
+    throttle = Math.max(throttle, traffic.playerBlock ? 0.62 : traffic.minThrottle);
+    brake = Math.min(brake, traffic.playerBlock ? 0.14 : traffic.maxBrake);
 
     // Unstick: slow + someone close ahead → force a pass and dig in throttle.
     if (spd < 7 && traffic.aheadClose) {
@@ -456,10 +455,12 @@ export class Opponent {
     // Rubber band: a whisper, and only while they are on the throttle. Anything
     // visible would read as a cheat.
     if (brake < 0.1) {
-      const gap = clamp((playerProgress - v.progress) / Math.max(1, AI.rubberBandRange), -1, 1);
+      const range = Math.min(90, AI.rubberBandRange || 200);
+      const band = Math.max(0.24, (AI.rubberBand || 0.08) * 3.2);
+      const gap = clamp((playerProgress - v.progress) / Math.max(1, range), -1, 1);
       const standing = this.champPlace || 15;
-      const catchMul = standing > 8 ? 1.18 : standing > 4 ? 1.0 : 0.82;
-      throttle = clamp(throttle * (1 + gap * AI.rubberBand * catchMul), 0, 1);
+      const catchMul = standing > 8 ? 1.35 : standing > 4 ? 1.12 : 0.9;
+      throttle = clamp(throttle * (1 + gap * band * catchMul), 0, 1);
     }
 
     // Slide recovery with a human lag. Rivals do not know they are sideways
@@ -533,7 +534,7 @@ export class Opponent {
       const o = others[i];
       if (o === v) continue;
       const isPlayer = !o.ai;
-      const respect = isPlayer ? AI.playerRespect : 1;
+      const respect = isPlayer ? PLAYER_RESPECT : 1;
       const dx = o.position.x - v.position.x;
       const dz = o.position.z - v.position.z;
       const dist = Math.hypot(dx, dz);
@@ -551,11 +552,10 @@ export class Opponent {
         if (sameGroove) {
           const close = 1 - dProg / look;
           if (isPlayer) {
-            playerBlock = true;
-            lift = Math.min(lift, 0.14 + dProg / 22);
-            if (dProg < 9) brakeFor = Math.max(brakeFor, 0.2 + close * 0.48);
-            if (dProg < 5.5) brakeFor = Math.max(brakeFor, 0.55);
-            avoid += (q.lateral >= oLat ? 1 : -1) * close * 0.55 * respect;
+            playerBlock = dProg < 2.1;
+            lift = Math.min(lift, 0.88 + dProg / 40);
+            if (dProg < 2.1) brakeFor = Math.max(brakeFor, 0.06);
+            avoid += (q.lateral >= oLat ? 1 : -1) * close * 0.16 * respect;
           } else {
             // Commit toward free space near our home groove — not random flip-flop.
             aheadClose = aheadClose || dProg < 12;
@@ -585,13 +585,13 @@ export class Opponent {
         const rz = -Math.sin(v.yaw);
         const along = dx * fx + dz * fz;
         const right = dx * rx + dz * rz;
-        if (along > -1.2 && along < (isPlayer ? 5.8 * respect : 4.8)) {
-          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.85 * respect : 0.75);
-          if (along > 0.2 && dist < (isPlayer ? 4.8 * respect : 3.9)) {
+        if (along > -1.2 && along < (isPlayer ? 4.2 * respect : 4.8)) {
+          avoid += (right > 0 ? -1 : 1) * (1 - dist / near) * (isPlayer ? 0.32 * respect : 0.75);
+          if (along > 0.2 && dist < (isPlayer ? 3.2 * respect : 3.9)) {
             if (isPlayer) {
-              playerBlock = true;
-              lift = Math.min(lift, 0.18);
-              brakeFor = Math.max(brakeFor, 0.34);
+              playerBlock = dist < 2.4;
+              lift = Math.min(lift, 0.78);
+              brakeFor = Math.max(brakeFor, 0.08);
             } else {
               aheadClose = true;
               lift = Math.min(lift, 0.9);

@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=5";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=6";
 
 const BASE = "assets/env/forest";
 

@@ -59,7 +59,7 @@ check(
   /if \(a\.tunnel\) continue/.test(trackSrc) && /_separateTunnelOverpasses/.test(trackSrc)
 );
 check("over-tunnel lanes are scrubbed", /_overTunnelLanes/.test(trackSrc));
-check("finish-left pad is flattened before 3469", /_overpassFlatEnd/.test(trackSrc) && /3380/.test(trackSrc));
+check("finish-left pad is flattened before 3469", /_overpassFlatEnd/.test(trackSrc) && /3180/.test(trackSrc));
 check("overpass apron is linear 4.5%", /const GRADE = 0\.045/.test(trackSrc) && /Linear flyover apron/.test(trackSrc));
 check(
   "collider sample honors wall top",
@@ -69,7 +69,7 @@ check(
   "bore cap uses flyover XZ test",
   /Same XZ test as flyover/.test(tunSrc) && !/if \(Math\.abs\(along\) > 8\)/.test(tunSrc)
 );
-check("validator gates 3440–3520 at 5%", /b\.dist < 3440/.test(valSrc) && /g > 0\.05/.test(valSrc) && /FOREST_3485_WALL/.test(valSrc));
+check("validator gates 3180–3900 at 5%", /b\.dist < 3180/.test(valSrc) && /g > 0\.05/.test(valSrc) && /FOREST_3485_WALL/.test(valSrc));
 
 const course = COURSES.forest;
 const pieces = course.pieces || [];

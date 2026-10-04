@@ -125,14 +125,22 @@ for (const piece of pieces) {
     const dropFast = Math.min(11, Math.max(8, gap * 0.4));
     const flyover = Math.max(10, gap - dropFast + 4);
     const easeInSine = (t) => 1 - Math.cos((t * Math.PI) / 2);
-    const pushPhase = (len, dyTotal, kind, ease) => {
+    const easeInOutSine = (t) => 0.5 - 0.5 * Math.cos(t * Math.PI);
+    const easeRampLip = (t) => {
+      const cut = 0.68;
+      if (t <= cut) return easeInSine(t);
+      const kCut = easeInSine(cut);
+      return kCut + (1 - kCut) * ((t - cut) / (1 - cut));
+    };
+    const pushPhase = (len, dyTotal, kind, easeFn) => {
       const step = kind === "ramp" ? 1.05 : 1.35;
       const n = Math.max(2, Math.round(len / step));
+      const ease = typeof easeFn === "function" ? easeFn : null;
       for (let i = 0; i < n; i++) {
         const t0 = i / n;
         const t1 = (i + 1) / n;
-        const k0 = ease ? easeInSine(t0) : t0;
-        const k1 = ease ? easeInSine(t1) : t1;
+        const k0 = ease ? ease(t0) : t0;
+        const k1 = ease ? ease(t1) : t1;
         const ds = len / n;
         x += Math.sin(heading) * ds;
         z += Math.cos(heading) * ds;
@@ -145,11 +153,31 @@ for (const piece of pieces) {
         });
       }
     };
-    pushPhase(ramp, rise, "ramp", true);
-    pushPhase(Math.max(5, lip), 0, "crest", false);
-    pushPhase(dropFast, -drop, "gap", true);
-    pushPhase(flyover, 0, "gap", false);
-    pushPhase(land, drop * 0.18, "land", true);
+    pushPhase(ramp, rise, "ramp", easeRampLip);
+    pushPhase(Math.max(5, lip), 0, "crest", null);
+    pushPhase(dropFast, -drop, "gap", easeInOutSine);
+    pushPhase(flyover, 0, "gap", null);
+    pushPhase(land, drop * 0.18, "land", easeInOutSine);
+  }
+}
+
+for (let i = 1; i < raw.length - 1; i++) {
+  if (raw[i].jumpKind !== "land" || raw[i + 1].jumpKind === "land") continue;
+  const prev = raw[i - 1];
+  if (!prev || prev.jumpKind !== "land") continue;
+  const landDs = Math.max(0.01, raw[i].dist - prev.dist);
+  const landG = (raw[i].y - prev.y) / landDs;
+  if (Math.abs(landG) < 0.025) continue;
+  const targetY = raw[i].y;
+  let j0 = i;
+  while (j0 > 0 && raw[j0].jumpKind === "land" && raw[i].dist - raw[j0].dist < 8) j0 -= 1;
+  if (raw[j0].jumpKind !== "land") j0 += 1;
+  const spanD = raw[i].dist - raw[j0].dist;
+  if (spanD < 2.5) continue;
+  const y0 = raw[j0].y;
+  for (let j = j0 + 1; j <= i; j++) {
+    const t = (raw[j].dist - raw[j0].dist) / spanD;
+    raw[j].y = y0 + (targetY - y0) * t * t * (3 - 2 * t);
   }
 }
 

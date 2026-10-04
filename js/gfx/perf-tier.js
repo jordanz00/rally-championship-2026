@@ -110,7 +110,7 @@ function buildLadder(gfx) {
       post: "high",
       sky: "high",
       mirrorEvery: 2,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "medium",
@@ -120,17 +120,17 @@ function buildLadder(gfx) {
       post: "balanced",
       sky: "medium",
       mirrorEvery: 4,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "low",
       floorMs: gfx.adaptHighMs ?? 20,
-      dpr: Math.max(minDpr, 0.72),
+      dpr: Math.max(minDpr, 0.68),
       shadow: Math.min(lowShadow, 768),
       post: "low",
       sky: "low",
       mirrorEvery: 4,
-      shadowEvery: 1,
+      shadowEvery: 2,
     },
     {
       id: "min",
@@ -140,7 +140,7 @@ function buildLadder(gfx) {
       post: "low",
       sky: "min",
       mirrorEvery: 6,
-      shadowEvery: 1,
+      shadowEvery: 3,
     },
   ];
 }

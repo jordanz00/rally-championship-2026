@@ -35,6 +35,7 @@ console.log(`PLAY LANE  ·  ${new Date().toISOString()}\n`);
 
 const vehSrc = fs.readFileSync(path.join(ROOT, "js/physics/vehicle.js"), "utf8");
 check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.4/.test(defSrc));
+check("speed lane opens after Desert Safari", /PLAY_SPEED_TIGHT/.test(defSrc) && /afterSafari/.test(defSrc));
 check("steer holds lock at speed", /maxSteer \* 1\.28/.test(vehSrc) && /kus \*= 0\.55/.test(vehSrc));
 check("rack still bites at speed", /lerp\(1\.62, 0\.82/.test(vehSrc) && /lerp\(1\.12, 0\.72/.test(vehSrc));
 check("game imports courses.js?v=94+", Number((gameSrc.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 94);
