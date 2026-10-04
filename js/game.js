@@ -151,7 +151,7 @@ function raceTunnelLighting(courseId) {
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
-import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=7";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=10";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -4368,12 +4368,10 @@ export class RallyGame {
     const dur = this.replayTape.duration();
     if (!(dur > 0.4)) return;
     this._broadcastClock += dt;
+    let wrapped = false;
     if (this._broadcastClock >= dur) {
       this._broadcastClock = 0;
-      this.broadcast.kind = "heli";
-      this.broadcast.phase = "out";
-      this.broadcast.phaseT = 0;
-      this.broadcast.shotT = 0;
+      wrapped = true;
       this._clearReplayTrails();
     }
     const pose = this.replayTape.poseAt(this._broadcastClock, this._broadcastPose || {});
@@ -4410,6 +4408,8 @@ export class RallyGame {
     this._poseReplayPack(pose, dt);
     this._emitReplayTrails(dt);
     const shot = this.broadcast.update(dt, pose);
+    if (wrapped) this.broadcast.hardCut(pose, "heli");
+    if (shot.didCut || this.broadcast.didCut) this._onBroadcastCut(pose);
     const cam = this.camera;
     if (cam) {
       if (cam.aspect > 0.2) this.broadcast.aspect = cam.aspect;
@@ -4420,6 +4420,7 @@ export class RallyGame {
         cam.fov = fov;
         cam.updateProjectionMatrix();
       }
+      if (shot.didCut || this.broadcast.didCut) cam.updateMatrixWorld(true);
     }
     const fade = document.getElementById("broadcast-fade");
     if (fade) fade.style.opacity = String(Math.max(0, Math.min(1, shot.fade)));
@@ -4428,6 +4429,45 @@ export class RallyGame {
     const clock = document.getElementById("broadcast-clock");
     if (clock) clock.textContent = formatTime(pose.t);
     this._updateLights(dt);
+  }
+
+  /**
+   * Same-frame cut cleanup: drop TSR history (Quality ghosts a camera jump)
+   * and snap every taped mesh so no car keeps last frame's transform.
+   * Trails stay — only the lens changed.
+   * @param {object|null} pose
+   */
+  _onBroadcastCut(pose) {
+    if (this.tsr && this.tsr.reset) this.tsr.reset();
+    if (this.mobilePresent && this.mobilePresent.reset) this.mobilePresent.reset();
+    if (!pose) return;
+    const p = this.player;
+    if (p) {
+      p.position.set(pose.x, pose.y, pose.z);
+      p.yaw = pose.yaw;
+      p.pitch = pose.pitch;
+      p.roll = pose.roll;
+      if (p._draw) {
+        p._draw.x = pose.x;
+        p._draw.y = pose.y;
+        p._draw.z = pose.z;
+        p._draw.yaw = pose.yaw;
+        p._draw.pitch = pose.pitch;
+        p._draw.roll = pose.roll;
+      }
+    }
+    if (this.playerMesh) {
+      this.playerMesh.position.set(pose.x, pose.y, pose.z);
+      this.playerMesh.rotation.set(pose.pitch, pose.yaw, pose.roll, "YXZ");
+      this._spinBroadcastWheels(0, pose);
+      this._syncBroadcastLamps(pose);
+      this.playerMesh.updateMatrixWorld(true);
+    }
+    this._poseReplayPack(pose, 0);
+    const pack = this.opponents || [];
+    for (let i = 0; i < pack.length; i++) {
+      if (pack[i] && pack[i].mesh) pack[i].mesh.updateMatrixWorld(true);
+    }
   }
 
   /**

@@ -1,5 +1,35 @@
 # QA report — quality-control pass
 
+## Forest Stage 2 — 3469 m stop, closed (2026-10-04)
+
+**Player moment:** Championship Stage 2. Medium left to the finish. The car must carry speed through 3469 m — no invisible wall, no 9% hill in the corridor.
+
+**What still slowed (v987 / qa-forest-3485 PARTIAL):** Compiled Forest is 3903 m. Tunnel floor Y=1.20 (`tunEnd` 2331). The later ribbon crosses that bore at ~3483–3518. v987 built one 7.4 m deck (Y=8.60) but left a **smoothstep apron** that peaked at **12.0% at 3439 m** and was still **7.3% at 3469** (Y=8.03, 0.57 m short of the deck). The old gate only sampled 3455–3515 at 12%, so 9.1% “passed.” Query was on-road dirt, not stolen. No mud `surfaceId`. Bore-wall AABB did not sit in the 42 m-offset 3469 pin — the stop was the climb.
+
+**Fix:** `_separateTunnelOverpasses` now flattens Forest finish-left **3380–3560** to the 7.4 m deck. 3440–3520 / 3469 is level (Y=8.60). Linear 4.5% aprons sit *outside* that pad (no 1.5× smoothstep spike). `_overTunnelLanes` covers the pad for collider scrub. `forestBoreCeiling` XZ cap unchanged — wall `top` stays under the later deck with car clearance. `tunEnd` function-scope (v984) untouched. Desert 1654 land skip untouched. `Track.query()` not rewritten. No global speed nerf.
+
+**Gate:** `tools/qa-forest-3485.mjs` + `tools/qa-forest-3469.mjs` + `FOREST_3485_WALL` at **5% over 3440–3520**. Fails the previous 9.1% pass. Kinematic XZ must hold speed.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3485.mjs` · `qa-forest-3469.mjs` · `qa-desert-1654.mjs` · `qa-forest-tunnel-bore.mjs` · `qa-lane-floor.mjs` · `qa-play-lane.mjs` · `qa-stage-flow.mjs`
+
+**Boot:** `main.js?v=1001` · `game.js?v=1001` · `track.js?v=420` · `world-geometry-validator.js?v=8`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1001
+
+## Result replay — 2–3 s hard cuts, no smear (2026-10-04)
+
+**Player moment:** Stage result TV replay. Every angle sits on the hero car for **2–3 seconds** so you can read the body. Cuts are clean — no pop, smear, teleport, or stretched hull.
+
+**Cause:** Holds were 1.2–2.5 s (fly-by 1.35 s flash). `_mustCut` dumped a shot that lost NDC and `_beginCut` could fire again on the next frame. Follow shots used a 0.55 s spring blend; Quality TSR kept history across the jump. Pack transforms from the previous tick sat one frame behind the new lens.
+
+**Fix:** `HOLD_MIN/MAX = 2.0–3.0` on every kind. Camera **hard-cuts** (no blend / fade-out lerp). After a cut, `_cutLock` blocks another recut for 2 s — `_mustCut` still picks the next in-frame shot, once. Same tick: `tsr.reset()`, re-pose the taped pack at `dt=0`, `updateMatrixWorld`. Player-in-frame, pack, trails, and opaque paint stay.
+
+**Proof:** `node tools/qa-broadcast-replay.mjs` — fails the old 1.2 s floor; min hold 2 s; no per-frame recut; frustum still required.
+
+**Boot:** `main.js?v=1002` · `game.js?v=1002` · `broadcast-replay.js?v=8`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1002
+
 ## Start / finish gantries — planted cloth, not paper cards (2026-10-04)
 
 **Player moment:** Leave the line and cross the line on Desert, Forest, Mountain, and Lakeside. START and FINISH read as real rally gantries — steel poles in the dirt, taut vinyl with **RALLY CHAMPIONSHIP** plus START/FINISH, a little wind in the cloth. Festive verge flags stay.

@@ -5,18 +5,16 @@
  * WHAT IT DOES: records the live pack at 20 Hz (player + every rival), plays
  *   it back exactly, and cuts a player-centric director (bumper / chase /
  *   fly-by / heli / nose-on / three-quarter / crane / tunnel-crest hero).
- *   Every locked shot keeps the hero hull in the frustum. Does not step
- *   Vehicle physics.
+ *   Every locked shot keeps the hero hull in the frustum and holds 2–3 s.
+ *   Cuts snap the lens (no blend). Does not step Vehicle physics.
  * HOW IT CONNECTS: game.js records during race, ticks the director on result.
  */
 
 const SAMPLE_HZ = 20;
 const MAX_SAMPLES = 16000;
-const FADE_OUT = 0.18;
 const FADE_IN = 0.28;
-const BLEND_SEC = 0.55;
-const HOLD_MIN = 1.2;
-const HOLD_MAX = 2.5;
+export const HOLD_MIN = 2.0;
+export const HOLD_MAX = 3.0;
 const DEFAULT_ASPECT = 16 / 9;
 
 /** Hull aim point above the taped contact patch. */
@@ -51,14 +49,14 @@ export const BROADCAST_SHOTS = Object.freeze([
 export const HERO_SHOTS = new Set(["bumper", "chase", "heli", "nose", "threeq", "crane", "hero"]);
 
 export const SHOT_HOLD = {
-  bumper: 1.55,
-  chase: 1.85,
-  flyby: 1.35,
-  heli: 2.15,
-  nose: 1.5,
-  threeq: 1.9,
-  crane: 2.2,
-  hero: 2.0,
+  bumper: 2.15,
+  chase: 2.45,
+  flyby: 2.2,
+  heli: 2.7,
+  nose: 2.15,
+  threeq: 2.5,
+  crane: 2.8,
+  hero: 2.6,
 };
 
 export const SHOT_LABEL = {
@@ -328,12 +326,12 @@ function shotSide(kind, pose) {
 }
 
 /**
- * Hold 1.2–2.5 s then cut.
+ * Hold 2.0–3.0 s then cut. Never shorter than 2 s (tape end is the exception).
  * @param {string} kind
  * @returns {number}
  */
 export function rollShotHold(kind) {
-  const base = SHOT_HOLD[kind] || 1.7;
+  const base = SHOT_HOLD[kind] || 2.4;
   return Math.min(HOLD_MAX, Math.max(HOLD_MIN, base * (0.9 + Math.random() * 0.2)));
 }
 
@@ -599,6 +597,9 @@ export class BroadcastDirector {
     this.fade = 0;
     this.phase = "in";
     this.phaseT = 0;
+    this.didCut = false;
+    this._cutLock = HOLD_MIN;
+    this._rescued = false;
     this._road = {};
     this._side = 1;
     this._flyEye = null;
@@ -657,25 +658,63 @@ export class BroadcastDirector {
     }
     this._compose(this.kind, pose);
     this._snapEye();
+    this._cutLock = HOLD_MIN;
+    this._rescued = false;
     this.fade = this.phase === "in" ? 1 : 0;
   }
 
   /**
    * @param {number} dt
    * @param {ReplaySample} pose
-   * @returns {{fade:number,label:string,kind:string}}
+   * @returns {{fade:number,label:string,kind:string,didCut:boolean}}
    */
   update(dt, pose) {
-    if (!pose) return { fade: 1, label: this.label(), kind: this.kind };
+    this.didCut = false;
+    if (!pose) return { fade: 1, label: this.label(), kind: this.kind, didCut: false };
     this.shotT += dt;
+    if (this._cutLock > 0) this._cutLock = Math.max(0, this._cutLock - dt);
     this._compose(this.kind, pose);
     const mustCut = this._mustCut(pose);
-    if (this.phase === "hold" && (this.shotT >= this.hold || mustCut)) {
-      this._beginCut(pose);
+    const holdDone = this.shotT >= this.hold && this._cutLock <= 0;
+    const rescue = mustCut && (this._cutLock <= 0 || !this._rescued);
+    if (holdDone || rescue) {
+      this.hardCut(pose);
+      this._rescued = true;
     }
     this._stepPhase(dt, pose);
     this._follow(dt, pose);
-    return { fade: this.fade, label: this.label(), kind: this.kind };
+    return { fade: this.fade, label: this.label(), kind: this.kind, didCut: this.didCut };
+  }
+
+  /**
+   * Instant lens change. Camera snaps this frame — no blend, no fade-out lerp.
+   * Caller must reset TSR history and re-pose the pack on the same tick.
+   * @param {ReplaySample} pose
+   * @param {string} [preferred]
+   */
+  hardCut(pose, preferred) {
+    if (!pose) return;
+    const prev = this.kind;
+    this._flyEye = null;
+    let next = preferred && preferred !== prev && this._shotOk(preferred, pose, true)
+      ? preferred
+      : this._pickKind(pose);
+    if (next === prev) {
+      const fallback = this._pickKind(pose);
+      if (fallback !== prev) next = fallback;
+    }
+    this._side = shotSide(next, pose);
+    this.kind = next;
+    this.shotT = 0;
+    this.hold = rollShotHold(next);
+    this._cutLock = HOLD_MIN;
+    this._rescued = true;
+    this._compose(next, pose);
+    this._snapEye();
+    this.phase = "in";
+    this.phaseT = 0;
+    this.fade = 1;
+    this.didCut = true;
   }
 
   /**
@@ -706,51 +745,18 @@ export class BroadcastDirector {
   }
 
   /**
-   * @param {ReplaySample} pose
-   */
-  _beginCut(pose) {
-    const prev = this.kind;
-    const next = this._pickKind(pose);
-    this._flyEye = null;
-    this._side = shotSide(next, pose);
-    this.kind = next;
-    this.shotT = 0;
-    this.hold = rollShotHold(next);
-    const followish =
-      HERO_SHOTS.has(prev) && HERO_SHOTS.has(next) && prev !== "nose" && next !== "nose";
-    if (this.reduced || !followish) {
-      this.phase = "out";
-      this.phaseT = 0;
-    } else {
-      this.phase = "blend";
-      this.phaseT = 0;
-    }
-  }
-
-  /**
    * @param {number} dt
    * @param {ReplaySample} pose
    */
   _stepPhase(dt, pose) {
     this.phaseT += dt;
-    if (this.phase === "out") {
-      const u = Math.min(1, this.phaseT / FADE_OUT);
-      this.fade = u * u * (3 - 2 * u);
-      if (u >= 1) {
-        this.snapTo(pose);
-        this.phase = "in";
-        this.phaseT = 0;
-      }
-    } else if (this.phase === "in") {
+    if (this.phase === "in") {
       const u = Math.min(1, this.phaseT / FADE_IN);
       this.fade = 1 - u * u * (3 - 2 * u);
       if (u >= 1) {
         this.phase = "hold";
         this.fade = 0;
       }
-    } else if (this.phase === "blend") {
-      if (this.phaseT >= BLEND_SEC) this.phase = "hold";
-      this.fade = 0;
     } else {
       this.fade = 0;
     }
@@ -855,32 +861,13 @@ export class BroadcastDirector {
   }
 
   /**
-   * Locked tracking for hero shots so damping cannot empty the frame.
-   * Blend damps, then snaps if the hull would leave.
+   * Hard lock — tracking snaps every frame. Cuts never leave a half-lerp.
    * @param {number} dt
    * @param {ReplaySample} pose
    */
   _follow(dt, pose) {
-    if (!(dt > 0) || this.phase === "out") return;
-    if (this.phase !== "blend") {
-      this._snapEye();
-      return;
-    }
-    const stiff = 11;
-    const damp = 2 * Math.sqrt(stiff);
-    const step = (x, v, t) => {
-      const a = (t - x) * stiff - v * damp;
-      v += a * dt;
-      x += v * dt;
-      return [x, v];
-    };
-    [this.eyeX, this._vx] = step(this.eyeX, this._vx, this._tx);
-    [this.eyeY, this._vy] = step(this.eyeY, this._vy, this._ty);
-    [this.eyeZ, this._vz] = step(this.eyeZ, this._vz, this._tz);
-    [this.lookX, this._vlx] = step(this.lookX, this._vlx, this._lx);
-    [this.lookY, this._vly] = step(this.lookY, this._vly, this._ly);
-    [this.lookZ, this._vlz] = step(this.lookZ, this._vlz, this._lz);
-    [this.fov, this._vfov] = step(this.fov, this._vfov, this._tfov);
+    if (!(dt > 0)) return;
+    this._snapEye();
     if (pose && !this._eyeFramesPlayer(pose)) this._snapEye();
   }
 }

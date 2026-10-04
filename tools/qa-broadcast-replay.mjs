@@ -12,8 +12,11 @@ import {
   unwrapAngle,
   snapReplayBody,
   lerpReplayBody,
+  rollShotHold,
   BROADCAST_SHOTS,
   SHOT_HOLD,
+  HOLD_MIN,
+  HOLD_MAX,
   composeBroadcastShot,
   playerInBroadcastFrame,
   lookTargetsPlayer,
@@ -133,8 +136,14 @@ check("director cuts more than one shot", kinds.size >= 2);
 check("fade used", faded || dir.reduced);
 
 check("shot vocab has 8 cinematic setups", BROADCAST_SHOTS.length >= 8);
-const holdsOk = BROADCAST_SHOTS.every((k) => SHOT_HOLD[k] >= 1.2 && SHOT_HOLD[k] <= 2.5);
-check("holds are 1.2–2.5 s", holdsOk);
+check("old 1.2 s floor is gone", HOLD_MIN > 1.2 && HOLD_MIN >= 2);
+check("hold range is 2.0–3.0 s", HOLD_MIN === 2 && HOLD_MAX === 3);
+const holdsOk = BROADCAST_SHOTS.every((k) => SHOT_HOLD[k] >= HOLD_MIN && SHOT_HOLD[k] <= HOLD_MAX);
+check("every kind hold is 2.0–3.0 s", holdsOk);
+const rolled = BROADCAST_SHOTS.map((k) => rollShotHold(k));
+check("rollShotHold never drops below 2 s", rolled.every((h) => h >= 2));
+check("rollShotHold never exceeds 3 s", rolled.every((h) => h <= 3));
+check("1.2 s is no longer a legal hold", !rolled.some((h) => h < 2) && HOLD_MIN !== 1.2);
 
 function poseAtProgress(progress, extras) {
   return {
@@ -209,6 +218,51 @@ check("director visits several cinematic kinds", seen.size >= 4);
 check("live director never empties the frame", lost === 0);
 check("snapTo keeps a finite player NDC", Number.isFinite(playerNdc(dir2.layout(), mid).x));
 
+const holdDir = new BroadcastDirector(track, tape, { reducedMotion: false, aspect: 16 / 9 });
+holdDir.snapTo(mid);
+const cutTimes = [];
+let cuts = 0;
+let lastCutT = 0;
+let simT = 0;
+for (let i = 0; i < 400; i++) {
+  const pose = tape.poseAt((i * 0.05) % tape.duration());
+  const shot = holdDir.update(0.05, pose);
+  simT += 0.05;
+  if (shot.didCut) {
+    cuts += 1;
+    if (lastCutT > 0) cutTimes.push(simT - lastCutT);
+    lastCutT = simT;
+  }
+}
+check("director actually cuts", cuts >= 2);
+check("no shot shorter than 2 s", cutTimes.length >= 1 && cutTimes.every((d) => d >= 1.99));
+check("holds stay at or under 3 s", cutTimes.every((d) => d <= 3.05));
+
+const recutDir = new BroadcastDirector(track, tape, { reducedMotion: false, aspect: 16 / 9 });
+recutDir.snapTo(mid);
+recutDir.phase = "hold";
+recutDir.shotT = 0.1;
+recutDir._cutLock = 0;
+recutDir._rescued = false;
+recutDir._mustCut = () => true;
+let recuts = 0;
+let recutGaps = [];
+let recutT = 0;
+let lastRecut = -1;
+for (let i = 0; i < 80; i++) {
+  const pose = tape.poseAt((i * 0.016) % tape.duration());
+  const shot = recutDir.update(0.016, pose);
+  recutT += 0.016;
+  if (shot.didCut) {
+    recuts += 1;
+    if (lastRecut >= 0) recutGaps.push(recutT - lastRecut);
+    lastRecut = recutT;
+  }
+}
+check("mustCut does not recut every frame", recuts <= 2);
+check("mustCut lockout is at least 2 s", recutGaps.every((g) => g >= 1.99));
+check("hardCut snaps eye without leftover lerp", recutDir.eyeX === recutDir._tx && recutDir.eyeZ === recutDir._tz);
+
 const startFn = (gameSrc.match(/_startBroadcastReplay\(\) \{[\s\S]*?\n  \}/) || [])[0] || "";
 check("replay spawn keeps pack visible", /_setPackVisible\(true\)/.test(startFn));
 check("replay spawn does not hide pack", !/_setPackVisible\(false\)/.test(startFn));
@@ -228,7 +282,11 @@ check("dust has a particle reset", /Kill every live particle/.test(fxSrc) && /th
 check("marks can forget stamps without wipe", /forgetStamps\(\)/.test(fxSrc));
 check("rival LOD mesh gets replay pose", /applyReplayPose\(pose, dt, spin\)/.test(aiSrc));
 check("rival replay keeps mesh visible", /this\.mesh\.visible = true/.test(aiSrc));
-check("attract reel import stays v9", /attract-reel\.js\?v=9/.test(gameSrc));
+check("attract reel import stays put", /attract-reel\.js\?v=\d+/.test(gameSrc));
+check("broadcast module cache-bust is v8+", Number((gameSrc.match(/broadcast-replay\.js\?v=(\d+)/) || [])[1] || 0) >= 8);
+check("replay cut resets TSR history", /_onBroadcastCut\(/.test(gameSrc) && /shot\.didCut/.test(gameSrc) && /this\.tsr\.reset/.test(gameSrc));
+check("replay cut re-poses pack at dt 0", /_onBroadcastCut\([\s\S]*?_poseReplayPack\(pose, 0\)/.test(gameSrc));
+check("hard cut has no camera blend leftover", !/BLEND_SEC/.test(fs.readFileSync(path.join(ROOT, "js/cinema/broadcast-replay.js"), "utf8")));
 
 if (failed) {
   console.error(`Broadcast replay QA failed (${failed})`);
