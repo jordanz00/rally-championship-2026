@@ -57,6 +57,63 @@ export const DAYLIGHT_FLOORS = {
 };
 
 /**
+ * Peak clamps for harsh sun moments. Soften white flash / desert glare /
+ * canopy shafts / tunnel-exit dump without flattening the key.
+ * Exposure caps sit under authored LIGHTING[stage].exposure; fill floors
+ * stay at DAYLIGHT_FLOORS. Do not recover brightness with bloom.
+ */
+export const HARSH_PEAKS = {
+  desert: {
+    fillMax: 0.36,
+    ambientMax: 0.26,
+    hemiMin: 0.52,
+    hemiMax: 0.62,
+    rimMax: 0.22,
+    exposureMax: 0.9,
+    exposureCeil: 0.97,
+    carEnvMax: 1.08,
+    coatEnvMax: 1.55,
+    worldEnvMax: 0.88,
+  },
+  forest: {
+    fillMax: 0.42,
+    ambientMax: 0.28,
+    hemiMin: 0.62,
+    hemiMax: 0.72,
+    rimMax: 0.2,
+    exposureMax: 0.86,
+    exposureCeil: 0.92,
+    carEnvMax: 1.12,
+    coatEnvMax: 1.65,
+    worldEnvMax: 0.88,
+  },
+  mountain: {
+    fillMax: 0.42,
+    ambientMax: 0.28,
+    hemiMin: 0.62,
+    hemiMax: 0.72,
+    rimMax: 0.2,
+    exposureMax: 0.9,
+    exposureCeil: 0.96,
+    carEnvMax: 1.0,
+    coatEnvMax: 1.45,
+    worldEnvMax: 0.68,
+  },
+  lakeside: {
+    fillMax: 0.36,
+    ambientMax: 0.22,
+    hemiMin: 0.5,
+    hemiMax: 0.64,
+    rimMax: 0.2,
+    exposureMax: 0.9,
+    exposureCeil: 0.94,
+    carEnvMax: 1.08,
+    coatEnvMax: 1.55,
+    worldEnvMax: 0.7,
+  },
+};
+
+/**
  * Infer stage from the authored LIGHTING block (config.js is locked).
  * @param {object} L
  * @param {string} [courseId]
@@ -158,16 +215,28 @@ export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, c
     if (stage === "desert") {
       // Seat boosts fill ×2.15 / ambient ×1.7 and flattens the key.
       // Cap sky bounce so the Kelvin sun still sculpts sand and the car.
-      if (lights.fill) lights.fill.intensity = Math.min(lights.fill.intensity, 0.4);
-      if (lights.ambient) lights.ambient.intensity = Math.min(lights.ambient.intensity, 0.28);
+      const pk = HARSH_PEAKS.desert;
+      if (lights.fill) lights.fill.intensity = Math.min(lights.fill.intensity, pk.fillMax);
+      if (lights.ambient) lights.ambient.intensity = Math.min(lights.ambient.intensity, pk.ambientMax);
       if (lights.hemi) {
-        lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, 0.52), 0.66);
+        lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, pk.hemiMin), pk.hemiMax);
       }
+      if (lights.skyRim) lights.skyRim.intensity = Math.min(lights.skyRim.intensity, pk.rimMax);
     } else if (stage === "forest" || stage === "mountain") {
       const fl = DAYLIGHT_FLOORS[stage];
+      const pk = HARSH_PEAKS[stage];
       if (lights.ambient && lights.ambient.intensity < fl.ambient) lights.ambient.intensity = fl.ambient;
       if (lights.fill && lights.fill.intensity < fl.fill) lights.fill.intensity = fl.fill;
       if (lights.hemi && lights.hemi.intensity < fl.hemi) lights.hemi.intensity = fl.hemi;
+      if (pk && lights.skyRim) lights.skyRim.intensity = Math.min(lights.skyRim.intensity, pk.rimMax);
+    } else if (stage === "lakeside") {
+      const pk = HARSH_PEAKS.lakeside;
+      if (lights.fill) lights.fill.intensity = Math.min(Math.max(lights.fill.intensity, 0.22), pk.fillMax);
+      if (lights.ambient) lights.ambient.intensity = Math.min(Math.max(lights.ambient.intensity, 0.14), pk.ambientMax);
+      if (lights.hemi) {
+        lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, pk.hemiMin), pk.hemiMax);
+      }
+      if (lights.skyRim) lights.skyRim.intensity = Math.min(lights.skyRim.intensity, pk.rimMax);
     }
   }
 
@@ -176,6 +245,96 @@ export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, c
     if (t <= 0.002 || !tunnelFog) fogColor.copy(_fogHor);
     else fogColor.lerpColors(_fogHor, tunnelFog, t);
   }
+}
+
+/**
+ * ACES exposure for race frames. Authored LIGHTING.exposure still owns the
+ * look; this only pulls the peak so tunnel exit and desert noon cannot flash
+ * white when the seated sun returns.
+ *
+ * @param {object} L
+ * @param {number} tunnelBlend
+ * @param {number} [boost]
+ * @param {string} [courseId]
+ * @returns {number}
+ */
+export function clampRaceExposure(L, tunnelBlend, boost, courseId) {
+  const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
+  const open = 1 - t;
+  const authored = L && L.exposure != null ? L.exposure : 1;
+  const b = boost != null ? boost : 1;
+  let ev = authored * (1 + (b - 1) * t);
+  const stage = lightingStageId(L, courseId);
+  const pk = HARSH_PEAKS[stage];
+  if (!pk) return ev;
+  if (open > 0.35) {
+    const k = Math.min(1, (open - 0.35) / 0.5);
+    const capped = Math.min(ev, pk.exposureMax);
+    ev = ev * (1 - k) + capped * k;
+  }
+  if (pk.exposureCeil != null) ev = Math.min(ev, pk.exposureCeil);
+  return ev;
+}
+
+/**
+ * Stage IBL / lacquer caps for harsh sun angles. Used by _updateLights —
+ * does not rewrite celica materials, only ceilings env / clearcoat env.
+ *
+ * @param {object} L
+ * @param {number} tunnelBlend
+ * @param {string} [courseId]
+ * @returns {{ carEnvMax: number, coatEnvMax: number, worldEnvMax: number, key: string }}
+ */
+export function harshEnvLook(L, tunnelBlend, courseId) {
+  const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
+  const stage = lightingStageId(L, courseId);
+  const pk = HARSH_PEAKS[stage] || {
+    carEnvMax: 1.2,
+    coatEnvMax: 1.8,
+    worldEnvMax: 0.95,
+  };
+  // High sun (y) + open sky = lacquer flash. Soften spec, keep tunnel IBL.
+  const sunY = L && L.sunDir ? Math.abs(Number(L.sunDir[1]) || 0.7) : 0.7;
+  const open = 1 - t;
+  const harsh = Math.min(1, Math.max(0, (sunY - 0.52) / 0.28)) * open;
+  const carEnvMax = pk.carEnvMax * (1 - 0.12 * harsh);
+  const coatEnvMax = pk.coatEnvMax * (1 - 0.16 * harsh);
+  const worldEnvMax = pk.worldEnvMax * (1 - 0.08 * harsh);
+  return {
+    carEnvMax,
+    coatEnvMax,
+    worldEnvMax,
+    key: `${stage}:${(carEnvMax * 100) | 0}:${(t * 4) | 0}`,
+  };
+}
+
+/**
+ * Ceiling only — never raises env, never touches paint colour / livery.
+ *
+ * @param {THREE.Object3D | null | undefined} root
+ * @param {{ carEnvMax: number, coatEnvMax: number }} look
+ */
+export function applyHarshSpecClamp(root, look) {
+  if (!root || !look || !root.traverse) return;
+  const carMax = look.carEnvMax;
+  const coatMax = look.coatEnvMax;
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m) continue;
+      if (m.userData && (m.userData.hud || m.userData.povHud)) continue;
+      const kind = m.userData && m.userData.kind;
+      if (kind === "glass") continue;
+      if (m.envMapIntensity != null && m.envMapIntensity > carMax) {
+        m.envMapIntensity = carMax;
+      }
+      if (m.clearcoatEnvMapIntensity != null && m.clearcoatEnvMapIntensity > coatMax) {
+        m.clearcoatEnvMapIntensity = coatMax;
+      }
+    }
+  });
 }
 
 /**
