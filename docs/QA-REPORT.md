@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## WebTSR live — Quality + LOOK on the present path (2026-10-04)
+
+**Player moment:** Desktop title and race present through WebTSR Quality. A top-centre badge reads `TSR QUALITY · REFINE · LOOK`. Edges stay sharp; LOOK adds the appearance residual. Pause IMAGE / LOOK still kill it. Phones stay FXAA. The HUD never says DLSS 5.
+
+**Cause:** The stack was already in the graph, but LOOK defaulted off and `_render` skipped TSR on the title pad and countdown, so the player never saw it.
+
+**Shipped:** `APPEAR_DEFAULT = true`. Title, countdown, and race all call `tsr.render`. Badge `#tsr-badge`. Mobile path unchanged.
+
+**Proof:** `node tools/qa-webtsr-sdk.mjs`
+
+**Boot:** `main.js?v=1011` · `game.js?v=1011` · SDK `?v=1011` · `appearance-net.js?v=1011`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1011
+
 ## Phone boot — no rotate nag, WebGL on Android / iPhone (2026-10-04)
 
 **Player moment:** Open the game on a phone. Title paints. No “turn sideways” card. Portrait or landscape, START works. Race uses cheap FXAA, not a WebTSR/LOOK compile that whites the tab.

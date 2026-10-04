@@ -8,13 +8,13 @@ WebTSR is a legal browser clone of [Unreal Engine Temporal Super Resolution](htt
 
 ## Live
 
-- Game (desktop Quality on by default, LOOK off): `http://127.0.0.1:8766/index.html?v=988`
-- Isolated SDK lab (no stage load, LOOK off): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=988`
-- Pause → **IMAGE** in-game: Off / DLAA / Quality / Balanced / Performance
-- Pause → **REFINE**: depth + velocity residual. Pause → **LOOK**: appearance residual.
-- Live UI never says “DLSS 5”. The control is IMAGE / TSR.
+- Game (desktop Quality + LOOK on): `http://127.0.0.1:8766/index.html?v=1011`
+- Live badge: **TSR QUALITY · REFINE · LOOK** (never “DLSS 5”)
+- Isolated SDK lab (LOOK off so you can A/B): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=988`
+- Pause → **IMAGE**: Off / DLAA / Quality / Balanced / Performance
+- Pause → **REFINE**: depth + velocity residual. Pause → **LOOK**: appearance residual (`APPEAR_DEFAULT` true on desktop).
 - `?tsr=off` forces native. `?recon=0` kills Refine. `?appear=0` kills Look.
-- **Phones / `?perf=low|min`:** skip WebTSR compile. Lazy FXAA (`createMobilePresent`). No WebGPU. Title stays a single present.
+- **Phones / `?perf=low|min`:** skip WebTSR compile. Lazy FXAA (`createMobilePresent`). No WebGPU. Badge reads FXAA.
 
 ## Pipeline
 
@@ -33,7 +33,7 @@ YCoCg AABB clip  →  accumulate
 depth + velocity-guided 3×3 residual  (REFINE)
         (no spatial sharpen along moving cars)
         ↓
-half-res appearance residual  (LOOK, opt-in)
+        half-res appearance residual  (LOOK, desktop on)
         3×3 edge / contact / sheen / bounce
         compose residual onto full-res TSR (never blit-replace)
         luma clamp · first two frames passthrough

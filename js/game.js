@@ -46,7 +46,7 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=989";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1011";
 import { createPerfTier } from "./gfx/perf-tier.js?v=54";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -7134,11 +7134,13 @@ export class RallyGame {
     // Race present through TSR: jittered low-res scene + temporal resolve, then
     // the normal post / pipeline path treats the reconstructed quad as the scene.
     this._armPresentLazy();
-    if (!onPad && !this.tsr && wantsHeavyWebTsr()) this._bootWebTsr();
-    if (!onPad && !this.mobilePresent && wantsMobilePresent()) this._bootMobilePresent();
+    if (!this.tsr && wantsHeavyWebTsr()) this._bootWebTsr();
+    if (!this.mobilePresent && wantsMobilePresent()) this._bootMobilePresent();
     const paused = this.state === "paused";
-    let useTsr = !!(this.tsr && this.tsr.active && !onPad && !countdownLite);
-    let wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
+    // Title, countdown, and race all present through WebTSR on desktop.
+    // Skipping the pad was why the player never saw the reconstruct stack.
+    let useTsr = !!(this.tsr && this.tsr.active);
+    let wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported);
     if (useTsr && !paused) {
       try {
         this._tsrRoots = this._tsrRoots || [];
@@ -7161,7 +7163,7 @@ export class RallyGame {
         this.appear = null;
         this._tsrBootFailed = true;
         useTsr = false;
-        wantMobile = !!(this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
+        wantMobile = !!(this.mobilePresent && this.mobilePresent.supported);
       }
     }
     if (!useTsr && wantMobile && !paused) {
@@ -7202,6 +7204,29 @@ export class RallyGame {
     }
     this.camera.layers.mask = prevMask;
     this._renderPovHudOverlay();
+    this._syncTsrBadge(useTsr, useMobile);
+  }
+
+  /**
+   * Live proof the reconstruct stack is the present path. Badge says TSR / LOOK.
+   * @param {boolean} useTsr
+   * @param {boolean} useMobile
+   */
+  _syncTsrBadge(useTsr, useMobile) {
+    const el = document.getElementById("tsr-badge");
+    if (!el) return;
+    if (useTsr && this.tsr) {
+      const mode = String(this.tsr.mode || "quality").toUpperCase();
+      const refine = this.recon && this.recon.enabled ? " · REFINE" : "";
+      const look = this.appear && this.appear.enabled ? " · LOOK" : "";
+      el.hidden = false;
+      el.textContent = `TSR ${mode}${refine}${look}`;
+    } else if (useMobile) {
+      el.hidden = false;
+      el.textContent = "FXAA";
+    } else {
+      el.hidden = true;
+    }
   }
 
   /**

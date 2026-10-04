@@ -25,11 +25,12 @@ export const APPEAR_STORAGE_KEY = "rally-appear-v1";
 export const APPEAR_BUDGET_MS = 1.8;
 export const APPEAR_LUMA_HEADROOM = 1.02;
 /**
- * Game default. Forest LOOK p50 was never proven ≤ 33 ms (G-buffer walk
- * ~47 ms then abort; compile spikes ~20 ms). Plan gate: default off.
- * `?appear=1` or Pause LOOK still opt in on desktop.
+ * Desktop default ON — this is the DLSS-class appearance residual the
+ * player asked to see. Phones never compile it (`wantsHeavyWebTsr`).
+ * `?appear=0` or Pause LOOK still kill it. G-buffer walk still aborts
+ * if it exceeds APPEAR_BUDGET_MS.
  */
-export const APPEAR_DEFAULT = false;
+export const APPEAR_DEFAULT = true;
 
 /**
  * @param {Iterable<string>|URLSearchParams|null} [debug]

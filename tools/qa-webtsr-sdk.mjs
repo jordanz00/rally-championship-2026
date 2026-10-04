@@ -4,7 +4,7 @@
  *
  * WHO THIS IS FOR: the WebTSR plan close-out. Proves createWebTsr +
  *   presentScene + appearance flag + G-buffer abort + luma clamp +
- *   no stacked RCAS + LOOK default off + mobile cheap present +
+ *   no stacked RCAS + LOOK default on (desktop) + mobile cheap present +
  *   no “DLSS 5” live label + no WebGPU-required phone path.
  * WHAT IT DOES: reads the SDK / upscaler / appearance / game / lab
  *   sources and fails on any missing contract line. No WebGL.
@@ -88,7 +88,7 @@ function main() {
   must(src.tsr.includes("TSR_DEFAULT_MODE = \"quality\""), "desktop IMAGE default is Quality");
   must(src.sdk.includes("TSR_CAR_HISTORY_KILL"), "SDK re-exports car history kill");
 
-  must(src.appear.includes("APPEAR_DEFAULT = false"), "APPEAR_DEFAULT false");
+  must(src.appear.includes("APPEAR_DEFAULT = true"), "APPEAR_DEFAULT true on desktop");
   must(src.appear.includes("APPEAR_LUMA_HEADROOM"), "luma headroom constant");
   must(src.appear.includes("float cap = srcL * uHeadroom"), "luma clamp in shader");
   must(src.appear.includes("Never stacked with TSR present RCAS"), "no stacked RCAS note");
@@ -108,7 +108,10 @@ function main() {
   must(src.game.includes("createWebTsr(this.renderer, {"), "game uses createWebTsr");
   must(src.game.includes("appearance: true"), "appearance handle created");
   must(src.game.includes("parseAppearParams()"), "?appear= flag");
-  must(src.game.includes("this.appear.enabled = appearOpts.enabled === true"), "LOOK off unless opted in");
+  must(src.game.includes("this.appear.enabled = appearOpts.enabled === true"), "LOOK follows parseAppearParams");
+  must(src.game.includes("Skipping the pad was why"), "title and race both present through TSR");
+  must(src.game.includes("_syncTsrBadge"), "live TSR badge");
+  must(src.html.includes('id="tsr-badge"'), "HUD TSR badge");
   must(src.game.includes("inner.writeNormals = !!(this.appear && this.appear.enabled)"), "boot normals follow LOOK");
   must(src.game.includes("skipPresentSharp"), "game skips present RCAS with LOOK");
   must(src.game.includes("_bootWebTsr()"), "desktop TSR lazy boot");
@@ -118,7 +121,7 @@ function main() {
   must(src.game.includes("presentScene"), "race uses presentScene");
 
   must(src.html.includes('id="opt-appear"'), "Pause LOOK checkbox");
-  must(/id="opt-appear-val">OFF/.test(src.html), "Pause LOOK label starts OFF");
+  must(/id="opt-appear-val">ON/.test(src.html), "Pause LOOK label starts ON");
   must(!/DLSS\s*5/i.test(src.html), "live UI never says DLSS 5");
   must(!/DLSS\s*5/i.test(src.lab), "lab never says DLSS 5");
   must(!/DLSS\s*5/i.test(src.game), "game never says DLSS 5");
@@ -127,9 +130,9 @@ function main() {
   const gameV = Number((src.main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
   const sdkV = Number((src.game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) || [])[1] || 0);
   const tsrV = Number((src.sdk.match(/tsr-upscaler\.js\?v=(\d+)/) || [])[1] || 0);
-  must(mainV >= 988, `index boots main.js?v=${mainV} (>=988)`);
-  must(gameV >= 988, `main imports game.js?v=${gameV} (>=988)`);
-  must(sdkV >= 988, `game imports SDK ?v=${sdkV} (>=988)`);
+  must(mainV >= 1011, `index boots main.js?v=${mainV} (>=1011)`);
+  must(gameV >= 1011, `main imports game.js?v=${gameV} (>=1011)`);
+  must(sdkV >= 1011, `game imports SDK ?v=${sdkV} (>=1011)`);
   must(tsrV >= 988, `SDK imports tsr-upscaler.js?v=${tsrV} (>=988)`);
 
   must(src.lab.includes("createWebTsr"), "lab uses createWebTsr");
@@ -137,7 +140,8 @@ function main() {
   must(src.lab.includes("recon.appear.enabled = false"), "lab forces appear off at boot");
   must(/browser-reconstruct-sdk\/index\.js\?v=988/.test(src.lab), "lab cache-bust 988");
 
-  must(src.docs.includes("APPEAR_DEFAULT"), "WEBTSR.md records default off");
+  must(src.docs.includes("APPEAR_DEFAULT"), "WEBTSR.md records APPEAR_DEFAULT");
+  must(src.docs.includes("LOOK on") || src.docs.includes("LOOK ON") || src.docs.includes("LOOK is on"), "WEBTSR.md records desktop LOOK on");
   must(src.docs.includes("Not cloned"), "WEBTSR.md records no frame generation");
   must(src.docs.includes("mobile") || src.docs.includes("phone") || src.docs.includes("iPhone"), "WEBTSR.md records phone path");
   must(src.docs.includes("createMobilePresent") || src.docs.includes("FXAA"), "WEBTSR.md records cheap phone present");

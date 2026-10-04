@@ -787,6 +787,25 @@ button.ghost {
   text-shadow: 0 2px 0 #000;
 }
 
+#tsr-badge {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 4px 10px;
+  font: 700 10px/1.2 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.16em;
+  color: #f4f0e0;
+  background: rgba(8, 12, 10, 0.62);
+  border: 1px solid rgba(244, 240, 224, 0.35);
+  pointer-events: none;
+}
+
+#tsr-badge[hidden] {
+  display: none !important;
+}
+
 .hud-top [hidden] {
   display: none;
 }

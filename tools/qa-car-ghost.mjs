@@ -67,7 +67,7 @@ function main() {
   must(src.sdk.includes("TSR_CAR_HISTORY_KILL"), "SDK exports car kill");
   must(src.sdk.includes("if (roots && typeof tsr.setDynamicRoots"), "SDK applies dynamicRoots each frame");
 
-  must(src.appear.includes("APPEAR_DEFAULT = false"), "LOOK stays default-off");
+  must(src.appear.includes("APPEAR_DEFAULT = true"), "LOOK default on; car history still killed");
   must(!/AfterimagePass|UnrealBloom.*ghost|motionBlur|MotionBlur|Afterimage/.test(src.post), "postfx has no afterimage / motion blur");
   must(src.fade.includes("VISUAL.packSeeThrough === true"), "pack see-through stays opt-in");
 
