@@ -12,6 +12,14 @@ import {
   unwrapAngle,
   snapReplayBody,
   lerpReplayBody,
+  BROADCAST_SHOTS,
+  SHOT_HOLD,
+  composeBroadcastShot,
+  playerInBroadcastFrame,
+  lookTargetsPlayer,
+  playerNdc,
+  FRAME_NDC_X,
+  FRAME_NDC_Y,
 } from "../js/cinema/broadcast-replay.js";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -123,6 +131,83 @@ for (let i = 0; i < 240; i++) {
 }
 check("director cuts more than one shot", kinds.size >= 2);
 check("fade used", faded || dir.reduced);
+
+check("shot vocab has 8 cinematic setups", BROADCAST_SHOTS.length >= 8);
+const holdsOk = BROADCAST_SHOTS.every((k) => SHOT_HOLD[k] >= 1.2 && SHOT_HOLD[k] <= 2.5);
+check("holds are 1.2–2.5 s", holdsOk);
+
+function poseAtProgress(progress, extras) {
+  return {
+    t: 1,
+    x: progress,
+    y: 1.2,
+    z: 0,
+    yaw: 0,
+    pitch: 0,
+    roll: 0,
+    speed: 28,
+    progress,
+    gear: 3,
+    steer: 0.1,
+    brake: 0,
+    handbrake: 0,
+    yawRate: 0,
+    ...(extras || {}),
+  };
+}
+
+const samplePoses = [
+  mid,
+  poseAtProgress(80),
+  poseAtProgress(250),
+  poseAtProgress(510, { yawRate: 0.8 }),
+];
+let framed = 0;
+let emptyLook = 0;
+for (const kind of BROADCAST_SHOTS) {
+  for (const pose of samplePoses) {
+    const layout = composeBroadcastShot(kind, pose, track);
+    if (!lookTargetsPlayer(layout, pose)) emptyLook += 1;
+    if (playerInBroadcastFrame(layout, pose, { kind })) framed += 1;
+    else {
+      check(`${kind} frames player at ${pose.progress | 0}`, false);
+    }
+  }
+}
+check("every shot looks at the player hull", emptyLook === 0);
+check("every sampled pose keeps the player in frustum", framed === BROADCAST_SHOTS.length * samplePoses.length);
+
+const emptyRoad = {
+  eyeX: 0,
+  eyeY: 42,
+  eyeZ: 0,
+  lookX: 380,
+  lookY: 28,
+  lookZ: 40,
+  fov: 40,
+};
+check("empty-road look-at fails the player test", !lookTargetsPlayer(emptyRoad, mid));
+check("sky-only pose fails the frustum test", !playerInBroadcastFrame(emptyRoad, mid, { kind: "heli" }));
+check("NDC margins are the hard rule", FRAME_NDC_X <= 0.72 && FRAME_NDC_Y <= 0.78);
+
+const dir2 = new BroadcastDirector(track, tape, { reducedMotion: false, aspect: 16 / 9 });
+dir2.snapTo(mid);
+let lost = 0;
+const seen = new Set();
+for (let i = 0; i < 360; i++) {
+  const pose = tape.poseAt((i * 0.05) % tape.duration());
+  dir2.update(0.05, pose);
+  seen.add(dir2.kind);
+  if (dir2.fade < 0.55) {
+    const lay = dir2.layout();
+    if (!lookTargetsPlayer(lay, pose) || !playerInBroadcastFrame(lay, pose, { kind: dir2.kind, aspect: dir2.aspect })) {
+      lost += 1;
+    }
+  }
+}
+check("director visits several cinematic kinds", seen.size >= 4);
+check("live director never empties the frame", lost === 0);
+check("snapTo keeps a finite player NDC", Number.isFinite(playerNdc(dir2.layout(), mid).x));
 
 const startFn = (gameSrc.match(/_startBroadcastReplay\(\) \{[\s\S]*?\n  \}/) || [])[0] || "";
 check("replay spawn keeps pack visible", /_setPackVisible\(true\)/.test(startFn));

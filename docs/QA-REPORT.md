@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Result replay — player-centric cinema (2026-10-04)
+
+**Player moment:** Stage result TV replay. Cuts land on the hero car — bumper, chase, side fly-by, helicopter, nose-on, rear three-quarter, crane, tunnel/crest hero. No empty-road, sky-only, or rival-only frames.
+
+**Cause:** Holds were 4–6 s and look-at sat metres down the ribbon, so a locked/tracking shot could show asphalt or sky while the Celica sat off-screen.
+
+**Fix:** Eight cinematic setups, hold 1.2–2.5 s. Look-at is the player hull plus a short velocity lead. After every pose the hull must project inside the frustum (`|ndc.x| < 0.72`, `|ndc.y| < 0.78`; tighter hero box for centered shots). A candidate that loses the player is rejected. Fly-by parks the eye and pans with the hull. Pack tape, fresh trails, opaque replay paint, attract reel `v=9`, and TSR car-history kill stay as shipped.
+
+**Proof:** `node tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=989` · `game.js?v=989` · `broadcast-replay.js?v=7`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=989
+
 ## Live car ghost / smear (2026-10-04)
 
 **Player moment:** Chase cam, Celica or a rival. One solid body — not a smear, double image, or trailing hull.

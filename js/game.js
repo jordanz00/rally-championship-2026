@@ -144,7 +144,7 @@ function raceTunnelLighting(courseId) {
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
-import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=6";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=7";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=9";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -4128,7 +4128,10 @@ export class RallyGame {
     }
     const reduced =
       typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.broadcast = new BroadcastDirector(this.track, this.replayTape, { reducedMotion: reduced });
+    this.broadcast = new BroadcastDirector(this.track, this.replayTape, {
+      reducedMotion: reduced,
+      aspect: this.camera && this.camera.aspect > 0.2 ? this.camera.aspect : 16 / 9,
+    });
     if (!this.broadcast.ready) {
       this.broadcast = null;
       return;
@@ -4399,6 +4402,7 @@ export class RallyGame {
     const shot = this.broadcast.update(dt, pose);
     const cam = this.camera;
     if (cam) {
+      if (cam.aspect > 0.2) this.broadcast.aspect = cam.aspect;
       cam.position.set(this.broadcast.eyeX, this.broadcast.eyeY, this.broadcast.eyeZ);
       cam.lookAt(this.broadcast.lookX, this.broadcast.lookY, this.broadcast.lookZ);
       const fov = Math.max(28, Math.min(58, this.broadcast.fov));

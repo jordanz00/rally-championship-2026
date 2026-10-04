@@ -3,36 +3,76 @@
  *
  * WHO THIS IS FOR: the Stage Result screen.
  * WHAT IT DOES: records the live pack at 20 Hz (player + every rival), plays
- *   it back exactly, and cuts a director between trackside towers, chase,
- *   crane, and approach shots with fades. Does not step Vehicle physics.
+ *   it back exactly, and cuts a player-centric director (bumper / chase /
+ *   fly-by / heli / nose-on / three-quarter / crane / tunnel-crest hero).
+ *   Every locked shot keeps the hero hull in the frustum. Does not step
+ *   Vehicle physics.
  * HOW IT CONNECTS: game.js records during race, ticks the director on result.
  */
 
 const SAMPLE_HZ = 20;
 const MAX_SAMPLES = 16000;
-const FADE_OUT = 0.22;
-const FADE_IN = 0.34;
-const BLEND_SEC = 0.92;
+const FADE_OUT = 0.18;
+const FADE_IN = 0.28;
+const BLEND_SEC = 0.55;
+const HOLD_MIN = 1.2;
+const HOLD_MAX = 2.5;
+const DEFAULT_ASPECT = 16 / 9;
 
-const SHOT_HOLD = {
-  heli: 6.2,
-  moto: 5.0,
-  tower: 4.6,
-  front: 3.9,
-  lowside: 4.9,
-  crane: 5.6,
-  wall: 5.2,
+/** Hull aim point above the taped contact patch. */
+export const HULL_Y = 0.62;
+
+/** NDC margin — player must sit inside this after every pose. */
+export const FRAME_NDC_X = 0.72;
+export const FRAME_NDC_Y = 0.78;
+
+/** Tighter box for centered / tracking / hero shots. */
+export const HERO_NDC_X = 0.46;
+export const HERO_NDC_Y = 0.52;
+
+/** Look-at must stay on the hull, not an empty ribbon or the sky. */
+export const LOOK_PLAYER_M = 7.5;
+
+/**
+ * Eight cinematic setups. Fly-by may lead; the rest are hero-centered.
+ * @type {readonly string[]}
+ */
+export const BROADCAST_SHOTS = Object.freeze([
+  "bumper",
+  "chase",
+  "flyby",
+  "heli",
+  "nose",
+  "threeq",
+  "crane",
+  "hero",
+]);
+
+export const HERO_SHOTS = new Set(["bumper", "chase", "heli", "nose", "threeq", "crane", "hero"]);
+
+export const SHOT_HOLD = {
+  bumper: 1.55,
+  chase: 1.85,
+  flyby: 1.35,
+  heli: 2.15,
+  nose: 1.5,
+  threeq: 1.9,
+  crane: 2.2,
+  hero: 2.0,
 };
 
-const SHOT_LABEL = {
+export const SHOT_LABEL = {
+  bumper: "BUMPER CAM",
+  chase: "CHASE CAM",
+  flyby: "FLY-BY",
   heli: "HELICOPTER",
-  moto: "CHASE CAM",
-  tower: "TRACKSIDE",
-  front: "HEAD-ON",
-  lowside: "LOW SIDE",
+  nose: "NOSE-ON",
+  threeq: "THREE-QUARTER",
   crane: "CRANE",
-  wall: "TUNNEL CAM",
+  hero: "HERO",
 };
+
+const SHOT_CYCLE = ["heli", "bumper", "threeq", "nose", "flyby", "crane", "chase", "hero"];
 
 /**
  * @typedef {{x:number,y:number,z:number,yaw:number,pitch:number,roll:number,speed:number,progress:number,steer:number,brake:number,handbrake:number}} ReplayRivalSample
@@ -265,19 +305,294 @@ export function buildBroadcastTowers(track) {
 }
 
 /**
+ * Forward / lateral axes from taped yaw.
+ * @param {number} yaw
+ * @returns {{fx:number,fz:number,nx:number,nz:number}}
+ */
+export function headingAxes(yaw) {
+  const fx = Math.sin(yaw || 0);
+  const fz = Math.cos(yaw || 0);
+  return { fx, fz, nx: -fz, nz: fx };
+}
+
+/**
+ * @param {string} kind
+ * @param {ReplaySample} pose
+ * @returns {number}
+ */
+function shotSide(kind, pose) {
+  const rate = pose && pose.yawRate;
+  if (Number.isFinite(rate) && Math.abs(rate) > 0.12) return rate > 0 ? 1 : -1;
+  const seed = ((kind && kind.charCodeAt(0)) || 0) + Math.floor((pose && pose.progress) || 0);
+  return seed & 1 ? 1 : -1;
+}
+
+/**
+ * Hold 1.2–2.5 s then cut.
+ * @param {string} kind
+ * @returns {number}
+ */
+export function rollShotHold(kind) {
+  const base = SHOT_HOLD[kind] || 1.7;
+  return Math.min(HOLD_MAX, Math.max(HOLD_MIN, base * (0.9 + Math.random() * 0.2)));
+}
+
+/**
+ * Compose one shot. Look-at is the player hull plus a short velocity lead
+ * so the car sits in frame instead of behind the lens.
+ * @param {string} kind
+ * @param {ReplaySample} pose
+ * @param {object|null} track
+ * @param {{side?:number,flyEye?:{x:number,y:number,z:number},scratch?:object}} [opts]
+ * @returns {{eyeX:number,eyeY:number,eyeZ:number,lookX:number,lookY:number,lookZ:number,fov:number,lead:number,kind:string}}
+ */
+export function composeBroadcastShot(kind, pose, track, opts) {
+  const axes = headingAxes(pose.yaw);
+  const scratch = (opts && opts.scratch) || {};
+  const road = track && track.sample ? track.sample(pose.progress || 0, scratch) : null;
+  const fx = axes.fx;
+  const fz = axes.fz;
+  const nx = road && Number.isFinite(road.nx) ? road.nx : axes.nx;
+  const nz = road && Number.isFinite(road.nz) ? road.nz : axes.nz;
+  const deck = road && Number.isFinite(road.y) ? Math.max(pose.y, road.y + 0.28) : pose.y;
+  const tunnel = !!(road && road.tunnel);
+  const side = Number.isFinite(opts && opts.side) ? opts.side : shotSide(kind, pose);
+  const shot = BROADCAST_SHOTS.includes(kind) ? kind : "chase";
+
+  let lead = 1.55;
+  let back = 7.6;
+  let ahead = 0;
+  let lat = 1.05;
+  let up = 1.72;
+  let fov = 48;
+  if (shot === "bumper") {
+    lead = 1.45;
+    back = 4.35;
+    lat = 0.42;
+    up = 0.88;
+    fov = 50;
+  } else if (shot === "chase") {
+    lead = 2.0;
+    back = 7.6;
+    lat = 1.05;
+    up = 1.72;
+    fov = 48;
+  } else if (shot === "heli") {
+    lead = 1.7;
+    back = 11.8;
+    lat = 5.1;
+    up = 6.55;
+    fov = 40;
+  } else if (shot === "threeq") {
+    lead = 1.5;
+    back = 6.1;
+    lat = 4.7;
+    up = 1.48;
+    fov = 44;
+  } else if (shot === "crane") {
+    lead = 1.35;
+    back = 3.2;
+    lat = 11.2;
+    up = 9.6;
+    fov = 38;
+  } else if (shot === "hero") {
+    if (tunnel) {
+      lead = 1.15;
+      back = 5.4;
+      lat = 1.45;
+      up = 1.38;
+      fov = 46;
+    } else {
+      lead = 1.85;
+      back = 8.2;
+      lat = 3.1;
+      up = 3.5;
+      fov = 42;
+    }
+  } else if (shot === "nose") {
+    lead = 0.4;
+    back = 0;
+    ahead = 15.2;
+    lat = 0.28;
+    up = 1.38;
+    fov = 36;
+  } else if (shot === "flyby") {
+    lead = 2.35;
+    back = -6.4;
+    lat = 10.1;
+    up = 1.18;
+    fov = 40;
+  }
+
+  const lookX = pose.x + fx * lead;
+  const lookY = pose.y + HULL_Y;
+  const lookZ = pose.z + fz * lead;
+
+  if (shot === "flyby" && opts && opts.flyEye) {
+    return {
+      eyeX: opts.flyEye.x,
+      eyeY: opts.flyEye.y,
+      eyeZ: opts.flyEye.z,
+      lookX,
+      lookY,
+      lookZ,
+      fov,
+      lead,
+      kind: shot,
+    };
+  }
+
+  let eyeX = pose.x + fx * (ahead - back) + nx * lat * side;
+  let eyeY = deck + up;
+  let eyeZ = pose.z + fz * (ahead - back) + nz * lat * side;
+  const hx = pose.x;
+  const hy = pose.y + HULL_Y;
+  const hz = pose.z;
+  const dx = eyeX - hx;
+  const dy = eyeY - hy;
+  const dz = eyeZ - hz;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 3.4) {
+    const s = 3.4 / Math.max(dist, 0.2);
+    eyeX = hx + dx * s;
+    eyeY = hy + dy * s;
+    eyeZ = hz + dz * s;
+  }
+  return { eyeX, eyeY, eyeZ, lookX, lookY, lookZ, fov, lead, kind: shot };
+}
+
+/**
+ * Project a world point into NDC for a lookAt + vertical-FOV camera.
+ * @returns {{x:number,y:number,z:number,visible:boolean}}
+ */
+export function projectWorldToNdc(wx, wy, wz, eyeX, eyeY, eyeZ, lookX, lookY, lookZ, fovDeg, aspect) {
+  const zax = eyeX - lookX;
+  const zay = eyeY - lookY;
+  const zaz = eyeZ - lookZ;
+  const zl = Math.hypot(zax, zay, zaz) || 1;
+  let zx = zax / zl;
+  let zy = zay / zl;
+  let zz = zaz / zl;
+  let ux = 0;
+  let uy = 1;
+  let uz = 0;
+  let xx = uy * zz - uz * zy;
+  let xy = uz * zx - ux * zz;
+  let xz = ux * zy - uy * zx;
+  let xl = Math.hypot(xx, xy, xz);
+  if (xl < 1e-6) {
+    ux = 0;
+    uy = 0;
+    uz = 1;
+    xx = uy * zz - uz * zy;
+    xy = uz * zx - ux * zz;
+    xz = ux * zy - uy * zx;
+    xl = Math.hypot(xx, xy, xz);
+  }
+  xx /= xl || 1;
+  xy /= xl || 1;
+  xz /= xl || 1;
+  const yx = zy * xz - zz * xy;
+  const yy = zz * xx - zx * xz;
+  const yz = zx * xy - zy * xx;
+  const px = wx - eyeX;
+  const py = wy - eyeY;
+  const pz = wz - eyeZ;
+  const vx = xx * px + xy * py + xz * pz;
+  const vy = yx * px + yy * py + yz * pz;
+  const vz = zx * px + zy * py + zz * pz;
+  if (!(vz < -1e-4)) return { x: 99, y: 99, z: vz, visible: false };
+  const fov = ((Number.isFinite(fovDeg) ? fovDeg : 42) * Math.PI) / 180;
+  const sy = 1 / Math.tan(fov * 0.5);
+  const sx = sy / (aspect > 0.2 ? aspect : DEFAULT_ASPECT);
+  return { x: (vx * sx) / -vz, y: (vy * sy) / -vz, z: vz, visible: true };
+}
+
+/**
+ * @param {{eyeX:number,eyeY:number,eyeZ:number,lookX:number,lookY:number,lookZ:number,fov:number}} layout
+ * @param {ReplaySample} pose
+ * @param {number} [aspect]
+ */
+export function playerNdc(layout, pose, aspect) {
+  return projectWorldToNdc(
+    pose.x,
+    pose.y + HULL_Y,
+    pose.z,
+    layout.eyeX,
+    layout.eyeY,
+    layout.eyeZ,
+    layout.lookX,
+    layout.lookY,
+    layout.lookZ,
+    layout.fov,
+    aspect || DEFAULT_ASPECT
+  );
+}
+
+/**
+ * Hard rule: hero hull must project inside the view with a margin.
+ * Centered / tracking shots use the tighter hero box.
+ * @param {{eyeX:number,eyeY:number,eyeZ:number,lookX:number,lookY:number,lookZ:number,fov:number}} layout
+ * @param {ReplaySample} pose
+ * @param {{kind?:string,aspect?:number}} [opts]
+ * @returns {boolean}
+ */
+export function playerInBroadcastFrame(layout, pose, opts) {
+  if (!layout || !pose || !Number.isFinite(layout.eyeX) || !Number.isFinite(layout.lookX)) return false;
+  const ndc = playerNdc(layout, pose, opts && opts.aspect);
+  if (!ndc.visible) return false;
+  const kind = (opts && opts.kind) || layout.kind || "";
+  const hero = HERO_SHOTS.has(kind);
+  const mx = hero ? HERO_NDC_X : FRAME_NDC_X;
+  const my = hero ? HERO_NDC_Y : FRAME_NDC_Y;
+  return Math.abs(ndc.x) < mx && Math.abs(ndc.y) < my;
+}
+
+/**
+ * Reject empty-road / sky look-at — the aim point must sit on the hull.
+ * @param {{lookX:number,lookY:number,lookZ:number}} layout
+ * @param {ReplaySample} pose
+ * @param {number} [maxM]
+ * @returns {boolean}
+ */
+export function lookTargetsPlayer(layout, pose, maxM) {
+  if (!layout || !pose || !Number.isFinite(layout.lookX)) return false;
+  const dx = layout.lookX - pose.x;
+  const dy = layout.lookY - (pose.y + HULL_Y);
+  const dz = layout.lookZ - pose.z;
+  return Math.hypot(dx, dy, dz) <= (maxM || LOOK_PLAYER_M);
+}
+
+/**
+ * @param {string} kind
+ * @param {ReplaySample} pose
+ * @param {object|null} track
+ * @param {{aspect?:number,side?:number,flyEye?:{x:number,y:number,z:number},scratch?:object}} [opts]
+ */
+export function shotFramesPlayer(kind, pose, track, opts) {
+  const layout = composeBroadcastShot(kind, pose, track, opts);
+  return (
+    lookTargetsPlayer(layout, pose) &&
+    playerInBroadcastFrame(layout, pose, { kind, aspect: opts && opts.aspect })
+  );
+}
+
+/**
  * TV director: picks shots, fades, and returns a camera pose.
+ * Rejects any layout that would lose the player car.
  */
 export class BroadcastDirector {
   /**
    * @param {object} track
    * @param {ReplayTape} tape
-   * @param {{reducedMotion?:boolean}} [opts]
+   * @param {{reducedMotion?:boolean,aspect?:number}} [opts]
    */
   constructor(track, tape, opts) {
     this.track = track;
     this.tape = tape;
     this.towers = buildBroadcastTowers(track);
     this.reduced = !!(opts && opts.reducedMotion);
+    this.aspect = opts && opts.aspect > 0.2 ? opts.aspect : DEFAULT_ASPECT;
     this.kind = "heli";
     this.shotT = 0;
     this.hold = SHOT_HOLD.heli;
@@ -285,7 +600,8 @@ export class BroadcastDirector {
     this.phase = "in";
     this.phaseT = 0;
     this._road = {};
-    this._ahead = {};
+    this._side = 1;
+    this._flyEye = null;
     this.eyeX = 0;
     this.eyeY = 8;
     this.eyeZ = 0;
@@ -316,20 +632,31 @@ export class BroadcastDirector {
   }
 
   /**
+   * Live eye/look as a layout for the frustum test.
+   * @returns {{eyeX:number,eyeY:number,eyeZ:number,lookX:number,lookY:number,lookZ:number,fov:number,kind:string}}
+   */
+  layout() {
+    return {
+      eyeX: this.eyeX,
+      eyeY: this.eyeY,
+      eyeZ: this.eyeZ,
+      lookX: this.lookX,
+      lookY: this.lookY,
+      lookZ: this.lookZ,
+      fov: this.fov,
+      kind: this.kind,
+    };
+  }
+
+  /**
    * @param {ReplaySample} pose
    */
   snapTo(pose) {
+    if (!this._shotOk(this.kind, pose)) {
+      this.kind = this._pickKind(pose);
+    }
     this._compose(this.kind, pose);
-    this.eyeX = this._tx;
-    this.eyeY = this._ty;
-    this.eyeZ = this._tz;
-    this.lookX = this._lx;
-    this.lookY = this._ly;
-    this.lookZ = this._lz;
-    this.fov = this._tfov;
-    this._vx = this._vy = this._vz = 0;
-    this._vlx = this._vly = this._vlz = 0;
-    this._vfov = 0;
+    this._snapEye();
     this.fade = this.phase === "in" ? 1 : 0;
   }
 
@@ -347,7 +674,7 @@ export class BroadcastDirector {
       this._beginCut(pose);
     }
     this._stepPhase(dt, pose);
-    this._follow(dt);
+    this._follow(dt, pose);
     return { fade: this.fade, label: this.label(), kind: this.kind };
   }
 
@@ -356,19 +683,24 @@ export class BroadcastDirector {
    * @returns {boolean}
    */
   _mustCut(pose) {
-    if (this.kind === "front") {
-      const road = this.track && this.track.sample
-        ? this.track.sample(pose.progress + 22, this._ahead)
-        : null;
-      if (road) {
-        const dx = pose.x - road.x;
-        const dz = pose.z - road.z;
-        if (dx * dx + dz * dz < 64) return true;
-      }
+    const next = {
+      eyeX: this._tx,
+      eyeY: this._ty,
+      eyeZ: this._tz,
+      lookX: this._lx,
+      lookY: this._ly,
+      lookZ: this._lz,
+      fov: this._tfov,
+      kind: this.kind,
+    };
+    if (!lookTargetsPlayer(next, pose) || !playerInBroadcastFrame(next, pose, { kind: this.kind, aspect: this.aspect })) {
+      return true;
     }
-    if (this.kind === "tower") {
-      const tw = this._nearestTower(pose.progress, 0, 18);
-      if (tw && pose.progress > tw.dist + 16) return true;
+    if (this.kind === "nose") {
+      const dx = pose.x - this._tx;
+      const dy = pose.y + HULL_Y - this._ty;
+      const dz = pose.z - this._tz;
+      if (dx * dx + dy * dy + dz * dz < 7.2 * 7.2) return true;
     }
     return false;
   }
@@ -377,13 +709,15 @@ export class BroadcastDirector {
    * @param {ReplaySample} pose
    */
   _beginCut(pose) {
+    const prev = this.kind;
     const next = this._pickKind(pose);
-    const followish =
-      (this.kind === "heli" || this.kind === "moto" || this.kind === "lowside") &&
-      (next === "heli" || next === "moto" || next === "lowside");
+    this._flyEye = null;
+    this._side = shotSide(next, pose);
     this.kind = next;
     this.shotT = 0;
-    this.hold = (SHOT_HOLD[next] || 5) * (0.88 + Math.random() * 0.22);
+    this.hold = rollShotHold(next);
+    const followish =
+      HERO_SHOTS.has(prev) && HERO_SHOTS.has(next) && prev !== "nose" && next !== "nose";
     if (this.reduced || !followish) {
       this.phase = "out";
       this.phaseT = 0;
@@ -423,6 +757,7 @@ export class BroadcastDirector {
   }
 
   /**
+   * First candidate that keeps the player in frame wins.
    * @param {ReplaySample} pose
    * @returns {string}
    */
@@ -433,39 +768,54 @@ export class BroadcastDirector {
     const tunnel = !!(road && road.tunnel);
     const jump = !!(road && road.jump);
     const prev = this.kind;
-    let next;
-    if (tunnel) next = prev === "wall" ? "moto" : "wall";
-    else if (jump) next = "lowside";
-    else if (Math.abs(pose.yawRate || 0) > 0.62) next = prev === "crane" ? "heli" : "crane";
+    const prefs = [];
+    if (tunnel) prefs.push("hero", "bumper", "chase");
+    else if (jump) prefs.push("hero", "crane", "threeq");
+    else if (Math.abs(pose.yawRate || 0) > 0.62) prefs.push("crane", "flyby", "threeq");
     else {
-      const cycle = ["heli", "tower", "moto", "front", "lowside", "crane"];
-      const i = cycle.indexOf(prev);
-      next = cycle[(i + 1 + (Math.random() < 0.25 ? 1 : 0)) % cycle.length];
+      const i = SHOT_CYCLE.indexOf(prev);
+      const start = i >= 0 ? (i + 1) % SHOT_CYCLE.length : 0;
+      const skip = Math.random() < 0.22 ? 1 : 0;
+      for (let k = 0; k < SHOT_CYCLE.length; k++) {
+        prefs.push(SHOT_CYCLE[(start + skip + k) % SHOT_CYCLE.length]);
+      }
     }
-    if (next === "tower" && !this._nearestTower(pose.progress, 8, 70)) next = "heli";
-    if (next === prev && !tunnel) next = prev === "heli" ? "moto" : "heli";
-    return next;
+    for (let i = 0; i < SHOT_CYCLE.length; i++) {
+      const k = SHOT_CYCLE[i];
+      if (!prefs.includes(k)) prefs.push(k);
+    }
+    for (let i = 0; i < prefs.length; i++) {
+      const next = prefs[i];
+      if (next === prev && prefs.length > 1) continue;
+      if (this._shotOk(next, pose, true)) return next;
+    }
+    return "chase";
   }
 
   /**
-   * @param {number} progress
-   * @param {number} behind
-   * @param {number} ahead
+   * @param {string} kind
+   * @param {ReplaySample} pose
+   * @param {boolean} [fresh]
+   * @returns {boolean}
    */
-  _nearestTower(progress, behind, ahead) {
-    let best = null;
-    let bestD = 1e9;
-    for (let i = 0; i < this.towers.length; i++) {
-      const tw = this.towers[i];
-      const d = tw.dist - progress;
-      if (d < -behind || d > ahead) continue;
-      const score = Math.abs(d - 32);
-      if (score < bestD) {
-        bestD = score;
-        best = tw;
-      }
-    }
-    return best;
+  _shotOk(kind, pose, fresh) {
+    return shotFramesPlayer(kind, pose, this.track, {
+      aspect: this.aspect,
+      side: this._side,
+      flyEye: !fresh && kind === "flyby" ? this._flyEye : null,
+      scratch: this._road,
+    });
+  }
+
+  /**
+   * @param {ReplaySample} pose
+   * @returns {boolean}
+   */
+  _eyeFramesPlayer(pose) {
+    return (
+      lookTargetsPlayer(this.layout(), pose) &&
+      playerInBroadcastFrame(this.layout(), pose, { kind: this.kind, aspect: this.aspect })
+    );
   }
 
   /**
@@ -473,118 +823,50 @@ export class BroadcastDirector {
    * @param {ReplaySample} pose
    */
   _compose(kind, pose) {
-    const fx = Math.sin(pose.yaw);
-    const fz = Math.cos(pose.yaw);
-    const road = this.track && this.track.sample
-      ? this.track.sample(pose.progress, this._road)
-      : null;
-    const nx = road ? road.nx : -fz;
-    const nz = road ? road.nz : fx;
-    const deck = road ? Math.max(pose.y, road.y + 0.35) : pose.y;
-    const lookY = deck + 0.85;
-    if (kind === "heli") {
-      this._tx = pose.x - fx * 11.5 + nx * 5.4;
-      this._ty = deck + 7.6;
-      this._tz = pose.z - fz * 11.5 + nz * 5.4;
-      this._lx = pose.x + fx * 5;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 5;
-      this._tfov = 42;
-    } else if (kind === "moto") {
-      this._tx = pose.x - fx * 8.2 + nx * 1.15;
-      this._ty = deck + 1.85;
-      this._tz = pose.z - fz * 8.2 + nz * 1.15;
-      this._lx = pose.x + fx * 8;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 8;
-      this._tfov = 48;
-    } else if (kind === "lowside") {
-      this._tx = pose.x - fx * 3.4 + nx * 7.2;
-      this._ty = deck + 1.7;
-      this._tz = pose.z - fz * 3.4 + nz * 7.2;
-      this._lx = pose.x + fx * 3;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 3;
-      this._tfov = 44;
-    } else if (kind === "crane") {
-      this._tx = pose.x - fx * 4 + nx * 14;
-      this._ty = deck + 11.5;
-      this._tz = pose.z - fz * 4 + nz * 14;
-      this._lx = pose.x + fx * 2;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 2;
-      this._tfov = 40;
-    } else if (kind === "front") {
-      const ahead = this.track && this.track.sample
-        ? this.track.sample(pose.progress + 20, this._ahead)
-        : null;
-      if (ahead) {
-        this._tx = ahead.x;
-        this._ty = Math.max(ahead.y, deck) + 1.85;
-        this._tz = ahead.z;
-      } else {
-        this._tx = pose.x + fx * 20;
-        this._ty = deck + 1.85;
-        this._tz = pose.z + fz * 20;
-      }
-      this._lx = pose.x;
-      this._ly = lookY;
-      this._lz = pose.z;
-      this._tfov = 38;
-    } else if (kind === "wall") {
-      const lat = road && road.width ? road.width * 0.38 : 4;
-      this._tx = pose.x + nx * lat;
-      this._ty = deck + 2.05;
-      this._tz = pose.z + nz * lat;
-      this._lx = pose.x + fx * 6;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 6;
-      this._tfov = 50;
-    } else {
-      const tw = this._nearestTower(pose.progress, 12, 78) || this.towers[0];
-      if (tw) {
-        this._tx = tw.x;
-        this._ty = Math.max(tw.y, deck + 3.2);
-        this._tz = tw.z;
-      } else {
-        this._tx = pose.x + nx * 11;
-        this._ty = deck + 4.4;
-        this._tz = pose.z + nz * 11;
-      }
-      this._lx = pose.x + fx * 4;
-      this._ly = lookY;
-      this._lz = pose.z + fz * 4;
-      this._tfov = 36;
+    if (kind !== "flyby") this._flyEye = null;
+    const layout = composeBroadcastShot(kind, pose, this.track, {
+      side: this._side,
+      flyEye: kind === "flyby" ? this._flyEye : null,
+      scratch: this._road,
+    });
+    if (kind === "flyby" && !this._flyEye) {
+      this._flyEye = { x: layout.eyeX, y: layout.eyeY, z: layout.eyeZ };
     }
+    this._tx = layout.eyeX;
+    this._ty = layout.eyeY;
+    this._tz = layout.eyeZ;
+    this._lx = layout.lookX;
+    this._ly = layout.lookY;
+    this._lz = layout.lookZ;
+    this._tfov = layout.fov;
+  }
+
+  _snapEye() {
+    this.eyeX = this._tx;
+    this.eyeY = this._ty;
+    this.eyeZ = this._tz;
+    this.lookX = this._lx;
+    this.lookY = this._ly;
+    this.lookZ = this._lz;
+    this.fov = this._tfov;
+    this._vx = this._vy = this._vz = 0;
+    this._vlx = this._vly = this._vlz = 0;
+    this._vfov = 0;
   }
 
   /**
-   * Critically-ish damped follow so cuts do not snap the lens.
+   * Locked tracking for hero shots so damping cannot empty the frame.
+   * Blend damps, then snaps if the hull would leave.
    * @param {number} dt
+   * @param {ReplaySample} pose
    */
-  _follow(dt) {
+  _follow(dt, pose) {
     if (!(dt > 0) || this.phase === "out") return;
-    const locked =
-      this.phase !== "blend" &&
-      (this.kind === "heli" ||
-        this.kind === "moto" ||
-        this.kind === "lowside" ||
-        this.kind === "wall" ||
-        this.kind === "crane");
-    if (locked) {
-      this.eyeX = this._tx;
-      this.eyeY = this._ty;
-      this.eyeZ = this._tz;
-      this.lookX = this._lx;
-      this.lookY = this._ly;
-      this.lookZ = this._lz;
-      this.fov = this._tfov;
-      this._vx = this._vy = this._vz = 0;
-      this._vlx = this._vly = this._vlz = 0;
-      this._vfov = 0;
+    if (this.phase !== "blend") {
+      this._snapEye();
       return;
     }
-    const stiff = this.phase === "blend" ? 9 : this.kind === "tower" || this.kind === "front" ? 22 : 14;
+    const stiff = 11;
     const damp = 2 * Math.sqrt(stiff);
     const step = (x, v, t) => {
       const a = (t - x) * stiff - v * damp;
@@ -599,5 +881,6 @@ export class BroadcastDirector {
     [this.lookY, this._vly] = step(this.lookY, this._vly, this._ly);
     [this.lookZ, this._vlz] = step(this.lookZ, this._vlz, this._lz);
     [this.fov, this._vfov] = step(this.fov, this._vfov, this._tfov);
+    if (pose && !this._eyeFramesPlayer(pose)) this._snapEye();
   }
 }
