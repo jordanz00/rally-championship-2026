@@ -57,6 +57,13 @@ const skipSeat = {
 };
 check("skipSeat furniture is not ground-snapped", !isGroundProp(skipSeat));
 
+const keepY = {
+  userData: { envProp: true, keepY: true },
+  name: "stage-gantry-pole-START-L",
+  geometry: { userData: { propKind: "gantry-pole" } },
+};
+check("keepY gantry poles are not ground-snapped", !isGroundProp(keepY));
+
 const midLod = {
   userData: { envProp: true, midDetail: true },
   geometry: { userData: { propKind: "forest_tree_a" } },

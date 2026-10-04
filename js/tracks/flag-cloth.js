@@ -1,16 +1,18 @@
 /**
- * Rally start / finish cloth flags — CPU Verlet fabric in the stage wind.
+ * Rally start / finish cloth — festive verge flags plus taut gantry banners.
  *
  * WHO THIS IS FOR: the chase / medium camera at START and FINISH.
- * WHAT IT DOES: plants a steel pole plus a modest cloth grid (8×12) and
- *   integrates gravity, damping, stretch-limited springs, pole pins, and
+ * WHAT IT DOES: plants steel poles plus Verlet cloth (flags 8×12, banners 18×7)
+ *   and integrates gravity, damping, stretch-limited springs, pins, and
  *   LIGHTING.wind each frame. Not a Kenney toy mesh. Not a UV wiggle shader.
+ *   Not a paper-thin unlit plane.
  * HOW IT CONNECTS: Track._addStageGates() plants; Track.update() ticks.
  *   Wind comes from config LIGHTING[scenery].wind — no second weather system.
  *   Each flag carries phase / seed offsets so a finish row never sync-waves.
  *
  * Cost: every stage start is a ten-flag festive avenue; finish is ten checkers.
- * 96 particles each. Far flags skip frames. No extra physics world.
+ * One taut gantry banner at START and one at FINISH (126 particles each).
+ * Far flags skip frames. No extra physics world.
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -30,6 +32,15 @@ const GRAVITY = -10.4;
 const DAMPING = 0.978;
 const NEAR_M = 88;
 const FAR_SKIP = 3;
+
+const BANNER_COLS = 18;
+const BANNER_ROWS = 7;
+const BANNER_H = 1.58;
+const GANTRY_POLE_R = 0.082;
+const GANTRY_POLE_BURY = 0.44;
+const GANTRY_BEAM_R = 0.068;
+const GANTRY_FOOT = 0.52;
+const GANTRY_CLEAR = 5.22;
 
 /** @type {Map<string, THREE.CanvasTexture>} */
 const FLAG_TEX = new Map();
@@ -412,6 +423,167 @@ function clampByte(v) {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
+/** @type {Map<string, THREE.CanvasTexture>} */
+const BANNER_TEX = new Map();
+/** @type {Map<string, THREE.MeshStandardMaterial>} */
+const BANNER_MAT = new Map();
+/** @type {THREE.MeshStandardMaterial|null} */
+let GANTRY_STEEL = null;
+/** @type {THREE.MeshStandardMaterial|null} */
+let GANTRY_CONCRETE = null;
+/** @type {THREE.MeshStandardMaterial|null} */
+let GANTRY_LAMP = null;
+
+function stageWord(scenery) {
+  if (scenery === "desert") return "DESERT";
+  if (scenery === "forest") return "FOREST";
+  if (scenery === "mountain") return "MOUNTAIN";
+  if (scenery === "lakeside") return "LAKESIDE";
+  return "STAGE";
+}
+
+/**
+ * Printed rally vinyl — original championship wording, not a licensed lockup.
+ * @param {string} label START | FINISH
+ * @param {string} scenery
+ * @returns {THREE.CanvasTexture}
+ */
+function bannerTexture(label, scenery) {
+  const word = label === "FINISH" ? "FINISH" : "START";
+  const key = `${word}|${scenery || "forest"}`;
+  const hit = BANNER_TEX.get(key);
+  if (hit) return hit;
+  const w = 2048;
+  const h = 384;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  const finish = word === "FINISH";
+  g.fillStyle = finish ? "#141618" : "#7a1014";
+  g.fillRect(0, 0, w, h);
+  const cell = 32;
+  const wing = 220;
+  for (let y = 0; y < h; y += cell) {
+    for (let x = 0; x < wing; x += cell) {
+      const dark = ((x / cell) | 0) + ((y / cell) | 0);
+      g.fillStyle = dark % 2 === 0 ? "#121214" : "#efeae2";
+      g.fillRect(x, y, cell + 0.6, cell + 0.6);
+      g.fillRect(w - wing + x, y, cell + 0.6, cell + 0.6);
+    }
+  }
+  const field = g.createLinearGradient(0, 0, 0, h);
+  if (finish) {
+    field.addColorStop(0, "#2a2e32");
+    field.addColorStop(0.5, "#16181c");
+    field.addColorStop(1, "#0c0d10");
+  } else {
+    field.addColorStop(0, "#c41822");
+    field.addColorStop(0.45, "#8a1016");
+    field.addColorStop(1, "#4a080c");
+  }
+  g.fillStyle = field;
+  g.fillRect(wing, 0, w - wing * 2, h);
+  g.fillStyle = "#d4b15a";
+  g.fillRect(wing, 0, w - wing * 2, 14);
+  g.fillStyle = finish ? "#c41218" : "#1a1c1e";
+  g.fillRect(wing, h - 18, w - wing * 2, 18);
+  g.fillStyle = "#f4ecda";
+  g.font = "600 36px sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText("RALLY CHAMPIONSHIP", w * 0.5, 58);
+  g.fillStyle = finish ? "#d4b15a" : "#f0d27a";
+  g.font = "600 28px sans-serif";
+  g.fillText(stageWord(scenery), w * 0.5, 98);
+  g.fillStyle = "#f7f3ea";
+  g.font = "800 168px sans-serif";
+  g.fillText(word, w * 0.5, 230);
+  finishCloth(g, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 16;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = true;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.needsUpdate = true;
+  tex.userData.shared = true;
+  BANNER_TEX.set(key, tex);
+  return tex;
+}
+
+function bannerMaterial(label, scenery) {
+  const word = label === "FINISH" ? "FINISH" : "START";
+  const key = `${word}|${scenery || "forest"}`;
+  let m = BANNER_MAT.get(key);
+  if (m) return m;
+  const cinema = (VISUAL.tier || 0) >= 8 && VISUAL.realisticArcade !== false;
+  m = cinema
+    ? new THREE.MeshStandardMaterial({
+        map: bannerTexture(word, scenery),
+        roughness: 0.82,
+        metalness: 0.02,
+        side: THREE.DoubleSide,
+        envMapIntensity: 0.28,
+        flatShading: false,
+      })
+    : new THREE.MeshLambertMaterial({
+        map: bannerTexture(word, scenery),
+        side: THREE.DoubleSide,
+        flatShading: false,
+      });
+  m.userData.kind = "gantry-banner-cloth";
+  m.fog = true;
+  BANNER_MAT.set(key, m);
+  return m;
+}
+
+function gantrySteel() {
+  if (GANTRY_STEEL) return GANTRY_STEEL;
+  const cinema = (VISUAL.tier || 0) >= 8 && VISUAL.realisticArcade !== false;
+  GANTRY_STEEL = cinema
+    ? new THREE.MeshStandardMaterial({
+        color: 0x3e444c,
+        roughness: 0.38,
+        metalness: 0.7,
+        envMapIntensity: 0.52,
+      })
+    : new THREE.MeshLambertMaterial({ color: 0x3e444c });
+  GANTRY_STEEL.userData.kind = "gantry-steel";
+  return GANTRY_STEEL;
+}
+
+function gantryConcrete() {
+  if (GANTRY_CONCRETE) return GANTRY_CONCRETE;
+  const cinema = (VISUAL.tier || 0) >= 8 && VISUAL.realisticArcade !== false;
+  GANTRY_CONCRETE = cinema
+    ? new THREE.MeshStandardMaterial({
+        color: 0x6a6862,
+        roughness: 0.92,
+        metalness: 0.04,
+        envMapIntensity: 0.16,
+      })
+    : new THREE.MeshLambertMaterial({ color: 0x6a6862 });
+  GANTRY_CONCRETE.userData.kind = "gantry-foot";
+  return GANTRY_CONCRETE;
+}
+
+function gantryLamp() {
+  if (GANTRY_LAMP) return GANTRY_LAMP;
+  GANTRY_LAMP = new THREE.MeshStandardMaterial({
+    color: 0x2a1214,
+    roughness: 0.42,
+    metalness: 0.18,
+    emissive: 0x6a1014,
+    emissiveIntensity: 0.22,
+    envMapIntensity: 0.2,
+  });
+  GANTRY_LAMP.userData.kind = "gantry-lamp";
+  return GANTRY_LAMP;
+}
+
 function clothMaterial(kind) {
   const key = FLAG_PAINT[kind] ? kind : "red";
   let m = CLOTH_MAT.get(key);
@@ -645,6 +817,224 @@ export function createClothFlag(opts) {
 }
 
 /**
+ * Planted steel gantry + taut Verlet vinyl at START or FINISH.
+ * Poles sit on land Y (buried). Cloth is a multi-vert grid, not a 1-poly card.
+ *
+ * @param {object} opts
+ * @param {string} opts.label START | FINISH
+ * @param {string} opts.scenery
+ * @param {number} opts.heading
+ * @param {{x:number,y:number,z:number}} opts.left
+ * @param {{x:number,y:number,z:number}} opts.right
+ * @param {number} [opts.roadY]
+ * @param {number} [opts.seed]
+ * @returns {ClothFlag}
+ */
+export function createGantryBanner(opts) {
+  const label = opts.label === "FINISH" ? "FINISH" : "START";
+  const scenery = opts.scenery || "forest";
+  const left = opts.left;
+  const right = opts.right;
+  const midX = (left.x + right.x) * 0.5;
+  const midZ = (left.z + right.z) * 0.5;
+  const minY = Math.min(left.y, right.y);
+  const dx = right.x - left.x;
+  const dz = right.z - left.z;
+  const span = Math.max(4.8, Math.hypot(dx, dz));
+  const yaw = Math.atan2(-dz, dx);
+  const roadY = Number.isFinite(opts.roadY) ? opts.roadY : minY;
+  const beamWorldY = Math.max(roadY, left.y, right.y) + GANTRY_CLEAR;
+  const seed = opts.seed != null ? opts.seed : hash3(midX, midZ, label === "FINISH" ? 7 : 3) * 97;
+  const h0 = hash3(seed, 1.1, 2.3);
+  const h1 = hash3(seed, 4.7, 8.9);
+  const h2 = hash3(seed, 13.1, 17.3);
+  const h3 = hash3(seed, 19.7, 23.9);
+
+  const group = new THREE.Group();
+  group.name = `stage-gantry-${label}`;
+  group.position.set(midX, minY, midZ);
+  group.rotation.y = yaw;
+  group.userData.clothFlag = true;
+  group.userData.gantryBanner = true;
+  group.userData.skipSeat = true;
+  group.userData.keepY = true;
+  group.userData.envProp = false;
+  group.userData.clothSeed = seed;
+
+  const steel = gantrySteel();
+  const foot = gantryConcrete();
+  const plantPole = (side, landY) => {
+    const localX = side * (span * 0.5);
+    const h = Math.max(4.8, beamWorldY - landY + GANTRY_POLE_BURY);
+    const geo = new THREE.CylinderGeometry(
+      GANTRY_POLE_R * 0.86,
+      GANTRY_POLE_R * 1.12,
+      h,
+      12,
+      1
+    );
+    const pole = new THREE.Mesh(geo, steel);
+    pole.name = `stage-gantry-pole-${label}-${side < 0 ? "L" : "R"}`;
+    pole.position.set(localX, landY - minY + h * 0.5 - GANTRY_POLE_BURY, 0);
+    pole.castShadow = true;
+    pole.receiveShadow = true;
+    pole.userData.skipSeat = true;
+    pole.userData.keepY = true;
+    pole.userData.gantryBanner = true;
+    group.add(pole);
+
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(GANTRY_FOOT, 0.1, GANTRY_FOOT), foot);
+    pad.name = `stage-gantry-foot-${label}-${side < 0 ? "L" : "R"}`;
+    pad.position.set(localX, landY - minY + 0.02, 0);
+    pad.castShadow = true;
+    pad.receiveShadow = true;
+    pad.userData.skipSeat = true;
+    pad.userData.keepY = true;
+    group.add(pad);
+
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(GANTRY_POLE_R * 1.18, GANTRY_POLE_R * 1.05, 0.16, 12, 1),
+      steel
+    );
+    cap.position.set(localX, beamWorldY - minY + 0.08, 0);
+    cap.castShadow = true;
+    group.add(cap);
+
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.26), gantryLamp());
+    lamp.position.set(localX * 0.72, beamWorldY - minY - 0.16, 0.16);
+    lamp.castShadow = true;
+    group.add(lamp);
+    return { localX, h, landY };
+  };
+  plantPole(-1, left.y);
+  plantPole(1, right.y);
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(GANTRY_BEAM_R, GANTRY_BEAM_R, span + 0.36, 10, 1),
+    steel
+  );
+  beam.name = `stage-gantry-beam-${label}`;
+  beam.rotation.z = Math.PI * 0.5;
+  beam.position.set(0, beamWorldY - minY, 0);
+  beam.castShadow = true;
+  beam.receiveShadow = true;
+  beam.userData.skipSeat = true;
+  beam.userData.keepY = true;
+  group.add(beam);
+
+  const fascia = new THREE.Mesh(
+    new THREE.BoxGeometry(span - 0.22, 0.11, 0.16),
+    steel
+  );
+  fascia.name = `stage-gantry-fascia-${label}`;
+  fascia.position.set(0, beamWorldY - minY - 0.12, 0.02);
+  fascia.castShadow = true;
+  fascia.userData.skipSeat = true;
+  group.add(fascia);
+
+  const hem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.032, 0.032, span - 0.55, 8, 1),
+    steel
+  );
+  hem.name = `stage-gantry-hem-${label}`;
+  hem.rotation.z = Math.PI * 0.5;
+  hem.position.set(0, beamWorldY - minY - 0.2 - BANNER_H, 0.04);
+  hem.castShadow = true;
+  hem.userData.skipSeat = true;
+  group.add(hem);
+
+  const clothW = Math.max(3.6, span - 0.62);
+  const geo = new THREE.PlaneGeometry(clothW, BANNER_H, BANNER_COLS - 1, BANNER_ROWS - 1);
+  const clothY = beamWorldY - minY - 0.2 - BANNER_H * 0.5;
+  geo.translate(0, clothY, 0.07);
+  const pos = geo.attributes.position;
+  pos.setUsage(THREE.DynamicDrawUsage);
+  const count = pos.count;
+  const cur = new Float32Array(count * 3);
+  const prev = new Float32Array(count * 3);
+  const pin = new Uint8Array(count);
+  for (let i = 0; i < count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const col = i % BANNER_COLS;
+    const row = (i / BANNER_COLS) | 0;
+    const j = hash3(seed, col + 0.4, row + 0.8);
+    const edge = col === 0 || col === BANNER_COLS - 1 || row === BANNER_ROWS - 1;
+    cur[i * 3] = x + (edge ? 0 : (h2 - 0.5) * 0.012 * (j - 0.5));
+    cur[i * 3 + 1] = y;
+    cur[i * 3 + 2] = z + (edge ? 0 : (h3 - 0.5) * 0.016 * (j - 0.5));
+    prev[i * 3] = cur[i * 3];
+    prev[i * 3 + 1] = cur[i * 3 + 1];
+    prev[i * 3 + 2] = cur[i * 3 + 2];
+    if (edge) pin[i] = 1;
+  }
+
+  const restH = [];
+  const restV = [];
+  const restD = [];
+  for (let r = 0; r < BANNER_ROWS; r++) {
+    for (let c = 0; c < BANNER_COLS; c++) {
+      const i = r * BANNER_COLS + c;
+      if (c + 1 < BANNER_COLS) restH.push(dist3(cur, i, i + 1));
+      if (r + 1 < BANNER_ROWS) restV.push(dist3(cur, i, i + BANNER_COLS));
+      if (r + 1 < BANNER_ROWS && c + 1 < BANNER_COLS) restD.push(dist3(cur, i, i + BANNER_COLS + 1));
+      if (r + 1 < BANNER_ROWS && c > 0) restD.push(dist3(cur, i, i + BANNER_COLS - 1));
+    }
+  }
+
+  const mesh = new THREE.Mesh(geo, bannerMaterial(label, scenery));
+  mesh.name = `stage-banner-${label}`;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.clothFlag = true;
+  mesh.userData.gantryBanner = true;
+  mesh.userData.skipSeat = true;
+  mesh.userData.keepY = true;
+  mesh.frustumCulled = false;
+  group.add(mesh);
+
+  /** @type {ClothFlag} */
+  const banner = {
+    group,
+    mesh,
+    geo,
+    cur,
+    prev,
+    pin,
+    restH,
+    restV,
+    restD,
+    ry: 0,
+    kind: label === "FINISH" ? "finish-banner" : "start-banner",
+    scenery,
+    x: midX,
+    y: minY,
+    z: midZ,
+    frame: 0,
+    seed,
+    phase: h0 * Math.PI * 2,
+    gustPhase: h1 * Math.PI * 2,
+    turbPhase: h2 * Math.PI * 2,
+    windMul: 0.22 + h3 * 0.08,
+    dirBias: (h0 - 0.5) * 0.18,
+    dampMul: 1.035,
+    cols: BANNER_COLS,
+    rows: BANNER_ROWS,
+    banner: true,
+    taut: true,
+    plantY: minY,
+    leftY: left.y,
+    rightY: right.y,
+  };
+
+  const warmT0 = h0 * 1.6;
+  for (let i = 0; i < 18; i++) stepCloth(banner, 1 / 60, warmT0 + i / 60, scenery, 0.55);
+  writeCloth(banner);
+  return banner;
+}
+
+/**
  * Integrate every planted flag. Far flags skip most frames.
  * @param {ClothFlag[]} flags
  * @param {number} dt
@@ -675,6 +1065,10 @@ export function updateClothFlags(flags, dt, time, scenery, camera) {
  * @param {string} scenery
  * @param {number} windScale
  */
+function clothSize(flag) {
+  return { cols: flag.cols || COLS, rows: flag.rows || ROWS };
+}
+
 function stepCloth(flag, dt, time, scenery, windScale) {
   const h = Math.min(0.042, Math.max(0.008, dt));
   const h2 = h * h;
@@ -694,13 +1088,17 @@ function stepCloth(flag, dt, time, scenery, windScale) {
   const prev = flag.prev;
   const pin = flag.pin;
   const n = pin.length;
+  const { cols } = clothSize(flag);
+  const taut = flag.taut ? 0.26 : 1;
 
   for (let i = 0; i < n; i++) {
     if (pin[i]) continue;
     const i3 = i * 3;
-    const col = i % COLS;
-    const row = (i / COLS) | 0;
-    const fly = col / (COLS - 1);
+    const col = i % cols;
+    const row = (i / cols) | 0;
+    const fly = flag.banner
+      ? Math.min(col, cols - 1 - col) / Math.max(1, (cols - 1) * 0.5)
+      : col / Math.max(1, cols - 1);
     const turb =
       0.28 *
       Math.sin(time * 2.35 + col * 0.82 + phase + flag.x * 0.05) *
@@ -714,9 +1112,9 @@ function stepCloth(flag, dt, time, scenery, windScale) {
     prev[i3] = cur[i3];
     prev[i3 + 1] = cur[i3 + 1];
     prev[i3 + 2] = cur[i3 + 2];
-    const ax = (lx + turb * lz + flap) * (8.4 * edge);
-    const ay = GRAVITY + ly * 2.6 + flap * 1.8;
-    const az = (lz + turb + flap * 0.55) * (8.4 * edge);
+    const ax = (lx + turb * lz + flap) * (8.4 * edge) * taut;
+    const ay = GRAVITY * (flag.banner ? 0.42 : 1) + ly * 2.6 + flap * 1.8 * taut;
+    const az = (lz + turb + flap * 0.55) * (8.4 * edge) * taut;
     cur[i3] += vx + ax * h2;
     cur[i3 + 1] += vy + ay * h2;
     cur[i3 + 2] += vz + az * h2;
@@ -734,23 +1132,24 @@ function stepCloth(flag, dt, time, scenery, windScale) {
 function constrainGrid(flag) {
   const cur = flag.cur;
   const pin = flag.pin;
+  const { cols, rows } = clothSize(flag);
   let hi = 0;
   let vi = 0;
   let di = 0;
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const i = r * COLS + c;
-      if (c + 1 < COLS) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (c + 1 < cols) {
         satisfy(cur, pin, i, i + 1, flag.restH[hi++]);
       }
-      if (r + 1 < ROWS) {
-        satisfy(cur, pin, i, i + COLS, flag.restV[vi++]);
+      if (r + 1 < rows) {
+        satisfy(cur, pin, i, i + cols, flag.restV[vi++]);
       }
-      if (r + 1 < ROWS && c + 1 < COLS) {
-        satisfy(cur, pin, i, i + COLS + 1, flag.restD[di++]);
+      if (r + 1 < rows && c + 1 < cols) {
+        satisfy(cur, pin, i, i + cols + 1, flag.restD[di++]);
       }
-      if (r + 1 < ROWS && c > 0) {
-        satisfy(cur, pin, i, i + COLS - 1, flag.restD[di++]);
+      if (r + 1 < rows && c > 0) {
+        satisfy(cur, pin, i, i + cols - 1, flag.restD[di++]);
       }
     }
   }
@@ -821,6 +1220,7 @@ function satisfy(cur, pin, ia, ib, rest) {
  * @param {ClothFlag} flag
  */
 function collidePole(flag) {
+  if (flag.banner) return;
   const cur = flag.cur;
   const pin = flag.pin;
   const minR = POLE_R + 0.028;
@@ -892,5 +1292,10 @@ function dist3(cur, ia, ib) {
  *   windMul: number,
  *   dirBias: number,
  *   dampMul: number,
+ *   cols?: number,
+ *   rows?: number,
+ *   banner?: boolean,
+ *   taut?: boolean,
+ *   plantY?: number,
  * }} ClothFlag
  */

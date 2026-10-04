@@ -112,7 +112,7 @@ function propLabel(obj) {
  */
 export function isGroundProp(obj) {
   if (!obj || !obj.userData) return false;
-  if (obj.userData.skipSeat) return false;
+  if (obj.userData.skipSeat || obj.userData.keepY) return false;
   if (obj.userData.farDetail || obj.userData.midDetail) return false;
   if (
     obj.userData.tunnelPortal ||

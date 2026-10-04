@@ -31,7 +31,8 @@ check(
   /alongSlots\.length/.test(trackSrc) && /Forced verge/.test(trackSrc) && /five poles per verge/.test(trackSrc),
   "every stage must plant 5+5 even when clearance fails"
 );
-check("finish drops overhead banner blob", /label !== "FINISH"/.test(trackSrc) && /stage-banner/.test(trackSrc));
+check("start and finish plant cloth gantry banners", /createGantryBanner/.test(trackSrc) && /_addGantry\(start, "START"\)/.test(trackSrc) && /_addGantry\(finish, "FINISH"\)/.test(trackSrc));
+check("overhead banner is not a 1-poly PlaneGeometry card", !/new THREE\.PlaneGeometry\(span, bannerH\)/.test(trackSrc));
 check("Kenney gate flags removed", !/flagKind/.test(trackSrc) && !/propGeometry\("flag_checkers"\)/.test(trackSrc));
 check("update ticks cloth", /_tickClothFlags/.test(trackSrc));
 check("Verlet springs present", /satisfy\(|STRUCT_ITERS|MAX_STRETCH/.test(clothSrc));
@@ -55,6 +56,10 @@ class FakeCanvas {
       },
       fillRect() {},
       strokeRect() {},
+      fillText() {},
+      font: "",
+      textAlign: "center",
+      textBaseline: "middle",
       beginPath() {},
       moveTo() {},
       lineTo() {},

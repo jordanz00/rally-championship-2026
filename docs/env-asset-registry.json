@@ -254,6 +254,26 @@
       "license": "Poly Haven CC0"
     },
     {
+      "id": "START_FINISH_GANTRY",
+      "category": "Trackside",
+      "runtimeKinds": ["stage-gantry-START", "stage-gantry-FINISH"],
+      "files": [],
+      "heroDistanceM": 20,
+      "layer": "mid",
+      "silhouette": "PARTIAL",
+      "material": "PARTIAL",
+      "groundContact": "PASS",
+      "textureRepetition": "PASS",
+      "scale": "PASS",
+      "lod": "PARTIAL",
+      "visualTarget": "PARTIAL",
+      "verdict": "PARTIAL",
+      "status": "HAVE_FALLBACK",
+      "requiredVariants": "CC0/CC-BY PBR rally gantry (two planted posts + truss + printed vinyl) readable at 5–30 m",
+      "reason": "No HQ gantry GLB on disk. Runtime ships authored steel poles/beam/hem plus taut Verlet cloth (flag-cloth.js) at START and FINISH. Kenney gantry_overhead stretch + 1-poly plane rejected. Do not close this row with a cube card.",
+      "license": "original runtime cloth / steel (no Sega banner art)"
+    },
+    {
       "id": "KENNEY_ROCK_FALLBACK",
       "category": "Forest rocks",
       "runtimeKinds": ["rock_largeA", "rock_largeB", "rock_tallA", "rock_smallA", "forest_rock_a", "forest_rock_b", "forest_rock_c", "forest_rock_d"],

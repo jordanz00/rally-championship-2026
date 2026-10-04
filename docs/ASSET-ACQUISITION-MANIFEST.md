@@ -114,6 +114,18 @@ Desert friend-ship does **not** wait on this table.
 
 ## Trackside (finish hero — not Forest Phase 1)
 
+### START_FINISH_GANTRY — PARTIAL (authored steel + Verlet cloth)
+
+```
+Have (runtime): planted steel poles / beam / hem + taut Verlet vinyl at START
+  and FINISH on every cup stage (Desert / Forest / Mountain / Lakeside).
+  Readable “RALLY CHAMPIONSHIP” + START/FINISH. Festive verge flags stay.
+Gap: no CC0/CC-BY scanned rally gantry GLB (albedo+normal+rough) on disk.
+  Kenney gantry_overhead was a stretched unit arch + paper plane — rejected
+  as the player-facing banner. Do not replace the cloth gantry with a cube card.
+Status: PARTIAL — player-visible banners ship via flag-cloth.js. HQ mesh MISSING.
+```
+
 ### GRANDSTAND_HERO — PARTIAL / MISSING HQ
 
 ```

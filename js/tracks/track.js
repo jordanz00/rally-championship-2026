@@ -23,7 +23,7 @@ import {
   foliageMaterial,
   treeCardKind,
 } from "./trees.js?v=45";
-import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=4";
+import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=5";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -85,7 +85,7 @@ import {
 } from "./forest-tunnel.js?v=19";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, updateClothFlags, startFlagKinds } from "./flag-cloth.js?v=8";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds } from "./flag-cloth.js?v=9";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -316,7 +316,7 @@ export class Track {
     /** Desert tumbleweeds — real twig balls that occasionally roll past. */
     this._tumbleweeds = null;
     this._tumbleWeedTime = 0;
-    /** Start / finish Verlet cloth flags — see flag-cloth.js. */
+    /** Start / finish Verlet cloth flags + taut gantry banners — see flag-cloth.js. */
     this._clothFlags = [];
     this._clothFlagTime = 0;
     this._tumbleDummy = null;
@@ -10847,103 +10847,36 @@ export class Track {
   }
 
   /**
-   * Overhead checkered banner, posts at the road edge, stripe on the tarmac.
+   * Planted steel gantry + taut Verlet vinyl at START and FINISH, plus a
+   * painted checker stripe on the deck. Poles sit on visual land — no floating
+   * Kenney arch, no paper-thin PlaneGeometry card.
    * @param {object} p
    * @param {string} label
    */
   _addGantry(p, label) {
     const half = p.width * 0.5;
-    const postX = half + 1.8;
+    const postX = half + 1.55;
     const scenery = (this._def && this._def.scenery) || "forest";
-    const useGlb =
-      (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
-    // Plain overhead first. gantry_overhead_lights merges lamp housings into
-    // one Kenney "grey" (RGB ~0.95) mesh — a white volume across the ribbon.
-    const gantryKind =
-      useGlb && propGeometry("gantry_overhead")
-        ? "gantry_overhead"
-        : useGlb && propGeometry("gantry_overhead_lights")
-          ? "gantry_overhead_lights"
-          : null;
-    if (gantryKind) {
-      const gyL = this._landSurfaceY(p.x + p.nx * -postX, p.z + p.nz * -postX, scenery);
-      const gyR = this._landSurfaceY(p.x + p.nx * postX, p.z + p.nz * postX, scenery);
-      const gy = Math.min(gyL, gyR);
-      const geo = propGeometry(gantryKind);
-      const mesh = new THREE.Mesh(geo, gantrySteelMaterial(gantryKind));
-      mesh.name = `stage-gantry-${label}`;
-      mesh.position.set(p.x, gy, p.z);
-      mesh.rotation.y = p.heading;
-      // Stretch across the full road width — Kenney overhead is a unit gantry.
-      const span = (p.width + 3.6) / Math.max(1e-3, geo.boundingBox?.max.x - geo.boundingBox?.min.x || 8);
-      mesh.scale.set(Math.max(1.1, span), 1, 1);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      this._bump(p.x + p.nx * -postX, p.z + p.nz * -postX, 0.55);
-      this._bump(p.x + p.nx * postX, p.z + p.nz * postX, 0.55);
-
-      this._dressGantry(p, label, gy);
-      return;
-    }
-
-    const steel = new THREE.MeshLambertMaterial({ color: 0x3a3a40, flatShading: true });
-    const red = new THREE.MeshLambertMaterial({ color: 0xd4121a, flatShading: true });
-    const beamY = p.y + 5.35;
-    for (const side of [-1, 1]) {
-      const px = p.x + p.nx * side * postX;
-      const pz = p.z + p.nz * side * postX;
-      const gy = this._landSurfaceY(px, pz, scenery);
-      const bot = gy - 0.4;
-      const top = beamY + 0.05;
-      const postH = Math.max(5.4, top - bot);
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.38, postH, 0.38), steel);
-      post.position.set(px, bot + postH * 0.5, pz);
-      post.rotation.y = p.heading;
-      this.group.add(post);
-      this._bump(px, pz, 0.55);
-    }
-
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(p.width + 2.4, 0.28, 0.42), steel);
-    beam.position.set(p.x, beamY, p.z);
-    beam.rotation.y = p.heading;
-    this.group.add(beam);
-
-    this._dressGantry(p, label, p.y);
-
-    for (const side of [-0.35, 0.35]) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), red);
-      lamp.position.set(
-        p.x + p.nx * side * p.width * 0.4,
-        p.y + 5.58,
-        p.z + p.nz * side * p.width * 0.4
-      );
-      this.group.add(lamp);
-    }
-  }
-
-  /**
-   * Vinyl banner across the road at START and FINISH, plus painted checkers
-   * on the deck. Lit materials — never MeshBasic / emissive.
-   * @param {object} p
-   * @param {string} label
-   * @param {number} gy gantry foot / road Y for the banner beam
-   */
-  _dressGantry(p, label, gy) {
-    const span = p.width + 1.7;
-    if (label !== "FINISH") {
-      const bannerH = Math.max(1.35, span / 11.2);
-      const banner = new THREE.Mesh(
-        new THREE.PlaneGeometry(span, bannerH),
-        gantryBannerMaterial(label)
-      );
-      banner.name = `stage-banner-${label}`;
-      banner.position.set(p.x, gy + 4.55, p.z);
-      banner.rotation.y = p.heading + Math.PI;
-      banner.castShadow = true;
-      banner.receiveShadow = true;
-      this.group.add(banner);
-    }
+    const leftX = p.x + p.nx * -postX;
+    const leftZ = p.z + p.nz * -postX;
+    const rightX = p.x + p.nx * postX;
+    const rightZ = p.z + p.nz * postX;
+    const leftY = this._visualLandY(leftX, leftZ);
+    const rightY = this._visualLandY(rightX, rightZ);
+    if (!this._clothFlags) this._clothFlags = [];
+    const banner = createGantryBanner({
+      label,
+      scenery,
+      heading: p.heading,
+      left: { x: leftX, y: leftY, z: leftZ },
+      right: { x: rightX, y: rightY, z: rightZ },
+      roadY: p.y,
+      seed: label === "FINISH" ? 220 : 110,
+    });
+    this.group.add(banner.group);
+    this._clothFlags.push(banner);
+    this._bump(leftX, leftZ, 0.55);
+    this._bump(rightX, rightZ, 0.55);
 
     const stripe = new THREE.Mesh(
       new THREE.BoxGeometry(p.width * 0.96, 0.035, 1.35),
@@ -10953,6 +10886,7 @@ export class Track {
     stripe.position.set(p.x, p.y + ROAD_DECK + 0.016, p.z);
     stripe.rotation.y = p.heading;
     stripe.receiveShadow = true;
+    stripe.userData.skipSeat = true;
     this.group.add(stripe);
   }
 
@@ -11957,64 +11891,8 @@ function fillSample(out, a, b, t, d) {
   return out;
 }
 
-/** @type {Map<string, THREE.CanvasTexture>} */
-const BANNER_TEX = new Map();
-/** @type {Map<string, THREE.MeshStandardMaterial>} */
-const GANTRY_STEEL = new Map();
-/** @type {Map<string, THREE.MeshStandardMaterial>} */
-const BANNER_MAT = new Map();
 /** @type {THREE.MeshStandardMaterial|null} */
 let STRIPE_MAT = null;
-
-/**
- * Kenney "grey" is RGB ~0.95 with no map. Recolor to steel so the stretched
- * gantry reads as a rally arch, not a white volume.
- * @param {string} kind
- */
-function gantrySteelMaterial(kind) {
-  const key = kind || "steel";
-  let mat = GANTRY_STEEL.get(key);
-  if (mat) return mat;
-  const src = kind ? propKitMaterial(kind) : null;
-  mat = src && src.clone ? src.clone() : new THREE.MeshStandardMaterial();
-  mat.color.setHex(0x454a52);
-  mat.roughness = 0.5;
-  mat.metalness = 0.56;
-  mat.envMapIntensity = 0.28;
-  mat.vertexColors = false;
-  mat.map = null;
-  mat.normalMap = null;
-  mat.emissiveMap = null;
-  if (mat.emissive) mat.emissive.setHex(0x000000);
-  mat.emissiveIntensity = 0;
-  mat.fog = true;
-  mat.userData.shared = true;
-  mat.userData.kind = "gantry-steel";
-  GANTRY_STEEL.set(key, mat);
-  return mat;
-}
-
-/**
- * Lit vinyl banner — MeshBasic + pale checkers bloomed into a white card.
- * @param {string} label
- */
-function gantryBannerMaterial(label) {
-  let mat = BANNER_MAT.get(label);
-  if (mat) return mat;
-  mat = new THREE.MeshStandardMaterial({
-    map: bannerTexture(label),
-    color: 0xffffff,
-    roughness: 0.78,
-    metalness: 0.03,
-    envMapIntensity: 0.18,
-    side: THREE.DoubleSide,
-    fog: true,
-  });
-  mat.userData.shared = true;
-  mat.userData.kind = "gantry-banner";
-  BANNER_MAT.set(label, mat);
-  return mat;
-}
 
 /** Painted tarmac checkers — not an unlit slab. */
 function gantryStripeMaterial() {
@@ -12030,61 +11908,6 @@ function gantryStripeMaterial() {
   STRIPE_MAT.userData.shared = true;
   STRIPE_MAT.userData.kind = "gantry-stripe";
   return STRIPE_MAT;
-}
-
-/**
- * Checkered overhead sign — START / FINISH.
- * @param {string} label
- */
-function bannerTexture(label) {
-  const hit = BANNER_TEX.get(label);
-  if (hit) return hit;
-  const w = 1536;
-  const h = 160;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const g = c.getContext("2d");
-  g.fillStyle = "#1a1c1e";
-  g.fillRect(0, 0, w, h);
-  const cell = 20;
-  const wing = 168;
-  for (let y = 0; y < h; y += cell) {
-    for (let x = 0; x < wing; x += cell) {
-      const dark = ((x / cell) | 0) + ((y / cell) | 0);
-      g.fillStyle = dark % 2 === 0 ? "#141416" : "#efeae2";
-      g.fillRect(x, y, cell, cell);
-      g.fillRect(w - wing + x, y, cell, cell);
-    }
-  }
-  const field = g.createLinearGradient(0, 0, 0, h);
-  field.addColorStop(0, "#2a2e32");
-  field.addColorStop(0.45, "#1c2024");
-  field.addColorStop(1, "#121416");
-  g.fillStyle = field;
-  g.fillRect(wing, 0, w - wing * 2, h);
-  g.fillStyle = "#c41218";
-  g.fillRect(wing, h - 22, w - wing * 2, 22);
-  g.fillStyle = "#d4b15a";
-  g.fillRect(wing, 0, w - wing * 2, 8);
-  g.fillStyle = "#efeae2";
-  g.font = "600 22px sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText("RALLY", w * 0.5, 36);
-  g.fillStyle = "#f7f3ea";
-  g.font = "700 72px sans-serif";
-  g.fillText(label === "FINISH" ? "FINISH" : "START", w * 0.5, 96);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.generateMipmaps = true;
-  tex.anisotropy = 16;
-  tex.needsUpdate = true;
-  tex.userData.shared = true;
-  BANNER_TEX.set(label, tex);
-  return tex;
 }
 
 /** @type {Map<string, THREE.CanvasTexture>} */

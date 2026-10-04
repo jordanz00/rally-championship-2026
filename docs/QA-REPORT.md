@@ -10,9 +10,9 @@
 
 **Proof:** `node tools/qa-start-finish-banner.mjs` · `node tools/qa-cloth-flags.mjs` · `node tools/qa-seat-scenery.mjs`
 
-**Boot:** `main.js?v=998` · `game.js?v=998` · `track.js?v=419` · `flag-cloth.js?v=9` · `seat-scenery.js?v=5`
+**Boot:** `main.js?v=999` · `game.js?v=999` · `track.js?v=419` · `flag-cloth.js?v=9` · `seat-scenery.js?v=5`
 
-**Public:** https://jordanz00.github.io/rally-championship-2026/?v=998
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=999
 
 ## Attract reel — MTV / WRC-TV open (2026-10-04)
 
