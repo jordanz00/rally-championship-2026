@@ -91,7 +91,6 @@ export class TouchControls {
     this.camEl = document.getElementById("touch-cam");
     this.modePadEl = document.getElementById("touch-mode-pad");
     this.modeTiltEl = document.getElementById("touch-mode-tilt");
-    this.hintEl = document.getElementById("orient-hint");
     this.tiltNoteEl = document.getElementById("touch-tilt-note");
 
     if (this.enabled && this.root) this._bind();
@@ -342,10 +341,6 @@ export class TouchControls {
     }
     if (this.modePadEl) this.modePadEl.classList.toggle("on", this.mode === "touch");
     if (this.modeTiltEl) this.modeTiltEl.classList.toggle("on", this.mode === "tilt");
-    if (this.hintEl) {
-      const portrait = window.innerHeight > window.innerWidth + 80;
-      this.hintEl.hidden = !this.live || !portrait;
-    }
     if (this.mode === "touch") this._setTiltNote("");
   }
 }

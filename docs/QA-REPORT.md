@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Phone boot — no rotate nag, WebGL on Android / iPhone (2026-10-04)
+
+**Player moment:** Open the game on a phone. Title paints. No “turn sideways” card. Portrait or landscape, START works. Race uses cheap FXAA, not a WebTSR/LOOK compile that whites the tab.
+
+**Cause:** `#orient-hint` nagged portrait play. Mid-range Android still carried cinema pixel / shadow budgets. A shader throw in WebTSR or FXAA could kill the title.
+
+**Fix:** Deleted the overlay (`index.html`, `css/game.css`, `touch-controls.js`). Quiet portrait/landscape CSS only. Phones stay WebGL2 (`capabilities` + `renderer-factory` skip WebGPURenderer). Android caps: 0.75 DPR, 720k pixels, 384² shadows. Present try/catch falls back to raw scene. Touch pedals unchanged.
+
+**Proof:** `node tools/qa-mobile-boot.mjs` · `node tools/qa-mobile-controls.mjs` · `node tools/qa-webtsr-sdk.mjs`
+
+**Boot:** `main.js?v=1010` · `game.js?v=1010` · `game.css?v=60` · `tsr-policy.js?v=982` · `mobile-present.js?v=982`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1010
+
 ## POV bare hands — real digits on the rim (2026-10-04)
 
 **Player moment:** C into the cockpit. Adult hands sit at 9 and 3. Each finger is a skin digit (phalanges, knuckles, nails) wrapped around the far side of the leather. Thumbs rest on the crown. Turn and the gloves-that-are-hands rotate with the wheel; sleeves follow the wrists.

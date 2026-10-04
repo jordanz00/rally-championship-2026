@@ -126,7 +126,7 @@ check(
 check(
   "Android fill-rate caps armed at boot",
   /GFX\.maxPixels = Math\.min\(GFX\.maxPixels/.test(game) &&
-    /android \? 900000/.test(game) &&
+    /android \? 720000/.test(game) &&
     /GFX\.preferLock30 = true/.test(game),
   "Android must cap pixels and prefer lock-30 before first setSize"
 );

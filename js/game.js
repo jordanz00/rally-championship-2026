@@ -28,7 +28,7 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=43";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=97";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=98";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
@@ -46,9 +46,9 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=988";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=989";
 import { createPerfTier } from "./gfx/perf-tier.js?v=54";
-import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
+import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=3";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
@@ -154,7 +154,7 @@ import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=11";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
-import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
+import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
   applyStageLights,
   applyDaylightLook,
@@ -667,10 +667,12 @@ export class RallyGame {
     if (isPhonePlay()) {
       const android = /Android/i.test(navigator.userAgent || "");
       GFX.preferLock30 = true;
-      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.9 : 1.0);
-      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 900000 : 1200000);
-      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 700000 : 900000);
-      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 512 : 768);
+      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.75 : 1.0);
+      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 720000 : 1100000);
+      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 520000 : 800000);
+      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 384 : 640);
+      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 256 : 512);
+      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 384 : 768);
       // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
       if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
     } else {
@@ -746,6 +748,8 @@ export class RallyGame {
     this._reconSize = null;
     this._tsrLazyArmed = false;
     this._mobileLazyArmed = false;
+    this._tsrBootFailed = false;
+    this._mobileBootFailed = false;
     // Do not construct heavy TSR / LOOK shaders on first paint. Desktop
     // warms after the first title frame; phones take the FXAA present.
     this._bindTsrControl();
@@ -760,7 +764,7 @@ export class RallyGame {
     this._onResize = this._onResize.bind(this);
     window.addEventListener("resize", this._onResize);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", this._onResize);
-    if (isPhonePlay()) this._perfDprScale = /Android/i.test(navigator.userAgent || "") ? 0.62 : 0.78;
+    if (isPhonePlay()) this._perfDprScale = /Android/i.test(navigator.userAgent || "") ? 0.55 : 0.72;
     this._onResize();
     // Rearview RT is race/POV only — allocating it on splash hitchs the first paint.
     if (this.state !== "title" && this.state !== "menu") this._initMirror();
@@ -1678,7 +1682,8 @@ export class RallyGame {
 
   /**
    * Desktop WebTSR after the first title present — not on first paint.
-   * Phones never enter this path (see wantsHeavyWebTsr).
+   * Phones never enter this path (see wantsHeavyWebTsr). Shader / LOOK
+   * compile failures fall back to raw present — never throw on title.
    */
   _bootWebTsr() {
     if (this.tsr || this._tsrBootFailed || !this.renderer) return;
@@ -6134,7 +6139,7 @@ export class RallyGame {
       onTitle ? titlePr : capPr,
       capPr
     );
-    if (isPhonePlay()) pr = Math.min(pr, /Android/i.test(navigator.userAgent || "") ? 0.9 : 1.15);
+    if (isPhonePlay()) pr = Math.min(pr, /Android/i.test(navigator.userAgent || "") ? 0.75 : 1.0);
     if (!onTitle && this._perfDprScale != null && this._perfDprScale < 1) {
       pr *= this._perfDprScale;
     }
@@ -7132,22 +7137,52 @@ export class RallyGame {
     if (!onPad && !this.tsr && wantsHeavyWebTsr()) this._bootWebTsr();
     if (!onPad && !this.mobilePresent && wantsMobilePresent()) this._bootMobilePresent();
     const paused = this.state === "paused";
-    const useTsr = !!(this.tsr && this.tsr.active && !onPad && !countdownLite);
-    const wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
+    let useTsr = !!(this.tsr && this.tsr.active && !onPad && !countdownLite);
+    let wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
     if (useTsr && !paused) {
-      this._tsrRoots = this._tsrRoots || [];
-      this._tsrRoots.length = 0;
-      if (this.playerMesh) this._tsrRoots.push(this.playerMesh);
-      for (let i = 0; i < this.opponents.length; i++) this._tsrRoots.push(this.opponents[i].mesh);
-      this.tsr.render(this.scene, this.camera, {
-        dynamicRoots: this._tsrRoots,
-        measureGuided: !!this._reconMeasure,
-      });
-    } else if (wantMobile && !paused) {
-      this.mobilePresent.render(this.scene, this.camera);
+      try {
+        this._tsrRoots = this._tsrRoots || [];
+        this._tsrRoots.length = 0;
+        if (this.playerMesh) this._tsrRoots.push(this.playerMesh);
+        for (let i = 0; i < this.opponents.length; i++) this._tsrRoots.push(this.opponents[i].mesh);
+        this.tsr.render(this.scene, this.camera, {
+          dynamicRoots: this._tsrRoots,
+          measureGuided: !!this._reconMeasure,
+        });
+      } catch (err) {
+        console.warn("[present] WebTSR/LOOK failed — raw present", err);
+        try {
+          if (this.tsr && typeof this.tsr.dispose === "function") this.tsr.dispose();
+        } catch {
+          /* ignore */
+        }
+        this.tsr = null;
+        this.recon = null;
+        this.appear = null;
+        this._tsrBootFailed = true;
+        useTsr = false;
+        wantMobile = !!(this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
+      }
+    }
+    if (!useTsr && wantMobile && !paused) {
+      try {
+        this.mobilePresent.render(this.scene, this.camera);
+      } catch (err) {
+        console.warn("[present] mobile FXAA failed — raw present", err);
+        try {
+          if (this.mobilePresent && typeof this.mobilePresent.dispose === "function") {
+            this.mobilePresent.dispose();
+          }
+        } catch {
+          /* ignore */
+        }
+        this.mobilePresent = null;
+        this._mobileBootFailed = true;
+        wantMobile = false;
+      }
     }
     const useMobile = !!(wantMobile && this.mobilePresent && this.mobilePresent.presentScene);
-    const presentScene = useTsr && this.tsr.presentScene
+    const presentScene = useTsr && this.tsr && this.tsr.presentScene
       ? this.tsr.presentScene
       : useMobile
         ? this.mobilePresent.presentScene

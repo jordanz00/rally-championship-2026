@@ -12,7 +12,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { probeCapabilities, publishRenderCaps, classifyGpuRenderer } from "./capabilities.js?v=3";
+import { probeCapabilities, publishRenderCaps, classifyGpuRenderer } from "./capabilities.js?v=4";
 import { setRenderCaps } from "./render-caps.js?v=1";
 
 /**
@@ -168,6 +168,12 @@ export async function createGameRenderer(opts = {}) {
     typeof location !== "undefined" &&
     /[?&]webgpu=native(?:&|$)/.test(location.search);
 
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  const phoneGl = /Android|iPhone|iPod|Mobile/i.test(ua);
+  // iPhone Safari / Android Chrome boot on WebGL2. WebGPURenderer is lab-only
+  // (`?webgpu=native`). A cached importmap must not white-screen the title.
+  const skipWebGpu = phoneGl && !wantNative;
+
   // ?webgpu=1|native remaps vendor/three.module.js → three.webgpu.js (r170)
   // via the index.html importmap. Without that remap this r160 module has
   // no WebGPURenderer and we stay on classic WebGL (boot-safe).
@@ -179,7 +185,7 @@ export async function createGameRenderer(opts = {}) {
 
   // Prefer WebGPURenderer when present on the THREE build AND caps allow it.
   // On three.module.js (r160) WebGPURenderer is absent → classic WebGLRenderer.
-  if (CanWebGPU && (caps.preferWebGPU || !THREE.WebGLRenderer)) {
+  if (CanWebGPU && !skipWebGpu && (caps.preferWebGPU || !THREE.WebGLRenderer)) {
     try {
       // Prefer WebGPURenderer always on the webgpu build.
       // Default backend = WebGL2 until TSL ports unlock ?webgpu=native.
@@ -219,7 +225,7 @@ export async function createGameRenderer(opts = {}) {
     }
   }
 
-  if (!renderer && CanWebGPU) {
+  if (!renderer && CanWebGPU && !skipWebGpu) {
     try {
       renderer = new THREE.WebGPURenderer({
         antialias,

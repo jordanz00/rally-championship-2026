@@ -11,7 +11,7 @@
  * POWER BI MAPPING: none
  */
 
-import { isPhonePlay } from "../ui/touch-controls.js?v=3";
+import { isPhonePlay } from "../ui/touch-controls.js?v=4";
 
 /**
  * @param {string} [search]
@@ -44,6 +44,7 @@ export function isPhonePresentBudget() {
  * Desktop Quality / Balanced / Performance reconstruct.
  * Phones never take this path unless `?tsrforce=1` (lab / QA only).
  * `?perf=low|min` also stays on the cheap present so probes match phones.
+ * Never requires WebGPU — iPhone Safari / Android Chrome stay on WebGL2.
  * @param {string} [search]
  * @returns {boolean}
  */

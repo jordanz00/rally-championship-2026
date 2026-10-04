@@ -26,12 +26,14 @@ export function probeCapabilities() {
     (typeof navigator !== "undefined" && !!navigator.webdriver) ||
     /HeadlessChrome/i.test(ua);
   const legacyThree = /[?&]legacyThree=1(?:&|$)/.test(q);
+  const forceNative = /[?&]webgpu=native(?:&|$)/.test(q);
+  const forceGpu = forceNative || /[?&]webgpu=1(?:&|$)/.test(q);
+  const phone = /Android|iPhone|iPod|Mobile/i.test(ua);
   const forceWebGL =
     legacyThree ||
     /[?&]forceWebGL=1(?:&|$)/.test(q) ||
-    /[?&]webgpu=0(?:&|$)/.test(q);
-  const forceNative = /[?&]webgpu=native(?:&|$)/.test(q);
-  const forceGpu = forceNative || /[?&]webgpu=1(?:&|$)/.test(q);
+    /[?&]webgpu=0(?:&|$)/.test(q) ||
+    (phone && !forceNative);
   const webgpu = !!(typeof navigator !== "undefined" && navigator.gpu);
   const webgl2 = (function () {
     try {
@@ -43,6 +45,7 @@ export function probeCapabilities() {
   })();
   // Factory prefers WebGPURenderer only when the webgpu build is loaded
   // (importmap ?webgpu=1|native) or when THREE exposes WebGPURenderer alone.
+  // Phones stay on WebGL — iOS Safari must never require WebGPU to boot.
   const preferWebGPU = !forceWebGL && forceGpu;
   return {
     webgpu,

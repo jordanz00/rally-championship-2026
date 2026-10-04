@@ -93,7 +93,7 @@ void main() {
  */
 export function createMobilePresent(renderer) {
   const caps = renderer && renderer.capabilities;
-  const supported = !!(caps && caps.isWebGL2);
+  let ok = !!(caps && caps.isWebGL2);
   let w = 0;
   let h = 0;
   let capture = null;
@@ -107,7 +107,7 @@ export function createMobilePresent(renderer) {
   const stats = { outW: 0, outH: 0, bytes: 0, compiled: false, lastMs: 0 };
 
   function ensureMaterials() {
-    if (mat || !supported) return;
+    if (mat || !ok) return;
     mat = new THREE.ShaderMaterial({
       uniforms: {
         tColor: { value: null },
@@ -165,35 +165,44 @@ export function createMobilePresent(renderer) {
    * @param {THREE.Camera} camera
    */
   function render(scene, camera) {
-    if (!supported || !renderer || !scene || !camera) return;
+    if (!ok || !renderer || !scene || !camera) return;
     const t0 = performance.now();
-    ensureMaterials();
-    renderer.getDrawingBufferSize(drawSize);
-    ensureRT(drawSize.x, drawSize.y);
-    const prevTarget = renderer.getRenderTarget();
-    const prevAuto = renderer.autoClear;
-    renderer.autoClear = true;
-    renderer.setRenderTarget(capture);
-    renderer.clear();
-    renderer.render(scene, camera);
-    renderer.setRenderTarget(prevTarget);
-    renderer.autoClear = prevAuto;
-    frames += 1;
-    // Frame 1 compiles. Present a straight blit so the first race frame
-    // cannot flash a half-linked WebKit program.
-    const live = frames > 1;
-    ready = true;
-    mat.uniforms.tColor.value = capture.texture;
-    mat.uniforms.uOutSize.value.set(w, h);
-    mat.uniforms.uReady.value = live ? 1 : 0;
-    stats.compiled = live;
-    stats.lastMs = performance.now() - t0;
+    try {
+      ensureMaterials();
+      renderer.getDrawingBufferSize(drawSize);
+      ensureRT(drawSize.x, drawSize.y);
+      const prevTarget = renderer.getRenderTarget();
+      const prevAuto = renderer.autoClear;
+      renderer.autoClear = true;
+      renderer.setRenderTarget(capture);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(prevTarget);
+      renderer.autoClear = prevAuto;
+      frames += 1;
+      // Frame 1 compiles. Present a straight blit so the first race frame
+      // cannot flash a half-linked WebKit program.
+      const live = frames > 1;
+      ready = true;
+      mat.uniforms.tColor.value = capture.texture;
+      mat.uniforms.uOutSize.value.set(w, h);
+      mat.uniforms.uReady.value = live ? 1 : 0;
+      stats.compiled = live;
+      stats.lastMs = performance.now() - t0;
+    } catch (err) {
+      console.warn("[mobile-present] FXAA failed — raw present", err);
+      ok = false;
+      ready = false;
+      presentScene = null;
+    }
   }
 
   return {
-    supported,
+    get supported() {
+      return ok;
+    },
     get active() {
-      return supported;
+      return ok;
     },
     get presentScene() {
       return presentScene;
@@ -208,7 +217,7 @@ export function createMobilePresent(renderer) {
      * @param {number} nh
      */
     setSize(nw, nh) {
-      if (!supported) return;
+      if (!ok) return;
       const rw = Math.max(1, Math.floor(nw));
       const rh = Math.max(1, Math.floor(nh));
       if (capture && (capture.width !== rw || capture.height !== rh)) {

@@ -54,13 +54,13 @@ import {
 } from "../appearance-net.js?v=981";
 import {
   createMobilePresent,
-} from "../mobile-present.js?v=981";
+} from "../mobile-present.js?v=982";
 import {
   wantsHeavyWebTsr,
   wantsMobilePresent,
   wantsAppearanceHandle,
   isPhonePresentBudget,
-} from "../tsr-policy.js?v=981";
+} from "../tsr-policy.js?v=982";
 
 export {
   TsrUpscaler,
