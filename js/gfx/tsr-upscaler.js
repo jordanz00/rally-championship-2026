@@ -14,10 +14,11 @@
  *   depth-based reprojection (camera motion) + a cheap per-object velocity
  *   pass (visible body/wheels only, dedicated scene — never a Forest walk),
  *   Catmull-Rom history when the camera is still / bilinear when it is not,
- *   YCoCg variance clipping, and RCAS on present unless guided reconstruct
- *   already sharpened. The result is handed to PhotoRealPost as if it were
- *   the scene pass (colour + depth), so bloom / AO / grade keep running at
- *   output resolution.
+ *   YCoCg variance clipping, car-silhouette history kill (colour-only —
+ *   chase-locked hulls cannot ghost), and RCAS on present unless guided
+ *   reconstruct already sharpened. The result is handed to PhotoRealPost as
+ *   if it were the scene pass (colour + depth), so bloom / AO / grade keep
+ *   running at output resolution.
  * HOW IT CONNECTS: `new TsrUpscaler(renderer, opts)` in RallyGame._initRenderer;
  *   `_render` calls `tsr.render(scene, camera)` and then presents
  *   `tsr.presentScene` through the normal post / pipeline path.
@@ -62,6 +63,13 @@ export const TSR_HISTORY_SAMPLES = Object.freeze({
 
 /** Epic r.TSR.Velocity.WeightClampingSampleCount — rally wants sharp cars. */
 export const TSR_VEL_CLAMP_SAMPLES = 2.0;
+
+/**
+ * Live race cars never keep TSR history. Chase locks the hull on screen, so
+ * last frame is a near-register copy — blending it is the ghost / smear /
+ * double image. Quality and cheap resolve both honour this.
+ */
+export const TSR_CAR_HISTORY_KILL = true;
 
 /** Persistent-frame interval (Epic default is 31, must be odd). */
 export const TSR_RESURRECT_INTERVAL = 31;
@@ -287,19 +295,21 @@ void main() {
 #endif
   vec3 curCC = toYCoCg(karis(cur));
 
-  // Reprojection: car velocity where the velocity pass wrote. Dilate one
-  // texel only on the still path — motion already rejects long history.
+  // Reprojection: car velocity only where THIS pixel wrote it.
+  // Do not dilate the vector — a neighbour inheriting car motion
+  // reprojects the old hull onto the road (ghost trail).
   vec4 vel = texelFetch(tVel, closeI, 0);
-#if !CHEAP_RESOLVE
-  if (vel.a < 0.5) {
+  float car = step(0.5, vel.a);
+  // Dilate the CAR MASK only (Quality + cheap) so a 1-texel silhouette
+  // that missed the velocity pass cannot keep history.
+  if (car < 0.5) {
     for (int y = -1; y <= 1; y++) {
       for (int x = -1; x <= 1; x++) {
         vec4 nv = texelFetch(tVel, clamp(ic + ivec2(x, y), ivec2(0), maxI), 0);
-        if (nv.a > 0.5) vel = nv;
+        if (nv.a > 0.5) car = 1.0;
       }
     }
   }
-#endif
   vec2 prevUv;
   float expPrevD;
   if (vel.a > 0.5) {
@@ -337,14 +347,22 @@ void main() {
   hist.rgb = sane(hist.rgb);
   float n = (hist.a == hist.a) ? clamp(hist.a, 0.0, uMaxN) : 0.0;
   n *= valid;
+  // Car silhouette: drop history (colour-only). Chase keeps the hull
+  // nearly still on screen, so last frame is a near-register copy —
+  // blending it is the player-visible ghost / smear / double image.
+  // Quality and cheap resolve share this kill. Spatial AA covers n<2.4.
+  if (car > 0.5) {
+    valid = 0.0;
+    n = 0.0;
+  }
 
   vec3 histCC = toYCoCg(karis(hist.rgb));
   float highFreq = length(bmax - bmin);
 
   // History Resurrection (FAQ): use the oldest persistent frame only when
   // (1) it matches current better than last frame AND (2) last frame does
-  // not match enough. No optical flow — moving cars stay on velocity.
-  if (uResurrectOn > 0.5 && valid > 0.5) {
+  // not match enough. No optical flow — cars already dropped history.
+  if (uResurrectOn > 0.5 && valid > 0.5 && car < 0.5) {
     vec4 rez = texture2D(tResurrect, prevUv);
     rez.rgb = sane(rez.rgb);
     float nRez = (rez.a == rez.a) ? clamp(rez.a, 0.0, uMaxN) : 0.0;
@@ -410,7 +428,8 @@ void main() {
   float yDelta = abs(curCC.x - histCC.x);
   float still = 1.0 - clamp((motionPx - 0.6) / 3.0, 0.0, 1.0);
   // FAQ: flicker analysis is off on moving objects / big parallax (pink).
-  float flickerOk = still * (1.0 - step(0.5, vel.a));
+  // Use the dilated car mask so a silhouette edge cannot re-accumulate.
+  float flickerOk = still * (1.0 - car);
   if (uFlickerOn > 0.5 && flickerOk > 0.55 && thin < 0.5 && highFreq > 0.07 && yDelta > 0.035 && valid > 0.5) {
     clipped = mix(clipped, histCC, 0.62);
     n = min(n + 2.0, uMaxN);
@@ -439,6 +458,12 @@ void main() {
     vec3 fx = eH > eV ? 0.5 * (sL + sR) : 0.5 * (sU + sD);
     cur = mix(cur, fx, 0.52);
     curCC = toYCoCg(karis(cur));
+  }
+
+  // Final car kill — flicker / specular lock must not restore history.
+  if (car > 0.5) {
+    n = 0.0;
+    clipped = curCC;
   }
 
   float wCur = conf + 0.02;
@@ -639,7 +664,7 @@ function collectHeroVelMeshes(root) {
     const kind = !Array.isArray(o.material) && o.material && o.material.userData
       ? o.material.userData.kind
       : "";
-    if (kind === "paint" || BODY_VEL_NAME.test(n)) body.push(o);
+    if (kind === "paint" || kind === "chrome" || BODY_VEL_NAME.test(n)) body.push(o);
   });
   body.sort((a, b) => meshRadius(b) - meshRadius(a));
   const out = [];
@@ -650,8 +675,10 @@ function collectHeroVelMeshes(root) {
     out.push(o);
   };
   for (let i = 0; i < Math.min(4, wheels.length); i++) add(wheels[i]);
-  for (let i = 0; i < body.length && out.length < 7; i++) add(body[i]);
-  if (!out.length) {
+  for (let i = 0; i < body.length && out.length < 8; i++) add(body[i]);
+  // Name miss: still stamp the largest hull pieces so the car mask covers
+  // the silhouette. Without coverage, Quality TSR ghosts the live race car.
+  if (out.length < 6) {
     const all = [];
     root.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh || !o.geometry) return;
@@ -660,7 +687,7 @@ function collectHeroVelMeshes(root) {
       all.push(o);
     });
     all.sort((a, b) => meshRadius(b) - meshRadius(a));
-    for (let i = 0; i < Math.min(5, all.length); i++) add(all[i]);
+    for (let i = 0; i < all.length && out.length < 8; i++) add(all[i]);
   }
   return out;
 }

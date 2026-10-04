@@ -8,8 +8,8 @@ WebTSR is a legal browser clone of [Unreal Engine Temporal Super Resolution](htt
 
 ## Live
 
-- Game (desktop Quality on by default, LOOK off): `http://127.0.0.1:8766/index.html?v=981`
-- Isolated SDK lab (no stage load, LOOK off): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=981`
+- Game (desktop Quality on by default, LOOK off): `http://127.0.0.1:8766/index.html?v=988`
+- Isolated SDK lab (no stage load, LOOK off): `http://127.0.0.1:8766/tools/webtsr-lab.html?v=988`
 - Pause → **IMAGE** in-game: Off / DLAA / Quality / Balanced / Performance
 - Pause → **REFINE**: depth + velocity residual. Pause → **LOOK**: appearance residual.
 - Live UI never says “DLSS 5”. The control is IMAGE / TSR.
@@ -53,6 +53,7 @@ Public Epic algorithms from the Temporal Super Resolution page. Our GLSL, not `T
 | Nyquist-Shannon history at 200% | **Not shipped** | 4× resolve cost; Forest 33 ms gate |
 | Parallax disocclusion | Depth + previous-depth compare | Camera + car velocity |
 | Shading rejection | YCoCg AABB + luma-delta reject | Lighting / VFX drop history |
+| Car silhouette | Colour-only (`TSR_CAR_HISTORY_KILL`) | No history blend on player / rivals |
 | Flickering temporal analysis | High-freq luma flip → relax reject | Forest fences / tree edges |
 | History resurrection | `_resurrectRT` every 31 frames | Older match beats last frame |
 | Spatial anti-aliaser | FXAA-style on `n < 2.4` | Cuts / disocclusion only |
@@ -100,7 +101,7 @@ From [Temporal Super Resolution FAQ](https://dev.epicgames.com/documentation/unr
 | Quality WebTSR (pre-Look) | **32.7 ms** | 1377×775 → 1788×1006 |
 | Native off | **33.4 ms** | full buffer |
 
-Look A/B never cleared the Forest 33 ms gate (G-buffer walk ~47 ms then abort; first LOOK frames ~20 ms compile). Appearance defaults **off** (`APPEAR_DEFAULT = false`). Pause LOOK or `?appear=1` is the opt-in. Isolated lab `tools/webtsr-lab.html?v=981` Quality p50 **16.7 ms** (845×751 → 1098×975, LOOK off, n 0.00 ms). G-buffer override is opt-in and aborts after frame 2 if it exceeds 1.5 ms. Proof: `node tools/qa-webtsr-sdk.mjs`.
+Look A/B never cleared the Forest 33 ms gate (G-buffer walk ~47 ms then abort; first LOOK frames ~20 ms compile). Appearance defaults **off** (`APPEAR_DEFAULT = false`). Pause LOOK or `?appear=1` is the opt-in. Isolated lab `tools/webtsr-lab.html?v=988` Quality p50 **16.7 ms** (845×751 → 1098×975, LOOK off, n 0.00 ms). G-buffer override is opt-in and aborts after frame 2 if it exceeds 1.5 ms. Live cars drop history (`TSR_CAR_HISTORY_KILL`) so Quality cannot smear a chase-locked hull. Proof: `node tools/qa-webtsr-sdk.mjs` · `node tools/qa-car-ghost.mjs`.
 
 ## Device policy
 
@@ -111,7 +112,7 @@ Look A/B never cleared the Forest 33 ms gate (G-buffer walk ~47 ms then abort; f
 | `?perf=low\|min` | Same as phone. |
 | `?tsrforce=1` | Lab-only: force desktop WebTSR on a phone. |
 
-Earlier Quality was 65.8 ms because velocity walked 214 car meshes. It now draws 7 hero body/wheel meshes. Shadows stayed 1536. Mid-throttle: no ghost body.
+Earlier Quality was 65.8 ms because velocity walked 214 car meshes. It now draws hero body/wheel meshes (cap 8 per car). Shadows stayed 1536. Car pixels are colour-only — mid-throttle is one body, not a history double.
 
 ## SDK
 

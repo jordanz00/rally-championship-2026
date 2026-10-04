@@ -81,6 +81,12 @@ function main() {
   must(src.tsr.includes("setSize(w, h)"), "TsrUpscaler.setSize");
   must(src.tsr.includes("wall = step"), "tunnel-mouth depth wall reject");
   must(src.tsr.includes("Specular lock"), "specular swim reject");
+  must(src.tsr.includes("export const TSR_CAR_HISTORY_KILL = true"), "car history kill exported");
+  must(src.tsr.includes("Car silhouette: drop history (colour-only)"), "car silhouette colour-only");
+  must(src.tsr.includes("Do not dilate the vector"), "velocity vector not dilated onto road");
+  must(src.tsr.includes("Final car kill"), "final car kill before blend");
+  must(src.tsr.includes("TSR_DEFAULT_MODE = \"quality\""), "desktop IMAGE default is Quality");
+  must(src.sdk.includes("TSR_CAR_HISTORY_KILL"), "SDK re-exports car history kill");
 
   must(src.appear.includes("APPEAR_DEFAULT = false"), "APPEAR_DEFAULT false");
   must(src.appear.includes("APPEAR_LUMA_HEADROOM"), "luma headroom constant");
@@ -120,14 +126,16 @@ function main() {
   const mainV = Number((src.html.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
   const gameV = Number((src.main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
   const sdkV = Number((src.game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) || [])[1] || 0);
-  must(mainV >= 981, `index boots main.js?v=${mainV} (>=981)`);
-  must(gameV >= 981, `main imports game.js?v=${gameV} (>=981)`);
-  must(sdkV >= 981, `game imports SDK ?v=${sdkV} (>=981)`);
+  const tsrV = Number((src.sdk.match(/tsr-upscaler\.js\?v=(\d+)/) || [])[1] || 0);
+  must(mainV >= 988, `index boots main.js?v=${mainV} (>=988)`);
+  must(gameV >= 988, `main imports game.js?v=${gameV} (>=988)`);
+  must(sdkV >= 988, `game imports SDK ?v=${sdkV} (>=988)`);
+  must(tsrV >= 988, `SDK imports tsr-upscaler.js?v=${tsrV} (>=988)`);
 
   must(src.lab.includes("createWebTsr"), "lab uses createWebTsr");
   must(!/id="appear"[^>]*checked/.test(src.lab), "lab LOOK checkbox unchecked");
   must(src.lab.includes("recon.appear.enabled = false"), "lab forces appear off at boot");
-  must(/browser-reconstruct-sdk\/index\.js\?v=981/.test(src.lab), "lab cache-bust 981");
+  must(/browser-reconstruct-sdk\/index\.js\?v=988/.test(src.lab), "lab cache-bust 988");
 
   must(src.docs.includes("APPEAR_DEFAULT"), "WEBTSR.md records default off");
   must(src.docs.includes("Not cloned"), "WEBTSR.md records no frame generation");

@@ -27,9 +27,10 @@ import {
   parseTsrParams,
   TSR_HISTORY_SAMPLES,
   TSR_VEL_CLAMP_SAMPLES,
+  TSR_CAR_HISTORY_KILL,
   TSR_RESURRECT_INTERVAL,
   NORMAL_BUDGET_MS,
-} from "../tsr-upscaler.js?v=981";
+} from "../tsr-upscaler.js?v=988";
 import {
   createReconstruct,
   persistReconEnabled,
@@ -72,6 +73,7 @@ export {
   parseTsrParams,
   TSR_HISTORY_SAMPLES,
   TSR_VEL_CLAMP_SAMPLES,
+  TSR_CAR_HISTORY_KILL,
   TSR_RESURRECT_INTERVAL,
   NORMAL_BUDGET_MS,
   createReconstruct,

@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Live car ghost / smear (2026-10-04)
+
+**Player moment:** Chase cam, Celica or a rival. One solid body — not a smear, double image, or trailing hull.
+
+**Cause:** Desktop IMAGE Quality TSR (`TSR_DEFAULT_MODE = quality`) kept history on the car. Chase locks the hull on screen, so last frame is a near-register copy of the same paint. Shade reject only fired when `still > 0.7` *and* luma delta was large — two offset copies of the same lacquer fail that test. Dilating the velocity *vector* onto neighbouring road texels reprojected the old hull onto the asphalt (trail). LOOK is default-off; this was Quality history, not appearance. Replay solids, attract reel, and race paint were not a second mesh.
+
+**Fix:** Car silhouette is colour-only (`TSR_CAR_HISTORY_KILL`). Velocity coverage (player + rivals) plus a 1-texel *mask* dilate drop history; the motion vector is not dilated. Resurrection / flicker cannot restore car history. Cheap resolve shares the same kill. Attract `v=9` and broadcast replay `v=6` untouched.
+
+**Proof:** `node tools/qa-car-ghost.mjs` · `node tools/qa-webtsr-sdk.mjs` · `node tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=988` · `game.js?v=988` · SDK `?v=988` · `tsr-upscaler.js?v=988`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=988
+
 ## Forest Stage 2 — stuck at 3485 m (2026-10-04)
 
 **Player moment:** Championship Stage 2. Medium left to the finish. At ~3485 m the car slows and feels stuck on invisible geometry.

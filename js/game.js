@@ -46,7 +46,7 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=981";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=988";
 import { createPerfTier } from "./gfx/perf-tier.js?v=54";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
