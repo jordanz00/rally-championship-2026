@@ -654,6 +654,8 @@ export class Vehicle {
     this._visPitch = 0;
     this._deckFilt = null;
     this._maneuverY = null;
+    this._maneuverPinned = false;
+    this._maneuverFollow = 0;
     this._bodyPitch = 0;
     this._bodyPitchRate = 0;
     this._alphaF = 0;
@@ -908,7 +910,12 @@ export class Vehicle {
     this._goRush = GO_RUSH_S;
     // Pin the plant filter to the settled deck so the first GO steps do not
     // chase a stale spawn Y and read as a throttle trampoline.
-    if (Number.isFinite(this.position.y)) this._deckFilt = this.position.y;
+    if (Number.isFinite(this.position.y)) {
+      this._deckFilt = this.position.y;
+      this._maneuverY = this.position.y;
+    }
+    this._maneuverPinned = false;
+    this._maneuverFollow = 0;
     this._capturePrev();
     this._stashGoodPose(true);
     this.drawPose(1);
@@ -1044,7 +1051,9 @@ export class Vehicle {
     if (!Number.isFinite(dt) || dt <= 0) dt = FIXED_DT;
     if (dt > FIXED_DT) dt = FIXED_DT;
     this._capturePrev();
-    this._maneuverY = null;
+    // Hold `_maneuverY` across ticks. Wiping it here re-sampled washboard /
+    // crown every step and hopped the hull on throttle and e-brake slides.
+    this._maneuverPinned = false;
     const s = this.spec;
     this.throttle = clamp(Number(input.throttle) || 0, 0, 1);
     this.brake = clamp(Number(input.brake) || 0, 0, 1);
@@ -1605,7 +1614,7 @@ export class Vehicle {
       if (!Number.isFinite(plantDeck)) plantDeck = prevY;
       // A slide used to ride the deck filter. The filter hangs above a
       // dropping probe, then drops — that is the hop on brake and handbrake.
-      if (this._keepDeckPlanted() && !onJumpApproach) {
+      if (this._wantPlantedDeck() && !onJumpApproach) {
         this._pinManeuverDeck();
         this._airTime = 0;
         return;
@@ -2936,7 +2945,7 @@ export class Vehicle {
     let x = this._landCompress || 0;
     let v = this._landCompressVel || 0;
     // A slide or brake after touchdown must not get a second hop from rebound.
-    if (this._keepDeckPlanted() && v > 0) v *= 0.15;
+    if (this._wantPlantedDeck() && v > 0) v *= 0.15;
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
@@ -3121,7 +3130,7 @@ export class Vehicle {
     // Lifting to them is the hop during a drift, brake, turn, or handbrake.
     const pinManeuver =
       this.onGround &&
-      this._keepDeckPlanted() &&
+      this._wantPlantedDeck() &&
       kind !== "gap" &&
       kind !== "ramp";
     if (pinManeuver && this._pinManeuverDeck()) return;
@@ -3199,6 +3208,18 @@ export class Vehicle {
   }
 
   /**
+   * World-Y plant: slide / brake / steer, plus throttle so GO squats
+   * instead of hopping. Roll / ay mute stay on `_keepDeckPlanted` so a
+   * straight launch does not flatten the chassis.
+   * @returns {boolean}
+   */
+  _wantPlantedDeck() {
+    if (!this.onGround) return false;
+    if (this.throttle > 0.16) return true;
+    return this._keepDeckPlanted();
+  }
+
+  /**
    * Ribbon plane under the car — spline + deck, no washboard / ruts.
    * Sliding across crown or micro used to hop the hull every tick.
    * @param {object} [q]
@@ -3217,32 +3238,60 @@ export class Vehicle {
   }
 
   /**
-   * Glue a drift / brake / turn to the stable deck. One filter step per tick.
+   * Glue accel / drift / brake / turn to the ribbon plane.
+   * One follow step per tick; later calls in the same step only stamp Y.
+   * Query chatter is deadzoned. Real grade must hold its sign before we move.
    * @returns {boolean}
    */
   _pinManeuverDeck() {
     const q = this._q;
-    if (!this.onGround || !this._keepDeckPlanted() || !q) return false;
-    if (q.jumpKind === "gap" || q.jumpKind === "ramp") return false;
-    if (Number.isFinite(this._maneuverY)) {
+    if (!this.onGround || !this._wantPlantedDeck() || !q) {
+      this._maneuverY = null;
+      this._maneuverFollow = 0;
+      return false;
+    }
+    if (q.jumpKind === "gap" || q.jumpKind === "ramp") {
+      this._maneuverY = null;
+      this._maneuverFollow = 0;
+      return false;
+    }
+    if (this._maneuverPinned && Number.isFinite(this._maneuverY)) {
       this.position.y = this._maneuverY;
       this.velY = 0;
       this._groundVy = 0;
       this._climbVel = 0;
       return true;
     }
-    const raw = this._stableDeckY(q, this.position.y);
+    const hold = Number.isFinite(this._maneuverY) ? this._maneuverY : this.position.y;
+    const raw = this._stableDeckY(q, hold);
     if (!Number.isFinite(raw)) return false;
-    if (this._deckFilt == null || !Number.isFinite(this._deckFilt)) this._deckFilt = raw;
-    const err = raw - this._deckFilt;
-    const rate = Math.abs(err) > 0.1 ? 32 : 14;
-    this._deckFilt += err * (1 - Math.exp(-rate * FIXED_DT));
-    this._maneuverY = this._deckFilt;
-    this._deckSmoothY = this._deckFilt;
+    if (!Number.isFinite(this._maneuverY)) {
+      this._maneuverY = raw;
+      this._maneuverFollow = 0;
+    } else {
+      const err = raw - this._maneuverY;
+      if (Math.abs(err) <= 0.035) {
+        this._maneuverFollow = 0;
+      } else {
+        const sign = err > 0 ? 1 : -1;
+        const prev = this._maneuverFollow || 0;
+        this._maneuverFollow = prev * sign > 0 ? prev + sign : sign;
+        if (Math.abs(this._maneuverFollow) >= 4 || Math.abs(err) > 0.18) {
+          const rate = Math.abs(err) > 0.22 ? 10 : 5;
+          let dy = err * (1 - Math.exp(-rate * FIXED_DT));
+          if (dy > 0.006) dy = 0.006;
+          if (dy < -0.006) dy = -0.006;
+          this._maneuverY += dy;
+        }
+      }
+    }
+    this._deckFilt = this._maneuverY;
+    this._deckSmoothY = this._maneuverY;
     this.position.y = this._maneuverY;
     this.velY = 0;
     this._groundVy = 0;
     this._climbVel = 0;
+    this._maneuverPinned = true;
     return true;
   }
 
@@ -3717,6 +3766,10 @@ export class Vehicle {
     if (ground && this._keepDeckPlanted()) {
       this._suspRollRate *= Math.exp(-10 * dt);
       this._suspPitchRate *= Math.exp(-2.4 * dt);
+    }
+    // Throttle squat is one sit, not a hop. Yaw / slide stay on the tires.
+    if (ground && this._wantPlantedDeck()) {
+      this._suspPitchRate *= Math.exp(-3.2 * dt);
     }
     if (!ground) {
       // Airborne: the springs unload and the body stops leaning.

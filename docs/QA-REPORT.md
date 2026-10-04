@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## E-brake / accel deck plant (2026-10-04)
+
+**Player moment:** Floor it. Yank the handbrake into a powerslide. The Celica rotates and stays catchable — the deck does not hop or jitter.
+
+**Cause:** `_pinManeuverDeck` wiped `_maneuverY` every `step()`, then re-filtered `_stableDeckY` at 14–32/s. Three pin calls per tick were supposed to hold Y, but the wipe forced a fresh chase of crown / washboard / axle mid-height. Throttle-only GO used the regular plant, so launch squat read as a bounce.
+
+**Fix:** Persist the ribbon sample across ticks. One follow per step; later calls only stamp. Deadzone 3.5 cm chatter; follow a real grade only after four same-sign ticks (or an 18 cm shelf), capped at 6 mm/tick. `_wantPlantedDeck` adds throttle so accel squats instead of hopping. Slide roll / ay mute stay on `_keepDeckPlanted` — yaw and the GO punch are untouched.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-slide-bounce.mjs` · `node tools/qa-go-punch.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs`
+
+**Boot:** `main.js?v=990` · `game.js?v=990` · `vehicle.js?v=184`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=990
+
 ## Result replay — player-centric cinema (2026-10-04)
 
 **Player moment:** Stage result TV replay. Cuts land on the hero car — bumper, chase, side fly-by, helicopter, nose-on, rear three-quarter, crane, tunnel/crest hero. No empty-road, sky-only, or rival-only frames.
