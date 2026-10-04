@@ -59,7 +59,7 @@ check("codriver names Emma actor", /Emma cheerful/.test(driver) && /NAV_ACTOR/.t
 check("nav clips cache-bust v=8+", Number((engine.match(/nav\/\$\{key\}\.mp3\?v=(\d+)/) || [])[1]) >= 8);
 check("game imports engine.js v=80+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 80);
 check("game imports codriver.js v=47+", Number((game.match(/codriver\.js\?v=(\d+)/) || [])[1]) >= 47);
-check("boot cache-bust 982+", cacheOk && Number(gameV) >= 982 && Number(mainV) >= 982, `main=${mainV} game=${gameV}`);
+check("boot cache-bust 983+", cacheOk && Number(gameV) >= 983 && Number(mainV) >= 983, `main=${mainV} game=${gameV}`);
 check("attribution actor id", /emma-cheerful/.test(attr) && /emma-cheerful/.test(navAttr));
 check("renderer uses Emma neural", /en-US-EmmaMultilingualNeural/.test(render) && /NAV_ACTOR/.test(render));
 check("no speechSynthesis on race path", !/speechSynthesis/.test(engine) && !/speechSynthesis/.test(driver));
