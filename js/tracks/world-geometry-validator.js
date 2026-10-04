@@ -157,6 +157,31 @@ export function validateWorldGeometry(track, opts = {}) {
     }
   }
 
+  // Late Forest play-lane: the finish-left over the bore (~3485 m) must stay
+  // a road. A stacked flyover here is the same class of wall as Desert 1654.
+  if (scenery === "forest") {
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      if (b.dist < 3455 || b.dist > 3515) continue;
+      if (a.jump || a.jumpKind || b.jump || b.jumpKind) continue;
+      const ds = b.dist - a.dist;
+      if (ds < 0.12) continue;
+      const g = (b.y - a.y) / ds;
+      if (g > 0.12) {
+        errors.push({
+          severity: "error",
+          code: "FOREST_3485_WALL",
+          message: `Late Forest play-lane grade ${(g * 100).toFixed(1)}% at ${b.dist.toFixed(0)} m — finish-left over the bore must stay a road`,
+          dist: b.dist,
+          x: b.x,
+          y: b.y,
+          z: b.z,
+        });
+      }
+    }
+  }
+
   // Prop / instance lateral samples — check keep-clear vs tunnel volumes.
   // We do not walk every InstancedMesh matrix (expensive); we re-check corridor
   // consistency: exclusion half-width must be >= shoulder pad convention.

@@ -15,7 +15,7 @@ import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=13";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
-import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=6";
+import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=7";
 import {
   shadowGeometry,
   shadowMaterial,
@@ -82,7 +82,7 @@ import {
   FOREST_BORE_INSET,
   forestTunnelSconcePose,
   createForestTunnelSconceGeometry,
-} from "./forest-tunnel.js?v=18";
+} from "./forest-tunnel.js?v=19";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, updateClothFlags, startFlagKinds } from "./flag-cloth.js?v=8";
@@ -582,7 +582,11 @@ export class Track {
     if ((def.scenery || "forest") === "desert") {
       this._markDesertUnderpassCorridors();
     }
+    this._overTunnelLanes = [];
     this._separateOverlappingRibbon();
+    // Later ribbon over a bore (Forest finish-left @ 3485) — one flat deck,
+    // not stacked 18% flyover hills through the tunnel walls.
+    this._separateTunnelOverpasses();
 
     // Tunnel runs must be known before the land plane: Desert raises a ridge
     // around them so the tube is not a gate in empty sand.
@@ -646,6 +650,9 @@ export class Track {
       for (let i = 0; i < n; i += 2) {
         const a = pts[i];
         if (a.jumpKind === "gap" || a.jumpKind === "crest" || a.jumpKind === "ramp") continue;
+        // Tunnel already is the crossing. Additive lifts over the bore stacked
+        // an 18% wall on Forest's medium-left-to-finish (~3485 m).
+        if (a.tunnel) continue;
         for (let j = i + 24; j < n; j += 2) {
           const b = pts[j];
           if (b.tunnel || b.underpass) continue;
@@ -746,6 +753,112 @@ export class Track {
       if (pts[k].jump || pts[k].jumpKind) return true;
     }
     return false;
+  }
+
+  /**
+   * Later ribbon that occupies a tunnel's XZ. One flat deck at CLEAR above the
+   * bore, then grade-limited ramps *outside* the overlap so the climb is not
+   * an invisible wall (Forest medium-left-to-finish @ 3485 m).
+   */
+  _separateTunnelOverpasses() {
+    const pts = this.points;
+    if (!pts || pts.length < 40) return;
+    if (!this._overTunnelLanes) this._overTunnelLanes = [];
+    const CLEAR = 7.4;
+    const GRADE = 0.12;
+    const tunIdx = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (pts[i].tunnel) tunIdx.push(i);
+    }
+    if (!tunIdx.length) return;
+    const over = [];
+    for (let j = 0; j < pts.length; j++) {
+      const b = pts[j];
+      if (b.tunnel || b.underpass) continue;
+      if (b.jump || b.jumpKind) continue;
+      let tunY = null;
+      for (let t = 0; t < tunIdx.length; t++) {
+        const a = pts[tunIdx[t]];
+        if (b.dist - a.dist < 80) continue;
+        const xz = Math.hypot(b.x - a.x, b.z - a.z);
+        const need = (a.width + b.width) * 0.5 + 3;
+        if (xz >= need) continue;
+        tunY = a.y;
+        break;
+      }
+      if (tunY == null) continue;
+      over.push({ j, tunY });
+    }
+    if (!over.length) return;
+    let c0 = 0;
+    const clusters = [];
+    for (let k = 1; k <= over.length; k++) {
+      const split = k === over.length || over[k].j > over[k - 1].j + 3;
+      if (!split) continue;
+      clusters.push({ a: over[c0], b: over[k - 1] });
+      c0 = k;
+    }
+    for (let c = 0; c < clusters.length; c++) {
+      const j0 = clusters[c].a.j;
+      const j1 = clusters[c].b.j;
+      const tunY = clusters[c].a.tunY;
+      const target = tunY + CLEAR;
+      for (let j = j0; j <= j1; j++) {
+        if (pts[j].y < target) pts[j].y = target;
+        if (pts[j].y > target) pts[j].y = target;
+      }
+      this._gradeRampTo(j0, -1, target, GRADE);
+      this._gradeRampTo(j1, 1, target, GRADE);
+      this._overTunnelLanes.push({
+        dist0: pts[j0].dist - 16,
+        dist1: pts[j1].dist + 16,
+      });
+    }
+  }
+
+  /**
+   * Smoothstep a flyover ramp from a peak index toward `dir` so the steepest
+   * point stays at or under `gradeMax` (smoothstep peak is 1.5× average).
+   * @param {number} fromIdx
+   * @param {number} dir -1 or +1
+   * @param {number} peakY
+   * @param {number} gradeMax
+   */
+  _gradeRampTo(fromIdx, dir, peakY, gradeMax) {
+    const pts = this.points;
+    if (!pts || !pts[fromIdx]) return;
+    let farY = peakY;
+    for (let s = 1; s <= 90; s++) {
+      const k = fromIdx + dir * s;
+      if (k < 0 || k >= pts.length) break;
+      if (pts[k].tunnel || pts[k].underpass || pts[k].jump || pts[k].jumpKind) break;
+      if (pts[k].y < farY) farY = pts[k].y;
+      if (Math.abs(pts[k].dist - pts[fromIdx].dist) > 180) break;
+    }
+    const rise = Math.abs(peakY - farY);
+    const needRun = Math.max(28, (rise * 1.5) / Math.max(0.04, gradeMax));
+    let end = fromIdx;
+    for (let s = 1; s <= 90; s++) {
+      const k = fromIdx + dir * s;
+      if (k < 0 || k >= pts.length) break;
+      if (pts[k].tunnel || pts[k].underpass || pts[k].jump || pts[k].jumpKind) break;
+      end = k;
+      if (Math.abs(pts[fromIdx].dist - pts[k].dist) >= needRun) break;
+    }
+    const run = Math.abs(pts[fromIdx].dist - pts[end].dist);
+    if (run < 8) return;
+    const baseY = pts[end].y;
+    const lo = Math.min(fromIdx, end);
+    const hi = Math.max(fromIdx, end);
+    for (let k = lo; k <= hi; k++) {
+      if (k === fromIdx) continue;
+      const t = 1 - Math.abs(pts[k].dist - pts[fromIdx].dist) / run;
+      if (t <= 0) continue;
+      const w = t * t * (3 - 2 * t);
+      const want = baseY + (peakY - baseY) * w;
+      if (pts[k].y < want) pts[k].y = want;
+      if (pts[k].y > peakY) pts[k].y = peakY;
+    }
   }
 
   /**
@@ -4317,7 +4430,7 @@ export class Track {
    * @param {number} pz
    * @param {number} heading
    */
-  _colliderBlocksSample(c, px, pz, heading) {
+  _colliderBlocksSample(c, px, pz, heading, sampleY) {
     const fx = Math.sin(heading);
     const fz = Math.cos(heading);
     const rx = fz;
@@ -4326,6 +4439,9 @@ export class Track {
     const HW = 0.95;
     const WB = 2.4;
     if (c.kind === "wall") {
+      if (Number.isFinite(c.top) && Number.isFinite(sampleY) && sampleY >= c.top + 0.45) {
+        return false;
+      }
       const nx = c.nx;
       const nz = c.nz;
       const dx = px - c.x;
@@ -4425,7 +4541,7 @@ export class Track {
           const col = list[c];
           if (col.kind !== "wall") continue;
           if (Math.hypot(col.x - sx, col.z - sz) > (col.halfLen || 4) + 6) continue;
-          if (this._colliderBlocksSample(col, sx, sz, p.heading)) offenders.add(c);
+          if (this._colliderBlocksSample(col, sx, sz, p.heading, p.y)) offenders.add(c);
         }
       }
     }
@@ -4446,7 +4562,7 @@ export class Track {
           const col = list[c];
           if (col.kind !== "wall") continue;
           if (Math.hypot(col.x - sx, col.z - sz) > (col.halfLen || 4) + 6) continue;
-          if (this._colliderBlocksSample(col, sx, sz, p.heading)) drop.add(c);
+          if (this._colliderBlocksSample(col, sx, sz, p.heading, p.y)) drop.add(c);
         }
       }
     }
@@ -4513,6 +4629,15 @@ export class Track {
       }
       prevLand = land;
     }
+    // Later-over-bore decks (Forest 3485). Walls whose top still reaches the
+    // finish-left must not sit in the play lane if this class of block returns.
+    const overLanes = this._overTunnelLanes;
+    if (overLanes && overLanes.length) {
+      for (let i = 0; i < overLanes.length; i++) {
+        const ln = overLanes[i];
+        bands.push({ dist0: ln.dist0, dist1: ln.dist1, step: 0.75 });
+      }
+    }
     if (!bands.length) return;
     const list = this.colliders;
     if (!list || !list.length) return;
@@ -4540,7 +4665,7 @@ export class Track {
             if (drop.has(i)) continue;
             const c = list[i];
             if (Math.hypot(c.x - sx, c.z - sz) > 55) continue;
-            if (this._colliderBlocksSample(c, sx, sz, pose.heading)) {
+            if (this._colliderBlocksSample(c, sx, sz, pose.heading, pose.y)) {
               drop.add(i);
             }
           }

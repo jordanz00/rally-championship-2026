@@ -1,5 +1,21 @@
 # QA report — quality-control pass
 
+## Forest Stage 2 — stuck at 3485 m (2026-10-04)
+
+**Player moment:** Championship Stage 2. Medium left to the finish. At ~3485 m the car slows and feels stuck on invisible geometry.
+
+**What lives there:** Compiled Forest is 3903 m. 3442–3521 m is the authored “Medium left to the finish” (r=108, +42°). That ribbon occupies the same XZ as the late rock bore (~2248 m, still inside `tunEnd` 2331). Additive `_separateOverlappingRibbon` passes stacked a flyover to 11 m — **18.6% at 3474 m** — and bore wall tops still reached the later deck.
+
+**Fix:** Tunnel-under pairs no longer take the additive flyover. `_separateTunnelOverpasses` builds one 7.4 m deck over the bore and grade-limited ramps outside the overlap (worst 9.1%). `forestBoreCeiling` uses the same XZ test as the flyover so wall `top` stays under the later deck. Ribbon scrub samples the over-tunnel lane. `tunEnd` function-scope (v984) untouched. Desert 1654 land skip untouched. `Track.query()` not rewritten.
+
+**Gate:** `tools/qa-forest-3485.mjs` plus `FOREST_3485_WALL` in the world-geometry validator. Fails if late-Forest play-lane grows a new wall.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3485.mjs` · `qa-desert-1654.mjs` · `qa-forest-tunnel-bore.mjs` · `qa-lane-floor.mjs` · `qa-play-lane.mjs` · `qa-stage-flow.mjs`
+
+**Boot:** `main.js?v=987` · `game.js?v=987` · `track.js?v=418` · `forest-tunnel.js?v=19`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=987
+
 ## Result replay — full pack, fresh trails (2026-10-04)
 
 **Player moment:** After a stage, TV replay. Every car that raced is on the road (player + rivals). Old finish marks are gone. As the pack drives, each car stamps new dirt/rubber trails. Opaque paint, not ghosts.

@@ -425,28 +425,21 @@ function roadClearanceCaps(frames, pts, spec) {
   }
   for (let i = 0; i < n; i++) {
     const f = frames[i];
-    const shoulders = [0, -half * 0.9, half * 0.9];
-    for (let s = 0; s < shoulders.length; s++) {
-      const sx = f.x + f.nx * shoulders[s];
-      const sz = f.z + f.nz * shoulders[s];
-      for (let r = 0; r < roads.length; r++) {
-        const p = roads[r];
-        const dx = p.x - sx;
-        const dz = p.z - sz;
-        const reach = p.width * 0.5 + half + 2;
-        if (dx * dx + dz * dz > reach * reach) continue;
-        const along =
-          (sx - p.x) * Math.sin(p.heading) + (sz - p.z) * Math.cos(p.heading);
-        const lat = (sx - p.x) * p.nx + (sz - p.z) * p.nz;
-        if (Math.abs(along) > 8) continue;
-        if (Math.abs(lat) > p.width * 0.5 + 1.5) continue;
-        const dy = p.y - f.y;
-        if (dy < minBore + 0.5 || dy > crown + thick) continue;
-        const iCap = Math.max(f.y + minBore, p.y - 2.05);
-        const oCap = Math.min(p.y - 1.15, iCap + 0.65);
-        if (iCap < hardI[i]) hardI[i] = iCap;
-        if (oCap < hardO[i]) hardO[i] = oCap;
-      }
+    for (let r = 0; r < roads.length; r++) {
+      const p = roads[r];
+      // Same XZ test as flyover separation — a 13 m offset finish-left
+      // still sits over this bore (Forest 3485). The old along/lat window
+      // missed that crossing and left wall tops at the natural crown.
+      const dx = p.x - f.x;
+      const dz = p.z - f.z;
+      const need = (p.width || 12) * 0.5 + half + 3;
+      if (dx * dx + dz * dz >= need * need) continue;
+      const dy = p.y - f.y;
+      if (dy < minBore + 0.5 || dy > crown + thick) continue;
+      const iCap = Math.max(f.y + minBore, p.y - 2.05);
+      const oCap = Math.min(p.y - 1.15, iCap + 0.65);
+      if (iCap < hardI[i]) hardI[i] = iCap;
+      if (oCap < hardO[i]) hardO[i] = oCap;
     }
   }
   const alongD = new Float64Array(n);
