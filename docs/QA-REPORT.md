@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Result replay — full pack, fresh trails (2026-10-04)
+
+**Player moment:** After a stage, TV replay. Every car that raced is on the road (player + rivals). Old finish marks are gone. As the pack drives, each car stamps new dirt/rubber trails. Opaque paint, not ghosts.
+
+**Cause:** The tape stored only the hero. `_startBroadcastReplay` hid the pack (`_setPackVisible(false)`), then never re-emitted marks after the wipe.
+
+**Fix:** 20 Hz tape now records rival x/y/z/yaw/speed/steer/brake. Replay keeps the pack visible, poses every taped mesh, solids opacity 1, then `_emitReplayTrails` writes live TireMarks (rear contact language) after the pre-replay wipe. Loop wrap wipes again. Chase see-through is skipped during broadcast. Attract reel (`v=9`) untouched.
+
+**Proof:** `node tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=986` · `game.js?v=986` · `broadcast-replay.js?v=6` · `effects.js?v=97` · `ai.js?v=216`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=986
+
 ## Attract reel — tires on the ribbon (2026-10-04)
 
 **Player moment:** Title attract. Pack flies the rally ribbon. Contact patches sit on the asphalt — no hovering wheels.

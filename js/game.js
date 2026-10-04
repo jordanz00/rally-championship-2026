@@ -15,7 +15,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=7";
 import { Track } from "./tracks/track.js?v=417";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=215";
+import { Opponent } from "./ai.js?v=216";
 import { RallyAudio } from "./audio/engine.js?v=80";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -28,7 +28,7 @@ import {
   formatTime,
   placeOrdinal,
 } from "./ui/hud.js?v=43";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=96";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=97";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
@@ -144,7 +144,7 @@ function raceTunnelLighting(courseId) {
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
-import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=5";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=6";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=9";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
@@ -375,6 +375,8 @@ export class RallyGame {
     this._broadcastClock = 0;
     this._broadcastPose = null;
     this._broadcastSpin = [0, 0, 0, 0];
+    this._broadcastRivalSpin = [];
+    this._replayQuery = {};
     this._attractReel = null;
     this._attractFx = null;
     this._attractBooting = false;
@@ -4037,7 +4039,7 @@ export class RallyGame {
     h.dt = dt;
     this.hud.update(h);
     this.ghostRecorder.tick(dt, this.player);
-    this.replayTape.tick(dt, this.player);
+    this.replayTape.tick(dt, this.player, this.opponents);
     if (this.ghostPlayer && this.ghostMesh) this.ghostPlayer.tick(dt, this.ghostMesh);
     this.telemetry.sample(dt, {
       grip: this.player.gripUsed(),
@@ -4139,6 +4141,7 @@ export class RallyGame {
       prev && Number.isFinite(prev[2]) ? prev[2] : 0,
       prev && Number.isFinite(prev[3]) ? prev[3] : 0,
     ];
+    this._broadcastRivalSpin = [];
     this._broadcastPose = this.replayTape.poseAt(0, this._broadcastPose || {});
     if (this._broadcastPose) {
       this.broadcast.snapTo(this._broadcastPose);
@@ -4163,7 +4166,8 @@ export class RallyGame {
     this.broadcast.fade = 1;
     this._clearReplayTrails();
     this._solidReplayCar();
-    this._setPackVisible(false);
+    this._setPackVisible(true);
+    this._poseReplayPack(this._broadcastPose, 0);
     if (this.ghostMesh) this.ghostMesh.visible = false;
     if (this.playerMesh) setCockpitView(this.playerMesh, false);
     this._paintBroadcastChrome(true);
@@ -4182,12 +4186,22 @@ export class RallyGame {
   }
 
   /**
-   * Result replay is the hero car, not the time-attack ghost. Shared garage
-   * materials can be left at 0.42 opacity — force bodywork solid.
+   * Result replay is the live pack, not the time-attack ghost. Shared garage
+   * materials can be left at 0.42 opacity — force every bodywork solid.
    */
   _solidReplayCar() {
-    const root = this.playerMesh;
-    if (!root) return;
+    this._solidReplayMesh(this.playerMesh);
+    const pack = this.opponents || [];
+    for (let i = 0; i < pack.length; i++) {
+      if (pack[i] && pack[i].mesh) this._solidReplayMesh(pack[i].mesh);
+    }
+  }
+
+  /**
+   * @param {object|null} root
+   */
+  _solidReplayMesh(root) {
+    if (!root || !root.traverse) return;
     root.traverse((o) => {
       if (!o.isMesh || !o.material) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -4226,6 +4240,100 @@ export class RallyGame {
   }
 
   /**
+   * Place every taped rival on the road. Replay does not step Opponent AI.
+   * @param {{rivals?:Array<object>}|null} pose
+   * @param {number} dt
+   */
+  _poseReplayPack(pose, dt) {
+    const pack = this.opponents || [];
+    const rivals = pose && pose.rivals;
+    const spins = this._broadcastRivalSpin || (this._broadcastRivalSpin = []);
+    while (spins.length < pack.length) spins.push([0, 0, 0, 0]);
+    for (let i = 0; i < pack.length; i++) {
+      const o = pack[i];
+      const rp = rivals && rivals[i];
+      if (!o) continue;
+      if (!rp) {
+        if (o.mesh) o.mesh.visible = false;
+        continue;
+      }
+      if (typeof o.applyReplayPose === "function") {
+        o.applyReplayPose(rp, dt, spins[i]);
+      }
+      this._bindReplaySurface(o.vehicle);
+    }
+  }
+
+  /**
+   * Replay does not step Vehicle, so surfaceId is whatever the finish left.
+   * Query the taped x/z so dirt/rubber stamps match the ribbon under the car.
+   * @param {{position:{x:number,z:number},progress?:number,surfaceId?:string}|null} vehicle
+   */
+  _bindReplaySurface(vehicle) {
+    if (!vehicle || !vehicle.position || !this.track || !this.track.query) return;
+    const q = this.track.query(
+      vehicle.position.x,
+      vehicle.position.z,
+      this._replayQuery || (this._replayQuery = {}),
+      vehicle.progress || 0
+    );
+    if (q && q.surface) vehicle.surfaceId = q.surface;
+    vehicle.onGround = !(q && q.jumpKind === "gap");
+  }
+
+  /**
+   * After the pre-replay wipe, write fresh marks from every visible car.
+   * Same TireMarks / Dust path as the live race — dirt and rubber grit.
+   * @param {number} dt
+   */
+  _emitReplayTrails(dt) {
+    if (!(dt > 0)) return;
+    if (this.tireMarks) {
+      this.tireMarks.mesh.visible = true;
+      if (this.player) this.tireMarks.emit(this.player, this.track, dt);
+      const pack = this.opponents || [];
+      for (let i = 0; i < pack.length; i++) {
+        const o = pack[i];
+        if (!o || !o.vehicle || (o.mesh && o.mesh.visible === false)) continue;
+        this.tireMarks.emit(o.vehicle, this.track, dt);
+      }
+      this.tireMarks.step(dt);
+    }
+    if (this.dust && !isPhonePlay()) {
+      if (this.player) this.dust.emit(this.player, dt, this.track);
+      const pack = this.opponents || [];
+      let near0 = -1;
+      let near1 = -1;
+      let nearD0 = 1e9;
+      let nearD1 = 1e9;
+      const px = this.player ? this.player.position.x : 0;
+      const pz = this.player ? this.player.position.z : 0;
+      for (let i = 0; i < pack.length; i++) {
+        const v = pack[i] && pack[i].vehicle;
+        if (!v || !v.position) continue;
+        const dx = v.position.x - px;
+        const dz = v.position.z - pz;
+        const d = dx * dx + dz * dz;
+        if (d < nearD0) {
+          nearD1 = nearD0;
+          near1 = near0;
+          nearD0 = d;
+          near0 = i;
+        } else if (d < nearD1) {
+          nearD1 = d;
+          near1 = i;
+        }
+      }
+      if (near0 >= 0) this.dust.emit(pack[near0].vehicle, dt, this.track);
+      if (near1 >= 0) this.dust.emit(pack[near1].vehicle, dt, this.track);
+      this.dust.step(dt, this.track);
+    }
+    if (this.track && this.track.wheelRuts && this.track.wheelRuts.flush) {
+      this.track.wheelRuts.flush();
+    }
+  }
+
+  /**
    * @param {boolean} on
    */
   _paintBroadcastChrome(on) {
@@ -4253,6 +4361,7 @@ export class RallyGame {
       this.broadcast.phase = "out";
       this.broadcast.phaseT = 0;
       this.broadcast.shotT = 0;
+      this._clearReplayTrails();
     }
     const pose = this.replayTape.poseAt(this._broadcastClock, this._broadcastPose || {});
     this._broadcastPose = pose;
@@ -4266,6 +4375,10 @@ export class RallyGame {
     p.speed = pose.speed;
     p.progress = pose.progress;
     p.gear = pose.gear;
+    p.steer = pose.steer || 0;
+    p.brake = pose.brake || 0;
+    p.handbrake = pose.handbrake || 0;
+    p.onGround = true;
     if (p._draw) {
       p._draw.x = pose.x;
       p._draw.y = pose.y;
@@ -4274,12 +4387,15 @@ export class RallyGame {
       p._draw.pitch = pose.pitch;
       p._draw.roll = pose.roll;
     }
+    this._bindReplaySurface(p);
     if (this.playerMesh) {
       this.playerMesh.position.set(pose.x, pose.y, pose.z);
       this.playerMesh.rotation.set(pose.pitch, pose.yaw, pose.roll, "YXZ");
       this._spinBroadcastWheels(dt, pose);
       this._syncBroadcastLamps(pose);
     }
+    this._poseReplayPack(pose, dt);
+    this._emitReplayTrails(dt);
     const shot = this.broadcast.update(dt, pose);
     const cam = this.camera;
     if (cam) {
@@ -6896,11 +7012,12 @@ export class RallyGame {
       // Pack see-through is a second material pass — skip on min, half-rate on low.
       const fadeEvery =
         this._qualityTierId === "min" ? 0 : this._qualityTierId === "low" ? 2 : 1;
-      if (fadeEvery > 0 && (this._shadowTick || 0) % fadeEvery === 0) {
+      if (!this.broadcast && fadeEvery > 0 && (this._shadowTick || 0) % fadeEvery === 0) {
         updateCameraFade(this.camera.position, carPos, chase);
         this._fadeBlockingPack(chase, dt);
       }
       // Mirror / cube must see a solid pack. Ghost after those captures.
+      // Broadcast replay stays opaque — no chase see-through leftover.
       this._paintBlockingPack(0);
     }
     // Real play: countdown uses the race present (post/shadow/mirror) so GO
@@ -6916,7 +7033,7 @@ export class RallyGame {
     if (onPad) this._updateTitleReflections();
     // No live cube refresh while present-frozen — settle already baked one.
     else if (!countdownLite && !this._presentFrozen) this._updateReflections();
-    if (!onPad) this._paintBlockingPack(1);
+    if (!onPad && !this.broadcast) this._paintBlockingPack(1);
     // Race and the showroom both bake every present. The pad atlas is 512
     // and only covers the car, so the orbit shadow stays with the body.
     const padShadowEvery = 1;

@@ -640,6 +640,67 @@ export class Opponent {
       setBrakeLights(this.mesh, braking);
     }
   }
+
+  /**
+   * Drive mesh + lamps from a taped pose. Replay does not step Vehicle.
+   * @param {{x:number,y:number,z:number,yaw:number,pitch?:number,roll?:number,speed?:number,progress?:number,steer?:number,brake?:number,handbrake?:number}} pose
+   * @param {number} dt
+   * @param {number[]} spin 4-slot wheel-spin accumulator
+   */
+  applyReplayPose(pose, dt, spin) {
+    if (!pose || !this.mesh) return;
+    const v = this.vehicle;
+    if (v && v.position) {
+      v.position.x = pose.x;
+      v.position.y = pose.y;
+      v.position.z = pose.z;
+      v.yaw = pose.yaw;
+      v.pitch = pose.pitch || 0;
+      v.roll = pose.roll || 0;
+      v.speed = pose.speed || 0;
+      v.progress = pose.progress || 0;
+      v.steer = pose.steer || 0;
+      v.brake = pose.brake || 0;
+      v.handbrake = pose.handbrake || 0;
+      v.onGround = true;
+      if (v._draw) {
+        v._draw.x = pose.x;
+        v._draw.y = pose.y;
+        v._draw.z = pose.z;
+        v._draw.yaw = pose.yaw;
+        v._draw.pitch = pose.pitch || 0;
+        v._draw.roll = pose.roll || 0;
+      }
+    }
+    this.mesh.visible = true;
+    this.mesh.position.set(pose.x, pose.y, pose.z);
+    this.mesh.rotation.set(pose.pitch || 0, pose.yaw, pose.roll || 0, "YXZ");
+    const wheels = this.mesh.userData && this.mesh.userData.wheels;
+    if (wheels && wheels.length && spin) {
+      const radius = v && v.spec && v.spec.wheelRadius > 0.05 ? v.spec.wheelRadius : 0.32;
+      const omega = (pose.speed || 0) / radius;
+      const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.08, dt)) : 0;
+      const wrap = Math.PI * 2;
+      spin[0] = ((spin[0] || 0) + omega * step) % wrap;
+      spin[1] = ((spin[1] || 0) + omega * step) % wrap;
+      spin[2] = ((spin[2] || 0) + omega * step) % wrap;
+      spin[3] = ((spin[3] || 0) + omega * step) % wrap;
+      applyWheelPose(
+        wheels,
+        spin,
+        pose.steer || 0,
+        pose.roll || 0,
+        null,
+        chassisDeckEmbed(v, pose.y, this.mesh),
+        null
+      );
+    }
+    const braking = (pose.brake || 0) > 0.08 || (pose.handbrake || 0) > 0.28;
+    if (this.mesh.userData.brakeOn !== braking) {
+      this.mesh.userData.brakeOn = braking;
+      setBrakeLights(this.mesh, braking);
+    }
+  }
 }
 
 /** Coasting input, used only when a rival's brain throws. */

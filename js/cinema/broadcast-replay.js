@@ -2,9 +2,9 @@
  * Broadcast replay — TV coverage of the run just finished.
  *
  * WHO THIS IS FOR: the Stage Result screen.
- * WHAT IT DOES: records the live pose at 20 Hz, plays it back exactly, and
- *   cuts a director between trackside towers, chase, crane, and approach shots
- *   with fades. Does not step Vehicle physics.
+ * WHAT IT DOES: records the live pack at 20 Hz (player + every rival), plays
+ *   it back exactly, and cuts a director between trackside towers, chase,
+ *   crane, and approach shots with fades. Does not step Vehicle physics.
  * HOW IT CONNECTS: game.js records during race, ticks the director on result.
  */
 
@@ -35,7 +35,11 @@ const SHOT_LABEL = {
 };
 
 /**
- * @typedef {{t:number,x:number,y:number,z:number,yaw:number,pitch:number,roll:number,speed:number,progress:number,gear:number,steer:number,brake:number,handbrake:number}} ReplaySample
+ * @typedef {{x:number,y:number,z:number,yaw:number,pitch:number,roll:number,speed:number,progress:number,steer:number,brake:number,handbrake:number}} ReplayRivalSample
+ */
+
+/**
+ * @typedef {{t:number,x:number,y:number,z:number,yaw:number,pitch:number,roll:number,speed:number,progress:number,gear:number,steer:number,brake:number,handbrake:number,rivals?:ReplayRivalSample[]}} ReplaySample
  */
 
 /**
@@ -49,6 +53,53 @@ export function unwrapAngle(from, to) {
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return from + d;
+}
+
+/**
+ * Compact body snapshot for the tape (player or rival).
+ * @param {{position:{x:number,y:number,z:number},yaw?:number,pitch?:number,roll?:number,speed?:number,progress?:number,steer?:number,brake?:number,handbrake?:number}|null} vehicle
+ * @returns {ReplayRivalSample|null}
+ */
+export function snapReplayBody(vehicle) {
+  if (!vehicle || !vehicle.position) return null;
+  return {
+    x: vehicle.position.x,
+    y: vehicle.position.y,
+    z: vehicle.position.z,
+    yaw: vehicle.yaw || 0,
+    pitch: vehicle.pitch || 0,
+    roll: vehicle.roll || 0,
+    speed: vehicle.speed || 0,
+    progress: vehicle.progress || 0,
+    steer: vehicle.steer || 0,
+    brake: vehicle.brake || 0,
+    handbrake: vehicle.handbrake || 0,
+  };
+}
+
+/**
+ * Lerp one taped body into `out`. Heading unwraps so the pack does not spin.
+ * @param {ReplayRivalSample} a
+ * @param {ReplayRivalSample} b
+ * @param {number} u
+ * @param {ReplayRivalSample} [out]
+ * @returns {ReplayRivalSample}
+ */
+export function lerpReplayBody(a, b, u, out) {
+  const dest = out || {};
+  dest.x = a.x + (b.x - a.x) * u;
+  dest.y = a.y + (b.y - a.y) * u;
+  dest.z = a.z + (b.z - a.z) * u;
+  dest.yaw = unwrapAngle(a.yaw, b.yaw);
+  dest.yaw = a.yaw + (dest.yaw - a.yaw) * u;
+  dest.pitch = a.pitch + (b.pitch - a.pitch) * u;
+  dest.roll = a.roll + (b.roll - a.roll) * u;
+  dest.speed = a.speed + (b.speed - a.speed) * u;
+  dest.progress = a.progress + (b.progress - a.progress) * u;
+  dest.steer = (a.steer || 0) + ((b.steer || 0) - (a.steer || 0)) * u;
+  dest.brake = (a.brake || 0) + ((b.brake || 0) - (a.brake || 0)) * u;
+  dest.handbrake = (a.handbrake || 0) + ((b.handbrake || 0) - (a.handbrake || 0)) * u;
+  return dest;
 }
 
 /**
@@ -85,8 +136,9 @@ export class ReplayTape {
   /**
    * @param {number} dt
    * @param {{position:{x:number,y:number,z:number},yaw:number,pitch?:number,roll?:number,speed:number,progress:number,gear?:number,steer?:number,brake?:number,handbrake?:number}} vehicle
+   * @param {Array<{vehicle?:object,position?:{x:number,y:number,z:number}}>|null} [rivals]
    */
-  tick(dt, vehicle) {
+  tick(dt, vehicle, rivals) {
     if (!this.active || !vehicle || !vehicle.position) return;
     this.t += dt;
     this._acc += dt;
@@ -94,6 +146,14 @@ export class ReplayTape {
     if (this._acc < step) return;
     this._acc -= step;
     if (this.samples.length >= MAX_SAMPLES) return;
+    const pack = [];
+    if (Array.isArray(rivals)) {
+      for (let i = 0; i < rivals.length; i++) {
+        const src = rivals[i] && (rivals[i].vehicle || rivals[i]);
+        const snap = snapReplayBody(src);
+        if (snap) pack.push(snap);
+      }
+    }
     this.samples.push({
       t: this.t,
       x: vehicle.position.x,
@@ -108,7 +168,15 @@ export class ReplayTape {
       steer: vehicle.steer || 0,
       brake: vehicle.brake || 0,
       handbrake: vehicle.handbrake || 0,
+      rivals: pack,
     });
+  }
+
+  /** Player + taped rivals on the first sample. */
+  packCount() {
+    const s = this.samples[0];
+    if (!s) return 0;
+    return 1 + ((s.rivals && s.rivals.length) || 0);
   }
 
   /** @returns {number} */
@@ -148,6 +216,20 @@ export class ReplayTape {
     dest.handbrake = (a.handbrake || 0) + ((b.handbrake || 0) - (a.handbrake || 0)) * u;
     dest.gear = u > 0.5 ? b.gear : a.gear;
     dest.yawRate = b.t > a.t ? (unwrapAngle(a.yaw, b.yaw) - a.yaw) / (b.t - a.t) : 0;
+    const ra = a.rivals;
+    const rb = b.rivals;
+    const n = Math.max(ra ? ra.length : 0, rb ? rb.length : 0);
+    const pack = dest.rivals || (dest.rivals = []);
+    pack.length = n;
+    for (let i = 0; i < n; i++) {
+      const left = (ra && ra[i]) || (rb && rb[i]);
+      const right = (rb && rb[i]) || left;
+      if (!left || !right) {
+        pack[i] = null;
+        continue;
+      }
+      pack[i] = lerpReplayBody(left, right, u, pack[i] || {});
+    }
     return dest;
   }
 }

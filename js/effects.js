@@ -1510,6 +1510,15 @@ export class TireMarks {
     }
   }
 
+  /**
+   * Drop last-contact memory without wiping marks already on the road.
+   * Replay loop wrap uses this so end-of-tape does not stitch to t=0.
+   */
+  forgetStamps() {
+    this._last = new WeakMap();
+    this._carry = new WeakMap();
+  }
+
   reset() {
     this._last = new WeakMap();
     this._carry = new WeakMap();
