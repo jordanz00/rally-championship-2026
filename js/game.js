@@ -5452,8 +5452,8 @@ export class RallyGame {
       p.speed * (CAMERA.speedFov || 0.08) * punchScale
     );
     const startRushFov =
-      !wantPov && this.state === "race" && this.raceTime < 10
-        ? Math.max(0, 1 - this.raceTime / 10) * Math.min(3.6, p.speed * 0.09)
+      !wantPov && this.state === "race" && this.raceTime < 30
+        ? Math.max(0, 1 - this.raceTime / 30) * Math.min(5.2, p.speed * 0.12)
         : 0;
     const wantFov =
       (rig && wantPov ? rig.fov : mode.fov) +
