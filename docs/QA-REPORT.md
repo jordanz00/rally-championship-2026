@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Attract — no strobe (2026-10-04)
+
+**Player moment:** Title reel shows cars and road, not a white light show.
+
+**Cause:** MTV cuts painted a full-screen flash (opacity 1) every 0.5–0.7 s. WebTSR on the pad then smeared each hard cut.
+
+**Shipped:** Attract flash forced to 0. Holds ≥2 s. Title pad is native present again. Race still uses WebTSR Quality + LOOK.
+
+**Proof:** `node tools/qa-attract-reel.mjs` · `node tools/qa-webtsr-sdk.mjs`
+
+**Boot:** `main.js?v=1012` · `attract-reel.js?v=12`
+
 ## WebTSR live — Quality + LOOK on the present path (2026-10-04)
 
 **Player moment:** Desktop title and race present through WebTSR Quality. A top-centre badge reads `TSR QUALITY · REFINE · LOOK`. Edges stay sharp; LOOK adds the appearance residual. Pause IMAGE / LOOK still kill it. Phones stay FXAA. The HUD never says DLSS 5.

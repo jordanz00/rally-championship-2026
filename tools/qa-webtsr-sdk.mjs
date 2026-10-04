@@ -109,7 +109,8 @@ function main() {
   must(src.game.includes("appearance: true"), "appearance handle created");
   must(src.game.includes("parseAppearParams()"), "?appear= flag");
   must(src.game.includes("this.appear.enabled = appearOpts.enabled === true"), "LOOK follows parseAppearParams");
-  must(src.game.includes("Skipping the pad was why"), "title and race both present through TSR");
+  must(src.game.includes("Attract hard-cuts smear"), "title pad skips TSR so attract does not strobe");
+  must(src.game.includes("!onPad"), "useTsr requires !onPad");
   must(src.game.includes("_syncTsrBadge"), "live TSR badge");
   must(src.html.includes('id="tsr-badge"'), "HUD TSR badge");
   must(src.game.includes("inner.writeNormals = !!(this.appear && this.appear.enabled)"), "boot normals follow LOOK");

@@ -26,20 +26,20 @@ const ROAD_HALF = 7.4;
 const SAMPLE_STEP = 2.2;
 const KIT_V = "23";
 const SHOT_HOLD = {
-  bumper: 1.28,
-  moto: 1.18,
-  whip: 0.88,
-  heli: 1.55,
-  headon: 1.05,
-  lowside: 1.18,
-  jump: 1.48,
-  dutch: 0.92,
-  crane: 1.32,
-  smash: 0.68,
-  nose: 0.98,
-  packfly: 1.22,
-  rear: 1.12,
-  bank: 1.08,
+  bumper: 2.35,
+  moto: 2.25,
+  whip: 2.15,
+  heli: 2.7,
+  headon: 2.2,
+  lowside: 2.25,
+  jump: 2.45,
+  dutch: 2.2,
+  crane: 2.5,
+  smash: 2.15,
+  nose: 2.2,
+  packfly: 2.4,
+  rear: 2.3,
+  bank: 2.25,
 };
 
 const SHOT_LABEL = {
@@ -704,7 +704,7 @@ export class AttractDirector {
     if (!pose) return this._out();
     this.justCut = false;
     this.shotT += dt;
-    this.flash = Math.max(0, this.flash - dt * (this.kind === "smash" ? 5.2 : 3.8));
+    this.flash = 0;
     this._compose(this.kind, pose, pack);
     if (this.phase === "hold" && (this.shotT >= this.hold || this._mustCut(pose))) {
       this._cut(pose);
@@ -718,8 +718,8 @@ export class AttractDirector {
   _out() {
     const hot = this.kind === "smash" || this.kind === "whip" || this.kind === "headon" || this.kind === "packfly";
     return {
-      fade: this.fade,
-      flash: this.reduced ? 0 : this.flash,
+      fade: Math.min(0.22, this.fade),
+      flash: 0,
       kind: this.kind,
       label: this.label(),
       dutch: this.dutch,
@@ -735,10 +735,11 @@ export class AttractDirector {
   }
 
   _mustCut(pose) {
-    if (this.kind === "headon" && pose.speed > 28 && this.shotT > 0.52) return true;
-    if (this.kind === "smash" && this.shotT > 0.58) return true;
-    if (!this.reduced && this.kind === "whip" && this.shotT > 0.7) return true;
-    if (!this.reduced && pose.jump && this.kind !== "jump" && this.shotT > 0.32) return true;
+    if (this.shotT < 2) return false;
+    if (this.kind === "headon" && pose.speed > 28 && this.shotT > 2.2) return true;
+    if (this.kind === "smash" && this.shotT > 2.15) return true;
+    if (!this.reduced && this.kind === "whip" && this.shotT > 2.2) return true;
+    if (!this.reduced && pose.jump && this.kind !== "jump" && this.shotT > 2) return true;
     return false;
   }
 
@@ -751,13 +752,11 @@ export class AttractDirector {
     }
     this.kind = next;
     this.shotT = 0;
-    this.hold = (SHOT_HOLD[this.kind] || 1.2) * (this.reduced ? 1.7 : 0.7 + Math.random() * 0.22);
+    this.hold = (SHOT_HOLD[this.kind] || 2.2) * (this.reduced ? 1.35 : 1.85 + Math.random() * 0.35);
     this.phase = this.reduced ? "blend" : "out";
     this.phaseT = 0;
     this.justCut = true;
-    if (!this.reduced) {
-      this.flash = this.kind === "smash" || this.kind === "whip" || this.kind === "headon" ? 1 : 0.48;
-    }
+    this.flash = 0;
   }
 
   _phase(dt, pose) {
@@ -1533,7 +1532,7 @@ export function paintAttractFx(root, shot, on) {
   const speed = root.querySelector(".attract-speed");
   const clock = root.querySelector(".attract-clock");
   if (fade) fade.style.opacity = String(Math.max(0, Math.min(1, shot.fade)));
-  if (flash) flash.style.opacity = String(Math.max(0, Math.min(1, shot.flash)));
+  if (flash) flash.style.opacity = "0";
   if (chroma) chroma.style.opacity = String(Math.max(0, Math.min(1, shot.chroma == null ? 0.64 : shot.chroma)));
   if (smear) smear.style.opacity = String(Math.max(0, Math.min(1, shot.smear || 0)));
   if (speed) speed.style.opacity = String(Math.max(0, Math.min(1, shot.speedFx == null ? 0.35 : shot.speedFx)));

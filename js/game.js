@@ -152,7 +152,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=11";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=12";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -7137,10 +7137,10 @@ export class RallyGame {
     if (!this.tsr && wantsHeavyWebTsr()) this._bootWebTsr();
     if (!this.mobilePresent && wantsMobilePresent()) this._bootMobilePresent();
     const paused = this.state === "paused";
-    // Title, countdown, and race all present through WebTSR on desktop.
-    // Skipping the pad was why the player never saw the reconstruct stack.
-    let useTsr = !!(this.tsr && this.tsr.active);
-    let wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported);
+    // Race presents through WebTSR. Attract hard-cuts smear history into a
+    // white strobe — title pad stays a single native present.
+    let useTsr = !!(this.tsr && this.tsr.active && !onPad);
+    let wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported && !onPad);
     if (useTsr && !paused) {
       try {
         this._tsrRoots = this._tsrRoots || [];
