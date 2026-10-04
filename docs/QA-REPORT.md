@@ -1,19 +1,5 @@
 # QA report — quality-control pass
 
-## POV racing gloves — real digits on the rim (2026-10-04)
-
-**Player moment:** C into the cockpit. Both hands sit at 10 and 2. Each finger is a racing-glove digit (phalanges, knuckles, cream stitch) wrapped around the leather. Thumbs rest over the inner rim / spoke. Turn and the gloves rotate with the wheel; sleeves follow the wrists.
-
-**Cause:** POV grip used capsule sausages and a boxed palm. At cockpit distance they read as mittens / floaters, not fingers on the tube.
-
-**Fix:** Keep hands parented to `steer-spin`. `measureSpinRim` still plants in spin-local space. Each finger is three sculpted phalanges + knuckles + tip on `tubePoint` / `orientOnTube`; thumb opposes with two phalanges. Leather / suede maps, contrast stitch, cuff strap, original chevron mark (no team logos). Overlay materials stay `emissiveMap` + `toneMapped: false`. No `gripLean`. Attract plant, replay pack/trails, TSR car-history kill, v990 deck plant, and in-flight lighting/livery WIP untouched.
-
-**Proof:** `node tools/qa-pov-hands.mjs` · `node tools/qa-pov-steer.mjs`
-
-**Boot:** `main.js?v=992` · `game.js?v=992` · `celica.js?v=226` · `pov-driver.js?v=4` · `cockpit-anim.js?v=8`
-
-**Public:** https://jordanz00.github.io/rally-championship-2026/?v=992
-
 ## Harsh lighting — peak clamp (2026-10-04)
 
 **Player moment:** All four cup stages. Sun still sculpts the car and the road. Desert noon, tunnel exit, Forest canopy gaps, and Mountain rain no longer flash the frame white or crush shade to ink.
@@ -30,9 +16,23 @@
 
 **Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lighting-harsh.mjs` · `node tools/qa-forest-headlights.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-fog.mjs`
 
-**Boot:** `main.js?v=991` · `game.js?v=991` · `lighting-rig.js?v=31`
+**Boot:** `main.js?v=993` · `game.js?v=993` · `lighting-rig.js?v=31`
 
-**Public:** https://jordanz00.github.io/rally-championship-2026/?v=991
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=993
+
+## POV racing gloves — real digits on the rim (2026-10-04)
+
+**Player moment:** C into the cockpit. Both hands sit at 10 and 2. Each finger is a racing-glove digit (phalanges, knuckles, cream stitch) wrapped around the leather. Thumbs rest over the inner rim / spoke. Turn and the gloves rotate with the wheel; sleeves follow the wrists.
+
+**Cause:** POV grip used capsule sausages and a boxed palm. At cockpit distance they read as mittens / floaters, not fingers on the tube.
+
+**Fix:** Keep hands parented to `steer-spin`. `measureSpinRim` still plants in spin-local space. Each finger is three sculpted phalanges + knuckles + tip on `tubePoint` / `orientOnTube`; thumb opposes with two phalanges. Leather / suede maps, contrast stitch, cuff strap, original chevron mark (no team logos). Overlay materials stay `emissiveMap` + `toneMapped: false`. No `gripLean`. Attract plant, replay pack/trails, TSR car-history kill, v990 deck plant, and in-flight lighting/livery WIP untouched.
+
+**Proof:** `node tools/qa-pov-hands.mjs` · `node tools/qa-pov-steer.mjs`
+
+**Boot:** `main.js?v=993` · `game.js?v=993` · `celica.js?v=227` · `pov-driver.js?v=4` · `cockpit-anim.js?v=8`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=993
 
 ## E-brake / accel deck plant (2026-10-04)
 
