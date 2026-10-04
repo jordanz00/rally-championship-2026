@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## POV bare hands — real digits on the rim (2026-10-04)
+
+**Player moment:** C into the cockpit. Adult hands sit at 9 and 3. Each finger is a skin digit (phalanges, knuckles, nails) wrapped around the far side of the leather. Thumbs rest on the crown. Turn and the gloves-that-are-hands rotate with the wheel; sleeves follow the wrists.
+
+**Cause:** Prior POV grip was boxed / capsule leather that read as mittens at 40 cm.
+
+**Fix:** Authored organic `digitGeo` (swept ellipse, knuckle swell, tapered tip — not Box/Capsule). Cupped `palmGeo`. Nails. Skin maps + `emissiveMap` + `toneMapped: false` + layer-1 `pov-hand-light`. Hands still parent to `steer-spin`. `measureSpinRim` still plants in spin-local space. Thumb on the crown. No `gripLean`. Config / attract / replay / flag-cloth / Forest flyover untouched.
+
+**Proof:** `node tools/qa-pov-hands.mjs` · `node tools/qa-pov-steer.mjs`
+
+**Boot:** `main.js?v=1009` · `game.js?v=1009` · `celica.js?v=228` · `pov-driver.js?v=5` · `cockpit-anim.js?v=9`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1009
+
 ## Start / finish vinyl — drum-tight, wider gantry (2026-10-04)
 
 **Player moment:** Leave the line and cross it. START and FINISH read as vinyl under tension — stretched across the gantry, almost flat, a little wind. No sag bag. Festive verge flags still flap.

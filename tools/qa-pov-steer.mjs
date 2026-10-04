@@ -87,11 +87,12 @@ check(
 );
 
 check(
-  "10/2 clock and overlay emissive gloves",
-  /clock = side > 0 \? 0\.62/.test(driver) &&
-    /emissiveMap: GLOVE_MAP/.test(driver) &&
-    /toneMapped: false/.test(driver),
-  "layer-1 overlay needs emissive + toneMapped false"
+  "9/3 clock and overlay emissive skin",
+  /CLOCK_9_3 = 0\.14/.test(driver) &&
+    /emissiveMap: SKIN_MAP/.test(driver) &&
+    /toneMapped: false/.test(driver) &&
+    /pov-hand-light/.test(driver),
+  "layer-1 overlay needs emissive + toneMapped false + cabin fill"
 );
 
 const celicaV = game.match(/celica\.js\?v=(\d+)/);
@@ -221,11 +222,11 @@ async function live() {
         `phalanges=${sample.phalanges}`
       );
       check(
-        "live 10/2 clock",
+        "live 9/3 clock",
         sample.clockL != null &&
-          Math.abs(sample.clockL - 0.62) < 0.02 &&
+          Math.abs(sample.clockL - 0.14) < 0.02 &&
           sample.clockR != null &&
-          Math.abs(sample.clockR - (Math.PI - 0.62)) < 0.02,
+          Math.abs(sample.clockR - (Math.PI - 0.14)) < 0.02,
         `L=${sample.clockL} R=${sample.clockR}`
       );
       check(

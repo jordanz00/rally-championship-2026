@@ -1,11 +1,11 @@
 /**
- * POV driver — 3D racing gloves that actually grip the rim.
+ * POV driver — bare adult hands that wrap the rim.
  *
  * WHO THIS IS FOR: cockpit / POV camera only (layer 1 overlay).
- * WHAT IT DOES: measures the live rim in spin-local space, plants a palm on
- *   the tube, wraps fingers and thumb around it, and hangs two-bone suit
- *   sleeves from the shoulders to those wrists. Hands ride the steer-spin
- *   so a turn rotates the grip with the wheel.
+ * WHAT IT DOES: measures the live rim in spin-local space, cups a palm on
+ *   the tube, wraps four fingers around the far side, parks the thumb on
+ *   top of the leather, and hangs two-bone sleeves to those wrists.
+ *   Hands ride steer-spin so a turn rotates the grip with the wheel.
  * HOW IT CONNECTS: celica.js attachPovDriverArms → cockpit-anim IK each frame.
  */
 
@@ -14,17 +14,19 @@ import * as THREE from "../../vendor/three.module.js";
 /** @type {Map<string, THREE.BufferGeometry>} */
 const GEO = new Map();
 /** @type {THREE.MeshStandardMaterial|null} */
-let GLOVE_MAT = null;
+let SKIN_MAT = null;
 /** @type {THREE.MeshStandardMaterial|null} */
-let GLOVE_ACCENT = null;
+let KNUCKLE_MAT = null;
+/** @type {THREE.MeshStandardMaterial|null} */
+let NAIL_MAT = null;
 /** @type {THREE.MeshStandardMaterial|null} */
 let SUIT_MAT = null;
 /** @type {THREE.MeshStandardMaterial|null} */
 let CUFF_MAT = null;
 /** @type {THREE.CanvasTexture|null} */
-let GLOVE_MAP = null;
+let SKIN_MAP = null;
 /** @type {THREE.CanvasTexture|null} */
-let GLOVE_BUMP = null;
+let SKIN_BUMP = null;
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -32,10 +34,9 @@ const _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _inv = new THREE.Matrix4();
 const _basis = new THREE.Matrix4();
-/** @type {THREE.MeshStandardMaterial|null} */
-let STITCH_MAT = null;
-/** @type {THREE.MeshStandardMaterial|null} */
-let KNUCKLE_MAT = null;
+
+/** 9/3 plus a few degrees toward 10/2 — planted, thumbs on the crown. */
+const CLOCK_9_3 = 0.14;
 
 /**
  * @param {string} key
@@ -52,59 +53,37 @@ function geo(key, build) {
 }
 
 /**
- * Racing-glove albedo + bump (leather grain, stitch, knuckle pads, accent stripe).
+ * Warm skin albedo + pore bump. Overlay has no sun, so this is also the emissive.
  */
-function ensureGloveMaps() {
-  if (GLOVE_MAP && GLOVE_BUMP) return;
+function ensureSkinMaps() {
+  if (SKIN_MAP && SKIN_BUMP) return;
   const w = 256;
   const h = 256;
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
-  const g = c.getContext("2d");
-  const img = g.createImageData(w, h);
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(w, h);
   const d = img.data;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const n =
-        ((Math.sin(x * 0.37) * Math.cos(y * 0.29) + 1) * 0.5) * 0.35 +
-        ((Math.sin(x * 1.7 + y * 0.9) + 1) * 0.5) * 0.25 +
-        ((Math.sin((x + y) * 0.11) + 1) * 0.5) * 0.2;
-      const stripe = x > w * 0.42 && x < w * 0.58 ? 1 : 0;
-      const stitchU = Math.abs((x % 14) - 7) < 0.7 || Math.abs((y % 16) - 8) < 0.7;
-      let r = 22 + n * 18;
-      let gr = 18 + n * 14;
-      let b = 16 + n * 12;
-      if (stripe) {
-        r = 132 + n * 36;
-        gr = 16 + n * 8;
-        b = 20 + n * 6;
-      }
-      if (stitchU) {
-        r = Math.min(255, r + 92);
-        gr = Math.min(255, gr + 78);
-        b = Math.min(255, b + 52);
-      }
-      const kx = ((x / w) * 4) | 0;
-      const ky = ((y / h) * 3) | 0;
-      if ((kx + ky) % 2 === 0 && x % 64 > 12 && x % 64 < 52 && y % 85 > 18 && y % 85 < 58) {
-        r *= 0.72;
-        gr *= 0.7;
-        b *= 0.68;
-      }
-      d[i] = r;
-      d[i + 1] = gr;
-      d[i + 2] = b;
+        ((Math.sin(x * 0.41) * Math.cos(y * 0.33) + 1) * 0.5) * 0.28 +
+        ((Math.sin(x * 1.9 + y * 0.7) + 1) * 0.5) * 0.18;
+      const blush = Math.max(0, Math.sin((x / w) * Math.PI) * Math.sin((y / h) * Math.PI * 2) * 0.12);
+      d[i] = 214 + n * 28 + blush * 40;
+      d[i + 1] = 168 + n * 22 - blush * 8;
+      d[i + 2] = 132 + n * 16 - blush * 4;
       d[i + 3] = 255;
     }
   }
-  g.putImageData(img, 0, 0);
-  GLOVE_MAP = new THREE.CanvasTexture(c);
-  GLOVE_MAP.colorSpace = THREE.SRGBColorSpace;
-  GLOVE_MAP.wrapS = GLOVE_MAP.wrapT = THREE.RepeatWrapping;
-  GLOVE_MAP.repeat.set(1.4, 1.4);
-  GLOVE_MAP.userData.shared = true;
+  ctx.putImageData(img, 0, 0);
+  SKIN_MAP = new THREE.CanvasTexture(c);
+  SKIN_MAP.colorSpace = THREE.SRGBColorSpace;
+  SKIN_MAP.wrapS = SKIN_MAP.wrapT = THREE.RepeatWrapping;
+  SKIN_MAP.repeat.set(1.6, 1.6);
+  SKIN_MAP.userData.shared = true;
 
   const bc = document.createElement("canvas");
   bc.width = w;
@@ -115,58 +94,68 @@ function ensureGloveMaps() {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
-      const grain =
-        ((Math.sin(x * 2.4) * Math.cos(y * 2.1) + 1) * 0.5) * 140 +
-        ((Math.sin(x * 0.55 + y * 0.4) + 1) * 0.5) * 80;
-      const v = Math.max(40, Math.min(220, grain));
+      const pore = ((Math.sin(x * 3.1) * Math.cos(y * 2.8) + 1) * 0.5) * 90 + 90;
+      const v = Math.max(50, Math.min(210, pore));
       bd[i] = bd[i + 1] = bd[i + 2] = v;
       bd[i + 3] = 255;
     }
   }
   bg.putImageData(bimg, 0, 0);
-  GLOVE_BUMP = new THREE.CanvasTexture(bc);
-  GLOVE_BUMP.wrapS = GLOVE_BUMP.wrapT = THREE.RepeatWrapping;
-  GLOVE_BUMP.repeat.set(2.2, 2.2);
-  GLOVE_BUMP.userData.shared = true;
+  SKIN_BUMP = new THREE.CanvasTexture(bc);
+  SKIN_BUMP.wrapS = SKIN_BUMP.wrapT = THREE.RepeatWrapping;
+  SKIN_BUMP.repeat.set(3.2, 3.2);
+  SKIN_BUMP.userData.shared = true;
 }
 
 function ensureMats() {
-  if (GLOVE_MAT) return;
-  ensureGloveMaps();
-  GLOVE_MAT = new THREE.MeshStandardMaterial({
-    map: GLOVE_MAP,
-    bumpMap: GLOVE_BUMP,
-    bumpScale: 0.55,
+  if (SKIN_MAT) return;
+  ensureSkinMaps();
+  SKIN_MAT = new THREE.MeshStandardMaterial({
+    map: SKIN_MAP,
+    bumpMap: SKIN_BUMP,
+    bumpScale: 0.35,
     color: 0xffffff,
-    roughness: 0.78,
-    metalness: 0.04,
-    envMapIntensity: 0.55,
-    emissive: 0xffffff,
-    emissiveMap: GLOVE_MAP,
-    emissiveIntensity: 0.7,
-    toneMapped: false,
-    side: THREE.DoubleSide,
-  });
-  GLOVE_MAT.userData.shared = true;
-  GLOVE_ACCENT = new THREE.MeshStandardMaterial({
-    color: 0x9a1c1c,
     roughness: 0.62,
-    metalness: 0.08,
-    envMapIntensity: 0.5,
-    bumpMap: GLOVE_BUMP,
-    bumpScale: 0.28,
-    emissive: 0x4a0c0c,
-    emissiveIntensity: 0.65,
+    metalness: 0.02,
+    envMapIntensity: 0.35,
+    emissive: 0xffffff,
+    emissiveMap: SKIN_MAP,
+    emissiveIntensity: 0.62,
     toneMapped: false,
     side: THREE.DoubleSide,
   });
-  GLOVE_ACCENT.userData.shared = true;
+  SKIN_MAT.userData.shared = true;
+  KNUCKLE_MAT = new THREE.MeshStandardMaterial({
+    map: SKIN_MAP,
+    bumpMap: SKIN_BUMP,
+    bumpScale: 0.42,
+    color: 0xf0c2a8,
+    roughness: 0.58,
+    metalness: 0.02,
+    envMapIntensity: 0.3,
+    emissive: 0xf0c2a8,
+    emissiveIntensity: 0.55,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  KNUCKLE_MAT.userData.shared = true;
+  NAIL_MAT = new THREE.MeshStandardMaterial({
+    color: 0xf3d6c8,
+    roughness: 0.28,
+    metalness: 0.08,
+    envMapIntensity: 0.45,
+    emissive: 0xc9a090,
+    emissiveIntensity: 0.5,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  NAIL_MAT.userData.shared = true;
   SUIT_MAT = new THREE.MeshStandardMaterial({
     color: 0x141820,
     roughness: 0.9,
     metalness: 0.02,
     envMapIntensity: 0.35,
-    bumpMap: GLOVE_BUMP,
+    bumpMap: SKIN_BUMP,
     bumpScale: 0.18,
     emissive: 0x0c1016,
     emissiveIntensity: 0.55,
@@ -185,30 +174,6 @@ function ensureMats() {
     side: THREE.DoubleSide,
   });
   CUFF_MAT.userData.shared = true;
-  STITCH_MAT = new THREE.MeshStandardMaterial({
-    color: 0xd4c4a4,
-    roughness: 0.55,
-    metalness: 0.02,
-    envMapIntensity: 0.35,
-    emissive: 0x6e624c,
-    emissiveIntensity: 0.62,
-    toneMapped: false,
-    side: THREE.DoubleSide,
-  });
-  STITCH_MAT.userData.shared = true;
-  KNUCKLE_MAT = new THREE.MeshStandardMaterial({
-    color: 0x1a1210,
-    roughness: 0.48,
-    metalness: 0.1,
-    envMapIntensity: 0.5,
-    bumpMap: GLOVE_BUMP,
-    bumpScale: 0.4,
-    emissive: 0x120c0a,
-    emissiveIntensity: 0.58,
-    toneMapped: false,
-    side: THREE.DoubleSide,
-  });
-  KNUCKLE_MAT.userData.shared = true;
 }
 
 /**
@@ -229,7 +194,7 @@ function tubePoint(theta, along, tubeR, pad = 0) {
 
 /**
  * Rim radius and tube thickness in the steer-spin's local XY disc.
- * World AABBs lie about a tilted GLB and float the gloves off the leather.
+ * World AABBs lie about a tilted GLB and float the hands off the leather.
  * @param {THREE.Object3D} spin
  * @returns {{ rimR: number, tubeR: number }}
  */
@@ -269,68 +234,183 @@ export function measureSpinRim(spin) {
 }
 
 /**
- * Rounded-box phalanx along +Y. +Z is the tube belly; −Z is the glove back.
+ * Organic phalanx — swept ellipse, knuckle swell, flat belly, tapered tip.
+ * Authored rings. Not a box. Not a capsule.
+ * @param {number} len
  * @param {number} wide
  * @param {number} thin
- * @param {number} len
+ * @param {number} swell
  * @param {string} key
  */
-function phalanxGeo(wide, thin, len, key) {
+function digitGeo(len, wide, thin, swell, key) {
   return geo(key, () => {
-    const g = new THREE.BoxGeometry(wide * 2, len, thin * 2, 5, 4, 4);
-    const pos = g.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i);
-      const y = pos.getY(i);
-      let z = pos.getZ(i);
-      const ny = (y + len * 0.5) / Math.max(1e-5, len);
-      const taper = 1 - ny * 0.2;
-      const nx = x / Math.max(1e-5, wide);
-      const nz = z / Math.max(1e-5, thin);
-      const mag = Math.hypot(nx, nz);
-      if (mag > 1e-4) {
-        const pull = 0.58 + 0.42 / Math.max(1, mag);
-        x *= pull * taper;
-        z *= pull * taper;
+    const rings = 8;
+    const segs = 10;
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    for (let i = 0; i <= rings; i++) {
+      const t = i / rings;
+      const y = t * len;
+      const bulge = 1 + swell * Math.sin(Math.min(1, t / 0.72) * Math.PI);
+      const taper = 1 - t * 0.24;
+      const rw = wide * bulge * taper;
+      const rt = thin * bulge * taper * 0.92;
+      for (let j = 0; j <= segs; j++) {
+        const a = (j / segs) * Math.PI * 2 - Math.PI * 0.5;
+        let x = Math.cos(a) * rw;
+        let z = Math.sin(a) * rt;
+        if (z > 0) z *= 0.7;
+        else z *= 1.06;
+        pos.push(x, y, z);
+        uv.push(j / segs, t);
       }
-      if (z > 0) z *= 0.78;
-      pos.setXYZ(i, x, y, z);
     }
-    g.translate(0, len * 0.5, 0);
+    pos.push(0, len * 1.035, 0);
+    uv.push(0.5, 1);
+    const tip = (rings + 1) * (segs + 1);
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = i * (segs + 1) + j;
+        const b = a + 1;
+        const c = a + (segs + 1);
+        const d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    const last = rings * (segs + 1);
+    for (let j = 0; j < segs; j++) idx.push(last + j, tip, last + j + 1);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
     g.computeVertexNormals();
     return g;
   });
 }
 
 /**
- * Knuckle pad on the back of a joint.
+ * Knuckle bone landmark on the dorsal side.
  * @param {number} r
  * @param {string} key
  */
 function knuckleGeo(r, key) {
-  return geo(key, () => new THREE.SphereGeometry(r, 10, 8));
-}
-
-/**
- * Fingertip leather cap.
- * @param {number} r
- * @param {string} key
- */
-function tipGeo(r, key) {
   return geo(key, () => {
-    const g = new THREE.SphereGeometry(r, 10, 8);
-    g.scale(1.05, 0.82, 0.88);
+    const rings = 6;
+    const segs = 8;
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    for (let i = 0; i <= rings; i++) {
+      const v = (i / rings) * Math.PI;
+      const sy = Math.cos(v);
+      const sr = Math.sin(v);
+      for (let j = 0; j <= segs; j++) {
+        const u = (j / segs) * Math.PI * 2;
+        pos.push(Math.cos(u) * sr * r * 1.15, sy * r * 0.62, Math.sin(u) * sr * r * 0.82);
+        uv.push(j / segs, i / rings);
+      }
+    }
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = i * (segs + 1) + j;
+        const b = a + 1;
+        const c = a + (segs + 1);
+        idx.push(a, c, b, b, c, c + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
     return g;
   });
 }
 
 /**
- * Contrast stitch ridge along a phalanx back.
- * @param {number} len
+ * Fingernail plate on the dorsal distal.
+ * @param {number} w
+ * @param {number} h
  * @param {string} key
  */
-function stitchGeo(len, key) {
-  return geo(key, () => new THREE.BoxGeometry(0.0011, Math.max(0.006, len * 0.78), 0.0009));
+function nailGeo(w, h, key) {
+  return geo(key, () => {
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    const nu = 4;
+    const nv = 3;
+    for (let i = 0; i <= nv; i++) {
+      const t = i / nv;
+      const y = (t - 0.15) * h;
+      const ww = w * (0.72 + t * 0.28);
+      for (let j = 0; j <= nu; j++) {
+        const s = j / nu;
+        const x = (s - 0.5) * ww;
+        const z = -0.0004 - Math.sin(s * Math.PI) * 0.0006;
+        pos.push(x, y, z);
+        uv.push(s, t);
+      }
+    }
+    for (let i = 0; i < nv; i++) {
+      for (let j = 0; j < nu; j++) {
+        const a = i * (nu + 1) + j;
+        idx.push(a, a + nu + 1, a + 1, a + 1, a + nu + 1, a + nu + 2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  });
+}
+
+/**
+ * Cupped palm — parametric skin sheet, not a box.
+ * Local +Y = pinky→index along the rim, +X = out from hub, +Z = dash.
+ */
+function palmGeo() {
+  return geo("palm-skin", () => {
+    const nu = 10;
+    const nv = 12;
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    for (let i = 0; i <= nv; i++) {
+      const ty = i / nv;
+      const y = (ty - 0.5) * 0.078;
+      const wrist = ty < 0.22 ? 0.78 + ty * 1.0 : 1;
+      for (let j = 0; j <= nu; j++) {
+        const tx = j / nu;
+        let x = (tx - 0.18) * 0.042 * wrist;
+        let z = -0.004;
+        const cup = Math.sin(ty * Math.PI) * 0.01;
+        z -= cup + Math.abs(y) * 0.07;
+        if (tx > 0.62) z -= (tx - 0.62) * 0.012;
+        if (ty < 0.2 && tx < 0.45) {
+          x -= 0.006;
+          z += 0.004;
+        }
+        pos.push(x, y, z);
+        uv.push(tx, ty);
+      }
+    }
+    for (let i = 0; i < nv; i++) {
+      for (let j = 0; j < nu; j++) {
+        const a = i * (nu + 1) + j;
+        idx.push(a, a + nu + 1, a + 1, a + 1, a + nu + 1, a + nu + 2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  });
 }
 
 /**
@@ -342,7 +422,7 @@ function stitchGeo(len, key) {
 function orientOnTube(joint, p0, p1) {
   _v.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
   const len = _v.length();
-  if (len < 1e-5) return;
+  if (len < 1e-5) return 0;
   _v.multiplyScalar(1 / len);
   _v2.set(-p0.x, 0, -p0.z);
   if (_v2.lengthSq() < 1e-8) _v2.set(0, 0, 1);
@@ -353,6 +433,7 @@ function orientOnTube(joint, p0, p1) {
   _v2.crossVectors(_v3, _v).normalize();
   _basis.makeBasis(_v3, _v, _v2);
   joint.quaternion.setFromRotationMatrix(_basis);
+  return len;
 }
 
 /**
@@ -368,67 +449,72 @@ function mesh(mat, geometry) {
   return m;
 }
 
+function countTris(root) {
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    const g = o.geometry;
+    if (g.index) n += g.index.count / 3;
+    else if (g.attributes.position) n += g.attributes.position.count / 3;
+  });
+  return n | 0;
+}
+
 /**
- * Three sculpted phalanges + knuckles wrapping driver → outside → dash.
+ * Three phalanges wrapping driver face → outside → far side of the tube.
  * @param {THREE.Group} hand
  * @param {number} along
- * @param {number} lenScale
+ * @param {number} wideScale
  * @param {number} tubeR
  * @param {number} startA
  * @param {number} sweep
  * @param {string} name
  */
-function addWrappedFinger(hand, along, lenScale, tubeR, startA, sweep, name) {
+function addWrappedFinger(hand, along, wideScale, tubeR, startA, sweep, name) {
   const finger = new THREE.Group();
   finger.name = name;
   finger.userData.digit = "finger";
   finger.userData.phalanges = 3;
-  const lens = [0.03 * lenScale, 0.024 * lenScale, 0.018 * lenScale];
-  const wides = [0.0079, 0.0072, 0.0063];
-  const thins = [0.0066, 0.0059, 0.0052];
+  const wides = [0.0084 * wideScale, 0.0075 * wideScale, 0.0064 * wideScale];
+  const thins = [0.0068 * wideScale, 0.006 * wideScale, 0.0052 * wideScale];
+  const swells = [0.16, 0.2, 0.1];
   const n = 3;
+  const pad = 0.0032;
   const da = sweep / n;
   for (let i = 0; i < n; i++) {
     const a0 = startA + da * i;
     const a1 = a0 + da;
-    const p0 = tubePoint(a0, along, tubeR, 0.0026);
-    const p1 = tubePoint(a1, along, tubeR, 0.0026);
+    const p0 = tubePoint(a0, along, tubeR, pad);
+    const p1 = tubePoint(a1, along, tubeR, pad);
     const joint = new THREE.Group();
     joint.name = `phalange-${i}`;
     joint.userData.phalange = i;
     joint.position.set(p0.x, p0.y, p0.z);
-    orientOnTube(joint, p0, p1);
-    const body = mesh(
-      GLOVE_MAT,
-      phalanxGeo(wides[i], thins[i], lens[i], `ph-${i}-${lenScale.toFixed(2)}`)
-    );
+    const arc = orientOnTube(joint, p0, p1);
+    const len = Math.max(0.012, arc * 1.02);
+    const body = mesh(SKIN_MAT, digitGeo(len, wides[i], thins[i], swells[i], `dig-${i}-${wideScale.toFixed(2)}`));
     body.userData.digitPart = "phalange";
     joint.add(body);
     if (i < n - 1) {
       const kn = mesh(KNUCKLE_MAT, knuckleGeo(wides[i] * 1.05, `kn-${i}`));
       kn.name = `knuckle-${i}`;
-      kn.position.set(0, lens[i] * 0.9, -thins[i] * 0.62);
-      kn.scale.set(1.2, 0.62, 0.82);
+      kn.position.set(0, len * 0.92, -thins[i] * 0.7);
       kn.userData.digitPart = "knuckle";
       joint.add(kn);
     } else {
-      const tip = mesh(GLOVE_MAT, tipGeo(wides[i] * 1.05, `tip-${lenScale.toFixed(2)}`));
-      tip.name = "fingertip";
-      tip.position.set(0, lens[i] * 0.96, 0.001);
-      tip.userData.digitPart = "tip";
-      joint.add(tip);
+      const nail = mesh(NAIL_MAT, nailGeo(wides[i] * 1.35, len * 0.42, `nail-${wideScale.toFixed(2)}`));
+      nail.name = "fingernail";
+      nail.position.set(0, len * 0.72, -thins[i] * 0.78);
+      nail.userData.digitPart = "nail";
+      joint.add(nail);
     }
-    const st = mesh(STITCH_MAT, stitchGeo(lens[i], `st-${i}`));
-    st.position.set(0, lens[i] * 0.48, -thins[i] * 0.78);
-    st.userData.digitPart = "stitch";
-    joint.add(st);
     finger.add(joint);
   }
   hand.add(finger);
 }
 
 /**
- * Thumb opposes the fingers and rests over the inner rim / spoke.
+ * Thumb rests on the crown of the rim (driver face), pointing toward 12.
  * @param {THREE.Group} hand
  * @param {number} tubeR
  */
@@ -437,53 +523,44 @@ function addWrappedThumb(hand, tubeR) {
   thumb.name = "thumb";
   thumb.userData.digit = "thumb";
   thumb.userData.phalanges = 2;
-  const along = -0.02;
-  const startA = 0.06;
-  const sweep = -1.48;
-  const lens = [0.032, 0.024];
-  const wides = [0.0088, 0.0076];
-  const thins = [0.0072, 0.0062];
-  const n = 2;
-  const da = sweep / n;
-  for (let i = 0; i < n; i++) {
-    const a0 = startA + da * i;
-    const a1 = a0 + da;
-    const p0 = tubePoint(a0, along, tubeR, 0.0028);
-    const p1 = tubePoint(a1, along, tubeR, 0.0028);
+  const pad = 0.0034;
+  const segs = [
+    { a0: -0.08, a1: -0.22, y0: -0.004, y1: 0.016, w: 0.0092, t: 0.0074, swell: 0.18 },
+    { a0: -0.22, a1: -0.32, y0: 0.016, y1: 0.034, w: 0.008, t: 0.0064, swell: 0.1 },
+  ];
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const p0 = tubePoint(s.a0, s.y0, tubeR, pad);
+    const p1 = tubePoint(s.a1, s.y1, tubeR, pad);
     const joint = new THREE.Group();
     joint.name = `phalange-${i}`;
     joint.userData.phalange = i;
     joint.position.set(p0.x, p0.y, p0.z);
-    orientOnTube(joint, p0, p1);
-    const body = mesh(GLOVE_MAT, phalanxGeo(wides[i], thins[i], lens[i], `th-ph-${i}`));
+    const arc = orientOnTube(joint, p0, p1);
+    const len = Math.max(0.014, arc * 1.04);
+    const body = mesh(SKIN_MAT, digitGeo(len, s.w, s.t, s.swell, `th-dig-${i}`));
     body.userData.digitPart = "phalange";
     joint.add(body);
     if (i === 0) {
-      const kn = mesh(KNUCKLE_MAT, knuckleGeo(wides[i] * 1.08, "th-kn"));
+      const kn = mesh(KNUCKLE_MAT, knuckleGeo(s.w * 1.08, "th-kn"));
       kn.name = "knuckle-0";
-      kn.position.set(0, lens[i] * 0.88, -thins[i] * 0.58);
-      kn.scale.set(1.18, 0.64, 0.8);
+      kn.position.set(0, len * 0.88, -s.t * 0.62);
       kn.userData.digitPart = "knuckle";
       joint.add(kn);
     } else {
-      const tip = mesh(GLOVE_MAT, tipGeo(wides[i] * 1.08, "th-tip"));
-      tip.name = "fingertip";
-      tip.position.set(0, lens[i] * 0.94, 0.001);
-      tip.userData.digitPart = "tip";
-      joint.add(tip);
+      const nail = mesh(NAIL_MAT, nailGeo(s.w * 1.3, len * 0.38, "th-nail"));
+      nail.name = "fingernail";
+      nail.position.set(0, len * 0.7, -s.t * 0.74);
+      nail.userData.digitPart = "nail";
+      joint.add(nail);
     }
-    const st = mesh(STITCH_MAT, stitchGeo(lens[i], `th-st-${i}`));
-    st.position.set(0, lens[i] * 0.48, -thins[i] * 0.76);
-    st.userData.digitPart = "stitch";
-    joint.add(st);
     thumb.add(joint);
   }
   hand.add(thumb);
 }
 
 /**
- * Gloved hand gripping 10 o'clock (then mirrored to 2).
- * Local +X = outward, +Y = toward 12, +Z = into the dash.
+ * Bare left hand at 9 o'clock (mirrored to 3). Adult male, fit to this rim.
  * @param {number} side +1 left / −1 right
  * @param {number} rimR
  * @param {number} tubeR
@@ -493,128 +570,66 @@ function makeHand(side, rimR, tubeR) {
   ensureMats();
   const mount = new THREE.Group();
   mount.name = side > 0 ? "hand-L" : "hand-R";
-  // 10 and 2 — 9/3 sits on the rim's bottom corners and reads as empty.
-  const clock = side > 0 ? 0.62 : Math.PI - 0.62;
+  const clock = side > 0 ? CLOCK_9_3 : Math.PI - CLOCK_9_3;
   mount.userData.clock = clock;
   mount.position.set(Math.cos(clock) * rimR, Math.sin(clock) * rimR, 0);
   mount.rotation.z = clock;
   if (side < 0) mount.scale.x = -1;
-  mount.scale.multiplyScalar(1.18);
+  const fit = THREE.MathUtils.clamp(rimR / 0.155, 0.9, 1.12);
+  mount.scale.multiplyScalar(fit);
 
   const hand = new THREE.Group();
   hand.name = "grip";
   mount.add(hand);
 
-  const palm = mesh(
-    GLOVE_MAT,
-    geo("palm-cup", () => {
-      const box = new THREE.BoxGeometry(0.038, 0.068, 0.03, 5, 6, 4);
-      const pos = box.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        let x = pos.getX(i);
-        let y = pos.getY(i);
-        let z = pos.getZ(i);
-        const ay = Math.abs(y) / 0.034;
-        const cup = 1 - Math.min(1, ay * 0.2);
-        const wrist = y < -0.012 ? 0.82 + (y + 0.034) * 2.2 : 1;
-        x = x * cup * wrist + 0.005;
-        z = z - ay * 0.09 - (x > 0.01 ? 0.004 : 0);
-        if (y > 0.018 && x > 0.004) z -= 0.006;
-        pos.setXYZ(i, x, y, z);
-      }
-      box.computeVertexNormals();
-      return box;
-    })
-  );
-  const driver = tubePoint(0.2, 0.004, tubeR, 0.011);
-  palm.position.set(driver.x + 0.005, driver.y, driver.z);
-  palm.rotation.y = 0.32;
+  const palm = mesh(SKIN_MAT, palmGeo());
+  const driver = tubePoint(0.12, 0.002, tubeR, 0.012);
+  palm.position.set(driver.x + 0.006, driver.y, driver.z);
+  palm.rotation.y = 0.22;
   hand.add(palm);
 
-  const thenar = mesh(
-    GLOVE_MAT,
-    geo("thenar", () => {
-      const g = new THREE.SphereGeometry(0.016, 10, 8);
-      g.scale(1.15, 0.85, 0.72);
-      return g;
-    })
-  );
-  thenar.position.set(driver.x - 0.002, -0.016, driver.z + 0.002);
+  const thenar = mesh(SKIN_MAT, digitGeo(0.028, 0.012, 0.009, 0.22, "thenar"));
+  thenar.position.set(driver.x - 0.002, -0.018, driver.z + 0.001);
+  thenar.rotation.z = 0.85;
+  thenar.rotation.y = 0.4;
   hand.add(thenar);
 
-  const pads = mesh(
-    GLOVE_ACCENT,
-    geo("pads", () => new THREE.BoxGeometry(0.012, 0.05, 0.008, 2, 3, 1))
-  );
-  pads.position.set(driver.x + 0.016, 0.008, driver.z - 0.004);
-  pads.rotation.y = 0.26;
-  hand.add(pads);
-
-  const knY = [0.024, 0.008, -0.008, -0.022];
+  const knY = [0.026, 0.008, -0.01, -0.026];
   for (let k = 0; k < 4; k++) {
-    const mk = mesh(KNUCKLE_MAT, knuckleGeo(0.0072, "palm-kn"));
+    const mk = mesh(KNUCKLE_MAT, knuckleGeo(0.0074, "palm-kn"));
     mk.name = `metacarpal-${k}`;
-    mk.position.set(driver.x + 0.012, knY[k], driver.z - 0.01);
-    mk.scale.set(1.05, 0.7, 0.78);
+    mk.position.set(driver.x + 0.014, knY[k], driver.z - 0.012);
     hand.add(mk);
   }
 
-  const brand = mesh(
-    GLOVE_ACCENT,
-    geo("brand-plate", () => new THREE.BoxGeometry(0.01, 0.016, 0.0024))
-  );
-  brand.name = "glove-mark";
-  brand.position.set(driver.x + 0.018, 0.002, driver.z - 0.012);
-  brand.rotation.y = 0.22;
-  hand.add(brand);
-  const chevron = mesh(
-    STITCH_MAT,
-    geo("brand-chevron", () => {
-      const g = new THREE.ConeGeometry(0.0042, 0.007, 3);
-      g.rotateZ(Math.PI);
-      return g;
-    })
-  );
-  chevron.name = "glove-mark-chevron";
-  chevron.position.set(driver.x + 0.019, 0.002, driver.z - 0.014);
-  chevron.rotation.y = 0.22;
-  chevron.rotation.x = Math.PI * 0.5;
-  hand.add(chevron);
-
-  const alongs = [0.026, 0.01, -0.006, -0.022];
-  const lens = [0.96, 1.04, 1.0, 0.86];
+  const alongs = [0.028, 0.01, -0.008, -0.024];
+  const wides = [0.98, 1.06, 1.0, 0.86];
   const names = ["finger-index", "finger-middle", "finger-ring", "finger-pinky"];
-  const startA = 0.16;
-  const sweep = 2.28;
+  const startA = 0.1;
+  const sweep = 2.55;
   for (let i = 0; i < 4; i++) {
-    addWrappedFinger(hand, alongs[i], lens[i], tubeR, startA + i * 0.035, sweep, names[i]);
+    addWrappedFinger(hand, alongs[i], wides[i], tubeR, startA + i * 0.03, sweep, names[i]);
   }
   addWrappedThumb(hand, tubeR);
 
   const cuff = mesh(
     CUFF_MAT,
-    geo("cuff", () => {
-      const c = new THREE.CylinderGeometry(0.019, 0.025, 0.046, 16, 1, true);
+    geo("wrist-cuff", () => {
+      const c = new THREE.CylinderGeometry(0.018, 0.022, 0.04, 14, 1, true);
       c.rotateZ(Math.PI * 0.5);
       return c;
     })
   );
-  cuff.position.set(0.006, -0.006, -tubeR - 0.034);
-  cuff.rotation.y = 0.45;
+  cuff.position.set(0.004, -0.008, -tubeR - 0.032);
+  cuff.rotation.y = 0.4;
   hand.add(cuff);
-  const strap = mesh(
-    GLOVE_ACCENT,
-    geo("cuff-strap", () => new THREE.BoxGeometry(0.028, 0.01, 0.004))
-  );
-  strap.position.set(0.01, -0.004, -tubeR - 0.03);
-  strap.rotation.y = 0.4;
-  hand.add(strap);
 
   const wrist = new THREE.Object3D();
   wrist.name = "wrist";
-  wrist.position.set(0.004, -0.01, -tubeR - 0.05);
+  wrist.position.set(0.002, -0.012, -tubeR - 0.048);
   hand.add(wrist);
   mount.userData.wrist = wrist;
+  mount.userData.tris = countTris(mount);
   return mount;
 }
 
@@ -668,6 +683,14 @@ export function attachPovDriverArms(root, hooks) {
   const handL = makeHand(1, rimR, tubeR);
   const handR = makeHand(-1, rimR, tubeR);
   grips.add(handL, handR);
+
+  const layer = hooks.POV_HUD_LAYER;
+  const lamp = new THREE.PointLight(0xffe6cc, 0.62, 1.05, 1.7);
+  lamp.name = "pov-hand-light";
+  lamp.layers.set(layer);
+  lamp.position.set(0, 0, 0.04);
+  grips.add(lamp);
+
   spin.add(grips);
   hooks.markSteerPovLayer(grips);
 
@@ -684,7 +707,6 @@ export function attachPovDriverArms(root, hooks) {
   shR.position.set(rig.eyeX - 0.168, shY, shZ);
   shoulders.add(shL, shR);
 
-  const layer = hooks.POV_HUD_LAYER;
   function armChain(side) {
     const deltoid = mesh(
       SUIT_MAT,
@@ -738,6 +760,8 @@ export function attachPovDriverArms(root, hooks) {
     wristR: handR.userData.wrist,
     rimR,
     tubeR,
+    trisL: handL.userData.tris,
+    trisR: handR.userData.tris,
     upperLen: 0.3,
     foreLen: 0.26,
     _tmpA: new THREE.Vector3(),
