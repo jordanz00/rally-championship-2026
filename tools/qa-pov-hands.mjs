@@ -61,10 +61,14 @@ check("hands are not twisted off the rim", !/gripLean/.test(anim) && /Gloves sta
 check("gloves emit in the POV overlay", /emissiveMap: GLOVE_MAP/.test(driver) && /toneMapped: false/.test(driver));
 check("grips sit at 10 and 2", /clock = side > 0 \? 0\.62/.test(driver));
 check("celica imports pov-driver.js?v=4+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 4);
+check(
+  "celica split still resolves rival-livery if imported",
+  !/rival-livery\.js/.test(car) || fs.existsSync(path.join(ROOT, "js/cars/rival-livery.js"))
+);
 check("game imports cockpit-anim.js?v=8+", Number((game.match(/cockpit-anim\.js\?v=(\d+)/) || [])[1]) >= 8);
-check("game imports celica.js?v=226+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 226);
-check("boot cache is 992+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 992);
-check("index boots main.js?v=992+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 992);
+check("game imports celica.js?v=227+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 227);
+check("boot cache is 993+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 993);
+check("index boots main.js?v=993+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 993);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "POV racing gloves grip the rim"}`);
 process.exit(fail ? 1 : 0);

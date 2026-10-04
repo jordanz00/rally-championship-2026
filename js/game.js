@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=184";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=226";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=227";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=8";
 import { Track } from "./tracks/track.js?v=418";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=216";
+import { Opponent } from "./ai.js?v=217";
 import { RallyAudio } from "./audio/engine.js?v=80";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -4996,7 +4996,7 @@ export class RallyGame {
         const ids = isPhonePlay() ? ["celica", "delta"] : ["celica", "delta", "stratos", "celica"];
         for (let i = 0; i < ids.length; i++) {
           try {
-            meshes.push(createRivalCar({}, i, ids[i]));
+            meshes.push(createRivalCar(aiTintForIndex(i), i, ids[i]));
           } catch {
             try {
               meshes.push(createTitleCar(ids[i]));

@@ -1412,53 +1412,22 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null) {
 }
 
 /**
- * Clone a rival template and force a solid unique body colour.
- *
- * Authored GLB stickers stay on the player car; rivals drop body albedo maps
- * so fourteen cars are fourteen distinct colours, not one muddy livery.
+ * Clone a rival template and dress it in a Group-A livery.
+ * Player hero paint is a different path (cloneCar + dressPlayerCarRace).
  *
  * @param {THREE.Group} template
- * @param {{body?: number}} tint
+ * @param {{body?: number, id?: string}} tint
+ * @param {number} [variant]
  * @returns {THREE.Group}
  */
-function cloneRival(template, tint = {}) {
+function cloneRival(template, tint = {}, variant = 0) {
   const clone = template.clone(true);
-  const bodyHex = tint.body;
-  if (bodyHex != null) {
-    const targets = collectBodyMaterials(template);
-    for (let ti = 0; ti < targets.length; ti++) {
-      const target = targets[ti];
-      const key = `${template.name}|${bodyHex}|${ti}`;
-      let painted = rivalPaintCache.get(key);
-      if (!painted) {
-        painted = target.clone();
-        // Solid lacquer — map would hide the tint under Castrol / Martini art.
-        painted.map = null;
-        painted.emissiveMap = null;
-        if (painted.color) painted.color.setHex(bodyHex);
-        else painted.color = new THREE.Color(bodyHex);
-        if (painted.emissive) painted.emissive.setHex(0x000000);
-        painted.needsUpdate = true;
-        rivalPaintCache.set(key, painted);
-      }
-      clone.traverse((obj) => {
-        if (!obj.isMesh) return;
-        if (obj.material === target) {
-          obj.material = painted;
-          return;
-        }
-        // Cloned meshes sometimes keep array materials.
-        if (Array.isArray(obj.material)) {
-          obj.material = obj.material.map((m) => (m === target ? painted : m));
-        }
-      });
-    }
-  }
+  clone.userData.carId = template.userData.carId;
+  dressRivalCar(clone, tint, variant, isRivalBodyMaterial);
   rebindClonedWheels(clone);
   clone.userData.wheels = findWheels(clone);
   clone.userData.body = clone;
   clone.userData.carId = template.userData.carId;
-  clone.userData.aiTint = bodyHex;
   return clone;
 }
 
@@ -1497,7 +1466,8 @@ function collectBodyMaterials(root) {
  */
 function isRivalBodyMaterial(mat, mesh) {
   const kind = mat.userData && mat.userData.kind;
-  if (kind === "glass" || kind === "rubber" || kind === "chrome") return false;
+  if (kind === "glass" || kind === "rubber" || kind === "chrome" || kind === "decal") return false;
+  if (mat.userData && mat.userData.rivalDecal) return false;
   if (mat.transparent && (mat.opacity == null || mat.opacity < 0.95)) return false;
   const name = `${mat.name || ""} ${mesh && mesh.name ? mesh.name : ""}`.toLowerCase();
   if (/glass|window|windshield|tyre|tire|rubber|wheel|rim|brake|disc|caliper|chrome|mirror|light|lamp|bulb|emissive/.test(name)) {
