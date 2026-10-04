@@ -40,9 +40,9 @@
 
 **Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3485.mjs` · `qa-forest-3469.mjs` · `qa-desert-1654.mjs` · `qa-forest-tunnel-bore.mjs` · `qa-lane-floor.mjs` · `qa-play-lane.mjs` · `qa-stage-flow.mjs`
 
-**Boot:** `main.js?v=1001` · `game.js?v=1001` · `track.js?v=420` · `world-geometry-validator.js?v=8`
+**Boot:** `main.js?v=1006` · `game.js?v=1006` · `track.js?v=421` · `world-geometry-validator.js?v=8`
 
-**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1001
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1006
 
 ## Result replay — 2–3 s hard cuts, no smear (2026-10-04)
 

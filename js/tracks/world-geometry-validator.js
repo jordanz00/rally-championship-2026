@@ -157,22 +157,22 @@ export function validateWorldGeometry(track, opts = {}) {
     }
   }
 
-  // Late Forest play-lane: the finish-left over the bore (~3485 m) must stay
-  // a road. A stacked flyover here is the same class of wall as Desert 1654.
+  // Late Forest play-lane: finish-left over the bore (3440–3520, pin 3469).
+  // v987 allowed 12% / measured 9.1% — the car still nearly stopped. 5% max.
   if (scenery === "forest") {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1];
       const b = points[i];
-      if (b.dist < 3455 || b.dist > 3515) continue;
+      if (b.dist < 3440 || b.dist > 3520) continue;
       if (a.jump || a.jumpKind || b.jump || b.jumpKind) continue;
       const ds = b.dist - a.dist;
       if (ds < 0.12) continue;
       const g = (b.y - a.y) / ds;
-      if (g > 0.12) {
+      if (g > 0.05) {
         errors.push({
           severity: "error",
           code: "FOREST_3485_WALL",
-          message: `Late Forest play-lane grade ${(g * 100).toFixed(1)}% at ${b.dist.toFixed(0)} m — finish-left over the bore must stay a road`,
+          message: `Late Forest play-lane grade ${(g * 100).toFixed(1)}% at ${b.dist.toFixed(0)} m — 3469 approach must stay a fast deck, not a hill`,
           dist: b.dist,
           x: b.x,
           y: b.y,
