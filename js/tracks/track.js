@@ -85,7 +85,7 @@ import {
 } from "./forest-tunnel.js?v=19";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=11";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=12";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;

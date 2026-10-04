@@ -41,6 +41,7 @@ check("poles bury into land", /GANTRY_POLE_BURY/.test(clothSrc) && /stage-gantry
 check("skipSeat / keepY on gantry", /skipSeat/.test(clothSrc) && /keepY/.test(clothSrc));
 check("seat-scenery honors keepY", /keepY/.test(seatSrc) && /skipSeat/.test(seatSrc));
 check("readable championship wording", /RALLY CHAMPIONSHIP/.test(clothSrc) && /START/.test(clothSrc) && /FINISH/.test(clothSrc));
+check("finish vinyl faces incoming traffic", /label === "FINISH" \? face \+ Math\.PI/.test(clothSrc));
 check("no Sega trademark lockup", !/SEGA/.test(clothSrc) && !/TOYOTA/.test(clothSrc));
 check("PBR / lit banner material", /gantry-banner-cloth/.test(clothSrc) && /MeshStandardMaterial|MeshLambertMaterial/.test(clothSrc));
 

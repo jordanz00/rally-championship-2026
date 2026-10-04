@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Finish banner — not backwards (2026-10-04)
+
+**Player moment:** Drive at the finish gantry. FINISH and RALLY CHAMPIONSHIP read left-to-right, not mirrored.
+
+**Cause:** The vinyl’s printed face pointed down-track. The approaching car saw the DoubleSide back, which mirrors the type.
+
+**Shipped:** Finish gantry yaws `heading + π` so the printed face greets incoming traffic. Start is unchanged.
+
+**Proof:** `node tools/qa-start-finish-banner.mjs`
+
+**Boot:** `main.js?v=1013` · `flag-cloth.js?v=12` · `track.js?v=424`
+
 ## Attract — no strobe (2026-10-04)
 
 **Player moment:** Title reel shows cars and road, not a white light show.
