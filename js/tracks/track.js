@@ -4466,9 +4466,29 @@ export class Track {
   _scrubCollidersOnRibbonSamples() {
     const runs = this._tunnels;
     const bands = [];
-    if (runs && runs.length) {
-      const tunStart = runs[0].startDist;
-      const tunEnd = runs[0].endDist;
+    // Function-scope posts — the mud-face loop below used to read block-scoped
+    // `const tunEnd` and threw ReferenceError on Forest (jump lands still
+    // opened bands when `_tunnels` was empty or the binding was out of scope).
+    let tunStart = NaN;
+    let tunEnd = NaN;
+    const posted = runs && runs.length ? runs[0] : null;
+    if (posted && Number.isFinite(posted.startDist) && Number.isFinite(posted.endDist)) {
+      tunStart = posted.startDist;
+      tunEnd = posted.endDist;
+    } else {
+      const pts = this.points || [];
+      let run0 = -1;
+      for (let i = 0; i < pts.length; i++) {
+        if (!pts[i].tunnel) continue;
+        if (run0 < 0) run0 = i;
+        if (i === pts.length - 1 || !pts[i + 1].tunnel) {
+          tunStart = pts[run0].dist;
+          tunEnd = pts[i].dist;
+          break;
+        }
+      }
+    }
+    if (Number.isFinite(tunStart) && Number.isFinite(tunEnd)) {
       bands.push(
         { dist0: tunStart - 72, dist1: tunStart + 55, step: 0.5 },
         { dist0: tunEnd - 55, dist1: tunEnd + 72, step: 0.5 },
@@ -4530,14 +4550,18 @@ export class Track {
     // Also drop any wall whose face sits inside / on the mud ribbon corridor
     // even if the OBB test barely missed (long slabs / folded opposite arms).
     // Tunnel linings live at over ≈ +0.25 — only strip faces on or inside paint.
-    for (let i = 0; i < list.length; i++) {
-      if (drop.has(i)) continue;
-      const c = list[i];
-      if (c.kind !== "wall") continue;
-      const road = this._nearestRoad(c.x, c.z);
-      if (road.along < tunEnd - 30 || road.along > tunEnd + 290) continue;
-      const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-      if (over < 0.05) drop.add(i);
+    // No tunnel posts → skip this band. Never throw; keep the road.
+    if (Number.isFinite(tunEnd)) {
+      for (let i = 0; i < list.length; i++) {
+        if (drop.has(i)) continue;
+        const c = list[i];
+        if (c.kind !== "wall") continue;
+        const road = this._nearestRoad(c.x, c.z);
+        if (!road || !Number.isFinite(road.along)) continue;
+        if (road.along < tunEnd - 30 || road.along > tunEnd + 290) continue;
+        const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
+        if (over < 0.05) drop.add(i);
+      }
     }
     if (!drop.size) return;
     const kept = [];

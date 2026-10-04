@@ -77,6 +77,37 @@ function wallsOn(id) {
   return { hits, cliffs };
 }
 
+/**
+ * Exercise the ribbon/collider scrub that crashed Forest with unbound tunEnd.
+ * Spline + a dummy wall is enough — full Track.create is a browser load.
+ * @param {string} id
+ */
+function scrubRibbon(id) {
+  const def = COURSES[id];
+  const track = new Track(def, { deferBuild: true });
+  track._buildSpline(def.pieces, def);
+  const mid = track.points[Math.floor((track.points.length || 1) / 2)] || track.points[0];
+  if (mid) {
+    track.colliders.push({
+      kind: "wall",
+      x: mid.x,
+      z: mid.z,
+      nx: mid.nx || 1,
+      nz: mid.nz || 0,
+      tx: Math.sin(mid.heading || 0),
+      tz: Math.cos(mid.heading || 0),
+      halfLen: 8,
+      r: 1,
+    });
+  }
+  track._scrubCollidersOnRibbonSamples();
+  const tun = track._tunnels && track._tunnels[0];
+  return {
+    tunnels: (track._tunnels || []).length,
+    tunEnd: tun && Number.isFinite(tun.endDist) ? tun.endDist : null,
+  };
+}
+
 let fail = 0;
 console.log("LANE FLOOR  ·  every stage, centre and both edges\n");
 for (let s = 0; s < IDS.length; s++) {
@@ -85,11 +116,23 @@ for (let s = 0; s < IDS.length; s++) {
   const lane = r.hits.filter((h) => h.kind !== "ribbon-step");
   if (!lane.length && !r.cliffs) {
     console.log(`  ok  ${id}`);
-    continue;
+  } else {
+    fail += 1;
+    console.log(`  FAIL  ${id}  cliffs=${r.cliffs} lane=${lane.length}`);
+    for (let i = 0; i < r.hits.length; i++) console.log("       ", r.hits[i]);
   }
-  fail += 1;
-  console.log(`  FAIL  ${id}  cliffs=${r.cliffs} lane=${lane.length}`);
-  for (let i = 0; i < r.hits.length; i++) console.log("       ", r.hits[i]);
+  try {
+    const scrub = scrubRibbon(id);
+    if (id === "forest" && !(scrub.tunnels >= 1 && Number.isFinite(scrub.tunEnd))) {
+      fail += 1;
+      console.log(`  FAIL  ${id} ribbon scrub — Forest bore posts missing`);
+    } else {
+      console.log(`  ok  ${id} ribbon scrub (tunnels=${scrub.tunnels})`);
+    }
+  } catch (err) {
+    fail += 1;
+    console.log(`  FAIL  ${id} ribbon scrub threw  ${err && err.message}`);
+  }
 }
 if (fail) {
   console.log(`\n${fail} stage(s) still have a roadway wall`);

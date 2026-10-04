@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Forest Stage 2 crash — tunEnd unbound (2026-10-04)
+
+**Player moment:** Championship Stage 2 (Forest) failed to build. Live Pages (`?v=983`) showed `course "forest" failed to build` / `ReferenceError: tunEnd is not defined`.
+
+**Cause:** `_scrubCollidersOnRibbonSamples` declared `const tunEnd` inside `if (runs && runs.length)`. Jump land pads still opened ribbon bands. The mud-face wall loop then read `tunEnd` outside that block — a ReferenceError on Forest (and any stage with jump lands). Missing `_tunnels` was not required to throw.
+
+**Fix:** Bind `tunStart` / `tunEnd` at function scope from `_tunnels[0]` (Forest bore posts), else the first spline tunnel run. Mud-face loop runs only when `Number.isFinite(tunEnd)`. No tunnel → skip that band, keep the road. No `Track.query()` rewrite. No blanket build try/catch.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-tunnel-bore.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lane-floor.mjs` · `node tools/qa-world-geometry.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=984` · `game.js?v=984` · `track.js?v=417`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=984
+
 ## Navigator VO — Emma cheerful neural (2026-10-03)
 
 **Player moment:** Stage start and the first corner. 3-2-1-GO and "easy left" are a young, upbeat woman — punchy, not lecture-radio Daniel or compact Samantha.

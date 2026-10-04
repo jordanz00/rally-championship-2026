@@ -31,7 +31,19 @@ check("bore inset ≥ 3.2 m", FOREST_BORE_INSET >= 3.2, String(FOREST_BORE_INSET
 check("sconce pose helper", /forestTunnelSconcePose/.test(tunSrc) && /createForestTunnelSconceGeometry/.test(tunSrc));
 check("sconces skip land plant", /skipSeat/.test(trackSrc) && /tunnelBoreRib/.test(seatSrc));
 check("no floating lookAt bars", !/BoxGeometry\(0\.16, 0\.28, 0\.82\)/.test(trackSrc));
-check("game imports track.js?v=415+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 415);
+check("game imports track.js?v=417+", Number((gameSrc.match(/track\.js\?v=(\d+)/) || [])[1]) >= 417);
+
+const scrubFn = (trackSrc.match(/_scrubCollidersOnRibbonSamples\(\) \{[\s\S]*?\n  \}/) || [])[0] || "";
+check(
+  "tunEnd is function-scope before mud-face use",
+  /let tunEnd = NaN/.test(scrubFn) &&
+    /Number\.isFinite\(tunEnd\)/.test(scrubFn) &&
+    !/if \(runs && runs\.length\) \{\s*const tunStart/.test(scrubFn)
+);
+check(
+  "mud-face loop does not read unbound tunEnd",
+  /if \(Number\.isFinite\(tunEnd\)\) \{[\s\S]*road\.along < tunEnd - 30/.test(scrubFn)
+);
 
 const tun = (COURSES.forest.pieces || []).filter((p) => p.tunnel);
 check("forest has a tunnel run", tun.length >= 4);
