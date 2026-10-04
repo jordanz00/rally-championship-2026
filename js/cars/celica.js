@@ -134,7 +134,7 @@ function requireCarModel(id, context = "spawn") {
 
 /**
  * Pack liveries — eight authored Group-A looks, then hue/dirt recycles.
- * Candy hex tints (hot-pink / lime / cyan) are gone; see rival-livery.js.
+ * Replaces the old flat candy hex pack; see rival-livery.js.
  */
 export const AI_TINTS = RIVAL_LIVERIES;
 

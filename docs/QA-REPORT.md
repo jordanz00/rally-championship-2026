@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Rival pack liveries — Group-A lacquer (2026-10-04)
+
+**Player moment:** Championship grid, attract reel, result replay. Fourteen rivals read as distinct Group-A / WRC-era cars — ivory sash, navy gold, bottle green, sunburst, graphite ember, nordic white, dune, cellar — not 14 clones of one toy hex.
+
+**What was cheap:** `cloneRival` stripped GLB maps and `setHex` candy tints (`hot-pink`, `lime`, `cyan`, `castrol-green`). `gameShade` flattened pack paint to roughness 0.48–0.62 / env 0.4 with no clearcoat. Attract called `createRivalCar({}, i)` so the reel kept muddy sticker maps. No door numbers. Player hero clearcoat path was never the pack path.
+
+**Fix:** `js/cars/rival-livery.js` — eight original looks, hue+dirt recycle for slots 8–13. Shared `MeshPhysicalMaterial` clearcoat + flake/grit + object-space panel blocks. Vinyl door / hood / roof plates with invented team copy (no Castrol / Toyota / Michelin). `createRivalCar` always resolves `aiLiveryForIndex(variant)` so attract, ghost, and race share the same dress. `createPlayerCar` / `dressPlayerCarRace` / title pad untouched.
+
+**Proof:** `node tools/qa-rival-livery.mjs`
+
+**Boot:** `main.js?v=994` · `game.js?v=994` · `celica.js?v=227` · `ai.js?v=217` · `rival-livery.js?v=1`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=994
+
 ## Harsh lighting — peak clamp (2026-10-04)
 
 **Player moment:** All four cup stages. Sun still sculpts the car and the road. Desert noon, tunnel exit, Forest canopy gaps, and Mountain rain no longer flash the frame white or crush shade to ink.

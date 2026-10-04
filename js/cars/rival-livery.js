@@ -5,7 +5,7 @@
  * WHAT IT DOES: eight unique lacquer looks (then hue+dirt recycles) so a
  *   14-car field is not one cheap hue. Physical clearcoat, env-aware
  *   roughness, object-space panel blocks, and readable door numbers.
- *   Sponsor copy is invented — no Castrol / Toyota / Michelin marks.
+ *   Sponsor copy is invented — no licensed works marks.
  * HOW IT CONNECTS: createRivalCar → getRivalPaintMaterial + attach marks.
  *   Player hero (createPlayerCar / dressPlayerCarRace) never imports this.
  */
