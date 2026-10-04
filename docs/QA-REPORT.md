@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Navigator VO — Emma cheerful neural (2026-10-03)
+
+**Player moment:** Stage start and the first corner. 3-2-1-GO and "easy left" are a young, upbeat woman — punchy, not lecture-radio Daniel or compact Samantha.
+
+**Cause:** The only spoken actor was macOS `say` Daniel, then a compact Samantha rebuild. Both read dry and old for a fun arcade navigator.
+
+**Shipped:** One original pack, actor id `emma-cheerful` (`en-US-EmmaMultilingualNeural` via `tools/render-nav-vo.py`). Faster cheerful takes, bright cabin EQ, tails trimmed so calls stay under a second. Same 16 clip ids and pace-note timing. Not Sega audio.
+
+**Proof:** `node tools/qa-nav-young-vo.mjs`
+
+**Boot:** `main.js?v=983` · `game.js?v=983` · `engine.js?v=80` · `codriver.js?v=47` · nav clips `?v=8`
+
+**Human listen:** hard-refresh, Navigator slider up, Desert or `?physlab=1&audio=on`. Hear GO then the first grade.
+
 ## First 30 s — punch, catch, rush (2026-10-03)
 
 **Player moment:** GO leaps. First Desert right rotates into a slide you can catch with a flick. The chase lens rushes for the whole opening 30 s. Pack leaves with you.
