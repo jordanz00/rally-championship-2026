@@ -15,7 +15,7 @@ import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=13";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
-import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=7";
+import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=8";
 import {
   shadowGeometry,
   shadowMaterial,
@@ -757,15 +757,17 @@ export class Track {
 
   /**
    * Later ribbon that occupies a tunnel's XZ. One flat deck at CLEAR above the
-   * bore, then grade-limited ramps *outside* the overlap so the climb is not
-   * an invisible wall (Forest medium-left-to-finish @ 3485 m).
+   * bore. Forest's finish-left keeps 3380–3560 at that deck so 3469 is not a
+   * 9–12% hill in the corridor (v987 left that climb; the car nearly stopped).
+   * Linear ramps outside the pad stay at 4.5% — no smoothstep spike.
    */
   _separateTunnelOverpasses() {
     const pts = this.points;
     if (!pts || pts.length < 40) return;
     if (!this._overTunnelLanes) this._overTunnelLanes = [];
     const CLEAR = 7.4;
-    const GRADE = 0.12;
+    const GRADE = 0.045;
+    const forest = this.scenery === "forest" || (this._def && this._def.scenery === "forest");
     const tunIdx = [];
     for (let i = 0; i < pts.length; i++) {
       if (pts[i].tunnel) tunIdx.push(i);
@@ -803,22 +805,51 @@ export class Track {
       const j1 = clusters[c].b.j;
       const tunY = clusters[c].a.tunY;
       const target = tunY + CLEAR;
-      for (let j = j0; j <= j1; j++) {
-        if (pts[j].y < target) pts[j].y = target;
-        if (pts[j].y > target) pts[j].y = target;
+      let flat0 = j0;
+      let flat1 = j1;
+      // Finish-left corridor: flatten the approach *before* 3469 so the car
+      // is already on the deck, not climbing 12% beside the bore walls.
+      const finishLeft = forest && pts[j0].dist > 3200 && pts[j1].dist < 3700;
+      if (finishLeft) {
+        flat0 = this._overpassFlatEnd(j0, -1, 3380);
+        flat1 = this._overpassFlatEnd(j1, 1, 3560);
       }
-      this._gradeRampTo(j0, -1, target, GRADE);
-      this._gradeRampTo(j1, 1, target, GRADE);
+      for (let j = flat0; j <= flat1; j++) {
+        pts[j].y = target;
+      }
+      this._gradeRampTo(flat0, -1, target, GRADE);
+      this._gradeRampTo(flat1, 1, target, GRADE);
       this._overTunnelLanes.push({
-        dist0: pts[j0].dist - 16,
-        dist1: pts[j1].dist + 16,
+        dist0: pts[flat0].dist - 24,
+        dist1: pts[flat1].dist + 24,
       });
     }
   }
 
   /**
-   * Smoothstep a flyover ramp from a peak index toward `dir` so the steepest
-   * point stays at or under `gradeMax` (smoothstep peak is 1.5× average).
+   * Walk a flyover deck until `coverDist` (or a protected post).
+   * @param {number} fromIdx
+   * @param {number} dir -1 toward lower dist, +1 toward higher
+   * @param {number} coverDist
+   * @returns {number}
+   */
+  _overpassFlatEnd(fromIdx, dir, coverDist) {
+    const pts = this.points;
+    let end = fromIdx;
+    for (let s = 1; s <= 160; s++) {
+      const k = fromIdx + dir * s;
+      if (k < 0 || k >= pts.length) break;
+      if (pts[k].tunnel || pts[k].underpass || pts[k].jump || pts[k].jumpKind) break;
+      if (dir < 0 && pts[k].dist < coverDist) break;
+      if (dir > 0 && pts[k].dist > coverDist) break;
+      end = k;
+    }
+    return end;
+  }
+
+  /**
+   * Linear flyover apron from a peak index toward `dir`. Peak grade equals
+   * average — smoothstep's 1.5× spike was the 12% wall at 3439 m.
    * @param {number} fromIdx
    * @param {number} dir -1 or +1
    * @param {number} peakY
@@ -828,17 +859,17 @@ export class Track {
     const pts = this.points;
     if (!pts || !pts[fromIdx]) return;
     let farY = peakY;
-    for (let s = 1; s <= 90; s++) {
+    for (let s = 1; s <= 120; s++) {
       const k = fromIdx + dir * s;
       if (k < 0 || k >= pts.length) break;
       if (pts[k].tunnel || pts[k].underpass || pts[k].jump || pts[k].jumpKind) break;
       if (pts[k].y < farY) farY = pts[k].y;
-      if (Math.abs(pts[k].dist - pts[fromIdx].dist) > 180) break;
+      if (Math.abs(pts[k].dist - pts[fromIdx].dist) > 240) break;
     }
     const rise = Math.abs(peakY - farY);
-    const needRun = Math.max(28, (rise * 1.5) / Math.max(0.04, gradeMax));
+    const needRun = Math.max(36, rise / Math.max(0.04, gradeMax));
     let end = fromIdx;
-    for (let s = 1; s <= 90; s++) {
+    for (let s = 1; s <= 120; s++) {
       const k = fromIdx + dir * s;
       if (k < 0 || k >= pts.length) break;
       if (pts[k].tunnel || pts[k].underpass || pts[k].jump || pts[k].jumpKind) break;
@@ -854,8 +885,7 @@ export class Track {
       if (k === fromIdx) continue;
       const t = 1 - Math.abs(pts[k].dist - pts[fromIdx].dist) / run;
       if (t <= 0) continue;
-      const w = t * t * (3 - 2 * t);
-      const want = baseY + (peakY - baseY) * w;
+      const want = baseY + (peakY - baseY) * t;
       if (pts[k].y < want) pts[k].y = want;
       if (pts[k].y > peakY) pts[k].y = peakY;
     }
