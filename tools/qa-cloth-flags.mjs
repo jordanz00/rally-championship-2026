@@ -36,6 +36,9 @@ check("overhead banner is not a 1-poly PlaneGeometry card", !/new THREE\.PlaneGe
 check("Kenney gate flags removed", !/flagKind/.test(trackSrc) && !/propGeometry\("flag_checkers"\)/.test(trackSrc));
 check("update ticks cloth", /_tickClothFlags/.test(trackSrc));
 check("Verlet springs present", /satisfy\(|STRUCT_ITERS|MAX_STRETCH/.test(clothSrc));
+check("banner rest pre-tension", /BANNER_REST_SCALE = 0\.(8|9)/.test(clothSrc));
+check("banner sag cap declared", /BANNER_SAG_CAP/.test(clothSrc));
+check("festive flags are not banner-taut", /flag\.taut \? BANNER_WIND/.test(clothSrc) || /BANNER_WIND/.test(clothSrc));
 check("uses LIGHTING.wind", /LIGHTING\[scenery\]/.test(clothSrc) || /L\.wind/.test(clothSrc));
 check("not a UV wiggle shader", !/sin\s*\(\s*uv/.test(clothSrc));
 check("per-flag phase/seed independence", /phase/.test(clothSrc) && /gustPhase/.test(clothSrc) && /turbPhase/.test(clothSrc) && /opts\.seed/.test(clothSrc));
@@ -86,9 +89,17 @@ globalThis.window = globalThis;
 globalThis.performance = { now: () => 16 };
 globalThis.HTMLCanvasElement = FakeCanvas;
 
-const { createClothFlag, updateClothFlags, stageWind, startFlagKinds } = await import(
-  "../js/tracks/flag-cloth.js"
-);
+const {
+  createClothFlag,
+  createGantryBanner,
+  updateClothFlags,
+  stageWind,
+  startFlagKinds,
+  bannerClothMetrics,
+  BANNER_REST_SCALE,
+  BANNER_SAG_CAP,
+  BANNER_SPAN_FILL,
+} = await import("../js/tracks/flag-cloth.js");
 
 const desert = stageWind("desert", 1.2);
 const forest = stageWind("forest", 1.2);
@@ -190,5 +201,22 @@ check("independent cloth motion (not synced)", diverge > 0.01);
 const alongMatch = trackSrc.match(/alongSlots\s*=\s*\[([^\]]+)\]/);
 const slots = alongMatch ? alongMatch[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
 check("finish row has five along slots × two sides (=10)", slots.length === 5);
+
+const tautBanner = createGantryBanner({
+  label: "START",
+  scenery: "desert",
+  heading: 0,
+  left: { x: -6, y: 1, z: 0 },
+  right: { x: 6, y: 1, z: 0 },
+  roadY: 1,
+  seed: 2,
+});
+const tm = bannerClothMetrics(tautBanner);
+check("banner cloth wider than the 12 m pole line", tm.span >= 14.2 && tm.clothW >= tm.span * (BANNER_SPAN_FILL - 0.01));
+check("banner rest length vs span (pre-tension)", tm.restRow < tm.clothW * 0.985 && tm.restRow > tm.clothW * 0.9);
+for (let t = 0; t < 40; t++) updateClothFlags([tautBanner], 1 / 30, t / 30, "desert", null);
+const sag = bannerClothMetrics(tautBanner).sag;
+check("banner sag under cap (no bag)", sag <= BANNER_SAG_CAP);
+check("festive flags still flap (not drum-tight)", max > 0.01);
 
 if (!process.exitCode) console.log("PASS  cloth flag sim");

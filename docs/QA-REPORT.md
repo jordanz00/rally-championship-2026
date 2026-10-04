@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Start / finish vinyl — drum-tight, wider gantry (2026-10-04)
+
+**Player moment:** Leave the line and cross it. START and FINISH read as vinyl under tension — stretched across the gantry, almost flat, a little wind. No sag bag. Festive verge flags still flap.
+
+**What sagged:** v999 18×7 Verlet hung from three edges with rest = geometric length, gravity 0.42, wind 0.26. Poles sat at `half + 1.55`. The sheet read as a floppy cloth card.
+
+**Fix:** Wider plant (`GANTRY_POST_PAD` 2.55) plus `BANNER_SPAN_PAD` 1.2 m each side. Vinyl fills 98.4% of the steel. Rest lengths × 0.955 (pre-tension). Four-edge pins, 10 structure iters, banner stretch cap 1.024, gravity 0.13, wind 0.11. Festive 8×12 flags unchanged. `_separateTunnelOverpasses` / 3469 / `Track.query()` / broadcast / attract / POV untouched.
+
+**Proof:** `node tools/qa-start-finish-banner.mjs` · `node tools/qa-cloth-flags.mjs`
+
+**Boot:** `main.js?v=1007` · `game.js?v=1007` · `track.js?v=422` · `flag-cloth.js?v=11`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=1007
+
 ## Attract reel — no clip through ribbon or sand (2026-10-04)
 
 **Player moment:** Title attract. MTV cuts stay. Pack flies the ribbon. Tires kiss paint. Hulls and wheels do not sink through asphalt or desert grit in the lane.

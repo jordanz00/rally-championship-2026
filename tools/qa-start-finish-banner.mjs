@@ -32,6 +32,11 @@ check("Kenney stretched gantry path removed", !/gantry_overhead_lights/.test(tra
 check("cloth builds taut gantry banners", /export function createGantryBanner/.test(clothSrc));
 check("banner grid is not 1 poly", /BANNER_COLS = 18/.test(clothSrc) && /BANNER_ROWS = 7/.test(clothSrc));
 check("banner is Verlet taut cloth", /banner: true/.test(clothSrc) && /taut: true/.test(clothSrc) && /satisfy\(/.test(clothSrc));
+check("vinyl rest scale is pre-tensioned", /BANNER_REST_SCALE = 0\.(8\d|9[0-7])/.test(clothSrc));
+check("vinyl fills the gantry span", /BANNER_SPAN_FILL = 0\.97/.test(clothSrc) || /BANNER_SPAN_FILL = 0\.98/.test(clothSrc));
+check("gantry span pad widens the sheet", /BANNER_SPAN_PAD = 1\./.test(clothSrc));
+check("track plants poles with GANTRY_POST_PAD", /GANTRY_POST_PAD/.test(trackSrc) && /half \+ GANTRY_POST_PAD/.test(trackSrc));
+check("four-edge pin (drum frame)", /row === 0 \|\| row === BANNER_ROWS - 1/.test(clothSrc));
 check("poles bury into land", /GANTRY_POLE_BURY/.test(clothSrc) && /stage-gantry-pole/.test(clothSrc));
 check("skipSeat / keepY on gantry", /skipSeat/.test(clothSrc) && /keepY/.test(clothSrc));
 check("seat-scenery honors keepY", /keepY/.test(seatSrc) && /skipSeat/.test(seatSrc));
@@ -95,7 +100,21 @@ globalThis.window = globalThis;
 globalThis.performance = { now: () => 16 };
 globalThis.HTMLCanvasElement = FakeCanvas;
 
-const { createGantryBanner, updateClothFlags } = await import("../js/tracks/flag-cloth.js");
+const {
+  createGantryBanner,
+  updateClothFlags,
+  bannerClothMetrics,
+  BANNER_REST_SCALE,
+  BANNER_SAG_CAP,
+  BANNER_SPAN_FILL,
+  BANNER_SPAN_PAD,
+  GANTRY_POST_PAD,
+} = await import("../js/tracks/flag-cloth.js");
+
+check("GANTRY_POST_PAD wider than v999 1.55", GANTRY_POST_PAD >= 2.4);
+check("BANNER_SPAN_PAD stretches past the pole line", BANNER_SPAN_PAD >= 1.0);
+check("BANNER_REST_SCALE < 1 (tension)", BANNER_REST_SCALE > 0.9 && BANNER_REST_SCALE < 0.99);
+check("BANNER_SAG_CAP is drum-tight", BANNER_SAG_CAP > 0 && BANNER_SAG_CAP <= 0.12);
 
 const stages = ["desert", "forest", "mountain", "lakeside"];
 for (const scenery of stages) {
@@ -122,8 +141,16 @@ for (const scenery of stages) {
     const kind = cloth && cloth.material && cloth.material.userData && cloth.material.userData.kind;
     check(`${tag} cloth / PBR material`, kind === "gantry-banner-cloth");
     check(`${tag} double-sided or mapped`, !!(cloth && cloth.material && (cloth.material.side != null) && cloth.material.map));
+    const m0 = bannerClothMetrics(banner);
+    const poleSpan = Math.hypot(12, 0.4);
+    check(`${tag} span wider than pole line`, m0.span >= poleSpan + BANNER_SPAN_PAD * 2 - 0.05);
+    check(`${tag} vinyl fills the steel`, m0.clothW >= m0.span * (BANNER_SPAN_FILL - 0.01));
+    check(`${tag} rest shorter than span (tension)`, m0.restRow < m0.clothW * 0.985 && m0.restRow > m0.clothW * 0.9);
+    check(`${tag} rest scale matches`, Math.abs(m0.restScale - BANNER_REST_SCALE) < 1e-6);
+    const pinned = banner.pin.reduce((n, p) => n + (p ? 1 : 0), 0);
+    check(`${tag} four-edge pins`, pinned >= 46);
     const before = Float32Array.from(banner.cur);
-    updateClothFlags([banner], 1 / 30, 0.9, scenery, null);
+    for (let t = 0; t < 48; t++) updateClothFlags([banner], 1 / 30, 0.9 + t / 30, scenery, null);
     let moved = 0;
     let max = 0;
     for (let i = 0; i < banner.cur.length; i += 3) {
@@ -136,8 +163,10 @@ for (const scenery of stages) {
       if (d > 1e-5) moved++;
       if (d > max) max = d;
     }
-    check(`${tag} free cloth verts moved`, moved >= 8);
-    check(`${tag} taut fabric-scale motion`, max > 0.0004 && max < 0.9);
+    const settled = bannerClothMetrics(banner);
+    check(`${tag} free cloth verts still breathe`, moved >= 8);
+    check(`${tag} taut fabric-scale motion`, max > 0.0002 && max < 0.35);
+    check(`${tag} sag under cap`, settled.sag <= BANNER_SAG_CAP);
   }
 }
 

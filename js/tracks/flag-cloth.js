@@ -4,8 +4,9 @@
  * WHO THIS IS FOR: the chase / medium camera at START and FINISH.
  * WHAT IT DOES: plants steel poles plus Verlet cloth (flags 8×12, banners 18×7)
  *   and integrates gravity, damping, stretch-limited springs, pins, and
- *   LIGHTING.wind each frame. Not a Kenney toy mesh. Not a UV wiggle shader.
- *   Not a paper-thin unlit plane.
+ *   LIGHTING.wind each frame. START/FINISH vinyl is drum-tight (pre-tensioned
+ *   rest lengths, four-edge pins, slight wind only). Festive verge flags still
+ *   flap. Not a Kenney toy mesh. Not a UV wiggle shader. Not a paper card.
  * HOW IT CONNECTS: Track._addStageGates() plants; Track.update() ticks.
  *   Wind comes from config LIGHTING[scenery].wind — no second weather system.
  *   Each flag carries phase / seed offsets so a finish row never sync-waves.
@@ -33,9 +34,23 @@ const DAMPING = 0.978;
 const NEAR_M = 88;
 const FAR_SKIP = 3;
 
-const BANNER_COLS = 18;
-const BANNER_ROWS = 7;
+export const BANNER_COLS = 18;
+export const BANNER_ROWS = 7;
 const BANNER_H = 1.58;
+/** Vinyl fills this fraction of pole-to-pole span — tight across the gantry. */
+export const BANNER_SPAN_FILL = 0.984;
+/** Extra meters each side beyond the requested pole line. */
+export const BANNER_SPAN_PAD = 1.2;
+/** Rest length ÷ geometric edge. < 1 pre-tensions the sheet drum-tight. */
+export const BANNER_REST_SCALE = 0.955;
+/** Max |Y| sag from the pinned frame after settle (meters). */
+export const BANNER_SAG_CAP = 0.09;
+/** Half-road pad so poles sit further onto the verge than v999 (1.55). */
+export const GANTRY_POST_PAD = 2.55;
+const BANNER_STRUCT_ITERS = 10;
+const BANNER_MAX_STRETCH = 1.024;
+const BANNER_WIND = 0.11;
+const BANNER_GRAVITY_MUL = 0.13;
 const GANTRY_POLE_R = 0.082;
 const GANTRY_POLE_BURY = 0.44;
 const GANTRY_BEAM_R = 0.068;
@@ -840,7 +855,8 @@ export function createGantryBanner(opts) {
   const minY = Math.min(left.y, right.y);
   const dx = right.x - left.x;
   const dz = right.z - left.z;
-  const span = Math.max(4.8, Math.hypot(dx, dz));
+  const rawSpan = Math.max(4.8, Math.hypot(dx, dz));
+  const span = rawSpan + BANNER_SPAN_PAD * 2;
   const yaw = Math.atan2(-dz, dx);
   const roadY = Number.isFinite(opts.roadY) ? opts.roadY : minY;
   const beamWorldY = Math.max(roadY, left.y, right.y) + GANTRY_CLEAR;
@@ -923,7 +939,7 @@ export function createGantryBanner(opts) {
   group.add(beam);
 
   const fascia = new THREE.Mesh(
-    new THREE.BoxGeometry(span - 0.22, 0.11, 0.16),
+    new THREE.BoxGeometry(span - 0.1, 0.11, 0.16),
     steel
   );
   fascia.name = `stage-gantry-fascia-${label}`;
@@ -933,7 +949,7 @@ export function createGantryBanner(opts) {
   group.add(fascia);
 
   const hem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.032, 0.032, span - 0.55, 8, 1),
+    new THREE.CylinderGeometry(0.032, 0.032, span - 0.28, 8, 1),
     steel
   );
   hem.name = `stage-gantry-hem-${label}`;
@@ -943,7 +959,7 @@ export function createGantryBanner(opts) {
   hem.userData.skipSeat = true;
   group.add(hem);
 
-  const clothW = Math.max(3.6, span - 0.62);
+  const clothW = Math.max(4.2, span * BANNER_SPAN_FILL);
   const geo = new THREE.PlaneGeometry(clothW, BANNER_H, BANNER_COLS - 1, BANNER_ROWS - 1);
   const clothY = beamWorldY - minY - 0.2 - BANNER_H * 0.5;
   geo.translate(0, clothY, 0.07);
@@ -960,10 +976,10 @@ export function createGantryBanner(opts) {
     const col = i % BANNER_COLS;
     const row = (i / BANNER_COLS) | 0;
     const j = hash3(seed, col + 0.4, row + 0.8);
-    const edge = col === 0 || col === BANNER_COLS - 1 || row === BANNER_ROWS - 1;
-    cur[i * 3] = x + (edge ? 0 : (h2 - 0.5) * 0.012 * (j - 0.5));
+    const edge = col === 0 || col === BANNER_COLS - 1 || row === 0 || row === BANNER_ROWS - 1;
+    cur[i * 3] = x + (edge ? 0 : (h2 - 0.5) * 0.003 * (j - 0.5));
     cur[i * 3 + 1] = y;
-    cur[i * 3 + 2] = z + (edge ? 0 : (h3 - 0.5) * 0.016 * (j - 0.5));
+    cur[i * 3 + 2] = z + (edge ? 0 : (h3 - 0.5) * 0.004 * (j - 0.5));
     prev[i * 3] = cur[i * 3];
     prev[i * 3 + 1] = cur[i * 3 + 1];
     prev[i * 3 + 2] = cur[i * 3 + 2];
@@ -976,10 +992,14 @@ export function createGantryBanner(opts) {
   for (let r = 0; r < BANNER_ROWS; r++) {
     for (let c = 0; c < BANNER_COLS; c++) {
       const i = r * BANNER_COLS + c;
-      if (c + 1 < BANNER_COLS) restH.push(dist3(cur, i, i + 1));
-      if (r + 1 < BANNER_ROWS) restV.push(dist3(cur, i, i + BANNER_COLS));
-      if (r + 1 < BANNER_ROWS && c + 1 < BANNER_COLS) restD.push(dist3(cur, i, i + BANNER_COLS + 1));
-      if (r + 1 < BANNER_ROWS && c > 0) restD.push(dist3(cur, i, i + BANNER_COLS - 1));
+      if (c + 1 < BANNER_COLS) restH.push(dist3(cur, i, i + 1) * BANNER_REST_SCALE);
+      if (r + 1 < BANNER_ROWS) restV.push(dist3(cur, i, i + BANNER_COLS) * BANNER_REST_SCALE);
+      if (r + 1 < BANNER_ROWS && c + 1 < BANNER_COLS) {
+        restD.push(dist3(cur, i, i + BANNER_COLS + 1) * BANNER_REST_SCALE);
+      }
+      if (r + 1 < BANNER_ROWS && c > 0) {
+        restD.push(dist3(cur, i, i + BANNER_COLS - 1) * BANNER_REST_SCALE);
+      }
     }
   }
 
@@ -1016,9 +1036,9 @@ export function createGantryBanner(opts) {
     phase: h0 * Math.PI * 2,
     gustPhase: h1 * Math.PI * 2,
     turbPhase: h2 * Math.PI * 2,
-    windMul: 0.22 + h3 * 0.08,
-    dirBias: (h0 - 0.5) * 0.18,
-    dampMul: 1.035,
+    windMul: 0.07 + h3 * 0.03,
+    dirBias: (h0 - 0.5) * 0.12,
+    dampMul: 1.055,
     cols: BANNER_COLS,
     rows: BANNER_ROWS,
     banner: true,
@@ -1026,12 +1046,48 @@ export function createGantryBanner(opts) {
     plantY: minY,
     leftY: left.y,
     rightY: right.y,
+    span,
+    clothW,
+    restScale: BANNER_REST_SCALE,
   };
 
   const warmT0 = h0 * 1.6;
-  for (let i = 0; i < 18; i++) stepCloth(banner, 1 / 60, warmT0 + i / 60, scenery, 0.55);
+  for (let i = 0; i < 36; i++) stepCloth(banner, 1 / 60, warmT0 + i / 60, scenery, 0.18);
   writeCloth(banner);
   return banner;
+}
+
+/**
+ * Width / tension / sag numbers for QA. Rest row vs clothW proves pre-tension;
+ * sag is max |Y| from the pinned frame after the current pose.
+ * @param {ClothFlag} banner
+ * @returns {{span:number,clothW:number,restRow:number,sag:number,restScale:number}}
+ */
+export function bannerClothMetrics(banner) {
+  const cols = banner.cols || BANNER_COLS;
+  const rows = banner.rows || BANNER_ROWS;
+  let restRow = 0;
+  const rowLen = Math.max(0, cols - 1);
+  for (let i = 0; i < rowLen; i++) restRow += banner.restH[i] || 0;
+  const cur = banner.cur;
+  let sag = 0;
+  const denom = Math.max(1, rows - 1);
+  for (let r = 1; r < rows - 1; r++) {
+    const t = r / denom;
+    for (let c = 1; c < cols - 1; c++) {
+      const topY = cur[(c) * 3 + 1];
+      const botY = cur[((rows - 1) * cols + c) * 3 + 1];
+      const expected = topY * (1 - t) + botY * t;
+      sag = Math.max(sag, Math.abs(cur[(r * cols + c) * 3 + 1] - expected));
+    }
+  }
+  return {
+    span: banner.span || 0,
+    clothW: banner.clothW || 0,
+    restRow,
+    sag,
+    restScale: banner.restScale != null ? banner.restScale : BANNER_REST_SCALE,
+  };
 }
 
 /**
@@ -1089,7 +1145,7 @@ function stepCloth(flag, dt, time, scenery, windScale) {
   const pin = flag.pin;
   const n = pin.length;
   const { cols } = clothSize(flag);
-  const taut = flag.taut ? 0.26 : 1;
+  const taut = flag.taut ? BANNER_WIND : 1;
 
   for (let i = 0; i < n; i++) {
     if (pin[i]) continue;
@@ -1113,14 +1169,15 @@ function stepCloth(flag, dt, time, scenery, windScale) {
     prev[i3 + 1] = cur[i3 + 1];
     prev[i3 + 2] = cur[i3 + 2];
     const ax = (lx + turb * lz + flap) * (8.4 * edge) * taut;
-    const ay = GRAVITY * (flag.banner ? 0.42 : 1) + ly * 2.6 + flap * 1.8 * taut;
+    const ay = GRAVITY * (flag.banner ? BANNER_GRAVITY_MUL : 1) + ly * 2.6 + flap * 1.8 * taut;
     const az = (lz + turb + flap * 0.55) * (8.4 * edge) * taut;
     cur[i3] += vx + ax * h2;
     cur[i3 + 1] += vy + ay * h2;
     cur[i3 + 2] += vz + az * h2;
   }
 
-  for (let iter = 0; iter < STRUCT_ITERS; iter++) {
+  const iters = flag.banner ? BANNER_STRUCT_ITERS : STRUCT_ITERS;
+  for (let iter = 0; iter < iters; iter++) {
     constrainGrid(flag);
     collidePole(flag);
   }
@@ -1133,6 +1190,7 @@ function constrainGrid(flag) {
   const cur = flag.cur;
   const pin = flag.pin;
   const { cols, rows } = clothSize(flag);
+  const stretch = flag.banner ? BANNER_MAX_STRETCH : MAX_STRETCH;
   let hi = 0;
   let vi = 0;
   let di = 0;
@@ -1140,16 +1198,16 @@ function constrainGrid(flag) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
       if (c + 1 < cols) {
-        satisfy(cur, pin, i, i + 1, flag.restH[hi++]);
+        satisfy(cur, pin, i, i + 1, flag.restH[hi++], stretch);
       }
       if (r + 1 < rows) {
-        satisfy(cur, pin, i, i + cols, flag.restV[vi++]);
+        satisfy(cur, pin, i, i + cols, flag.restV[vi++], stretch);
       }
       if (r + 1 < rows && c + 1 < cols) {
-        satisfy(cur, pin, i, i + cols + 1, flag.restD[di++]);
+        satisfy(cur, pin, i, i + cols + 1, flag.restD[di++], stretch);
       }
       if (r + 1 < rows && c > 0) {
-        satisfy(cur, pin, i, i + cols - 1, flag.restD[di++]);
+        satisfy(cur, pin, i, i + cols - 1, flag.restD[di++], stretch);
       }
     }
   }
@@ -1162,8 +1220,9 @@ function constrainGrid(flag) {
  * @param {number} ia
  * @param {number} ib
  * @param {number} rest
+ * @param {number} [maxStretch]
  */
-function satisfy(cur, pin, ia, ib, rest) {
+function satisfy(cur, pin, ia, ib, rest, maxStretch = MAX_STRETCH) {
   const a = ia * 3;
   const b = ib * 3;
   let dx = cur[b] - cur[a];
@@ -1171,12 +1230,12 @@ function satisfy(cur, pin, ia, ib, rest) {
   let dz = cur[b + 2] - cur[a + 2];
   let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist < 1e-6) dist = 1e-6;
-  if (dist > rest * MAX_STRETCH) {
-    const clamp = (rest * MAX_STRETCH) / dist;
+  if (dist > rest * maxStretch) {
+    const clamp = (rest * maxStretch) / dist;
     dx *= clamp;
     dy *= clamp;
     dz *= clamp;
-    dist = rest * MAX_STRETCH;
+    dist = rest * maxStretch;
     const mx = (cur[a] + cur[b]) * 0.5;
     const my = (cur[a + 1] + cur[b + 1]) * 0.5;
     const mz = (cur[a + 2] + cur[b + 2]) * 0.5;
@@ -1297,5 +1356,8 @@ function dist3(cur, ia, ib) {
  *   banner?: boolean,
  *   taut?: boolean,
  *   plantY?: number,
+ *   span?: number,
+ *   clothW?: number,
+ *   restScale?: number,
  * }} ClothFlag
  */
