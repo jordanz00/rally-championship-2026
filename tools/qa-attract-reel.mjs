@@ -8,6 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readCacheVersions } from "./qa-cache-version.mjs";
+import {
+  ATTRACT_TIRE_PLANT,
+  ATTRACT_TIRE_SINK_DEFAULT,
+  ATTRACT_WHEEL_KISS,
+  attractChassisY,
+  attractPlantGap,
+  attractRubberY,
+} from "../js/cinema/attract-plant.js";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -24,6 +32,7 @@ function check(label, ok, detail = "") {
 console.log(`ATTRACT REEL  ·  ${new Date().toISOString()}\n`);
 
 const reel = read("js/cinema/attract-reel.js");
+const plant = read("js/cinema/attract-plant.js");
 const game = read("js/game.js");
 const main = read("js/main.js");
 const index = read("index.html");
@@ -41,11 +50,45 @@ check("letterbox + flash CSS", /attract-letterbox/.test(css) && /attract-flash/.
 check("title CRT is dark for footage", /#crt\.is-title/.test(css) && /#050705/.test(css));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 967 && Number(mainV) >= 967,
+  cacheOk && Number(gameV) >= 985 && Number(mainV) >= 985,
   `main=${mainV} game=${gameV}`
 );
-check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 8);
-check("css bust ≥57", /game\.css\?v=57/.test(index));
+check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 9);
+check("reel imports attract-plant", /attract-plant\.js\?v=1/.test(reel));
+check("no chassis hover pad", !/pose\.y \+ embed \+ 0\.16/.test(reel) && !/position\.set\(pose\.x, pose\.y \+/.test(reel));
+check("plant uses attractChassisY", /attractChassisY\(pose\.y\)/.test(reel));
+check("hub lift not chassis lift", /applyWheelPose\([^;]*deckLift/.test(reel));
+check("TIRE_PLANT matches live Celica 14 mm", ATTRACT_TIRE_PLANT === 0.014 && /ATTRACT_TIRE_PLANT = 0\.014/.test(plant));
+
+const decks = [0, 0.04, 0.35, 2.4, 5.6];
+const sinks = [ATTRACT_TIRE_SINK_DEFAULT, 0.012, 0.008, 0.016];
+let plantOk = true;
+let plantDetail = "";
+for (let d = 0; d < decks.length && plantOk; d++) {
+  for (let s = 0; s < sinks.length && plantOk; s++) {
+    const deck = decks[d];
+    const sink = sinks[s];
+    const chassisY = attractChassisY(deck);
+    const rubber = attractRubberY(deck, sink);
+    const gap = attractPlantGap(deck, sink);
+    if (Math.abs(rubber - (deck - ATTRACT_WHEEL_KISS)) > 1e-9) plantOk = false;
+    if (Math.abs(gap + ATTRACT_WHEEL_KISS) > 1e-9) plantOk = false;
+    if (Math.abs(chassisY - (deck - ATTRACT_TIRE_PLANT)) > 1e-9) plantOk = false;
+    // Wheel bottom on the ribbon (few cm). Kiss is 2 mm into the slab, never a hover.
+    if (Math.abs(rubber - deck) > 0.03) plantOk = false;
+    if (rubber > deck + 0.002) plantOk = false;
+    if (!plantOk) {
+      plantDetail = `deck=${deck} sink=${sink} chassis=${chassisY.toFixed(4)} rubber=${rubber.toFixed(4)} gap=${gap.toFixed(4)}`;
+    }
+  }
+}
+check(
+  "plant: chassis Y − wheel bottom ≈ ribbon",
+  plantOk,
+  plantDetail || `kiss=${ATTRACT_WHEEL_KISS}m plant=${ATTRACT_TIRE_PLANT}m`
+);
+check("all pack cars share one plant", /for \(let i = 0; i < n; i\+\+\)/.test(reel) && /attractChassisY\(pose\.y\)/.test(reel));
+check("css bust ≥57", Number((index.match(/game\.css\?v=(\d+)/) || [])[1]) >= 57);
 check("no giant pale points", !/size: 0\.42/.test(reel) && !/0xd8c4a0/.test(reel));
 check("dirt grit sprite + small point cap", /makeGritSprite/.test(reel) && /min\(aSize \* uScale \/ dist, 5\.5\)/.test(reel));
 check("tire tracks on the ribbon", /attract-tracks/.test(reel) && /_stampTracks/.test(reel));

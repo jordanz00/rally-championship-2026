@@ -145,7 +145,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=5";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=8";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=9";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {

@@ -11,6 +11,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { armSurfaceNoise } from "../gfx/surface-noise.js?v=2";
+import { ATTRACT_TIRE_PLANT, attractChassisY, attractDeckLift } from "./attract-plant.js?v=1";
 
 const ROAD_HALF = 7.4;
 const SAMPLE_STEP = 2.2;
@@ -700,8 +701,12 @@ export class AttractReel {
       pose.t = this.t;
       if (i === 1) second = pose;
       const mesh = this.cars[i];
-      const embed = hooks && hooks.chassisDeckEmbed ? hooks.chassisDeckEmbed(mesh) : 0.08;
-      mesh.position.set(pose.x, pose.y + embed + 0.16, pose.z);
+      // Ribbon Y is the painted deck. Rival/hero meshes are already
+      // plantOnContactPatch'd (origin = contact patch). Live Celica sits at
+      // deck − TIRE_PLANT; chassisDeckEmbed then lifts hubs, not the hull.
+      // The old `embed + 0.16` pad floated every tire ~16 cm off the asphalt.
+      const chassisY = attractChassisY(pose.y);
+      mesh.position.set(pose.x, chassisY, pose.z);
       mesh.rotation.set(pose.jump ? -0.14 : 0.02, pose.yaw, pose.jump ? 0 : Math.sin(this.t * 8 + i) * 0.03);
       const yawRate = 0.35 + Math.sin(this.t * 0.7 + i) * 0.2;
       const steer = Math.max(-0.55, Math.min(0.55, yawRate * (i % 2 ? -1 : 1) * 0.35));
@@ -710,8 +715,16 @@ export class AttractReel {
       if (spin) {
         for (let w = 0; w < 4; w++) spin[w] += inc;
       }
+      const sink =
+        mesh.userData && Number.isFinite(mesh.userData.tirePlantSink)
+          ? mesh.userData.tirePlantSink
+          : 0.012;
+      const deckLift =
+        hooks && hooks.chassisDeckEmbed
+          ? hooks.chassisDeckEmbed(null, chassisY, mesh)
+          : attractDeckLift(sink);
       if (hooks && hooks.applyWheelPose && mesh.userData && mesh.userData.wheels) {
-        hooks.applyWheelPose(mesh.userData.wheels, spin, steer);
+        hooks.applyWheelPose(mesh.userData.wheels, spin, steer, mesh.rotation.z, null, deckLift);
       }
       if (hooks && hooks.setBrakeLights) hooks.setBrakeLights(mesh, pose.jump ? 0 : Math.abs(steer) > 0.28 ? 0.7 : 0);
       if (hooks && hooks.setHeadlights) hooks.setHeadlights(mesh, false);
@@ -768,7 +781,7 @@ export class AttractReel {
         pos.setXYZ(
           i,
           car.position.x - fx * aft + rx * side,
-          car.position.y - 0.08 + Math.random() * 0.05,
+          car.position.y + ATTRACT_TIRE_PLANT + 0.04 + Math.random() * 0.05,
           car.position.z - fz * aft + rz * side
         );
         const shade = 0.7 + Math.random() * 0.28;
@@ -827,7 +840,7 @@ export class AttractReel {
       const jump = Math.abs(car.rotation.x) > 0.08;
       const ax = car.position.x - fx * 1.15;
       const az = car.position.z - fz * 1.15;
-      const ay = car.position.y - 0.22;
+      const ay = car.position.y + ATTRACT_TIRE_PLANT + 0.004;
       const prev = this._lastMark[c] || (this._lastMark[c] = { x: 0, z: 0, valid: false });
       if (jump) {
         prev.valid = false;

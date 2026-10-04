@@ -1,5 +1,19 @@
 # QA report — quality-control pass
 
+## Attract reel — tires on the ribbon (2026-10-04)
+
+**Player moment:** Title attract. Pack flies the rally ribbon. Contact patches sit on the asphalt — no hovering wheels.
+
+**Cause:** Rival/hero meshes are already `plantOnContactPatch`'d (origin = contact patch). The reel then placed every car at `ribbonY + chassisDeckEmbed(mesh) + 0.16`. `chassisDeckEmbed` was called with the mesh as `vehicle`, so it returned a 16 mm fallback, then **+16 cm** of pad lift. Tires floated ~16 cm. Hubs stayed attached; the whole hull was high.
+
+**Fix:** Attract-only plant matching live Celica millimetres: `chassisY = deck − 0.014` (`TIRE_PLANT`). `chassisDeckEmbed(null, chassisY, mesh)` lifts hubs, not the chassis. Rubber = deck − 2 mm kiss. Hero + rivals share the same pose. Race/replay plant untouched. Dust / tire stamps follow the new origin.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=985` · `game.js?v=985` · `attract-reel.js?v=9` · `attract-plant.js?v=1`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=985
+
 ## Forest Stage 2 crash — tunEnd unbound (2026-10-04)
 
 **Player moment:** Championship Stage 2 (Forest) failed to build. Live Pages (`?v=983`) showed `course "forest" failed to build` / `ReferenceError: tunEnd is not defined`.
