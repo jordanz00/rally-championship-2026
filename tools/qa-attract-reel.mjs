@@ -12,9 +12,17 @@ import {
   ATTRACT_TIRE_PLANT,
   ATTRACT_TIRE_SINK_DEFAULT,
   ATTRACT_WHEEL_KISS,
+  ATTRACT_HULL_EPS,
+  ATTRACT_ROAD_HALF,
   attractChassisY,
+  attractChassisYCleared,
+  attractPitchClearance,
   attractPlantGap,
   attractRubberY,
+  attractHullMinY,
+  attractBackdropY,
+  attractPlayLaneLandY,
+  attractSandPokesRoad,
 } from "../js/cinema/attract-plant.js";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -57,11 +65,11 @@ check("reduced-motion safe", /prefers-reduced-motion/.test(css) && /is-calm/.tes
 check("title CRT is dark for footage", /#crt\.is-title/.test(css) && /#050705/.test(css));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 998 && Number(mainV) >= 998,
+  cacheOk && Number(gameV) >= 1006 && Number(mainV) >= 1006,
   `main=${mainV} game=${gameV}`
 );
-check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 10);
-check("reel imports attract-plant", /attract-plant\.js\?v=1/.test(reel));
+check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 11);
+check("reel imports attract-plant", /attract-plant\.js\?v=2/.test(reel));
 check("no chassis hover pad", !/pose\.y \+ embed \+ 0\.16/.test(reel) && !/position\.set\(pose\.x, pose\.y \+/.test(reel));
 check("plant uses attractChassisY", /attractChassisY\(pose\.y\)/.test(reel));
 check("hub lift not chassis lift", /applyWheelPose\([^;]*deckLift/.test(reel));
@@ -101,6 +109,43 @@ check("dirt grit sprite + small point cap", /makeGritSprite/.test(reel) && /min\
 check("tire tracks on the ribbon", /attract-tracks/.test(reel) && /_stampTracks/.test(reel));
 check("dust is dirt brown", /0\.4 \* shade, 0\.26 \* shade, 0\.12 \* shade/.test(reel));
 check("paintAttractFx smear + chroma + calm", /attract-smear/.test(reel) && /shot\.chroma/.test(reel) && /is-calm/.test(reel));
+check("snap plant after cut", /justCut/.test(reel) && /_plantCar/.test(reel) && /attractChassisYCleared/.test(reel));
+check("grounded cars sit flat", /pose\.jump \? -0\.12 : 0/.test(reel) && !/Math\.sin\(this\.t \* 8/.test(reel));
+check("sand trench under play lane", /attractBackdropY/.test(reel) && /attractPlayLaneLandY/.test(reel));
+
+let hullOk = true;
+let hullDetail = "";
+for (let d = 0; d < decks.length && hullOk; d++) {
+  const deck = decks[d];
+  const minY = attractHullMinY(deck);
+  if (minY < deck - ATTRACT_WHEEL_KISS - 1e-9) hullOk = false;
+  if (minY > deck + 0.002) hullOk = false;
+  const jumpPitch = -0.12;
+  const cleared = attractChassisYCleared(deck, jumpPitch, 0);
+  const planted = attractChassisY(deck);
+  if (cleared < planted - 1e-9) hullOk = false;
+  if (cleared - attractPitchClearance(jumpPitch, 0) - planted > 1e-9) hullOk = false;
+  const lowest = cleared - attractPitchClearance(jumpPitch, 0);
+  if (lowest < deck - ATTRACT_TIRE_PLANT - ATTRACT_HULL_EPS) hullOk = false;
+  if (!hullOk) hullDetail = `deck=${deck} minY=${minY.toFixed(4)} cleared=${cleared.toFixed(4)}`;
+}
+check("no car AABB below deck − epsilon", hullOk, hullDetail || `eps=${ATTRACT_HULL_EPS}m`);
+
+let sandOk = true;
+let sandDetail = "";
+const laneDists = [0, 2.4, 5.2, ATTRACT_ROAD_HALF, ATTRACT_ROAD_HALF + 0.3];
+for (let d = 0; d < decks.length && sandOk; d++) {
+  for (let i = 0; i < laneDists.length && sandOk; i++) {
+    const deck = decks[d];
+    const dist = laneDists[i];
+    const landY = attractBackdropY(deck, dist, 2.2);
+    if (attractSandPokesRoad(deck, landY, Math.min(dist, ATTRACT_ROAD_HALF))) sandOk = false;
+    if (dist <= ATTRACT_ROAD_HALF + 0.35 && landY > attractPlayLaneLandY(deck) + 1e-9) sandOk = false;
+    if (dist <= ATTRACT_ROAD_HALF && landY > deck - 0.12) sandOk = false;
+    if (!sandOk) sandDetail = `deck=${deck} dist=${dist} land=${landY.toFixed(4)} cap=${attractPlayLaneLandY(deck).toFixed(4)}`;
+  }
+}
+check("no sand tile above road in play lane", sandOk, sandDetail || `drop=${(decks[0] - attractPlayLaneLandY(decks[0])).toFixed(2)}m`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "attract reel armed"}`);
 process.exit(fail ? 1 : 0);

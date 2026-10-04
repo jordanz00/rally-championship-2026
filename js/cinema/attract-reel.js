@@ -13,7 +13,14 @@ import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { armSurfaceNoise } from "../gfx/surface-noise.js?v=2";
 import { loadTitleRocks, styleTitleRock } from "../tracks/prop-kit.js?v=55";
-import { ATTRACT_TIRE_PLANT, attractChassisY, attractDeckLift } from "./attract-plant.js?v=1";
+import {
+  ATTRACT_TIRE_PLANT,
+  attractChassisY,
+  attractChassisYCleared,
+  attractDeckLift,
+  attractBackdropY,
+  attractPlayLaneLandY,
+} from "./attract-plant.js?v=2";
 
 const ROAD_HALF = 7.4;
 const SAMPLE_STEP = 2.2;
@@ -243,6 +250,11 @@ function buildRibbon(line, map, nrm) {
   mesh.receiveShadow = true;
   mesh.castShadow = false;
   mesh.name = "attract-ribbon";
+  mesh.renderOrder = 1;
+  mat.polygonOffset = true;
+  mat.polygonOffsetFactor = -4;
+  mat.polygonOffsetUnits = -4;
+  mat.depthWrite = true;
   return mesh;
 }
 
@@ -380,21 +392,7 @@ function buildLand(phone, map, nrm, line) {
       Math.cos(z * 0.014) * 1.05 +
       Math.sin(x * 0.041 + z * 0.03) * 0.48;
     const near = nearestRibbon(line, x, z);
-    const s = near.s;
-    const d = near.d;
-    let y;
-    if (d < ROAD_HALF + 2.4) {
-      y = s.y - 0.08;
-    } else if (d < 24) {
-      const u = (d - ROAD_HALF - 2.4) / (24 - ROAD_HALF - 2.4);
-      const berm = Math.sin(Math.min(1, (d - ROAD_HALF) / 7) * Math.PI) * 1.05;
-      y = s.y - 0.14 + berm * (1 - u) + dune * 0.22 * u;
-    } else if (d < 110) {
-      const u = (d - 24) / 86;
-      y = s.y * (1 - u) * 0.28 + (-1.15 + dune) * (0.45 + u * 0.55);
-    } else {
-      y = -1.45 + dune;
-    }
+    const y = attractBackdropY(near.s.y, near.d, dune);
     pos.setY(i, y);
     const forest = Math.max(0, 1 - Math.hypot(x - FOREST_XZ.x, z - FOREST_XZ.z) / 52);
     col[i * 3] = 0.92 - forest * 0.22;
@@ -429,7 +427,7 @@ function buildLand(phone, map, nrm, line) {
  * @param {THREE.Texture|null} map
  * @returns {THREE.Mesh}
  */
-function buildForestIsland(phone, map) {
+function buildForestIsland(phone, map, line) {
   const r = phone ? 26 : 40;
   const geo = new THREE.CircleGeometry(r, phone ? 22 : 36);
   geo.rotateX(-Math.PI / 2);
@@ -438,7 +436,16 @@ function buildForestIsland(phone, map) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
     const d = Math.hypot(x, z);
-    pos.setY(i, 5.05 - d * 0.042 + Math.sin(x * 0.14) * 0.1);
+    const wx = FOREST_XZ.x + x;
+    const wz = FOREST_XZ.z + z;
+    const near = nearestRibbon(line, wx, wz);
+    let y = 5.05 - d * 0.042 + Math.sin(x * 0.14) * 0.1;
+    if (near.d <= ROAD_HALF + 2.6) {
+      y = attractPlayLaneLandY(near.s.y);
+    } else {
+      y = Math.min(y, near.s.y - 0.18);
+    }
+    pos.setY(i, y);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
@@ -668,6 +675,7 @@ export class AttractDirector {
     this._tl = new THREE.Vector3();
     this._tfov = 46;
     this._tdutch = 0;
+    this.justCut = false;
   }
 
   /** @returns {string} */
@@ -694,6 +702,7 @@ export class AttractDirector {
    */
   update(dt, pose, pack) {
     if (!pose) return this._out();
+    this.justCut = false;
     this.shotT += dt;
     this.flash = Math.max(0, this.flash - dt * (this.kind === "smash" ? 5.2 : 3.8));
     this._compose(this.kind, pose, pack);
@@ -701,7 +710,8 @@ export class AttractDirector {
       this._cut(pose);
     }
     this._phase(dt, pose);
-    this._follow(dt);
+    if (this.justCut || this.phase === "in") this.snap(pose);
+    else this._follow(dt);
     return this._out();
   }
 
@@ -720,6 +730,7 @@ export class AttractDirector {
       ramp: this.kind === "jump" ? "slow" : this.kind === "smash" || this.kind === "whip" ? "fast" : "live",
       energy: hot ? "hot" : "live",
       calm: this.reduced,
+      justCut: this.justCut,
     };
   }
 
@@ -743,6 +754,7 @@ export class AttractDirector {
     this.hold = (SHOT_HOLD[this.kind] || 1.2) * (this.reduced ? 1.7 : 0.7 + Math.random() * 0.22);
     this.phase = this.reduced ? "blend" : "out";
     this.phaseT = 0;
+    this.justCut = true;
     if (!this.reduced) {
       this.flash = this.kind === "smash" || this.kind === "whip" || this.kind === "headon" ? 1 : 0.48;
     }
@@ -943,7 +955,7 @@ export class AttractReel {
     this.group.add(buildShoulder(this.line, gravel));
     this.group.add(buildBerms(this.line, dirt));
     this.group.add(buildRibbon(this.line, dirt, dirtN));
-    this.group.add(buildForestIsland(this.phone, forest));
+    this.group.add(buildForestIsland(this.phone, forest, this.line));
     if (!this.phone) {
       this._dust = buildDust();
       this._tracks = buildTracks();
@@ -1200,6 +1212,47 @@ export class AttractReel {
   }
 
   /**
+   * Plant one pack car on the ribbon. Grounded cars sit flat.
+   * Jump pitch lifts the chassis by the contact-patch clearance so
+   * bumpers and wheels never go under deck Y.
+   * @param {THREE.Object3D} mesh
+   * @param {object} pose
+   * @param {number} i
+   * @param {number} dt
+   * @param {number} scale
+   * @param {{applyWheelPose?:Function, setBrakeLights?:Function, setHeadlights?:Function, chassisDeckEmbed?:Function}} hooks
+   */
+  _plantCar(mesh, pose, i, dt, scale, hooks) {
+    if (!mesh || !pose) return;
+    const pitch = pose.jump ? -0.12 : 0;
+    const roll = 0;
+    const chassisY = attractChassisYCleared(pose.y, pitch, roll);
+    mesh.position.set(pose.x, chassisY, pose.z);
+    mesh.rotation.set(pitch, pose.yaw, roll);
+    const yawRate = 0.35 + Math.sin(this.t * 0.7 + i) * 0.2;
+    const steer = pose.jump ? 0 : Math.max(-0.55, Math.min(0.55, yawRate * (i % 2 ? -1 : 1) * 0.35));
+    const spin = this._spin[i];
+    const inc = (pose.speed / 0.33) * dt * scale;
+    if (spin && dt > 0) {
+      for (let w = 0; w < 4; w++) spin[w] += inc;
+    }
+    const sink =
+      mesh.userData && Number.isFinite(mesh.userData.tirePlantSink)
+        ? mesh.userData.tirePlantSink
+        : 0.012;
+    const deckLift =
+      hooks && hooks.chassisDeckEmbed
+        ? hooks.chassisDeckEmbed(null, attractChassisY(pose.y), mesh)
+        : attractDeckLift(sink);
+    if (hooks && hooks.applyWheelPose && mesh.userData && mesh.userData.wheels) {
+      hooks.applyWheelPose(mesh.userData.wheels, spin, steer, roll, null, deckLift);
+    }
+    if (hooks && hooks.setBrakeLights) hooks.setBrakeLights(mesh, pose.jump ? 0 : Math.abs(steer) > 0.28 ? 0.7 : 0);
+    if (hooks && hooks.setHeadlights) hooks.setHeadlights(mesh, false);
+    mesh.updateMatrixWorld(true);
+  }
+
+  /**
    * @param {number} dt
    * @param {THREE.Camera} camera
    * @param {{applyWheelPose?:Function, setBrakeLights?:Function, setHeadlights?:Function, chassisDeckEmbed?:Function}} hooks
@@ -1225,38 +1278,21 @@ export class AttractReel {
       pose.speed = pace - i * 1.6;
       pose.t = this.t;
       if (i === 1) second = pose;
-      const mesh = this.cars[i];
-      // Ribbon Y is the painted deck. Rival/hero meshes are already
-      // plantOnContactPatch'd (origin = contact patch). Live Celica sits at
-      // deck − TIRE_PLANT; chassisDeckEmbed then lifts hubs, not the hull.
-      // The old `embed + 0.16` pad floated every tire ~16 cm off the asphalt.
-      const chassisY = attractChassisY(pose.y);
-      mesh.position.set(pose.x, chassisY, pose.z);
-      mesh.rotation.set(pose.jump ? -0.14 : 0.02, pose.yaw, pose.jump ? 0 : Math.sin(this.t * 8 + i) * 0.03);
-      const yawRate = 0.35 + Math.sin(this.t * 0.7 + i) * 0.2;
-      const steer = Math.max(-0.55, Math.min(0.55, yawRate * (i % 2 ? -1 : 1) * 0.35));
-      const spin = this._spin[i];
-      const inc = (pose.speed / 0.33) * dt * scale;
-      if (spin) {
-        for (let w = 0; w < 4; w++) spin[w] += inc;
-      }
-      const sink =
-        mesh.userData && Number.isFinite(mesh.userData.tirePlantSink)
-          ? mesh.userData.tirePlantSink
-          : 0.012;
-      const deckLift =
-        hooks && hooks.chassisDeckEmbed
-          ? hooks.chassisDeckEmbed(null, chassisY, mesh)
-          : attractDeckLift(sink);
-      if (hooks && hooks.applyWheelPose && mesh.userData && mesh.userData.wheels) {
-        hooks.applyWheelPose(mesh.userData.wheels, spin, steer, mesh.rotation.z, null, deckLift);
-      }
-      if (hooks && hooks.setBrakeLights) hooks.setBrakeLights(mesh, pose.jump ? 0 : Math.abs(steer) > 0.28 ? 0.7 : 0);
-      if (hooks && hooks.setHeadlights) hooks.setHeadlights(mesh, false);
+      this._plantCar(this.cars[i], pose, i, dt, scale, hooks);
     }
     this.second = second;
     this._tickWake(dt);
     const shot = this.director.update(dt, this.lead, { second });
+    if (shot.justCut) {
+      for (let i = 0; i < n; i++) {
+        const gap = i * (this.phone ? 10 : 8);
+        const dist = this.t * (pace - i * 1.6) - gap;
+        const pose = this.sample(dist, i === 0 ? this.lead : {});
+        pose.speed = pace - i * 1.6;
+        pose.t = this.t;
+        this._plantCar(this.cars[i], pose, i, 0, scale, hooks);
+      }
+    }
     shot.timeScale = this._timeScale;
     shot.clock = this._clock();
     if (camera) {

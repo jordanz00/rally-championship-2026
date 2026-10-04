@@ -12,7 +12,7 @@ import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=227";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=8";
-import { Track } from "./tracks/track.js?v=419";
+import { Track } from "./tracks/track.js?v=421";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
 import { Opponent } from "./ai.js?v=217";
@@ -152,7 +152,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=10";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=11";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {
