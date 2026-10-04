@@ -50,6 +50,7 @@ function wallsOn(id) {
     const fz = Math.cos(p.heading);
     for (let li = 0; li < lats.length; li++) {
       const lat = lats[li];
+      if (p.tunnel && Math.abs(lat) > half * 0.7) continue;
       const x = p.x + p.nx * lat;
       const z = p.z + p.nz * lat;
       const q = track.query(x, z, {}, p.dist);

@@ -3,19 +3,20 @@
  *
  * WHO THIS IS FOR: Track.buildAsync on the Forest stage only.
  * WHAT IT DOES: tiled albedo + normal + roughness for the driving ribbon
- *   and land plane. Tile scale is the authored Poly Haven metre size (~2 m).
+ *   and land plane. Tile scale is tighter than the authored ~2 m so the
+ *   chase camera reads grain instead of a stretched sheet.
  * HOW IT CONNECTS: track.js awaits prepareForestPbr() before _buildMesh
  *   (1k color only). Normals / 2k swap in on the shared texture Source.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=4";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=5";
 
 const BASE = "assets/env/forest";
 
-const TILE_DIRT_M = 2.0;
-const TILE_GRAVEL_M = 2.0;
-const TILE_FLOOR_M = 2.1;
+const TILE_DIRT_M = 1.45;
+const TILE_GRAVEL_M = 1.45;
+const TILE_FLOOR_M = 1.5;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */

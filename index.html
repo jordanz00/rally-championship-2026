@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=53" />
+    <link rel="stylesheet" href="css/game.css?v=58" />
     <!-- Splash: title bed + rival-LOD Celica. Hero GLB / other-stage HDRs wait until PRESS START. -->
     <link rel="preload" href="assets/music/title.mp3?v=3" as="audio" type="audio/mpeg" />
     <link rel="prefetch" href="assets/music/desert.mp3?v=4" as="audio" type="audio/mpeg" />
@@ -183,6 +183,20 @@
     <noscript>Rally Championship 2026 needs JavaScript. Enable it, then reload. Use Chrome or Safari — not an in-app browser.</noscript>
     <div id="crt" class="is-title">
       <div id="game-view"></div>
+      <div id="attract-fx" class="attract-fx" hidden aria-hidden="true">
+        <div class="attract-letterbox attract-letterbox-top"></div>
+        <div class="attract-letterbox attract-letterbox-bot"></div>
+        <div class="attract-grade"></div>
+        <div class="attract-chroma"></div>
+        <div class="attract-speed"></div>
+        <div class="attract-fade"></div>
+        <div class="attract-flash"></div>
+        <div class="attract-grain"></div>
+        <div class="attract-bug">
+          <span class="attract-live">LIVE</span>
+          <span class="attract-shot">WORLD FEED</span>
+        </div>
+      </div>
       <div class="scanlines"></div>
       <div id="fx-curtain" class="fx-curtain is-on" aria-hidden="true"></div>
 
@@ -215,7 +229,7 @@
           <h1 class="sr-a11y">Rally Championship 2026</h1>
 
           <div class="sr-push-wrap">
-            <p class="sr-attract-tag">ATTRACT · SHOWROOM LIVE</p>
+            <p class="sr-attract-tag">ATTRACT · WORLD FEED</p>
             <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
             <p class="press sr-input-hint">ENTER · SPACE · TAP</p>
             <p class="sr-credit">
@@ -498,8 +512,15 @@
         </div>
       </section>
 
-      <section id="screen-result" class="screen screen-ui">
-        <div class="ui-panel">
+      <section id="screen-result" class="screen screen-ui screen-result-broadcast">
+        <div id="broadcast-fade" class="broadcast-fade" aria-hidden="true"></div>
+        <div id="broadcast-bug" class="broadcast-bug" hidden>
+          <span class="broadcast-live">REPLAY</span>
+          <span id="broadcast-stage" class="broadcast-stage">STAGE</span>
+          <span id="broadcast-shot" class="broadcast-shot">WORLD FEED</span>
+          <span id="broadcast-clock" class="broadcast-clock">0:00.00</span>
+        </div>
+        <div class="ui-panel result-panel">
           <p class="ui-eyebrow">Stage complete</p>
           <h2 class="ui-title">RESULT</h2>
           <p id="result-headline" class="result-headline"></p>
@@ -539,6 +560,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=934" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=982" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

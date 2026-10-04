@@ -17,10 +17,10 @@
  */
 
 import { COLORS } from "../config.js?v=241";
-import { compileTrackDefinition } from "./track-definition.js?v=2";
-import { validateCourseData } from "./stage-data-validate.js?v=1";
+import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=6";
+import { validateCourseData } from "./stage-data-validate.js?v=3";
 import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=11";
-import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=12";
+import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=14";
 import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=10";
 import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=7";
 
@@ -57,7 +57,7 @@ export const COURSES = {
    * Rhythm: hairpin → gravel → jump → downhill → S → sweeper → mud → jump → hairpin.
    * See docs/SEGA_RALLY_DRIVING_MODEL.md. Enable overlay with ?physlab=1 / F8.
    */
-  physlab: {
+  physlab: easePlayCourse({
     id: "physlab",
     name: "PHYS LAB",
     subtitle: "DEV  ·  TORTURE  ·  HANDLING",
@@ -112,7 +112,7 @@ export const COURSES = {
       { type: "curve", radius: 15, angle: 150, surface: "dirt", surfaceOut: "tarmac", width: 12 },
       { type: "straight", length: 96, surface: "tarmac", width: 14 },
     ],
-  },
+  }),
 };
 
 /** Championship order. Lakeside is appended only after a 1st on Mountain. */

@@ -43,9 +43,9 @@ use Sega’s Saturn engine or tire samples.
 Navigator / co-driver
   assets/sfx/nav/*.mp3
   All spoken lines (turn grades, jump, long/maybe qualifiers, finish, start-grid
-  3-2-1-GO): original spoken lines rendered with macOS `say` (Daniel, en_GB)
-  and the same radio EQ chain via `tools/build-nav-grade-vo.sh`. One voice
-  for the full pack. See assets/sfx/nav/ATTRIBUTION.txt for clip list.
+  3-2-1-GO): original spoken lines via `tools/render-nav-vo.py`
+  (edge-tts Emma Multilingual Neural, actor id emma-cheerful; Nicky fallback).
+  One young voice for the full pack. See assets/sfx/nav/ATTRIBUTION.txt.
 
 Crowd beds (clap / cheer)
   Synthesised in js/audio/crowd.js at runtime — no third-party sample.

@@ -36,6 +36,7 @@ function check(label, ok, detail) {
 console.log(`POV STEER WHEEL  ·  ${new Date().toISOString()}\n`);
 
 const car = read("js/cars/celica.js");
+const driver = read("js/cars/pov-driver.js");
 const anim = read("js/cars/cockpit-anim.js");
 const game = read("js/game.js");
 const main = read("js/main.js");
@@ -66,11 +67,12 @@ check(
 check(
   "POV driver arms grip the steer spin",
   /function attachPovDriverArms/.test(car) &&
-    /pov-driver-grips/.test(car) &&
+    /pov-driver-grips/.test(driver) &&
+    /spin\.add\(grips\)/.test(driver) &&
     /userData\.povDriver/.test(car) &&
-    /poseSleeve/.test(anim) &&
+    /poseArm/.test(anim) &&
     /ud\.povDriver/.test(anim),
-  "hands parented to spin; sleeves stretch shoulder→wrist each frame"
+  "hands parented to spin; sleeves track the gripping wrists"
 );
 
 const celicaV = game.match(/celica\.js\?v=(\d+)/);

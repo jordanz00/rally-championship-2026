@@ -216,6 +216,7 @@ export class Hud {
   flashMessage(text) {
     if (!this.flash) return;
     this.flash.textContent = text;
+    this.flash.classList.toggle("is-go", text === "GO!");
     // Restart the CSS flash without forcing a synchronous layout (offsetWidth hitch).
     this.flash.classList.remove("show");
     requestAnimationFrame(() => {

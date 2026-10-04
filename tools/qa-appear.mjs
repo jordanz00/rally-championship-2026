@@ -116,7 +116,7 @@ async function measureFrames(cdp) {
 async function runCase(browser, { course, metres, appear, tag }) {
   const { cdp } = browser;
   await preparePage(cdp);
-  const url = `${ORIGIN}/index.html?v=926&tsr=quality&recon=1&appear=${appear}`;
+  const url = `${ORIGIN}/index.html?v=981&tsr=quality&recon=1&appear=${appear}`;
   console.log(`\\n--- ${tag}  ${url} ---`);
   await goto(cdp, url);
   await walkToCourse(cdp, course);

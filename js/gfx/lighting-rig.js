@@ -100,13 +100,26 @@ export function applyHemiFromSky(hemi, L) {
 
 /**
  * Fog that dissolves land into the sky photo horizon (not a gray/yellow band).
+ * Forest is the exception: skyHorizon is #a8cce8, so matching it turns every
+ * far tree into light-blue haze. Stage 2 uses woodland air — olive-gray mist.
  *
  * @param {object} L
  * @param {THREE.Color} [out]
+ * @param {string} [courseId]
  * @returns {THREE.Color}
  */
-export function horizonFogColor(L, out) {
+export function horizonFogColor(L, out, courseId) {
   const col = out || new THREE.Color();
+  const stage = lightingStageId(L, courseId);
+  if (stage === "forest") {
+    // Humid canopy atmosphere. Not Rayleigh blue, not the sky photo.
+    col.setHex(0x8f937a);
+    if (L && L.hemiGround != null) {
+      _fogGlow.setHex(L.hemiGround);
+      col.lerp(_fogGlow, 0.18);
+    }
+    return col;
+  }
   if (L && L.skyHorizon != null) col.setHex(L.skyHorizon);
   else if (L && L.fog != null) col.setHex(L.fog);
   else col.setHex(0xc8d4dc);
@@ -159,7 +172,7 @@ export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, c
   }
 
   if (fogColor) {
-    horizonFogColor(L, _fogHor);
+    horizonFogColor(L, _fogHor, courseId);
     if (t <= 0.002 || !tunnelFog) fogColor.copy(_fogHor);
     else fogColor.lerpColors(_fogHor, tunnelFog, t);
   }

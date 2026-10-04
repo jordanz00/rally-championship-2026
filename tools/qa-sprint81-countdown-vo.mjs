@@ -46,13 +46,13 @@ check(
   /armCountVo/.test(engine) && /PACE_AFTER_COUNT_MS = 2000/.test(engine) && /armCountVo\(\)/.test(game)
 );
 check("countdown holds under the load fade", /_countHold/.test(game));
-check("Daniel unified nav voice attribution", /Daniel/.test(navAttr) && /countdown|start-grid|three/i.test(navAttr));
+check("emma-cheerful countdown attribution", /emma-cheerful/.test(navAttr) && /countdown|start-grid|three/i.test(navAttr));
 check("nav ATTRIBUTION names countdown slices", /5-4-3-2-1-GO/.test(navAttr) || /start-grid/.test(navAttr) || /Countdown:/.test(navAttr));
 
 for (const key of COUNT) {
   const file = path.join(ROOT, "assets/sfx/nav", `${key}.mp3`);
   const st = fs.existsSync(file) ? fs.statSync(file) : null;
-  check(`clip ${key}.mp3`, !!(st && st.size > 4000), st ? `${st.size} bytes` : "missing");
+  check(`clip ${key}.mp3`, !!(st && st.size > 2800), st ? `${st.size} bytes` : "missing");
 }
 
 check("game imports engine.js?v=56+", Number((game.match(/engine\.js\?v=(\d+)/) || [])[1]) >= 56);

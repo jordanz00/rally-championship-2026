@@ -36,6 +36,20 @@ check("desert has no tunnel (Saturn Desert is open safari)", !d.pieces.some((p) 
 check("desert has bumps/jumps", d.pieces.filter((p) => p.type === "jump").length >= 2);
 check("desert ≥1 checkpoint", d.pieces.filter((p) => p.checkpoint).length >= 1);
 check("forest has the rock tunnel", f.pieces.some((p) => p.tunnel));
+const forestTunnel = f.pieces.filter((p) => p.tunnel);
+const forestTunnelLen = forestTunnel.reduce((sum, p) => {
+  if (p.length) return sum + p.length;
+  if (p.radius && p.angle) return sum + p.radius * Math.abs(p.angle) * (Math.PI / 180);
+  return sum;
+}, 0);
+const forestTunnelBends = forestTunnel.filter((p) => p.type === "curve");
+check("forest tunnel is wide", forestTunnel.every((p) => (p.width || 0) >= 19));
+check("forest tunnel is long", forestTunnelLen >= 700);
+check(
+  "forest tunnel turns are easy/medium",
+  forestTunnelBends.length >= 3 &&
+    forestTunnelBends.every((p) => p.radius >= 95 && Math.abs(p.angle) <= 50)
+);
 check("forest has the killer hairpin", f.pieces.some((p) => p.type === "curve" && Math.abs(p.angle) > 150));
 check("forest ≥2 checkpoints", f.pieces.filter((p) => p.checkpoint).length >= 2);
 check("mountain 3 checkpoint flags", m.pieces.filter((p) => p.checkpoint).length === 3);

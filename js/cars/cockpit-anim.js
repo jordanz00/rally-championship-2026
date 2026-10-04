@@ -13,7 +13,8 @@ import * as THREE from "../../vendor/three.module.js";
 const _yAxis = new THREE.Vector3(0, 1, 0);
 
 /**
- * Two-bone IK: shoulder → elbow → wrist. Elbow bends slightly toward the lap.
+ * Two-bone IK with fixed sleeve lengths. Elbow hinges toward the lap so the
+ * arms stay connected to gloves that ride the spinning rim.
  * @param {object} driver
  * @param {"L"|"R"} side
  */
@@ -29,20 +30,39 @@ function poseArm(driver, side) {
   const shW = driver._tmpA;
   const wrW = driver._tmpB;
   const elW = driver._tmpC;
-  const dir = driver._tmpD;
+  const along = driver._tmpD;
+  const axis = driver._tmpE || (driver._tmpE = new THREE.Vector3());
+  const perp = driver._tmpF || (driver._tmpF = new THREE.Vector3());
   const yAxis = driver._yAxis || _yAxis;
 
   shoulder.getWorldPosition(shW);
   (wristNode || hand).getWorldPosition(wrW);
 
-  // Elbow mid-reach, dropped toward the lap / cabin center.
-  elW.lerpVectors(shW, wrW, 0.48);
-  elW.y -= 0.075;
-  elW.x += (side === "L" ? -0.045 : 0.045);
-  elW.z -= 0.025;
+  const upperLen = driver.upperLen || 0.3;
+  const foreLen = driver.foreLen || 0.26;
+  along.subVectors(wrW, shW);
+  const reach = along.length();
+  const dist = Math.min(upperLen + foreLen - 0.012, Math.max(0.08, reach));
+  if (reach > 1e-5) along.multiplyScalar(1 / reach);
+  else along.set(0, 0, 1);
 
-  // Upper arm: child of shoulder — local aim shoulder→elbow.
-  const elLocal = dir;
+  let cosA = (upperLen * upperLen + dist * dist - foreLen * foreLen) / (2 * upperLen * dist);
+  cosA = Math.max(-1, Math.min(1, cosA));
+  const bend = Math.acos(cosA);
+
+  axis.set(0, -1, side === "L" ? -0.25 : 0.25);
+  perp.crossVectors(along, axis);
+  if (perp.lengthSq() < 1e-8) perp.set(side === "L" ? 0.2 : -0.2, 0, 1);
+  perp.normalize();
+  axis.crossVectors(perp, along);
+  if (axis.lengthSq() < 1e-8) axis.set(0, -1, 0);
+  else axis.normalize();
+  if (axis.y > 0) axis.negate();
+
+  elW.copy(shW).addScaledVector(along, upperLen * Math.cos(bend));
+  elW.addScaledVector(axis, upperLen * Math.sin(bend));
+
+  const elLocal = along;
   elLocal.copy(elW);
   shoulder.worldToLocal(elLocal);
   const upLen = elLocal.length();
@@ -56,16 +76,14 @@ function poseArm(driver, side) {
     upper.scale.set(1, Math.min(0.34, upLen), 1);
   }
 
-  // Elbow marker in cabin (shoulders group).
   if (elbow.parent) {
-    const p = dir;
+    const p = axis;
     p.copy(elW);
     elbow.parent.worldToLocal(p);
     elbow.position.copy(p);
   }
 
-  // Forearm: child of elbow — local aim elbow→wrist.
-  const wrLocal = dir;
+  const wrLocal = along;
   wrLocal.copy(wrW);
   elbow.worldToLocal(wrLocal);
   const lowLen = wrLocal.length();
@@ -76,7 +94,7 @@ function poseArm(driver, side) {
     forearm.position.set(0, 0, 0);
     wrLocal.multiplyScalar(1 / lowLen);
     forearm.quaternion.setFromUnitVectors(yAxis, wrLocal);
-    forearm.scale.set(1, Math.min(0.4, lowLen * 0.96), 1);
+    forearm.scale.set(1, Math.min(0.36, lowLen * 0.98), 1);
   }
 }
 
@@ -141,17 +159,14 @@ export function updateCockpitMotion(root, state) {
     pov.head.position.z = pov.eyeZ - anim.shiftT * 0.04;
   }
 
-  // POV driver — gloves ride the rim; two-bone sleeves track wrists.
+  // Gloves stay locked to the rim. Only the sleeves re-aim — twisting the
+  // hand groups here pulled palms off the leather.
   const driver = ud.povDriver;
   if (driver && ud._cockpitOn && driver.handL) {
-    const gripLean = anim.wheelZ * 0.08;
-    if (driver.handL) driver.handL.rotation.y = gripLean;
-    if (driver.handR) driver.handR.rotation.y = -gripLean;
     if (driver.elbowL && driver.forearmL) {
       poseArm(driver, "L");
       poseArm(driver, "R");
     } else if (driver.sleeveL) {
-      // Legacy single-cylinder sleeves.
       poseLegacySleeve(driver.sleeveL, driver.shoulderL, driver.handL, driver);
       poseLegacySleeve(driver.sleeveR, driver.shoulderR, driver.handR, driver);
     }

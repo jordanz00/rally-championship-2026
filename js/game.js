@@ -7,18 +7,18 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=175";
+import { Vehicle } from "./physics/vehicle.js?v=183";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=90";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=215";
-import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=6";
-import { Track } from "./tracks/track.js?v=403";
-import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=4";
-import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=53";
-import { Opponent } from "./ai.js?v=202";
-import { RallyAudio } from "./audio/engine.js?v=78";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=225";
+import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=7";
+import { Track } from "./tracks/track.js?v=416";
+import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
+import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
+import { Opponent } from "./ai.js?v=215";
+import { RallyAudio } from "./audio/engine.js?v=80";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
-import { CoDriver } from "./audio/codriver.js?v=46";
+import { CoDriver } from "./audio/codriver.js?v=47";
 import {
   Hud,
   showScreen,
@@ -27,23 +27,26 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=42";
-import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=94";
+} from "./ui/hud.js?v=43";
+import { Dust, TireMarks, ImpactSparks } from "./effects.js?v=96";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=49";
-import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=55";
-import { StageWeather, courseWantsRain } from "./weather/rain.js?v=18";
+import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
+import { StageWeather, courseWantsRain } from "./weather/rain.js?v=28";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=40";
 import {
   createWebTsr,
+  createMobilePresent,
   parseTsrParams,
   persistTsrMode,
   parseReconParams,
   persistReconEnabled,
   parseAppearParams,
   persistAppearEnabled,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=929";
+  wantsHeavyWebTsr,
+  wantsMobilePresent,
+} from "./gfx/browser-reconstruct-sdk/index.js?v=981";
 import { createPerfTier } from "./gfx/perf-tier.js?v=54";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=6";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -111,8 +114,38 @@ function easeFirstDrive() {
   CHAMPIONSHIP.stageTime.lakeside = 74;
 }
 easeFirstDrive();
+
+/**
+ * Forest TUNNEL_FOREST in config is a black cabin (fog 8–70 m, wallInt 16).
+ * Do not edit config.js — lift the bore here so wall sconces light rock + road.
+ * @param {string} [courseId]
+ */
+function raceTunnelLighting(courseId) {
+  const TC = tunnelLightingFor(courseId);
+  if (courseId !== "forest") return TC;
+  return Object.assign({}, TC, {
+    ambientFloor: 0.4,
+    hemiRetain: 0.58,
+    fillRetain: 0.34,
+    caveInt: 22,
+    wallInt: 62,
+    wallDistance: 76,
+    wallDecay: 0.96,
+    wallColor: 0xffe0a8,
+    fog: 0x3c362c,
+    fogNear: 22,
+    fogFar: 230,
+    exposureBoost: 1.0,
+    // Config Forest beams were a white-out (1850). Keep the tunnel boost;
+    // drop candela ~30% so the sconces and the rock still read.
+    headEmissive: 34,
+    headBeam: 1295,
+  });
+}
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=5";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=8";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {
@@ -130,7 +163,7 @@ import {
   updateShadowFrustum,
   snapShadowCamera,
   horizonFogColor,
-} from "./gfx/lighting-rig.js?v=29";
+} from "./gfx/lighting-rig.js?v=30";
 
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
@@ -337,6 +370,15 @@ export class RallyGame {
     this.audio = new RallyAudio();
     this.codriver = new CoDriver();
     this.ghostRecorder = new GhostRecorder();
+    this.replayTape = new ReplayTape();
+    this.broadcast = null;
+    this._broadcastClock = 0;
+    this._broadcastPose = null;
+    this._broadcastSpin = [0, 0, 0, 0];
+    this._attractReel = null;
+    this._attractFx = null;
+    this._attractBooting = false;
+    this._packHiddenForReplay = false;
     this.telemetry = new LiveTelemetry();
     this.ghostPlayer = null;
     this.ghostMesh = null;
@@ -427,6 +469,8 @@ export class RallyGame {
     this._camKickY = 0;
     this._camKickLat = 0;
     this._camFovKick = 0;
+    /** Seconds of lights-out camera / rumble sustain after GO. */
+    this._goFeel = 0;
     this._wasAir = false;
     /** Phase 1 — spring chase (non-POV). */
     this._camPosSpring = new Spring3();
@@ -685,40 +729,13 @@ export class RallyGame {
     this.tsr = null;
     this.recon = null;
     this.appear = null;
+    this.mobilePresent = null;
     this._reconRT = null;
     this._reconSize = null;
-    if (!isPhonePlay()) {
-      try {
-        const tsrOpts = parseTsrParams();
-        const appearOpts = parseAppearParams();
-        // Residual + appearance are created so Pause REFINE / LOOK can toggle.
-        const sdk = createWebTsr(this.renderer, {
-          mode: tsrOpts.mode,
-          guided: true,
-          appearance: true,
-          debug: tsrOpts.debug,
-        });
-        if (sdk.supported) {
-          this.tsr = sdk;
-          this.recon = sdk.guided || sdk.recon;
-          this.appear = sdk.appear;
-          if (this.recon) this.recon.enabled = parseReconParams().enabled;
-          if (this.appear) {
-            this.appear.enabled = appearOpts.enabled === true;
-            if (appearOpts.enabled === true && typeof this.appear.pin === "function") {
-              this.appear.pin(true);
-            }
-          }
-        } else {
-          sdk.dispose();
-        }
-      } catch (err) {
-        console.warn("[boot] reconstruct SDK skipped", err);
-        this.tsr = null;
-        this.recon = null;
-        this.appear = null;
-      }
-    }
+    this._tsrLazyArmed = false;
+    this._mobileLazyArmed = false;
+    // Do not construct heavy TSR / LOOK shaders on first paint. Desktop
+    // warms after the first title frame; phones take the FXAA present.
     this._bindTsrControl();
     this._syncTsrPresentSharp();
 
@@ -932,6 +949,7 @@ export class RallyGame {
     }
     this._markShowroomLive();
     this._titleShowroomRevealed = true;
+    this._startAttractReel();
   }
 
   /**
@@ -1647,6 +1665,90 @@ export class RallyGame {
   }
 
   /**
+   * Desktop WebTSR after the first title present — not on first paint.
+   * Phones never enter this path (see wantsHeavyWebTsr).
+   */
+  _bootWebTsr() {
+    if (this.tsr || this._tsrBootFailed || !this.renderer) return;
+    if (!wantsHeavyWebTsr()) return;
+    try {
+      const tsrOpts = parseTsrParams();
+      const appearOpts = parseAppearParams();
+      const sdk = createWebTsr(this.renderer, {
+        mode: tsrOpts.mode,
+        guided: true,
+        appearance: true,
+        debug: tsrOpts.debug,
+      });
+      if (sdk.supported) {
+        this.tsr = sdk;
+        this.recon = sdk.guided || sdk.recon;
+        this.appear = sdk.appear;
+        if (this.recon) this.recon.enabled = parseReconParams().enabled;
+        if (this.appear) {
+          this.appear.enabled = appearOpts.enabled === true;
+          if (appearOpts.enabled === true && typeof this.appear.pin === "function") {
+            this.appear.pin(true);
+          }
+        }
+        const inner = this.tsr.tsr;
+        if (inner && !inner._normalsAborted) {
+          inner.writeNormals = !!(this.appear && this.appear.enabled);
+        }
+        this._bindTsrControl();
+        this._syncTsrPresentSharp();
+      } else {
+        sdk.dispose();
+        this._tsrBootFailed = true;
+      }
+    } catch (err) {
+      console.warn("[boot] reconstruct SDK skipped", err);
+      this.tsr = null;
+      this.recon = null;
+      this.appear = null;
+      this._tsrBootFailed = true;
+    }
+  }
+
+  /**
+   * Phone / low-tier FXAA present. Shaders allocate on first race render.
+   */
+  _bootMobilePresent() {
+    if (this.mobilePresent || this._mobileBootFailed || !this.renderer) return;
+    if (!wantsMobilePresent()) return;
+    try {
+      this.mobilePresent = createMobilePresent(this.renderer);
+      if (!this.mobilePresent.supported) {
+        this.mobilePresent.dispose();
+        this.mobilePresent = null;
+        this._mobileBootFailed = true;
+      }
+    } catch (err) {
+      console.warn("[boot] mobile present skipped", err);
+      this.mobilePresent = null;
+      this._mobileBootFailed = true;
+    }
+  }
+
+  /**
+   * After the first title frame, warm the right present path off the
+   * first-paint critical path.
+   */
+  _armPresentLazy() {
+    if (wantsHeavyWebTsr() && !this._tsrLazyArmed) {
+      this._tsrLazyArmed = true;
+      const arm = () => this._bootWebTsr();
+      if (typeof requestIdleCallback === "function") requestIdleCallback(arm, { timeout: 480 });
+      else setTimeout(arm, 80);
+    } else if (wantsMobilePresent() && !this._mobileLazyArmed) {
+      this._mobileLazyArmed = true;
+      const arm = () => this._bootMobilePresent();
+      if (typeof requestIdleCallback === "function") requestIdleCallback(arm, { timeout: 480 });
+      else setTimeout(arm, 80);
+    }
+  }
+
+  /**
    * Pause-menu IMAGE reconstruct + Refine. Wired after the WebGL renderer exists.
    */
   _bindTsrControl() {
@@ -1654,8 +1756,10 @@ export class RallyGame {
     if (tsrSel && tsrSel.dataset.bound !== "1") {
       tsrSel.dataset.bound = "1";
       if (this.tsr) {
+        tsrSel.disabled = false;
         tsrSel.value = this.tsr.mode;
         tsrSel.addEventListener("change", () => {
+          if (!this.tsr) return;
           this.tsr.setMode(tsrSel.value);
           persistTsrMode(this.tsr.mode);
           this.tsr.reset();
@@ -1663,6 +1767,18 @@ export class RallyGame {
       } else {
         tsrSel.value = "off";
         tsrSel.disabled = true;
+      }
+    } else if (tsrSel && this.tsr && tsrSel.disabled) {
+      tsrSel.disabled = false;
+      tsrSel.value = this.tsr.mode;
+      if (tsrSel.dataset.listener !== "1") {
+        tsrSel.dataset.listener = "1";
+        tsrSel.addEventListener("change", () => {
+          if (!this.tsr) return;
+          this.tsr.setMode(tsrSel.value);
+          persistTsrMode(this.tsr.mode);
+          this.tsr.reset();
+        });
       }
     }
     const reconChk = document.getElementById("opt-recon");
@@ -1675,6 +1791,20 @@ export class RallyGame {
       if (!this.recon) {
         reconChk.disabled = true;
       } else {
+        reconChk.disabled = false;
+        reconChk.addEventListener("change", () => {
+          this.recon.enabled = !!reconChk.checked;
+          persistReconEnabled(this.recon.enabled);
+          if (reconVal) reconVal.textContent = this.recon.enabled ? "ON" : "OFF";
+          this._syncTsrPresentSharp();
+        });
+      }
+    } else if (reconChk && this.recon && reconChk.disabled) {
+      reconChk.disabled = false;
+      reconChk.checked = !!this.recon.enabled;
+      if (reconVal) reconVal.textContent = this.recon.enabled ? "ON" : "OFF";
+      if (reconChk.dataset.listener !== "1") {
+        reconChk.dataset.listener = "1";
         reconChk.addEventListener("change", () => {
           this.recon.enabled = !!reconChk.checked;
           persistReconEnabled(this.recon.enabled);
@@ -1693,10 +1823,39 @@ export class RallyGame {
       if (!this.appear) {
         appearChk.disabled = true;
       } else {
+        appearChk.disabled = false;
         appearChk.addEventListener("change", () => {
           this.appear.enabled = !!appearChk.checked;
           persistAppearEnabled(this.appear.enabled);
           if (appearVal) appearVal.textContent = this.appear.enabled ? "ON" : "OFF";
+          if (this.appear.enabled && typeof this.appear.pin === "function") {
+            this.appear.pin(true);
+          }
+          const inner = this.tsr && this.tsr.tsr;
+          if (inner && !inner._normalsAborted) {
+            inner.writeNormals = !!this.appear.enabled;
+          }
+          this._syncTsrPresentSharp();
+        });
+      }
+    } else if (appearChk && this.appear && appearChk.disabled) {
+      appearChk.disabled = false;
+      const on = !!this.appear.enabled;
+      appearChk.checked = on;
+      if (appearVal) appearVal.textContent = on ? "ON" : "OFF";
+      if (appearChk.dataset.listener !== "1") {
+        appearChk.dataset.listener = "1";
+        appearChk.addEventListener("change", () => {
+          this.appear.enabled = !!appearChk.checked;
+          persistAppearEnabled(this.appear.enabled);
+          if (appearVal) appearVal.textContent = this.appear.enabled ? "ON" : "OFF";
+          if (this.appear.enabled && typeof this.appear.pin === "function") {
+            this.appear.pin(true);
+          }
+          const inner = this.tsr && this.tsr.tsr;
+          if (inner && !inner._normalsAborted) {
+            inner.writeNormals = !!this.appear.enabled;
+          }
           this._syncTsrPresentSharp();
         });
       }
@@ -1889,10 +2048,15 @@ export class RallyGame {
   }
 
   _showTitle() {
+    this._stopBroadcastReplay();
+    this._stopAttractReel();
     this.state = "title";
     this._pauseGarageWatch();
     showScreen("screen-title");
-    if (this.weather) this.weather.setActive(false, this.track && this.track.group);
+    if (this.weather) {
+      this.weather.setActive(false, this.track && this.track.group);
+      if (this.playerMesh) this.weather.dryCar(this.playerMesh);
+    }
     if (this.track && this.track.group) this.track.group.visible = false;
     for (const o of this.opponents) if (o.mesh) o.mesh.visible = false;
     if (this.renderer) this._setupTitleStage();
@@ -1943,9 +2107,9 @@ export class RallyGame {
     if (this._titleWorld) return;
     const group = new THREE.Group();
     group.name = "title-showroom";
-    const aniso = Math.min(8, this.renderer && this.renderer.capabilities
+    const aniso = Math.min(16, this.renderer && this.renderer.capabilities
       ? this.renderer.capabilities.getMaxAnisotropy()
-      : 4);
+      : 8);
 
     const asphaltMaps = makeTitleAsphaltMaps();
     asphaltMaps.color.anisotropy = aniso;
@@ -2455,6 +2619,9 @@ export class RallyGame {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
       await carWarm;
       this._promotePlayerCar();
+      if (this.weather && !this.weather.active && this.playerMesh) {
+        this.weather.dryCar(this.playerMesh);
+      }
     }
 
     report(fromCache ? 0.96 : 0.9, "Spawning grid…");
@@ -2486,6 +2653,7 @@ export class RallyGame {
         if (slot === playerSlot) {
           this.player.spawn(this.track, dist, this._gridLane(place));
           if (this.tsr) this.tsr.reset();
+          if (this.mobilePresent) this.mobilePresent.reset();
         } else {
           const gridPlace = slot + 1;
           const ai = new Opponent(this.track, aiIndex, dist, {
@@ -2504,6 +2672,7 @@ export class RallyGame {
     } else {
       this.player.spawn(this.track, this._startLineDist(), 0);
       if (this.tsr) this.tsr.reset();
+      if (this.mobilePresent) this.mobilePresent.reset();
       for (let i = 0; i < n; i++) {
         const dist = 16 + i * spacing;
         const ai = new Opponent(this.track, i, dist, {
@@ -2537,6 +2706,7 @@ export class RallyGame {
     this._plantStartGrid();
     this._warmPov();
     this._applyCockpitCam();
+    this._stopAttractReel();
     if (this._titleFloor) this._titleFloor.visible = false;
     if (this._titleWorld) {
       this._titleWorld.visible = false;
@@ -2910,6 +3080,7 @@ export class RallyGame {
     this._gridCamHold = 4;
     holdGpuUploads();
     this._goPresentHold = 0;
+    this._goFeel = 0;
     this.raceTime = 0;
     this._physAccum = 0;
     this.nextCp = 0;
@@ -2922,9 +3093,12 @@ export class RallyGame {
     this.codriver.reset();
     if (this.audio.armCountVo) this.audio.armCountVo();
     this.ghostRecorder.start(courseId, this.carId);
+    this.replayTape.start(courseId, this.carId);
+    this._stopBroadcastReplay();
     this.telemetry.start();
     this.telemetry.exposeGlobal();
     this._setupGhostPlayback();
+    this._solidReplayCar();
     this.timeLeft = this.mode === "timeattack" ? 999 : CHAMPIONSHIP.stageTime[courseId] || 80;
     this.crossedFinish = false;
     this._countShown = "";
@@ -2969,6 +3143,7 @@ export class RallyGame {
     }
     if (this._titleRim) this._titleRim.intensity = 0;
     if (this._titleKick) this._titleKick.intensity = 0;
+    this._stopAttractReel();
     if (this._titleFloor) this._titleFloor.visible = false;
     if (this._titleWorld) {
       this._titleWorld.visible = false;
@@ -3343,7 +3518,8 @@ export class RallyGame {
         }
         if (this.input.camera) {
           // Attract / garage keep the orbit showroom — never attach POV under the car.
-          if (this.state !== "title" && this.state !== "menu") {
+          // Result owns the broadcast director; C must not steal the lens.
+          if (this.state !== "title" && this.state !== "menu" && this.state !== "result") {
             this._cycleCamera();
           }
         }
@@ -3539,11 +3715,14 @@ export class RallyGame {
     }
 
     if (this.state === "result") {
+      this._tickBroadcastReplay(dt);
       const s = this._audioState;
-      s.rpm = this.player ? this.player.spec.idleRpm : 900;
-      s.throttle = 0;
+      const pose = this._broadcastPose;
+      const idle = this.player ? this.player.spec.idleRpm : 900;
+      s.rpm = pose ? idle + Math.min(4200, (pose.speed || 0) * 38) : idle;
+      s.throttle = pose && pose.speed > 4 ? 0.22 : 0;
       s.slip = 0;
-      s.speed = 0;
+      s.speed = pose ? pose.speed : 0;
       s.surfaceDust = 0;
       s.carId = this.carId;
       s.active = false;
@@ -3571,17 +3750,21 @@ export class RallyGame {
           // Lights-out: drop leftover collide / env Δv and TSR history so the
           // GO camera ease cannot smear the car from the frozen 3-2-1 pose.
           if (this.tsr) this.tsr.reset();
+          if (this.mobilePresent) this.mobilePresent.reset();
           this._armLightsOut();
           this._camSnap = false;
           this._raceWarmFrames = Math.max(this._raceWarmFrames || 0, 48);
           this._enforcePresentFreeze();
           this.hud.flashMessage("GO!");
           this.audio.countGo();
-          // Soft launch read — a hard FOV/shake punch on a hitchy first
-          // throttle frame looks like the car glitching, not a start.
-          this._camFovKick = Math.max(this._camFovKick || 0, 1.15);
-          this._shake = Math.max(this._shake || 0, 0.04);
-          this._camKickY = Math.max(this._camKickY || 0, 0.02);
+          // Lights-out punch. Present is forced through `_launchHold` and
+          // `_goPresentHold`, so this is a start snap — not the hitch that
+          // used to stack a skipped frame onto launchBoost.
+          this._goFeel = 1.35;
+          this._camFovKick = Math.max(this._camFovKick || 0, 4.6);
+          this._shake = Math.max(this._shake || 0, 0.11);
+          this._camKickY = Math.max(this._camKickY || 0, 0.09);
+          if (this.input && this.input.rumble) this.input.rumble(0.58, 150);
           this._goPresentHold = 96;
           // Countdown already hard-snaps the chase — do not re-snap on GO
           // (that read as a graphics pop with the VO).
@@ -3638,6 +3821,7 @@ export class RallyGame {
     if (this.input.reset) {
       this.player.spawn(this.track, Math.max(4, this.player.progress - 8), 0);
       if (this.tsr) this.tsr.reset();
+      if (this.mobilePresent) this.mobilePresent.reset();
     }
 
     this._physAccum = Math.min((this._physAccum || 0) + dt, FIXED_DT * MAX_SUBSTEPS);
@@ -3747,6 +3931,7 @@ export class RallyGame {
         this.lap += 1;
         this.player.spawn(this.track, this._startLineDist(), 0);
         if (this.tsr) this.tsr.reset();
+      if (this.mobilePresent) this.mobilePresent.reset();
         this.hud.flashMessage("LAP 2");
       } else {
         this._finish(pos);
@@ -3852,6 +4037,7 @@ export class RallyGame {
     h.dt = dt;
     this.hud.update(h);
     this.ghostRecorder.tick(dt, this.player);
+    this.replayTape.tick(dt, this.player);
     if (this.ghostPlayer && this.ghostMesh) this.ghostPlayer.tick(dt, this.ghostMesh);
     this.telemetry.sample(dt, {
       grip: this.player.gripUsed(),
@@ -3930,6 +4116,263 @@ export class RallyGame {
     }
   }
 
+  /**
+   * Park the pack and play the just-finished tape as TV coverage.
+   */
+  _startBroadcastReplay() {
+    this._stopBroadcastReplay();
+    if (!this.replayTape || this.replayTape.samples.length < 8 || !this.track || !this.player) {
+      return;
+    }
+    const reduced =
+      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.broadcast = new BroadcastDirector(this.track, this.replayTape, { reducedMotion: reduced });
+    if (!this.broadcast.ready) {
+      this.broadcast = null;
+      return;
+    }
+    this._broadcastClock = 0;
+    const prev = this.player.wheelSpin;
+    this._broadcastSpin = [
+      prev && Number.isFinite(prev[0]) ? prev[0] : 0,
+      prev && Number.isFinite(prev[1]) ? prev[1] : 0,
+      prev && Number.isFinite(prev[2]) ? prev[2] : 0,
+      prev && Number.isFinite(prev[3]) ? prev[3] : 0,
+    ];
+    this._broadcastPose = this.replayTape.poseAt(0, this._broadcastPose || {});
+    if (this._broadcastPose) {
+      this.broadcast.snapTo(this._broadcastPose);
+      this._snapReplayTunnel(this._broadcastPose);
+      if (this.playerMesh) {
+        this.playerMesh.position.set(this._broadcastPose.x, this._broadcastPose.y, this._broadcastPose.z);
+        this.playerMesh.rotation.set(
+          this._broadcastPose.pitch,
+          this._broadcastPose.yaw,
+          this._broadcastPose.roll,
+          "YXZ"
+        );
+        this._syncBroadcastLamps(this._broadcastPose);
+      }
+      if (this.camera) {
+        this.camera.position.set(this.broadcast.eyeX, this.broadcast.eyeY, this.broadcast.eyeZ);
+        this.camera.lookAt(this.broadcast.lookX, this.broadcast.lookY, this.broadcast.lookZ);
+      }
+    }
+    this.broadcast.phase = "in";
+    this.broadcast.phaseT = 0;
+    this.broadcast.fade = 1;
+    this._clearReplayTrails();
+    this._solidReplayCar();
+    this._setPackVisible(false);
+    if (this.ghostMesh) this.ghostMesh.visible = false;
+    if (this.playerMesh) setCockpitView(this.playerMesh, false);
+    this._paintBroadcastChrome(true);
+  }
+
+  /**
+   * Wipe race dust, tire marks, and ruts before the tape snaps back to t=0.
+   * Leftover wake at the finish sits in the first replay shot as a trail.
+   */
+  _clearReplayTrails() {
+    if (this.dust && this.dust.reset) this.dust.reset();
+    if (this.tireMarks && this.tireMarks.reset) this.tireMarks.reset();
+    if (this.track && this.track.resetWheelDeform) this.track.resetWheelDeform();
+    if (this.tsr && this.tsr.reset) this.tsr.reset();
+    if (this.mobilePresent && this.mobilePresent.reset) this.mobilePresent.reset();
+  }
+
+  /**
+   * Result replay is the hero car, not the time-attack ghost. Shared garage
+   * materials can be left at 0.42 opacity — force bodywork solid.
+   */
+  _solidReplayCar() {
+    const root = this.playerMesh;
+    if (!root) return;
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (let i = 0; i < mats.length; i++) {
+        const m = mats[i];
+        if (!m) continue;
+        const kind = m.userData && m.userData.kind ? String(m.userData.kind) : "";
+        const label = `${m.name || ""} ${kind} ${o.name || ""}`.toLowerCase();
+        if (/window|glass|glazing|windshield|windscreen|lens/.test(label)) continue;
+        m.transparent = false;
+        m.opacity = 1;
+        m.depthWrite = true;
+      }
+    });
+  }
+
+  _stopBroadcastReplay() {
+    this.broadcast = null;
+    this._broadcastClock = 0;
+    this._broadcastPose = null;
+    this._setPackVisible(true);
+    if (this.ghostMesh) this.ghostMesh.visible = this.mode === "timeattack";
+    this._paintBroadcastChrome(false);
+    const fade = document.getElementById("broadcast-fade");
+    if (fade) fade.style.opacity = "0";
+  }
+
+  /**
+   * @param {boolean} vis
+   */
+  _setPackVisible(vis) {
+    this._packHiddenForReplay = !vis;
+    for (const o of this.opponents || []) {
+      if (o && o.mesh) o.mesh.visible = vis;
+    }
+  }
+
+  /**
+   * @param {boolean} on
+   */
+  _paintBroadcastChrome(on) {
+    const bug = document.getElementById("broadcast-bug");
+    if (bug) bug.hidden = !on;
+    const stage = document.getElementById("broadcast-stage");
+    if (stage) {
+      const def = COURSES[this.courseId];
+      stage.textContent = def && def.name ? def.name : "STAGE";
+    }
+  }
+
+  /**
+   * Drive the player mesh from the tape and aim the broadcast lens.
+   * @param {number} dt
+   */
+  _tickBroadcastReplay(dt) {
+    if (!this.broadcast || !this.replayTape || !this.player) return;
+    const dur = this.replayTape.duration();
+    if (!(dur > 0.4)) return;
+    this._broadcastClock += dt;
+    if (this._broadcastClock >= dur) {
+      this._broadcastClock = 0;
+      this.broadcast.kind = "heli";
+      this.broadcast.phase = "out";
+      this.broadcast.phaseT = 0;
+      this.broadcast.shotT = 0;
+    }
+    const pose = this.replayTape.poseAt(this._broadcastClock, this._broadcastPose || {});
+    this._broadcastPose = pose;
+    if (!pose) return;
+    if (this._broadcastClock < dt) this._snapReplayTunnel(pose);
+    const p = this.player;
+    p.position.set(pose.x, pose.y, pose.z);
+    p.yaw = pose.yaw;
+    p.pitch = pose.pitch;
+    p.roll = pose.roll;
+    p.speed = pose.speed;
+    p.progress = pose.progress;
+    p.gear = pose.gear;
+    if (p._draw) {
+      p._draw.x = pose.x;
+      p._draw.y = pose.y;
+      p._draw.z = pose.z;
+      p._draw.yaw = pose.yaw;
+      p._draw.pitch = pose.pitch;
+      p._draw.roll = pose.roll;
+    }
+    if (this.playerMesh) {
+      this.playerMesh.position.set(pose.x, pose.y, pose.z);
+      this.playerMesh.rotation.set(pose.pitch, pose.yaw, pose.roll, "YXZ");
+      this._spinBroadcastWheels(dt, pose);
+      this._syncBroadcastLamps(pose);
+    }
+    const shot = this.broadcast.update(dt, pose);
+    const cam = this.camera;
+    if (cam) {
+      cam.position.set(this.broadcast.eyeX, this.broadcast.eyeY, this.broadcast.eyeZ);
+      cam.lookAt(this.broadcast.lookX, this.broadcast.lookY, this.broadcast.lookZ);
+      const fov = Math.max(28, Math.min(58, this.broadcast.fov));
+      if (Math.abs(cam.fov - fov) > 0.05) {
+        cam.fov = fov;
+        cam.updateProjectionMatrix();
+      }
+    }
+    const fade = document.getElementById("broadcast-fade");
+    if (fade) fade.style.opacity = String(Math.max(0, Math.min(1, shot.fade)));
+    const label = document.getElementById("broadcast-shot");
+    if (label && label.textContent !== shot.label) label.textContent = shot.label;
+    const clock = document.getElementById("broadcast-clock");
+    if (clock) clock.textContent = formatTime(pose.t);
+    this._updateLights(dt);
+  }
+
+  /**
+   * Snap tunnel shade to the taped metre so headlights do not fade in from
+   * whatever the finish line left in `_tunnelBlend`.
+   * @param {{progress?:number}|null} pose
+   */
+  _snapReplayTunnel(pose) {
+    if (!this.track || !this.track.tunnelShade) return;
+    const dist = pose && Number.isFinite(pose.progress) ? pose.progress : 0;
+    this._tunnelBlend = this.track.tunnelShade(dist);
+  }
+
+  /**
+   * Replay does not step Vehicle, so brake/head lamps stay at the finish
+   * frame unless we drive them from the tape + the same tunnel path as live.
+   * @param {{brake?:number,handbrake?:number}|null} pose
+   */
+  _syncBroadcastLamps(pose) {
+    const mesh = this.playerMesh;
+    if (!mesh || !mesh.userData) return;
+    const braking = !!(pose && ((pose.brake || 0) > 0.08 || (pose.handbrake || 0) > 0.28));
+    mesh.userData.brakeOn = braking;
+    setBrakeLights(mesh, braking);
+    const lamps = [mesh.userData.headlights, mesh.userData.brakeLights];
+    for (let a = 0; a < lamps.length; a++) {
+      const list = lamps[a];
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i]) list[i].visible = true;
+      }
+    }
+    const beams = mesh.userData.headBeams;
+    if (beams) {
+      for (let i = 0; i < beams.length; i++) {
+        const spot = beams[i];
+        if (!spot) continue;
+        spot.visible = true;
+        if (spot.target) spot.target.updateMatrixWorld();
+      }
+    }
+    if (mesh.userData.brakeGlow) mesh.userData.brakeGlow.visible = true;
+  }
+
+  /**
+   * Result replay does not step Vehicle, so hubs stay frozen unless we
+   * integrate spin from the taped speed and call applyWheelPose.
+   * @param {number} dt
+   * @param {{speed?:number,steer?:number,roll?:number}} pose
+   */
+  _spinBroadcastWheels(dt, pose) {
+    const mesh = this.playerMesh;
+    const wheels = mesh && mesh.userData ? mesh.userData.wheels : null;
+    if (!wheels || !wheels.length) return;
+    const spin = this._broadcastSpin || (this._broadcastSpin = [0, 0, 0, 0]);
+    const spec = this.player && this.player.spec;
+    const radius = spec && spec.wheelRadius > 0.05 ? spec.wheelRadius : 0.32;
+    const omega = (pose && pose.speed ? pose.speed : 0) / radius;
+    const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.08, dt)) : 0.016;
+    const wrap = Math.PI * 2;
+    spin[0] = (spin[0] + omega * step) % wrap;
+    spin[1] = (spin[1] + omega * step) % wrap;
+    spin[2] = (spin[2] + omega * step) % wrap;
+    spin[3] = (spin[3] + omega * step) % wrap;
+    applyWheelPose(
+      wheels,
+      spin,
+      pose && pose.steer ? pose.steer : 0,
+      pose && pose.roll ? pose.roll : 0,
+      null,
+      chassisDeckEmbed(this.player, pose && Number.isFinite(pose.y) ? pose.y : mesh.position.y, mesh),
+      null
+    );
+  }
+
   _setupGhostPlayback() {
     if (this.mode !== "timeattack" || !this.scene) return;
     const data = GhostRecorder.loadBest(this.courseId, this.carId);
@@ -3940,13 +4383,16 @@ export class RallyGame {
       enableLocalLightReceiver(this.ghostMesh);
       this.ghostMesh.traverse((o) => {
         if (!o.isMesh || !o.material) return;
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-          if (!m) continue;
-          m.transparent = true;
-          m.opacity = 0.42;
-          m.depthWrite = false;
-        }
+        const src = o.material;
+        const paint = (m) => {
+          if (!m || !m.clone) return m;
+          const c = m.clone();
+          c.transparent = true;
+          c.opacity = 0.42;
+          c.depthWrite = false;
+          return c;
+        };
+        o.material = Array.isArray(src) ? src.map(paint) : paint(src);
       });
       this.scene.add(this.ghostMesh);
     }
@@ -3957,6 +4403,8 @@ export class RallyGame {
     const ghostData = this.ghostRecorder.export();
     if (ghostData) GhostRecorder.saveBest(ghostData);
     this.ghostRecorder.stop();
+    this.replayTape.stop();
+    this._startBroadcastReplay();
     this.telemetry.stop();
     releaseGpuUploads();
     this.state = "result";
@@ -4095,6 +4543,9 @@ export class RallyGame {
   }
 
   _dnf() {
+    this.ghostRecorder.stop();
+    this.replayTape.stop();
+    this._startBroadcastReplay();
     releaseGpuUploads();
     this.state = "result";
     document.getElementById("result-copy").textContent = "GAME OVER, YEAH!";
@@ -4122,13 +4573,15 @@ export class RallyGame {
     this.playerMesh.rotation.set(d.pitch, d.yaw, d.roll, "YXZ");
     const wVis = HANDLING.wheelTravelVisual != null ? HANDLING.wheelTravelVisual : 1;
     const wy = this._camWheelYScratch;
+    const dropOk = p._hubDropOk;
     if (d.wheelY) {
       // Cap amplified travel so hubs never read as trampoline / float.
       const cap = 0.085;
-      wy[0] = Math.max(-cap, Math.min(cap, d.wheelY[0] * wVis));
-      wy[1] = Math.max(-cap, Math.min(cap, d.wheelY[1] * wVis));
-      wy[2] = Math.max(-cap, Math.min(cap, d.wheelY[2] * wVis));
-      wy[3] = Math.max(-cap, Math.min(cap, d.wheelY[3] * wVis));
+      for (let i = 0; i < 4; i++) {
+        const raw = d.wheelY[i] * wVis;
+        const hi = dropOk && dropOk[i] ? cap : 0;
+        wy[i] = Math.max(-cap, Math.min(hi, raw));
+      }
     }
     applyWheelPose(
       this.playerMesh.userData.wheels || [],
@@ -4136,7 +4589,8 @@ export class RallyGame {
       d.steer,
       d.roll,
       d.wheelY ? wy : null,
-      chassisDeckEmbed(p, d.y, this.playerMesh)
+      chassisDeckEmbed(p, d.y, this.playerMesh),
+      dropOk
     );
     const braking = p.brake > 0.08 || p.handbrake > 0.28;
     if (this.playerMesh.userData.brakeOn !== braking) {
@@ -4313,6 +4767,16 @@ export class RallyGame {
     const landFovMul = mode.landFovMul != null ? mode.landFovMul : 1;
     const shakeMul =
       mode.shakeMul != null ? mode.shakeMul : mode.lockHeight || stableBehind ? 0 : 1;
+    if (this._goFeel > 0) {
+      this._goFeel = Math.max(0, this._goFeel - dt);
+      const u = this._goFeel / 1.35;
+      const floored = (p.throttle || 0) > 0.35;
+      if (floored) {
+        this._camFovKick = Math.max(this._camFovKick, 3.4 + u * 2.2);
+        this._camKickY = Math.max(this._camKickY, 0.05 + u * 0.055);
+        this._shake = Math.max(this._shake, 0.07 * u);
+      }
+    }
     // One-shot land impulse — must survive the soft surface chatter cap below.
     let landImpulse = 0;
     if (landed) {
@@ -4362,7 +4826,12 @@ export class RallyGame {
     if (shakeMul <= 0) this._shake = 0;
     else {
       const chatterCap = 0.08 * shakeMul * surfShake;
-      const impulseFloor = Math.max(landImpulse, hitMag > 0.45 ? Math.min(0.28, 0.08 + hitMag * 0.14) : 0);
+      const goImpulse = this._goFeel > 0 ? Math.min(0.14, 0.05 + this._goFeel * 0.07) : 0;
+      const impulseFloor = Math.max(
+        landImpulse,
+        goImpulse,
+        hitMag > 0.45 ? Math.min(0.28, 0.08 + hitMag * 0.14) : 0
+      );
       this._shake = Math.min(Math.max(this._shake, impulseFloor), Math.max(chatterCap, impulseFloor));
     }
     this._camFovKick *= Math.exp(-5.4 * dt);
@@ -4373,7 +4842,113 @@ export class RallyGame {
    * Attract camera. One slow move around the shadow side. No shot cuts.
    * @param {number} dt
    */
+  /**
+   * Swap the spinning pad for a looping rally reel after IBL.
+   * Never calls Track.create — the reel owns a lightweight ribbon.
+   */
+  _startAttractReel() {
+    if (this._attractReel || this._attractBooting) return;
+    if (this.state !== "title" && this.state !== "menu") return;
+    this._attractBooting = true;
+    void prepareRivalLods().catch(() => {});
+    const reduced =
+      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reel = new AttractReel({ phone: isPhonePlay(), reducedMotion: reduced });
+    void reel
+      .mount(this.scene)
+      .then(() => {
+        this._attractBooting = false;
+        if (this.state !== "title" && this.state !== "menu") {
+          reel.dispose(this.scene);
+          return;
+        }
+        const meshes = [];
+        const ids = isPhonePlay() ? ["celica", "delta"] : ["celica", "delta", "stratos", "celica"];
+        for (let i = 0; i < ids.length; i++) {
+          try {
+            meshes.push(createRivalCar({}, i, ids[i]));
+          } catch {
+            try {
+              meshes.push(createTitleCar(ids[i]));
+            } catch {
+              /* garage still parsing */
+            }
+          }
+        }
+        if (!meshes.length && this.playerMesh) meshes.push(this.playerMesh);
+        reel.bindCars(meshes);
+        this._attractReel = reel;
+        this._attractFx = document.getElementById("attract-fx");
+        paintAttractFx(this._attractFx, { fade: 1, flash: 0, label: "WORLD FEED", kind: "heli" }, true);
+        if (this._titleWorld) this._titleWorld.visible = false;
+        if (this.playerMesh && meshes.indexOf(this.playerMesh) < 0) this.playerMesh.visible = false;
+        const crt = document.getElementById("crt");
+        if (crt) crt.classList.add("attract-live");
+        const tag = document.querySelector(".sr-attract-tag");
+        if (tag) tag.textContent = "ATTRACT · WORLD FEED";
+      })
+      .catch((err) => {
+        this._attractBooting = false;
+        console.warn("[attract] reel failed", err);
+      });
+  }
+
+  /** Tear down the title reel before a stage load. */
+  _stopAttractReel() {
+    paintAttractFx(this._attractFx, null, false);
+    const crt = document.getElementById("crt");
+    if (crt) crt.classList.remove("attract-live");
+    if (this._attractReel) {
+      try {
+        this._attractReel.dispose(this.scene);
+      } catch {
+        /* already gone */
+      }
+    }
+    this._attractReel = null;
+    this._attractBooting = false;
+    if (this.camera) this.camera.up.set(0, 1, 0);
+    const tag = document.querySelector(".sr-attract-tag");
+    if (tag) tag.textContent = "ATTRACT · SHOWROOM LIVE";
+  }
+
+  /**
+   * Sun / fill follow the reel lead so cars stay lit through cuts.
+   * @param {number} dt
+   */
+  _updateAttractLights(dt) {
+    if (!this._attractReel || !this.sun) return;
+    this._updateTitleLights(dt || 0);
+    const p = this._attractReel.lead;
+    const d = this._titleSunDir;
+    this.sun.position.set(p.x + d.x * 48, p.y + d.y * 42, p.z + d.z * 48);
+    this.sun.target.position.set(p.x, p.y + 0.4, p.z);
+    this.sun.target.updateMatrixWorld();
+    this.sun.intensity = Math.min(this.sun.intensity, 1.55);
+    if (this.renderer) this.renderer.toneMappingExposure = 0.82;
+    if (this.scene && this.scene.fog) {
+      this.scene.fog.color.setHex(0x8aa8c0);
+      this.scene.fog.near = 36;
+      this.scene.fog.far = 260;
+    }
+  }
+
   _titleCam(dt) {
+    if (this._attractReel && this._attractReel.ready) {
+      if (this._cockpitLive || (this.playerMesh && this.playerMesh.userData._cockpitOn)) {
+        setCockpitView(this.playerMesh, false, this.camera, this.renderer);
+        this._cockpitLive = false;
+      }
+      const shot = this._attractReel.update(dt > 0 && dt < 0.1 ? dt : 0.016, this.camera, {
+        applyWheelPose,
+        setBrakeLights,
+        setHeadlights,
+        chassisDeckEmbed,
+      });
+      paintAttractFx(this._attractFx, shot, true);
+      this._updateAttractLights(dt);
+      return;
+    }
     if (!this.playerMesh || !this.player) return;
     if (this._cockpitLive || this.playerMesh.userData._cockpitOn) {
       setCockpitView(this.playerMesh, false, this.camera, this.renderer);
@@ -4687,7 +5262,14 @@ export class RallyGame {
             ? CAMERA.slideLookAhead
             : 2.4;
       const slidePush = sliding ? Math.min(1, drift * 1.8) * slideLookAhead : 0;
-      const aheadM = mode.lookAhead + geo.lookAhead + speedPush + slidePush;
+      const startRush =
+        this.state === "race" && this.raceTime < 30 ? Math.max(0, 1 - this.raceTime / 30) : 0;
+      const aheadM =
+        mode.lookAhead +
+        geo.lookAhead +
+        speedPush +
+        slidePush +
+        startRush * Math.min(4.8, p.speed * 0.11);
       // Road-aware look: blend velocity aim with a sample ahead on the ribbon.
       let lookX = px + lookSin * aheadM;
       let lookY = py + mode.lookY + geo.lookY - airLookDown;
@@ -4869,7 +5451,15 @@ export class RallyGame {
       (CAMERA.maxFovPunch || 8) * (wantPov ? 0.4 : punchScale),
       p.speed * (CAMERA.speedFov || 0.08) * punchScale
     );
-    const wantFov = (rig && wantPov ? rig.fov : mode.fov) + punch + this._camFovKick * (wantPov ? 0.55 : 1);
+    const startRushFov =
+      !wantPov && this.state === "race" && this.raceTime < 10
+        ? Math.max(0, 1 - this.raceTime / 10) * Math.min(3.6, p.speed * 0.09)
+        : 0;
+    const wantFov =
+      (rig && wantPov ? rig.fov : mode.fov) +
+      punch +
+      startRushFov +
+      this._camFovKick * (wantPov ? 0.55 : 1);
     const wantNear = (rig && wantPov ? rig.near : mode.near) || 0.2;
     if (this._camCut) {
       this._camFovSmooth = wantFov;
@@ -4921,12 +5511,14 @@ export class RallyGame {
             : 0;
         }
         if (this._cockpitLive) updatePovRoofClip(mesh);
+        this.camera.layers.enable(POV_HUD_LAYER);
       } else if (this._cockpitLive) {
         const seatOut = !blending || alongCam < -1.55 || (ease >= 0.62 && dist < detachDist);
         if (seatOut) {
           setCockpitView(mesh, false, this.camera, this.renderer);
           this._cockpitLive = false;
           this._povHudFade = 0;
+          this.camera.layers.disable(POV_HUD_LAYER);
         }
       }
       updatePovHudFade(mesh, this._cockpitLive ? 1 : 0);
@@ -4964,7 +5556,7 @@ export class RallyGame {
     }
     // Fog = horizon so distant land dissolves into the sky photo, not a band.
     const fogCol = this.scene.fog.color;
-    horizonFogColor(L, fogCol);
+    horizonFogColor(L, fogCol, courseId);
     if (!this.scene.background || !this.scene.background.isColor) {
       this.scene.background = new THREE.Color(L.skyBack || L.fog);
     } else {
@@ -5001,7 +5593,7 @@ export class RallyGame {
     );
     this._sunDir.set(L.sunDir[0], L.sunDir[1], L.sunDir[2]).normalize();
     this._fogColor.copy(fogCol);
-    const TC = tunnelLightingFor(courseId);
+    const TC = raceTunnelLighting(courseId);
     this._tunnelFog.setHex(TC.fog != null ? TC.fog : 0x5a4030);
     this._tunnelBlend = 0;
     this._updateLights();
@@ -5091,7 +5683,7 @@ export class RallyGame {
         d,
         this._tunnelBlend || 0,
         L,
-        tunnelLightingFor(this.courseId)
+        raceTunnelLighting(this.courseId)
       );
       if (this.renderer.shadowMap.enabled) {
         updateShadowFrustum(this.sun, SUN_SHADOW_EXTENT, GFX.shadowNear, GFX.shadowFar);
@@ -5134,7 +5726,7 @@ export class RallyGame {
 
     const t = this._tunnelBlend;
     const L = LIGHTING[this.courseId] || LIGHTING.desert;
-    const TC = tunnelLightingFor(this.courseId);
+    const TC = raceTunnelLighting(this.courseId);
     updateRaceLightFollow(
       {
         sun: this.sun,
@@ -5198,9 +5790,14 @@ export class RallyGame {
           ? this.track.nearestTunnelLamps(p, walls.length)
           : [];
     const wallInt = TC.wallInt != null ? TC.wallInt : 72;
+    const wallDist = TC.wallDistance != null ? TC.wallDistance : 68;
+    const wallDecay = TC.wallDecay != null ? TC.wallDecay : 0.95;
     for (let i = 0; i < walls.length; i++) {
       const lamp = walls[i];
       lamp.visible = true;
+      lamp.distance = wallDist;
+      lamp.decay = wallDecay;
+      if (TC.wallColor != null) lamp.color.setHex(TC.wallColor);
       const fix = fixtures[i];
       if (fix) {
         lamp.position.set(fix.x, fix.y, fix.z);
@@ -5380,6 +5977,10 @@ export class RallyGame {
       const bufW = Math.max(1, Math.floor(w * pr));
       const bufH = Math.max(1, Math.floor(h * pr));
       this.tsr.setSize(bufW, bufH);
+    } else if (this.mobilePresent && typeof this.mobilePresent.setSize === "function") {
+      const bufW = Math.max(1, Math.floor(w * pr));
+      const bufH = Math.max(1, Math.floor(h * pr));
+      this.mobilePresent.setSize(bufW, bufH);
     } else if (this.recon) {
       const bufW = Math.max(1, Math.floor(w * pr));
       const bufH = Math.max(1, Math.floor(h * pr));
@@ -6019,7 +6620,7 @@ export class RallyGame {
     // fog (the forest bore) pulls this in further, because there is no clear
     // air out at 40 m.
     const fogFarRaw = fog && fog.far ? fog.far : 520;
-    const heroR = Math.min(40, Math.max(22, fogFarRaw * 0.42));
+    const heroR = Math.min(64, Math.max(28, fogFarRaw * 0.48));
     const hero2 = heroR * heroR;
     // Stage 2 keeps one mesh out to the fog. A card or a coarse stand-in is
     // a different tree, and the handoff reads as foliage popping in.
@@ -6255,6 +6856,11 @@ export class RallyGame {
         throttle: this.player ? this.player.throttle : 0,
         pitch: this.player ? this.player.pitch : 0,
         ax: this.player ? this.player._axDrive : 0,
+        ay: this.player ? this.player._ay : 0,
+        steer: this.player ? this.player.steer : 0,
+        handbrake: this.player ? this.player.handbrake : 0,
+        track: this.track,
+        progress: this.player ? this.player.progress : 0,
       });
     }
     this._updateLights(dt);
@@ -6337,8 +6943,12 @@ export class RallyGame {
     this._armPresentLayers(this.camera);
     // Race present through TSR: jittered low-res scene + temporal resolve, then
     // the normal post / pipeline path treats the reconstructed quad as the scene.
+    this._armPresentLazy();
+    if (!onPad && !this.tsr && wantsHeavyWebTsr()) this._bootWebTsr();
+    if (!onPad && !this.mobilePresent && wantsMobilePresent()) this._bootMobilePresent();
     const paused = this.state === "paused";
     const useTsr = !!(this.tsr && this.tsr.active && !onPad && !countdownLite);
+    const wantMobile = !!(!useTsr && this.mobilePresent && this.mobilePresent.supported && !onPad && !countdownLite);
     if (useTsr && !paused) {
       this._tsrRoots = this._tsrRoots || [];
       this._tsrRoots.length = 0;
@@ -6348,14 +6958,21 @@ export class RallyGame {
         dynamicRoots: this._tsrRoots,
         measureGuided: !!this._reconMeasure,
       });
+    } else if (wantMobile && !paused) {
+      this.mobilePresent.render(this.scene, this.camera);
     }
-    const presentScene = useTsr ? this.tsr.presentScene : this.scene;
+    const useMobile = !!(wantMobile && this.mobilePresent && this.mobilePresent.presentScene);
+    const presentScene = useTsr && this.tsr.presentScene
+      ? this.tsr.presentScene
+      : useMobile
+        ? this.mobilePresent.presentScene
+        : this.scene;
     // Attract pad: always a single present (no post RTs) — keeps PRESS START at 60.
     if (this.pipeline) {
       this.pipeline.present(presentScene, this.camera, {
         usePost: !(onPad || countdownLite),
       });
-    } else if (useTsr) {
+    } else if (useTsr || useMobile) {
       if (this.post && this.post.enabled) this.post.render(presentScene, this.camera);
       else this.renderer.render(presentScene, this.camera);
     } else if (onPad || countdownLite || !this.post || !this.post.enabled) {
@@ -6432,7 +7049,15 @@ export class RallyGame {
             feedMPs: this.tsr.stats.feedMPs || 0,
             spp1Ms: this.tsr.stats.spp1Ms || 0,
           }
-        : null,
+        : this.mobilePresent
+          ? {
+              mode: "mobile",
+              active: !!this.mobilePresent.active,
+              supported: !!this.mobilePresent.supported,
+              compiled: !!(this.mobilePresent.stats && this.mobilePresent.stats.compiled),
+              lastMs: this.mobilePresent.stats ? this.mobilePresent.stats.lastMs : 0,
+            }
+          : null,
       recon: this.recon
         ? {
             enabled: !!this.recon.enabled,
@@ -6452,6 +7077,20 @@ export class RallyGame {
             p50Ms: this.appear.p50Ms || 0,
           }
         : null,
+      mobilePresent: this.mobilePresent
+        ? {
+            active: !!this.mobilePresent.active,
+            supported: !!this.mobilePresent.supported,
+            outW: this.mobilePresent.stats ? this.mobilePresent.stats.outW : 0,
+            outH: this.mobilePresent.stats ? this.mobilePresent.stats.outH : 0,
+            compiled: !!(this.mobilePresent.stats && this.mobilePresent.stats.compiled),
+          }
+        : null,
+      presentPath: this.tsr && this.tsr.active
+        ? "webtsr"
+        : this.mobilePresent && this.mobilePresent.supported
+          ? "mobile-fxaa"
+          : "native",
     };
   }
 }

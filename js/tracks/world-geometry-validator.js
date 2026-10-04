@@ -13,7 +13,7 @@
 
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
-import { TerrainConfig } from "./world-config.js?v=1";
+import { TerrainConfig } from "./world-config.js?v=2";
 
 /**
  * @typedef {{

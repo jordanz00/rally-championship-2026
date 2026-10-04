@@ -28,7 +28,8 @@ import {
   TSR_HISTORY_SAMPLES,
   TSR_VEL_CLAMP_SAMPLES,
   TSR_RESURRECT_INTERVAL,
-} from "../tsr-upscaler.js?v=929";
+  NORMAL_BUDGET_MS,
+} from "../tsr-upscaler.js?v=981";
 import {
   createReconstruct,
   persistReconEnabled,
@@ -49,7 +50,16 @@ import {
   APPEAR_BUDGET_MS,
   APPEAR_LUMA_HEADROOM,
   APPEAR_DEFAULT,
-} from "../appearance-net.js?v=3";
+} from "../appearance-net.js?v=981";
+import {
+  createMobilePresent,
+} from "../mobile-present.js?v=981";
+import {
+  wantsHeavyWebTsr,
+  wantsMobilePresent,
+  wantsAppearanceHandle,
+  isPhonePresentBudget,
+} from "../tsr-policy.js?v=981";
 
 export {
   TsrUpscaler,
@@ -63,6 +73,7 @@ export {
   TSR_HISTORY_SAMPLES,
   TSR_VEL_CLAMP_SAMPLES,
   TSR_RESURRECT_INTERVAL,
+  NORMAL_BUDGET_MS,
   createReconstruct,
   persistReconEnabled,
   parseReconParams,
@@ -80,11 +91,33 @@ export {
   APPEAR_BUDGET_MS,
   APPEAR_LUMA_HEADROOM,
   APPEAR_DEFAULT,
+  createMobilePresent,
+  wantsHeavyWebTsr,
+  wantsMobilePresent,
+  wantsAppearanceHandle,
+  isPhonePresentBudget,
 };
 
 /** Modes the factory accepts. Same ids as TsrUpscaler / Pause IMAGE. */
 export const BROWSER_RECONSTRUCT_MODES = TSR_MODES;
 export const WEBTSR_MODES = TSR_MODES;
+
+/**
+ * Suite contract for hosts and QA. No frame generation. presentScene stays
+ * the present hook. Appearance is an opt-in residual, default off in-game.
+ */
+export const WEBTSR_SUITE = {
+  name: "WebTSR",
+  presentScene: true,
+  appearance: true,
+  guided: true,
+  frameGeneration: false,
+  vendor: "original-mit",
+  appearDefault: APPEAR_DEFAULT,
+  normalBudgetMs: NORMAL_BUDGET_MS,
+  mobilePresent: true,
+  webgpuRequired: false,
+};
 
 /**
  * Build a WebTSR handle around the existing upscaler + residual + appearance.
@@ -117,7 +150,7 @@ export function createBrowserReconstruct(renderer, opts = {}) {
   const mode = opts.mode != null ? opts.mode : TSR_DEFAULT_MODE;
   const guided = !!opts.guided;
   const wantAppear = !!opts.appearance;
-  const tsrOpts = { mode, debug: opts.debug, writeNormals: opts.writeNormals !== false };
+  const tsrOpts = { mode, debug: opts.debug, writeNormals: opts.writeNormals === true };
   const tsr = typeof TsrUpscaler === "function"
     ? new TsrUpscaler(renderer, tsrOpts)
     : null;
@@ -290,6 +323,12 @@ export function createBrowserReconstruct(renderer, opts = {}) {
     set skipPresentSharp(v) {
       if (tsr) tsr.skipPresentSharp = !!v;
     },
+    get writeNormals() {
+      return !!(tsr && tsr.writeNormals);
+    },
+    get normalsAborted() {
+      return !!(tsr && tsr._normalsAborted);
+    },
     /** Last residual / appearance target after render, or null. */
     get outputTarget() {
       return appearRT || reconRT;
@@ -359,6 +398,7 @@ export function createBrowserReconstruct(renderer, opts = {}) {
     /** Drop temporal history — call on spawn / reset / lap / camera cuts. */
     reset() {
       if (tsr && typeof tsr.reset === "function") tsr.reset();
+      if (appear && typeof appear.reset === "function") appear.reset();
     },
     dispose() {
       if (tsr && typeof tsr.dispose === "function") tsr.dispose();

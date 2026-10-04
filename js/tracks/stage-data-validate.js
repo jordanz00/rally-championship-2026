@@ -9,9 +9,9 @@
  * POWER BI MAPPING: none
  */
 
-import { TrackConfig, TunnelConfig } from "./world-config.js?v=1";
+import { TrackConfig, TunnelConfig } from "./world-config.js?v=2";
 import { SEGMENT_KINDS } from "./segment-kinds.js?v=1";
-import { compileTrackDefinition } from "./track-definition.js?v=2";
+import { compileTrackDefinition } from "./track-definition.js?v=6";
 
 /**
  * @typedef {{ severity: 'error'|'warn', code: string, message: string }} DataIssue

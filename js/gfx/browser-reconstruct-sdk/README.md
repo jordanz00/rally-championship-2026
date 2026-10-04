@@ -86,7 +86,11 @@ createWebTsr(renderer, { mode, guided, appearance })
   .dispose()
 ```
 
-`createBrowserReconstruct` is an alias of `createWebTsr`. Re-exports: `TsrUpscaler`, `parseTsrParams`, `persistTsrMode`, `createReconstruct`, `parseReconParams`, `persistReconEnabled`, `createAppearance`, `parseAppearParams`, `persistAppearEnabled`, and the mode / storage constants.
+`createBrowserReconstruct` is an alias of `createWebTsr`. `WEBTSR_SUITE` is the machine-readable contract (`presentScene`, `appearance`, `guided`, `frameGeneration: false`, `appearDefault`, `mobilePresent`, `webgpuRequired: false`). Re-exports include `createMobilePresent`, `wantsHeavyWebTsr`, `wantsMobilePresent`.
+
+Appearance is **off by default** (`APPEAR_DEFAULT = false`). Hosts must pass `appearance: true` to construct the handle, then set `appear.enabled = true` (or `?appear=1` / Pause LOOK in this title). LOOK composites a residual onto the full-res resolve — it does not blit-replace a half-res colour buffer. Low-res normals write only while LOOK is on and abort if the override walk exceeds 1.5 ms.
+
+Phones and `?perf=low|min` skip `createWebTsr` and use `createMobilePresent` (lazy FXAA, WebGL2 only).
 
 ## License
 

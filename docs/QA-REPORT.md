@@ -1,5 +1,439 @@
 # QA report — quality-control pass
 
+## First 30 s — punch, catch, rush (2026-10-03)
+
+**Player moment:** GO leaps. First Desert right rotates into a slide you can catch with a flick. The chase lens rushes for the whole opening 30 s. Pack leaves with you.
+
+**Cause:** GO kick died in chatter. Countersteer needed 0.26 lock before it counted. Speed FOV stayed 0 after 10 s.
+
+**Shipped:** Lights-out hook-up stays. Opposite lock catches at 0.20 with 1.18× authority and quicker recovery. Chase look-ahead + 5.2° rush fade across 30 s. Play-turn lock, slide plant, Desert 1654, `config.js` untouched.
+
+**Proof:** `node tools/qa-go-punch.mjs` · `node tools/qa-slide-bounce.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs`
+
+**Boot:** `main.js?v=982` · `game.js?v=982` · `vehicle.js?v=183` · `ai.js?v=215`
+
+## Navigator VO — young, bright, original (2026-10-03)
+
+**Player moment:** 3-2-1-GO and the first pace note. The voice is young and punchy. Same person on every call. Not a Sega clip.
+
+**Cause:** The pack was Daniel (en_GB), slower, lecture-radio.
+
+**Shipped:** One original pack via `tools/build-nav-grade-vo.sh` — edge-tts Emma Multilingual Neural (cheerful), Nicky fallback. Punchy cabin EQ. Grades, jump, long/maybe, finish, countdown.
+
+**Proof:** `node tools/qa-sprint67-pace-vo.mjs` · `node tools/qa-sprint81-countdown-vo.mjs`
+
+**Boot:** `main.js?v=981` · `game.js?v=981` · `engine.js?v=79` · nav clips `?v=7`
+
+## WebTSR — race present, LOOK residual, phone FXAA (2026-10-03)
+
+**Player moment:** Desktop chase through Forest trees and the tunnel mouth. IMAGE Quality reconstruct is the race present — sharper and more stable than native 1×. LOOK (`?appear=1` / Pause LOOK) adds micro-contrast on the full-res resolve, not a soft upsample. iPhone / Android title stays a single present.
+
+**Shipped:** Desktop `_bootWebTsr` after the first title frame; race `tsr.render` → `presentScene`. History + Halton + YCoCg clip + car velocity + tunnel-mouth wall reject + specular lock. LOOK writes a residual and composites it. Phones / `?perf=low|min` use lazy FXAA (`createMobilePresent`). No WebGPU. Live UI says IMAGE / LOOK. Never “DLSS 5”. `APPEAR_DEFAULT` stays false (Forest 33 ms gate).
+
+**Proof:** `node tools/qa-webtsr-sdk.mjs`
+
+**Boot:** `main.js?v=981` · `game.js?v=981` · SDK `?v=981` · `tsr-upscaler.js?v=981` · `appearance-net.js?v=981`
+
+## GO punch — lights-out is a race start (2026-10-03)
+
+**Player moment:** 3-2-1-GO. Floor it. The car hooks and leaps. The banner fills the glass. The pack leaves with you. The first ten seconds rush — first Desert corner is still the same slide.
+
+**Cause:** GO FOV kick was 1.15° and died in `_feelPad`. Medium chase caps shake to gravel chatter (~0.04). `speedFovScale` stays 0 so the car does not shrink. The grid rolled out.
+
+**Shipped:** 1.18 s launch hook-up (1.22× drive, planted rears until you steer). GO kick 4.6° / shake 0.11 held for 1.35 s while floored. First 10 s add look-ahead + a fading 3.6° rush. HUD `GO!` is the big flash. AI floors the start town (first 82 m, no corner yet). Play-turn lock, slide plant, Desert 1654, `config.js` untouched.
+
+**Proof:** `node tools/qa-go-punch.mjs` · `node tools/qa-go-launch.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs` · `node tools/qa-slide-bounce.mjs`
+
+**Boot:** `main.js?v=981` · `game.js?v=981` · `vehicle.js?v=182` · `ai.js?v=214` · `hud.js?v=43` · `css/game.css?v=58`
+
+## Mountain rain — quiet road hits (2026-10-03)
+
+**Player moment:** Stage 3 asphalt. Rain stops on the deck. It does not strobe white.
+
+**Cause:** Every streak that reached or spawned under the road burst 4 additive white crowns. Dead verts stayed on the mesh. Wetness pulsed with a sine. Far streaks skipped a frame and popped.
+
+**Shipped:** Crowns only on a real plane crossing. Most road hits stay silent. Normal-blend mist, parked dead verts, stable wetness. `Track.query` unread-write only.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rain-collide.mjs`
+
+**Boot:** `main.js?v=980` · `game.js?v=980` · `rain.js?v=28`
+
+## Forest headlights — tunnel beams −30% (2026-10-03)
+
+**Player moment:** Stage 2 rock tunnel. The beams still light the bore. The cabin is not a white flash. Sconces and rock still read.
+
+**Cause:** Forest tunnel used `headBeam` 1850 × `headBeamTunnelBoost` 2.55. That is a floodlight, not a rally pair.
+
+**Shipped:** `raceTunnelLighting("forest")` runs the beams at 1295 (was 1850, −30%). Tunnel boost stays 2.55. Lens emissive follows. `config.js` untouched.
+
+**Proof:** `node tools/qa-forest-headlights.mjs`
+
+**Boot:** `main.js?v=979` · `game.js?v=979`
+
+## Forest fog — woodland haze, not blue sky (2026-10-03)
+
+**Player moment:** Stage 2, looking down the ribbon. Far trees and the horizon fade into olive-gray mist. They do not turn light blue.
+
+**Cause:** Daylight fog copied the sky photo horizon (`#a8cce8`). That matches Desert sand to a warm sky, but on Forest it painted every distant mesh with Rayleigh blue.
+
+**Shipped:** Forest fog is woodland air (`#8f937a` plus a little canopy ground). Desert/Mountain/Lakeside still dissolve into their horizon. `config.js` untouched.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-fog.mjs`
+
+**Boot:** `main.js?v=978` · `game.js?v=978` · `lighting-rig.js?v=30`
+
+## POV hands — gloves grip the rim (2026-10-03)
+
+**Player moment:** Press C into the cockpit. Both hands sit on the leather at 9 and 3. Fingers wrap the tube. Turn and the suit sleeves follow the wrists — the grip stays on the wheel.
+
+**Cause:** Palms were boxes parked at 90% of a world AABB. Fingers curled in place instead of around the tube. A yaw lean twisted them off the rim every frame.
+
+**Shipped:** Spin-local rim measure. Palms on the driver face of the tube. Phalanges and thumb placed on the wrap at 10 and 2. Gloves emit in the POV overlay so they are not black-on-black. Two-bone IK with fixed sleeve lengths. Hands stay parented to steer-spin.
+
+**Proof:** `node tools/qa-pov-hands.mjs`
+
+**Boot:** `main.js?v=977` · `celica.js?v=225` · `pov-driver.js?v=3` · `cockpit-anim.js?v=7`
+
+## Play turns — bite and rotate (2026-10-03)
+
+**Player moment:** Any corner on any stage. Steer and the nose comes. Hold the slide. High-speed sweepers answer instead of pushing wide.
+
+**Cause:** Lock was opened last pass, but the rack still halved at speed and yaw follow dropped to 40%. The wheel fought back into centre, so a committed entry still understeered.
+
+**Shipped:** More lock at speed (1.28×). Rack stays quick. Self-align is lighter. Understeer and yaw lag are cut. Slides last long enough to ride. Desert sweepers and the 1654 m land pad stay put.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs`
+
+**Boot:** `main.js?v=975` · `game.js?v=975` · `vehicle.js?v=181` · `ai.js?v=213`
+
+## Stage flow — smooth fun on every ribbon (2026-10-03)
+
+**Player moment:** Any stage, any surface change, any piece join. The car keeps its slide. The road does not pinch. Dirt after tarmac is a fade, not a slap. The pack still races you on the long roads.
+
+**Cause:** Longer stages still had hard width steps at piece joins. Grip teleported at surface cuts and kicked the hull sideways. Rivals aimed short, so the extra metres felt empty.
+
+**Shipped:** Spline width blends across three passes; jump pads keep authored width. Surface feel tau is longer, shock is weaker, and the hull no longer hops on a grip fade. AI looks further and keeps pack pace. Desert sweepers and the 1654 m land pad stay put.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-stage-flow.mjs`
+
+**Boot:** `main.js?v=974` · `game.js?v=974` · `track.js?v=416` · `vehicle.js?v=180` · `ai.js?v=212` · `courses.js?v=96`
+
+## Stage length — longer drives (2026-10-03)
+
+**Player moment:** Every stage lasts. More straights to wind out, more finish to hunt the pack.
+
+**Cause:** Championship ribbons were short teaching loops. Desert could not grow before the Safari jumps without moving the 1654 m landing into the start-town wall.
+
+**Shipped:** Compiler stretches straights 1.45× and pads the finish. Desert only stretches after the third jump, so the Safari land pad stays at 1654 m.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-stage-length.mjs`
+
+**Boot:** `main.js?v=972` · `courses.js?v=95` · `track-definition.js?v=6`
+
+## Play turns — smoother, easier, more fun (2026-10-03)
+
+**Player moment:** Every corner on every stage. The car rotates in. You can hold the slide. Tight hooks sweep instead of snapping.
+
+**Cause:** Fast sweepers were still authored-tight. High-speed lock fell off hard, so a committed entry understeered.
+
+**Shipped:** Steer lock holds at speed (1.12×). High-speed understeer eased. Tight/medium corners stay the opened play-lane. Desert sweepers keep Safari 1654 a road.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs`
+
+**Boot:** `main.js?v=971` · `courses.js?v=94` · `vehicle.js?v=179`
+
+## Forest tunnel — wide bore, wall lamps (2026-10-03)
+
+**Player moment:** Stage 2 rock tunnel. The cave is a real corridor, not a drainpipe. Sodium sconces sit on the stone, not hanging in the air.
+
+**Cause:** Inner rock was only 0.55 m past the paint. Lamps were long floating boxes aimed at the lane. Seat-scenery could also yank unnamed fixtures off the wall.
+
+**Shipped:** Bore inset 3.4 m. Tunnel ribbon extra width. Sconce backplate + cage bolted to the inner face; lights sit on the fixture. Meshes skip land plant.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-tunnel-bore.mjs`
+
+**Boot:** `main.js?v=970` · `track.js?v=415` · `forest-tunnel.js?v=18`
+
+## Play lane — wider roads, easier turns (2026-10-03)
+
+**Player moment:** Every stage has more paint. Tight hooks and hairpins sweep instead of snapping. Desert Safari jump marks stay where they were.
+
+**Cause:** Lakeside sat at 9–10 m. Forest/Mountain tight radii were 16–26 m. The car had no room to hold a slide.
+
+**Shipped:** Compiler `easePlayCourse` widens every ribbon 24%. Radii under 50 m open 40%, medium 16%. Fast sweepers keep authored radius. Hairpin angles stay. Attract ribbon matches.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs`
+
+**Boot:** `main.js?v=969` · `game.js?v=969` · `courses.js?v=92` · `track-definition.js?v=3`
+
+## Jump banks — sides rise with the ramp (2026-10-03)
+
+**Player moment:** Safari takeoff. Dirt on both sides of the lip climbs with the jump instead of sitting as a flat shelf under a floating plank. The hang stays a hole — no dirt in the flight path.
+
+**Cause:** `_landSurfaceY` only ever pulled land *down* in jump corridors. Skirts on `jumpWash` were a 1.4 m lip. `_nearestRoad` could lock a side vertex to the lower approach, so the banks stayed at approach height while the ribbon rose.
+
+**Shipped:** `_jumpBankTargetY` raises land and shoulders beside ramp / crest / land with a 22 m smoothstep. Gap centre and on-paint samples stay a hole. Ramp and land skirts plant on the raised ground; gap skirts stay a short lip.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-jump-banks.mjs`
+
+**Boot:** `main.js?v=968` · `game.js?v=968` · `track.js?v=414`
+
+## Attract wake — dirt grit + tracks (2026-10-03)
+
+**Player moment:** Title footage cars kick small brown dirt, not fat white squares. Twin tire tracks stay on the ribbon.
+
+**Cause:** Attract dust was 90 unmapped Points at 0.42 m, tinted pale sand, teleported in a fan behind the pack.
+
+**Shipped:** Grit sprite + dirt-brown points capped at 4.8 px. Particles fall and linger. Rear tires stamp compressed-earth quads.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=967` · `attract-reel.js?v=7`
+
+## Surface grit — textures, trails, particles (2026-10-03)
+
+**Player moment:** Road, dirt, and land show close-up grain instead of a painted sheet. Tire trails look like compressed earth / rubber with tread, not flat tape. The roost is clods and dusty volume, not hard discs.
+
+**Cause:** World maps had coarse blotch only. Trails were vertex-colored quads with one hash. Dust used a hexagonal 64 px sprite and almost no plume.
+
+**Shipped:** World-space `surfaceGrit` on projected road / land / skirt plus leftover props. Roughness chatters with the same noise. Tire marks get UV tread, edge fade, and multi-octave grit. Dust sprites are 128 px irregular grit; sand / dirt kick a real plume.
+
+**Proof:** `node tools/qa-surface-noise.mjs`
+
+**Boot:** `main.js?v=965` · `game.js?v=965` · `pbr.js?v=58` · `effects.js?v=96` · `surface-noise.js?v=2`
+
+## Result replay — no trails, solid car (2026-10-03)
+
+**Player moment:** The TV replay opens on a clean road. Dust and tire marks from the finish are gone. The hero car is solid paint, not a see-through ghost.
+
+**Cause:** Broadcast snaps the car back to tape t=0 while the race wake, skid quads, and ruts stay in the world. Time-attack ghost setup also wrote 0.42 opacity onto shared garage materials, so the player mesh stayed translucent. TSR history smeared the teleport.
+
+**Shipped:** `_clearReplayTrails` resets dust, tire marks, ruts, and TSR. `_solidReplayCar` forces non-glass bodywork opaque. Ghost paint clones materials before it goes translucent.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=963` · `game.js?v=963` · `effects.js?v=95`
+
+## Desert 1654 m — Safari landing wall (2026-10-03)
+
+**Player moment:** Stage 1, second Safari jump. Land the hang and drive the checkpoint straight. The car does not stop on an invisible hill at 1654 m.
+
+**Cause:** The checkpoint after the land pad occupies the same XZ as the start-town ribbon (~250 m). `_separateOverlappingRibbon` lifted that later road into a 5–8 m flyover. The back ramp walked through the land pad, so the arrival deck climbed 25–27% — a wall the car could not progress past.
+
+**Shipped:** Flyover lifts skip jump arrivals (64 m after a land pad) and cannot walk through jump posts. Jump land corridors also scrub env colliders off the painted deck.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-desert-1654.mjs`
+
+**Boot:** `main.js?v=962` · `game.js?v=962` · `track.js?v=411`
+
+## Attract reel — music-video title (2026-10-03)
+
+**Player moment:** PRESS START sits on racing footage. Cars fly past on a dirt ribbon. The camera cuts bumper / whip / head-on / crest like a replay trailer, not a spinning pad car.
+
+**Cause:** Attract was a showroom orbit. The emblem and a blue CRT wash hid the canvas. No pack, no cuts, no grade.
+
+**Shipped:** `AttractReel` builds a closed rally ribbon (no `Track.create`). Rival LOD pack drives it. Director holds 1.2–2.3 s and flash-cuts. CSS letterbox, chroma, grain, LIVE slug. Emblem shrinks to a lockup. Reel keeps running behind SELECT MODE and tears down before a stage load.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=961` · `game.js?v=961` · `attract-reel.js?v=3` · `game.css?v=57`
+
+## Environment + texture detail (2026-10-03)
+
+**Player moment:** Road, dirt, and land read sharp from the chase camera. Trees stay authored farther out. Mountain / Lakeside hills show finer grain instead of a soft sheet.
+
+**Cause:** Ground maps sat on 1k until a slow 2k queue, tiled at ~2–8 m with anisotropy 4–8. Hero meshes dropped to cards at 40 m. Terrain used 24 segs unless `?perf=high`. Painted land was 256 px.
+
+**Shipped:** 2k albedo starts right after the 1k boot (desktop). Filtering is 16× anisotropic. Forest / Desert / tunnel tiles are tighter. Hero trees hold to 64 m. Land segs use the cinema count on desktop. Painted land is 384 px. Banners and prop maps use mipmaps + 16× aniso. Phones still skip 2k.
+
+**Proof:** `node tools/qa-env-detail.mjs` · `node tools/qa-pbr-stream.mjs`
+
+**Boot:** `main.js?v=959` · `game.js?v=959` · `track.js?v=410` · `pbr-stream.js?v=5`
+
+## Slide bounce — planted ribbon (2026-10-03)
+
+**Player moment:** Power-slides and drifts stay on the tarmac. The car leans, it does not hop.
+
+**Cause:** Maneuver plant glued hull Y to raw `Track.query().height` every tick. That sample includes washboard, ruts, and crown. Yawing across the road made the chassis bounce.
+
+**Shipped:** `_stableDeckY` uses the ribbon plane (`baseHeight − roadMicro`). `_pinManeuverDeck` filters that once per step. Extra roll damp in a slide. Jumps (`ramp` / `gap`) unchanged.
+
+**Proof:** `node tools/qa-slide-bounce.mjs` · `node tools/qa-sprint63-plant.mjs`
+
+**Boot:** `main.js?v=958` · `vehicle.js?v=178`
+
+## Festive start cloth flags (2026-10-03)
+
+**Player moment:** Leave the line through a corridor of real cloth flags — ten poles, ten different festive faces, each one flying in the stage wind. Forest / Mountain / Lakeside get the same avenue Desert already had, not a lonely red pair.
+
+**Cause:** Only Desert planted a colour avenue. Other stages used one red flag per verge. Faces were flat fills. Poles sat on the height function.
+
+**Shipped:** `_plantStartFlagAvenue` on every stage. Per-stage festive kinds (sunrise, jade, medina, ember, wave…). Verlet cloth with a stronger fly edge, weave/hem texture, planted on `_visualLandY`. Finish checkers unchanged.
+
+**Proof:** `node tools/qa-cloth-flags.mjs`
+
+**Boot:** `main.js?v=957` · `track.js?v=409` · `flag-cloth.js?v=7`
+
+## Grandstand bleacher banks (2026-10-03)
+
+**Player moment:** Start grid and finish corridor show real stepped bleachers — wood treads, risers, seat boards, steel frames, rails, a center aisle, and a canopy. People sit on each row facing the road. The Kenney covered stand sits behind the top row at its real size, not stretched over the whole bank.
+
+**Cause:** One Kenney hut was scaled ~4× to fill the span. Seat heights were guessed, so fans floated inside a giant pavilion instead of sitting on bleachers.
+
+**Shipped:** `_addGrandstandCrowds` always builds bayed bleacher geometry (deck / seat / riser / post / rail / roof). Spectators use that row’s `seatLift`. Kenney `grandstand_covered` plants at `s: 1` as a VIP box. `keepY` + `skipSeat` stop the land snap from flattening the decks.
+
+**Proof:** `node tools/qa-grandstand-bleacher.mjs` · `node tools/qa-crowd-biped.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-seat-scenery.mjs`
+
+**Boot:** `main.js?v=956` · `track.js?v=408` · `seat-scenery.js?v=2`
+
+## Biped fans — planted, seated, arms down (2026-10-03)
+
+**Player moment:** Start/finish stands look like people sitting in the decks. Verge galleries stand on the dirt. Arms hang and clap — no crucifix T-pose, no hover over the benches.
+
+**Cause:** Crowd poses used the height function and were never reseated after the stands dropped onto the land mesh. Authored arm parts stayed in bind T-pose. Grandstand bipeds used a standing scale on the benches.
+
+**Shipped:** Verge feet use `_visualLandY`. Grandstand poses carry `sit` + `seatLift`. `_seatAllScenery` calls `CrowdField.replant`. Authored T-pose arms hang down like the split path.
+
+**Proof:** `node tools/qa-crowd-biped.mjs`
+
+**Boot:** `main.js?v=955` · `track.js?v=407` · `crowd.js?v=43` · `prop-kit.js?v=54`
+
+## Trackside scenery planted on land (2026-10-03)
+
+**Player moment:** Trees, rocks, bushes, and houses on the verge sit in the dirt. Nothing hovers beside the ribbon.
+
+**Cause:** Props used the height function. The land mesh is a bilinear tile, so the same XZ can sit lower than the sample. Authored `gy + 0.45` hover was also kept on nature.
+
+**Shipped:** Plant Y reads the visible tile. After the roadway scrub, `seatTrackScenery` drops grounded env instances by their world foot. Seats / roofs / banners stay up.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-seat-scenery.mjs`
+
+**Boot:** `main.js?v=954` · `track.js?v=406`
+
+## Mountain rain — road + car collision (2026-10-03)
+
+**Player moment:** Stage 3 rain stops on the deck and the car. Crowns pop on the asphalt and on the hood / roof instead of falling through.
+
+**Shipped:** Streaks sample `Track.query` height and a car OBB (hood / glass / roof / flank). Hits spawn splash points. Near streaks use depth test. Lakeside stays dry.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rain-collide.mjs`
+
+**Boot:** `main.js?v=953` · `rain.js?v=24`
+
+## Replay lamps (2026-10-03)
+
+**Player moment:** Result replay brake lights fire on taped brake / handbrake. Headlights still follow the same tunnel path as the live run.
+
+**Cause:** Replay did not step Vehicle, so `_syncPlayerMesh` never called `setBrakeLights`. Lamps stayed at the finish frame.
+
+**Shipped:** Tape records `brake` / `handbrake`. `_syncBroadcastLamps` drives the tail. `_snapReplayTunnel` resets `_tunnelBlend` so `_updateLights` can turn the beams on in the bore.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-broadcast-replay.mjs` — PASS including brake samples.
+
+**Boot:** `main.js?v=952`
+
+## Lakeside — no leftover windshield rain (2026-10-03)
+
+**Player moment:** Stage 4 is dry. The glass is clean at the grid. Mountain beads do not carry over.
+
+**Cause:** The same player mesh is reused. `setActive(false)` cleared the drop list but left the last canvas frame and visible panes.
+
+**Shipped:** Lakeside never enables rain. `dryCar()` wipes every rain canvas and hides wipers / side panes after the car is promoted.
+
+**Boot:** `main.js?v=951` · `rain.js?v=23`
+
+## POV rain — turn physics + side-window drip (2026-10-03)
+
+**Player moment:** Windshield beads slide with steer, yaw, and brake. Rain runs down the driver and passenger door glass — drips to the sill, streaks aft with ram-air, and leans with the turn.
+
+**Shipped:** Door panes fitted to the side apertures (chase + POV). Side lists `_dropsL` / `_dropsR`. Screen beads take `steer` / `yawRate` / `slide` / `_ay`.
+
+**Boot:** `main.js?v=950` · `rain.js?v=22` · `celica.js?v=220`
+
+## Tire plant — shocks tuck, no slab clip (2026-10-03)
+
+**Player moment:** Brake, slide, and turn with the body diving on the springs. The tread stays on the painted road. Hubs only drop when a wheel is on the verge.
+
+**Cause:** `applyWheelPose` subtracted shock *extension* on the ribbon (and allowed a negative deck lift). Dive/squat already lives in `_stepSuspension`; extra downward travel buried the patch.
+
+**Shipped:** On-paint travel is compression only. Extension needs `_hubDropOk` (past the paint). Lift ≥ 0. Springs unchanged.
+
+**Proof:** `node tools/qa-sprint63-plant.mjs` (static contracts)
+
+**Boot:** `main.js?v=949` · `vehicle.js?v=177` · `celica.js?v=219` · `ai.js?v=206`
+
+## Result replay — player wheels spin (2026-10-03)
+
+**Player moment:** The TV replay on the result screen rolls the player’s tires with taped speed. Parked they stay still. Turns keep the recorded steer.
+
+**Cause:** Result only posed the hull from the 20 Hz tape. `applyWheelPose` never ran, so hubs froze at the finish pose.
+
+**Shipped:** `_spinBroadcastWheels` integrates `speed / wheelRadius` each result tick and calls `applyWheelPose`. Tape also stores steer. `vehicle.js` untouched.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=948` · `broadcast-replay.js?v=4`
+
+## WebTSR suite — LOOK default off, G-buffer abort (2026-10-03)
+
+**Player moment:** Desktop IMAGE Quality stays on. LOOK (appearance residual) stays off unless Pause LOOK or `?appear=1`. Live UI never says “DLSS 5”.
+
+**Shipped:** `createWebTsr` + `presentScene` unchanged. Low-res normals are opt-in and abort after 1.5 ms. Appearance is hand 3×3 + luma clamp, no stacked RCAS. Cache-bust `?v=947`. Isolated lab LOOK checkbox unchecked.
+
+**Proof:** `node tools/qa-webtsr-sdk.mjs` · headed lab Quality p50 **16.7 ms** (LOOK off, n 0.00 ms). Title boot: `tsr.mode=quality`, `appear.enabled=false`, `writeNormals=false`, Pause LOOK **OFF**.
+
+**Boot:** `main.js?v=947` · `browser-reconstruct-sdk/index.js?v=947` · `tsr-upscaler.js?v=947` · `appearance-net.js?v=5`
+
+## POV rain — one glass, climb on accel (2026-10-03)
+
+**Player moment:** Stage 3 POV shows one set of beads on the windshield. Throttle / ram-air sends them up the rake toward the roof. Parked they creep to the cowl. Wipers are 30% shorter.
+
+**Cause:** Camera HUD overlay and the fitted pane shared one canvas, so two offset droplet fields. Climb damping plus a second overlay made motion read wrong.
+
+**Shipped:** Camera overlay removed. Beads paint only the windshield pane. Accel / throttle / speed change drive −v (roof). Wiper reach `×0.7`.
+
+**Boot:** `main.js?v=945` · `rain.js?v=21` · `celica.js?v=218`
+
+## Result-screen broadcast replay (2026-10-03)
+
+**Player moment:** After each stage the result board sits on a TV replay of *that* run. Trackside, helicopter, chase, crane, and head-on cameras cut with fades. The car drives the line you just drove.
+
+**Shipped:** In-memory 20 Hz tape (`ReplayTape`) plus `BroadcastDirector` towers along the ribbon. Result overlay is a lower-third so the feed stays visible. Pack hidden. Loop with a fade. `prefers-reduced-motion` uses hard cuts.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-broadcast-replay.mjs`
+
+**Boot:** `main.js?v=944` · `broadcast-replay.js?v=3` · `css/game.css?v=56`
+
+## Forest Stage 2 tunnel — wide, lit, easy (2026-10-03)
+
+**Player moment:** The Forest rock bore is a wide, readable cabin. Wall sconces sit on the lining and light the rock and the dirt. Turns are easy / medium sweepers, not a tight slalom. The bore is longer, with long straights between bends.
+
+**Cause:** Lamps sat at `half - 0.35` (0.9 m inside the lining). `TUNNEL_FOREST` crushed the cabin (`wallInt` 16, black fog 8–70 m). Layout was `forestWidth(11.6)` ≈ 15.3 m with r=38–52 hooks.
+
+**Shipped:** Tunnel width `forestWidth(15.6)` ≈ 20.6 m. Four sweepers r=102–128 / a=36–44. Bore ~840 m. Sconces flush to the lining, both sides. Forest lighting lifted in `game.js` (`raceTunnelLighting`) — `config.js` untouched. Bore PBR less dead. Road chunks in the tunnel receive layer-2 lamps.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-world-geometry.mjs`
+
+**Boot:** `main.js?v=941` · `track.js?v=405` · `forest-tunnel.js?v=14` · `forest-definition.js?v=13` · `courses.js?v=91`
+
+## Tire plant — no clip through road or verge (2026-10-03)
+
+**Player moment:** Power-slides and skids keep all four contact patches on the surface. Tires do not bury in the tarmac or punch through the road lip. The verge is a gentle apron, not a wall.
+
+**Cause:** Slide plant damped every corner to 12%, so hubs stayed at deck height while XZ left the paint and cut the road's side face. `applyWheelPose` ignored downward travel and `chassisDeckEmbed` could return −2 cm, shoving rubber through the slab. Skirt mid-drop was 42% in the first 38% of reach.
+
+**Shipped:** On-road slides still ignore bank hops. Past the paint, hubs drop onto the skirt. On-deck hub Y cannot go below the kiss plane. Skirt mid holds longer (`SKIRT_MID_U` 0.55 / `SKIRT_MID_DROP` 0.22). Painted edges blend further into the apron. `SKIRT_SLOPE` stays 0.18.
+
+**Boot:** `main.js?v=939` · `vehicle.js?v=176` · `celica.js?v=217` · `track.js?v=404`
+
+## POV windshield rain — full glass, climb (2026-10-03)
+
+**Player moment:** In POV on Mountain (or `?rain=1`), beads cover the whole windshield and streak **up** toward the roof under ram-air / accel. Parked beads still creep toward the cowl.
+
+**Cause:** Overlay was a small 1.42×0.72 patch. Spawn only hit the lower-mid pane. CanvasTexture `flipY` plus PlaneGeometry v=0-at-top made climb (−v) read as down.
+
+**Shipped:** Camera overlay scaled to the windshield FOV. Impacts across the full pane. `flipY = false` so canvas y=0 is the roof. Fitted texture hidden (wipers stay). POV HUD layer stays on so the glass actually renders. `rain.js?v=20` · `celica.js?v=216` · `main.js?v=937`.
+
 ## Slide / brake / turn hop (2026-10-03)
 
 **Player moment:** Drifting, power-sliding, braking, or turning must stay on the tarmac. No hop, bounce, or chassis glitch.
@@ -47,9 +481,9 @@
 | Quality TSR, Forest 600, pre-LOOK (prior) | **32.7 ms** |
 | G-buffer override, Forest | ~47 ms → abort after 2 frames |
 | LOOK compile spike | ~20 ms (warmup now ignored) |
-| Isolated lab Quality + LOOK checkbox | **16.6 ms** (cube, not Forest) |
+| Isolated lab Quality + LOOK checkbox (`?v=938`) | **16.8 ms** (845×751 → 1098×975, cube, not Forest) |
 
-**Default:** `APPEAR_DEFAULT = false`. `?appear=1` / Pause LOOK still work. No stacked RCAS. Shadows 1536. `main.js?v=928`.
+**Default:** `APPEAR_DEFAULT = false`. `?appear=1` / Pause LOOK still work. No stacked RCAS. Shadows 1536. `main.js?v=938`.
 
 **SDK:** `createWebTsr(renderer, { mode, guided, appearance })` · `presentScene` unchanged.
 

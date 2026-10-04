@@ -71,10 +71,11 @@ check("clipKey does not rewrite hairpin to hard", !/startsWith\("hairpin-"\)/.te
 check("long/maybe flags on turn notes", /LONG_ARC_M/.test(call) && /maybe:/.test(call) && /long:/.test(call));
 check("paceCall accepts long/maybe opts", /paceCall\(key, opts/.test(engine) && /_navQueue/.test(engine));
 check("codriver passes long/maybe phrase", /paceCall\(key, phrase\)/.test(driver) || /paceCall\(key, \{\s*long/.test(driver));
-check("nav clips cache-busted", Number((engine.match(/nav\/\$\{key\}\.mp3\?v=(\d+)/) || [])[1]) >= 6);
+check("nav clips cache-busted", Number((engine.match(/nav\/\$\{key\}\.mp3\?v=(\d+)/) || [])[1]) >= 8);
 check("nav bus bypasses SFX compressor", /_navGain/.test(engine) && /NAV_GAIN/.test(engine));
 check("playClip does not dump the line", /export function playClip/.test(bank) && /paceCall/.test(engine));
-check("Daniel unified nav voice attribution", /Daniel/.test(attr) && /build-nav-grade-vo/.test(attr));
+check("emma-cheerful nav actor attribution", /emma-cheerful/.test(attr) && /Emma/.test(attr) && /render-nav-vo/.test(attr));
+check("retired compact actors are gone", !/Daniel/.test(attr) && !/Samantha, en_US/.test(attr));
 
 for (const key of [...NAV_CLIPS, "long", "maybe"]) {
   const file = path.join(ROOT, "assets/sfx/nav", `${key}.mp3`);

@@ -73,8 +73,9 @@ check(
 );
 check(
   "clearHalfW matches drive corridor (collider pad)",
-  /clearHalfW:\s*half \+ ROAD_COLLIDER_CLEAR/.test(track),
-  "aperture must clear the drive lane without a stadium verge hole"
+  /clearHalfW:\s*forest \? half \+ FOREST_BORE_INSET/.test(track) &&
+    /half \+ ROAD_COLLIDER_CLEAR/.test(track),
+  "Forest uses the wide bore; Desert keeps the collider pad"
 );
 check("no sprint30 undercarriage-only portal", !/Undercarriage — readable when driving under the bridge/.test(track), "sprint30 portal removed");
 check("tunnel shoulder offset 15.5+", /half \+ 15\.5/.test(track), "ridge offset");

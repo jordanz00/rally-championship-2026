@@ -36,12 +36,12 @@
       </select>
     </label>
     <label><input type="checkbox" id="guided" checked /> Depth-guided residual</label>
-    <label><input type="checkbox" id="appear" checked /> Appearance residual</label>
+    <label><input type="checkbox" id="appear" /> Appearance residual (off by default)</label>
     <div id="stats">booting…</div>
   </div>
   <script type="module">
     import * as THREE from "../vendor/three.module.js";
-    import { createWebTsr } from "../js/gfx/browser-reconstruct-sdk/index.js?v=929";
+    import { createWebTsr } from "../js/gfx/browser-reconstruct-sdk/index.js?v=981";
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -86,6 +86,7 @@
     scene.add(car);
 
     const recon = createWebTsr(renderer, { mode: "quality", guided: true, appearance: true });
+    if (recon.appear) recon.appear.enabled = false;
     const modeEl = document.getElementById("mode");
     const guidedEl = document.getElementById("guided");
     const appearEl = document.getElementById("appear");

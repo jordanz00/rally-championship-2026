@@ -9,14 +9,14 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=4";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=5";
 
 const BASE = "assets/env/desert";
 
-const TILE_SAND_M = 8.0;
-const TILE_DIRT_M = 2.2;
-const TILE_GRAVEL_M = 6.0;
-const TILE_TARMAC_M = 4.0;
+const TILE_SAND_M = 5.6;
+const TILE_DIRT_M = 1.55;
+const TILE_GRAVEL_M = 4.2;
+const TILE_TARMAC_M = 2.8;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */

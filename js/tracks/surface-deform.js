@@ -15,6 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
+import { armSurfaceNoise } from "../gfx/surface-noise.js?v=2";
 
 /** Surfaces that accumulate wheel ruts. */
 export const DEFORM_SURFACES = new Set(["sand", "dirt", "mud", "gravel"]);
@@ -273,6 +274,8 @@ export class WheelRutMesh {
       polygonOffsetFactor: -8,
       polygonOffsetUnits: -8,
     });
+    this.mat.userData.kind = "prop";
+    armSurfaceNoise(this.mat, 0.28);
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = true;
     this.mesh.receiveShadow = true;

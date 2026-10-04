@@ -86,7 +86,7 @@ const VEL_MESH_CAP = 18;
 /** Rescan body/wheel list this often (plus on reset / pack change). */
 const VEL_SCAN_EVERY = 90;
 /** Drop the G-buffer override if the extra walk costs more than this. */
-const NORMAL_BUDGET_MS = 1.5;
+export const NORMAL_BUDGET_MS = 1.5;
 
 /** Output pixels of screen motion at which accumulation length starts to drop. */
 const MOTION_SOFT_PX = 10;
@@ -363,25 +363,35 @@ void main() {
   // Thin Geometry Detection (UE5 r.TSR.ThinGeometryDetection): depth-edge
   // + high-contrast line → relax ClampBlend so Forest fences / tree edges
   // do not boil. No GBuffer shading-model ID — depth + luma only.
+  // A *wall* (large z jump, not a thin line) is a tunnel mouth / crest —
+  // drop history so the far side cannot ghost for a frame.
   float thin = 0.0;
+  float wall = 0.0;
 #if !CHEAP_RESOLVE
-  if (uThinOn > 0.5 && closeD < 0.999) {
+  if (closeD < 0.999) {
     float zC = linZ(closeD);
     float zL = linZ(texelFetch(tDepth, clamp(closeI + ivec2(-1, 0), ivec2(0), maxI), 0).r);
     float zR = linZ(texelFetch(tDepth, clamp(closeI + ivec2( 1, 0), ivec2(0), maxI), 0).r);
     float zU = linZ(texelFetch(tDepth, clamp(closeI + ivec2(0, -1), ivec2(0), maxI), 0).r);
-    float zD = linZ(texelFetch(tDepth, clamp(closeI + ivec2(0,  1), ivec2(0), maxI), 0).r);
-    float zJump = max(max(abs(zL - zC), abs(zR - zC)), max(abs(zU - zC), abs(zD - zC)));
-    float edge = step(0.28, zJump);
+    float zDlin = linZ(texelFetch(tDepth, clamp(closeI + ivec2(0,  1), ivec2(0), maxI), 0).r);
+    float zJump = max(max(abs(zL - zC), abs(zR - zC)), max(abs(zU - zC), abs(zDlin - zC)));
     float line = step(0.11, highFreq);
-    thin = max(edge, line);
-    if (thin > 0.5) {
-      vec3 widen = (bmax - bmin) * 0.32 + vec3(0.035);
-      bmin -= widen;
-      bmax += widen;
+    if (uThinOn > 0.5) {
+      float edge = step(0.28, zJump);
+      thin = max(edge, line);
+      if (thin > 0.5) {
+        vec3 widen = (bmax - bmin) * 0.32 + vec3(0.035);
+        bmin -= widen;
+        bmax += widen;
+      }
     }
+    wall = step(2.4, zJump) * (1.0 - line);
   }
 #endif
+  if (wall > 0.5) {
+    valid = 0.0;
+    n = 0.0;
+  }
 
   // ClampBlend (UE4 TAA-style) — keep history inside the current AABB.
   vec3 clipped = histCC;
@@ -408,6 +418,13 @@ void main() {
     // BlendFinal = 1 (FAQ): drop history, spatial AA hides the native sample.
     n = 0.0;
     clipped = curCC;
+  }
+  // Specular lock — a bright highlight that flipped vs history is this
+  // frame's sun/glint, not a surface to accumulate. Stops wet-road swim.
+  float specFlip = step(0.40, curCC.x) * step(0.075, yDelta) * still;
+  if (specFlip > 0.5 && thin < 0.5 && wall < 0.5) {
+    n *= 0.22;
+    clipped = mix(clipped, curCC, 0.78);
   }
 
   if (uSpatialOn > 0.5 && n < 2.4) {
@@ -473,7 +490,9 @@ void main() {
     vec3 hitMin = min(mn4, e) / (4.0 * mx4 + 1.0e-4);
     vec3 hitMax = (peakC.x - max(mx4, e)) / (4.0 * mn4 + peakC.y);
     vec3 lobeRGB = max(-hitMin, hitMax);
-    float lobe = max(-0.1875, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * uSharpCon;
+    float edgeN = max(mx4.r - mn4.r, max(mx4.g - mn4.g, mx4.b - mn4.b));
+    float ringGate = 1.0 - smoothstep(0.28, 0.62, edgeN);
+    float lobe = max(-0.1875, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * uSharpCon * mix(0.42, 1.0, ringGate);
     float rcpL = 1.0 / (4.0 * lobe + 1.0);
     outC = (lobe * (b + d + f + h) + e) * rcpL;
   }
@@ -667,8 +686,8 @@ export class TsrUpscaler {
     this.mode = "off";
     this.scale = 0;
     this.debug = new Set(opts.debug || []);
-    /** @type {number} RCAS sharpness 0..1 (0.5 ≈ a stop of FidelityFX sharpen). */
-    this.sharpness = 0.5;
+    /** @type {number} RCAS sharpness 0..1 (softer than 0.5 — less fence ring). */
+    this.sharpness = 0.38;
     this.maxHistory = 12;
     this.kernelSigma = 0.47;
     this.clipGamma = 1.0;
@@ -694,8 +713,8 @@ export class TsrUpscaler {
       blending: THREE.NoBlending,
       toneMapped: false,
     });
-    /** Low-res MeshNormalMaterial override. Off if the pass exceeds 1.5 ms. */
-    this.writeNormals = opts.writeNormals !== false;
+    /** Low-res MeshNormalMaterial override. Off unless opted in; abort >1.5 ms. */
+    this.writeNormals = opts.writeNormals === true;
     this._normalMat = new THREE.MeshNormalMaterial({ fog: false });
     this._normalClear = new THREE.Color(0x8080ff);
     this._normalMsSum = 0;
@@ -834,6 +853,22 @@ export class TsrUpscaler {
     this._presentQuad = presentQuad;
 
     this.setMode(opts.mode || TSR_DEFAULT_MODE);
+  }
+
+  /**
+   * Hint output size and drop history so a resize cannot smear the last frame.
+   * Next `render()` still sizes from the drawing buffer.
+   * @param {number} w
+   * @param {number} h
+   */
+  setSize(w, h) {
+    const nw = Math.max(1, Math.floor(w));
+    const nh = Math.max(1, Math.floor(h));
+    if (nw === this._outW && nh === this._outH && this._lowRT[0]) return;
+    this._outW = 0;
+    this._outH = 0;
+    this._needReset = true;
+    this._havePrevCam = false;
   }
 
   /** @returns {boolean} true when the next render should go through TSR. */
@@ -1091,7 +1126,28 @@ export class TsrUpscaler {
    */
   _renderNormals(scene, camera) {
     const r = this.renderer;
-    if (!this.writeNormals || !this._normalRT || !r) {
+    if (!this.writeNormals || !r) {
+      this.stats.normalMs = 0;
+      return;
+    }
+    if (!this._normalRT && this._lowW > 0) {
+      const d = new THREE.DepthTexture(this._lowW, this._lowH);
+      d.format = THREE.DepthFormat;
+      d.type = THREE.FloatType;
+      d.minFilter = THREE.NearestFilter;
+      d.magFilter = THREE.NearestFilter;
+      this._normalRT = new THREE.WebGLRenderTarget(this._lowW, this._lowH, {
+        type: THREE.UnsignedByteType,
+        format: THREE.RGBAFormat,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        depthBuffer: true,
+        stencilBuffer: false,
+        generateMipmaps: false,
+        depthTexture: d,
+      });
+    }
+    if (!this._normalRT) {
       this.stats.normalMs = 0;
       return;
     }
@@ -1372,16 +1428,21 @@ export class TsrUpscaler {
       stencilBuffer: false,
       generateMipmaps: false,
     });
-    this._normalRT = new THREE.WebGLRenderTarget(lw, lh, {
-      type: THREE.UnsignedByteType,
-      format: THREE.RGBAFormat,
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      depthBuffer: true,
-      stencilBuffer: false,
-      generateMipmaps: false,
-      depthTexture: mkDepth(lw, lh),
-    });
+    // LOOK G-buffer only — skip the extra walk + RT while appearance is off.
+    if (this.writeNormals) {
+      this._normalRT = new THREE.WebGLRenderTarget(lw, lh, {
+        type: THREE.UnsignedByteType,
+        format: THREE.RGBAFormat,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        depthBuffer: true,
+        stencilBuffer: false,
+        generateMipmaps: false,
+        depthTexture: mkDepth(lw, lh),
+      });
+    } else {
+      this._normalRT = null;
+    }
     const histOpts = {
       type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,

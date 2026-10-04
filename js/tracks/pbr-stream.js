@@ -69,7 +69,7 @@ async function pumpHi() {
     } catch {
       /* ignore missing 2k */
     }
-    await new Promise((r) => setTimeout(r, 48));
+    await new Promise((r) => setTimeout(r, 16));
   }
   hiBusy = false;
 }
@@ -130,7 +130,7 @@ export function cloneTracked(tex, rx, ry) {
  * @param {HTMLImageElement|HTMLCanvasElement} image
  * @param {number} [anisotropy]
  */
-export function applyImage(master, image, anisotropy = 8) {
+export function applyImage(master, image, anisotropy = 16) {
   if (!master || !image) return;
   if (gpuHold) {
     PENDING_APPLY.push(() => applyImageNow(master, image, anisotropy));
@@ -144,7 +144,7 @@ export function applyImage(master, image, anisotropy = 8) {
  * @param {HTMLImageElement|HTMLCanvasElement} image
  * @param {number} [anisotropy]
  */
-function applyImageNow(master, image, anisotropy = 8) {
+function applyImageNow(master, image, anisotropy = 16) {
   master.image = image;
   const set = FAMILY.get(master) || new Set([master]);
   for (const t of set) {
@@ -175,7 +175,7 @@ export function stubTex(srgb, css) {
   tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   tex.needsUpdate = true;
   remember(tex, tex);
   return tex;
@@ -208,6 +208,7 @@ export function loadTex(loader, url, srgb, timeoutMs) {
         tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
         tex.generateMipmaps = true;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.anisotropy = 16;
         tex.needsUpdate = true;
         finish(tex);
       },
@@ -232,7 +233,13 @@ export async function bootPbrSet(loader, spec) {
   const roughnessMap = stubTex(false, "#b8b8b8");
 
   const boot = await loadTex(loader, `${base}/${stem}_diff_1k.jpg`, true, BOOT_MS);
-  if (boot) applyImage(map, boot.image, 4);
+  if (boot) applyImage(map, boot.image, 8);
+  if (wantHiMaps()) {
+    enqueueHi(async () => {
+      const d2 = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_MS);
+      if (d2) applyImage(map, d2.image, 16);
+    });
+  }
 
   void streamDetail(loader, base, stem, map, normalMap, roughnessMap);
   return { map, normalMap, roughnessMap, aoMap: null, tileMeters };
@@ -251,20 +258,16 @@ async function streamDetail(loader, base, stem, map, normalMap, roughnessMap) {
     loadTex(loader, `${base}/${stem}_nor_gl_1k.jpg`, false, DETAIL_MS),
     loadTex(loader, `${base}/${stem}_rough_1k.jpg`, false, DETAIL_MS),
   ]);
-  if (nor) applyImage(normalMap, nor.image, 8);
-  if (rough) applyImage(roughnessMap, rough.image, 8);
+  if (nor) applyImage(normalMap, nor.image, 16);
+  if (rough) applyImage(roughnessMap, rough.image, 16);
   if (!wantHiMaps()) return;
   enqueueHi(async () => {
-    const d2 = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_MS);
-    if (d2) applyImage(map, d2.image, 8);
-  });
-  enqueueHi(async () => {
     const n2 = await loadTex(loader, `${base}/${stem}_nor_gl_2k.jpg`, false, HI_MS);
-    if (n2) applyImage(normalMap, n2.image, 8);
+    if (n2) applyImage(normalMap, n2.image, 16);
   });
   enqueueHi(async () => {
     const r2 = await loadTex(loader, `${base}/${stem}_rough_2k.jpg`, false, HI_MS);
-    if (r2) applyImage(roughnessMap, r2.image, 8);
+    if (r2) applyImage(roughnessMap, r2.image, 16);
   });
 }
 
@@ -278,7 +281,13 @@ export async function bootTunnelSet(loader, base) {
   const normalMap = stubTex(false, "#8080ff");
   const armMap = stubTex(false, "#a8a090");
   const boot = await loadTex(loader, `${base}/tunnel_rock_diff_1k.jpg`, true, BOOT_MS);
-  if (boot) applyImage(map, boot.image, 4);
+  if (boot) applyImage(map, boot.image, 8);
+  if (wantHiMaps()) {
+    enqueueHi(async () => {
+      const d2 = await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_MS);
+      if (d2) applyImage(map, d2.image, 16);
+    });
+  }
   void streamTunnel(loader, base, map, normalMap, armMap);
   return { map, normalMap, armMap };
 }
@@ -295,19 +304,15 @@ async function streamTunnel(loader, base, map, normalMap, armMap) {
     loadTex(loader, `${base}/tunnel_rock_nor_gl_1k.jpg`, false, DETAIL_MS),
     loadTex(loader, `${base}/tunnel_rock_arm_1k.jpg`, false, DETAIL_MS),
   ]);
-  if (nor) applyImage(normalMap, nor.image, 8);
-  if (arm) applyImage(armMap, arm.image, 8);
+  if (nor) applyImage(normalMap, nor.image, 16);
+  if (arm) applyImage(armMap, arm.image, 16);
   if (!wantHiMaps()) return;
   enqueueHi(async () => {
-    const d2 = await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_MS);
-    if (d2) applyImage(map, d2.image, 8);
-  });
-  enqueueHi(async () => {
     const n2 = await loadTex(loader, `${base}/tunnel_rock_nor_gl_2k.jpg`, false, HI_MS);
-    if (n2) applyImage(normalMap, n2.image, 8);
+    if (n2) applyImage(normalMap, n2.image, 16);
   });
   enqueueHi(async () => {
     const a2 = await loadTex(loader, `${base}/tunnel_rock_arm_2k.jpg`, false, HI_MS);
-    if (a2) applyImage(armMap, a2.image, 8);
+    if (a2) applyImage(armMap, a2.image, 16);
   });
 }

@@ -22,6 +22,8 @@ const trackSrc = fs.readFileSync(path.join(ROOT, "js/tracks/track.js"), "utf8");
 const clothSrc = fs.readFileSync(path.join(ROOT, "js/tracks/flag-cloth.js"), "utf8");
 check("track imports flag-cloth", /flag-cloth\.js\?v=\d+/.test(trackSrc));
 check("gates plant cloth flags", /_plantClothFlags\(start, "START"\)/.test(trackSrc));
+check("start avenue on every stage", /_plantStartFlagAvenue/.test(trackSrc) && !/_plantDesertStartAvenue/.test(trackSrc));
+check("start kinds are festive per stage", /startFlagKinds/.test(trackSrc) && /sunrise/.test(clothSrc) && /jade/.test(clothSrc));
 check("finish plants cloth flags", /_plantClothFlags\(finish, "FINISH"\)/.test(trackSrc));
 check("finish plants checker row of 10", /_plantFinishCheckerRow/.test(trackSrc));
 check(
@@ -46,10 +48,21 @@ class FakeCanvas {
     const data = { data: new Uint8ClampedArray(this.width * this.height * 4) };
     return {
       fillStyle: "#000",
+      strokeStyle: "#000",
+      lineWidth: 1,
       createLinearGradient() {
         return { addColorStop() {} };
       },
       fillRect() {},
+      strokeRect() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      arc() {},
+      quadraticCurveTo() {},
+      closePath() {},
+      fill() {},
+      stroke() {},
       getImageData() {
         return data;
       },
@@ -68,13 +81,18 @@ globalThis.window = globalThis;
 globalThis.performance = { now: () => 16 };
 globalThis.HTMLCanvasElement = FakeCanvas;
 
-const { createClothFlag, updateClothFlags, stageWind } = await import(
+const { createClothFlag, updateClothFlags, stageWind, startFlagKinds } = await import(
   "../js/tracks/flag-cloth.js"
 );
 
 const desert = stageWind("desert", 1.2);
 const forest = stageWind("forest", 1.2);
 check("desert wind stronger than forest", Math.hypot(desert.x, desert.z) > Math.hypot(forest.x, forest.z));
+const desertKinds = startFlagKinds("desert");
+const forestKinds = startFlagKinds("forest");
+check("start avenue is ten unique faces", desertKinds.length === 10 && new Set(desertKinds).size === 10);
+check("forest start is not a red pair", forestKinds.length === 10 && forestKinds.some((k) => k !== "red"));
+check("stages use different festive sets", desertKinds.join(",") !== forestKinds.join(","));
 
 const a = stageWind("desert", 1.2, { phase: 0, gustPhase: 0 });
 const b = stageWind("desert", 1.2, { phase: 2.4, gustPhase: 5.1 });
@@ -112,6 +130,19 @@ for (let i = 0; i < flag.cur.length; i += 3) {
 check("free cloth verts moved", moved >= 20);
 check("motion is finite fabric-scale", max > 0.002 && max < 1.8);
 check("pinned hoist column stays", Math.abs(flag.cur[0] - before[0]) < 1e-6);
+const festive = createClothFlag({
+  x: 2,
+  y: 0,
+  z: 0,
+  heading: 0,
+  side: -1,
+  kind: "sunrise",
+  scenery: "desert",
+  nx: 1,
+  nz: 0,
+  seed: 9,
+});
+check("festive sunrise cloth builds", festive && festive.kind === "sunrise" && festive.cur.length === 96 * 3);
 
 const f0 = createClothFlag({
   x: 10,

@@ -16,7 +16,8 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=241";
-import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=1";
+import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
+import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=2";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
 const WORLD_ENV =
@@ -287,7 +288,7 @@ export function water() {
           }
         }
       },
-      { w: tier4 ? 160 : 128, h: tier4 ? 160 : 128, repeat: [3, 3] }
+      { w: tier4 ? 256 : 192, h: tier4 ? 256 : 192, repeat: [4, 4], aniso: 16 }
     );
     const mat = new THREE.MeshStandardMaterial({
       color: tier4 ? 0x9ad4e8 : 0x8ec8d8,
@@ -328,7 +329,7 @@ export function water() {
         g.stroke();
       }
     },
-    { w: 128, h: 128, repeat: [3, 3] }
+    { w: 192, h: 192, repeat: [4, 4], aniso: 16 }
   );
   const mat = new THREE.MeshPhongMaterial({
     color: 0x8ec8d8,
@@ -384,7 +385,7 @@ export function waterfall() {
       g.fillStyle = grad;
       g.fillRect(0, 0, w, h * 0.22);
     },
-    { w: 128, h: 256, repeat: [2.4, 1.6] }
+    { w: 192, h: 384, repeat: [2.8, 2.0], aniso: 16 }
   );
   if (map) {
     map.wrapS = THREE.RepeatWrapping;
@@ -528,7 +529,7 @@ function armRoadOrganic(mat, id) {
     ribbon: dirty ? 0.05 : id === "tarmac" ? 0.42 : id === "cobble" ? 0.16 : 0.24,
     bump: dirty ? 0.74 : id === "tarmac" ? 0.28 : id === "cobble" ? 0.52 : 0.4,
     blotch: true,
-    key: `road-organic-v6-${id}`,
+    key: `road-organic-v7-${id}`,
   });
 }
 
@@ -542,6 +543,7 @@ function injectProjectedMaps(shader, opts) {
   shader.uniforms.uProjRibbon = { value: opts.ribbon };
   shader.uniforms.uBumpAmt = { value: opts.bump };
   shader.uniforms.uRoadVar = { value: opts.amount };
+  shader.uniforms.uNoiseAmt = { value: opts.amount > 0.7 ? 0.3 : 0.22 };
   const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
   const blotchSrc = opts.blotch
     ? `	float n1 = roadNoise( vProjWorld.xz * 0.09 );
@@ -579,9 +581,11 @@ ${triDef}uniform float uProjAmt;
 uniform float uProjRibbon;
 uniform float uBumpAmt;
 uniform float uRoadVar;
+uniform float uNoiseAmt;
 varying vec3 vProjWorld;
 varying vec3 vProjNrm;
 varying vec3 vRoadWorld;
+${SURFACE_NOISE_GLSL}
 float roadHash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -629,7 +633,10 @@ vec3 projNormal(sampler2D tex, vec2 meshUv) {
       `#ifdef USE_MAP
 	vec4 sampledDiffuseColor = projTex( map, vMapUv );
 ${blotchSrc}
+	sampledDiffuseColor.rgb *= surfaceGrit( vProjWorld, uNoiseAmt );
 	diffuseColor *= sampledDiffuseColor;
+#else
+	diffuseColor.rgb *= surfaceGrit( vProjWorld, uNoiseAmt * 0.85 );
 #endif`
     )
     .replace(
@@ -665,7 +672,8 @@ ${blotchSrc}
 #ifdef USE_ROUGHNESSMAP
 	vec4 texelRoughness = projTex( roughnessMap, vRoughnessMapUv );
 	roughnessFactor *= texelRoughness.g;
-#endif`
+#endif
+	roughnessFactor = clamp( roughnessFactor * ( 0.88 + surfaceGritRough( vProjWorld ) * 0.24 ), 0.05, 1.0 );`
     )
     .replace(
       "#include <metalnessmap_fragment>",
@@ -776,7 +784,7 @@ export function worldTerrainMaterial(opts = {}) {
     ribbon: 0.1,
     bump: opts.bumpScale ?? 0.52,
     blotch: true,
-    key: "terrain-proj-v3",
+    key: "terrain-proj-v4",
   });
   return mat;
 }
@@ -822,7 +830,7 @@ export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = 
     ribbon: 0.08,
     bump: 0.48,
     blotch: true,
-    key: "skirt-proj-v3",
+    key: "skirt-proj-v4",
   });
   return mat;
 }
@@ -867,6 +875,7 @@ export function worldPropMaterial(color, roughness = 0.88) {
     flatShading: false,
   });
   mat.userData.kind = "prop";
+  armSurfaceNoise(mat, 0.2);
   return mat;
 }
 
@@ -939,6 +948,7 @@ export function upgradeWorld(root) {
     obj.material = shared;
   });
   upgradeWorldMaterials(root);
+  applySurfaceNoisePass(root);
 }
 
 /**

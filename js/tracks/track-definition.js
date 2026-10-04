@@ -316,6 +316,135 @@ export function compileSegment(seg, ctx) {
  * @param {TrackDefinition} def
  * @returns {object} course def with `pieces` and `authoredFrom: 'TrackDefinition'`
  */
+/**
+ * Playable lane — wider ribbon, opened corners. Tight hooks open the most;
+ * sweepers still ease so every stage turn is holdable.
+ */
+const PLAY_WIDTH = 1.24;
+const PLAY_TIGHT_RADIUS = 1.4;
+const PLAY_MEDIUM_RADIUS = 1.16;
+const PLAY_SWEEP_RADIUS = 1;
+const PLAY_WIDTH_MIN = 6;
+const PLAY_WIDTH_MAX = 32;
+const PLAY_TUNNEL_EXTRA = 2.2;
+const PLAY_STRAIGHT = 1.45;
+const PLAY_FINISH_PAD = {
+  desert: 180,
+  forest: 150,
+  mountain: 160,
+  lakeside: 140,
+  physlab: 48,
+};
+
+/**
+ * @param {number} w
+ * @returns {number}
+ */
+export function easePlayWidth(w) {
+  if (!Number.isFinite(w)) return w;
+  return Math.round(Math.min(PLAY_WIDTH_MAX, Math.max(PLAY_WIDTH_MIN, w * PLAY_WIDTH)) * 10) / 10;
+}
+
+/**
+ * @param {number} r
+ * @returns {number}
+ */
+export function easePlayRadius(r) {
+  if (!Number.isFinite(r)) return r;
+  const s = r < 50 ? PLAY_TIGHT_RADIUS : r < 90 ? PLAY_MEDIUM_RADIUS : PLAY_SWEEP_RADIUS;
+  return Math.round(r * s * 10) / 10;
+}
+
+/**
+ * Shave sharp non-hairpin bends. Hairpins keep their authored hook.
+ * @param {number} angle
+ * @param {number} radius
+ * @returns {number}
+ */
+export function easePlayAngle(angle, radius) {
+  if (!Number.isFinite(angle)) return angle;
+  const a = Math.abs(angle);
+  if (a >= 130) return angle;
+  if (radius < 50 && a > 62) {
+    const eased = Math.max(48, a * 0.9);
+    return angle < 0 ? -eased : eased;
+  }
+  return angle;
+}
+
+/**
+ * @param {object} piece
+ * @returns {object}
+ */
+/**
+ * @param {number} len
+ * @returns {number}
+ */
+export function easePlayLength(len) {
+  if (!Number.isFinite(len) || len < 4) return len;
+  return Math.round(Math.min(480, Math.max(4, len * PLAY_STRAIGHT)) * 10) / 10;
+}
+
+/**
+ * @param {object} piece
+ * @param {boolean} [scaleStraight]
+ * @returns {object}
+ */
+export function easePlayPiece(piece, scaleStraight = true) {
+  const out = { ...piece };
+  if (out.width != null) {
+    out.width = easePlayWidth(out.width);
+    if (out.tunnel) {
+      out.width = Math.round(Math.min(PLAY_WIDTH_MAX, out.width + PLAY_TUNNEL_EXTRA) * 10) / 10;
+    }
+  }
+  if (out.radius != null) {
+    const r0 = out.radius;
+    out.radius = easePlayRadius(r0);
+    if (out.angle != null) out.angle = easePlayAngle(out.angle, r0);
+  }
+  if (scaleStraight && out.type === "straight" && out.length) {
+    out.length = easePlayLength(out.length);
+  }
+  return out;
+}
+
+/**
+ * @param {object} course
+ * @returns {object}
+ */
+export function easePlayCourse(course) {
+  const pieces = course.pieces || [];
+  let scaleFrom = 0;
+  if (course.id === "desert") {
+    let jumps = 0;
+    for (let i = 0; i < pieces.length; i++) {
+      if (pieces[i].type === "jump") {
+        jumps += 1;
+        if (jumps >= 3) {
+          scaleFrom = i + 1;
+          break;
+        }
+      }
+    }
+  }
+  const next = pieces.map((p, i) =>
+    easePlayPiece(p, course.id !== "desert" || i >= scaleFrom)
+  );
+  const pad = PLAY_FINISH_PAD[course.id] || 0;
+  if (pad > 0 && next.length) {
+    const last = next[next.length - 1];
+    if (last.type === "straight") {
+      last.length = Math.min(480, (last.length || 0) + pad);
+    }
+  }
+  return {
+    ...course,
+    startWidth: easePlayWidth(course.startWidth),
+    pieces: next,
+  };
+}
+
 export function compileTrackDefinition(def) {
   if (!def || !Array.isArray(def.segments)) {
     throw new Error("compileTrackDefinition: def.segments required");
@@ -353,7 +482,7 @@ export function compileTrackDefinition(def) {
     segments: def.segments,
     pieces,
   };
-  return course;
+  return easePlayCourse(course);
 }
 
 /**

@@ -6,9 +6,9 @@
  *   adult/tall/teen/elder/stocky/child) with a shared skin/clothing/face atlas;
  *   per-person kind + tint + scale + cheer style/rate; splits authored cheer
  *   arms; body bob, lean, jump-cheer, and knee squash sell readable humans
- *   without a collider army. Track plants proper start/finish grandstands with
- *   audiences seated inside each Kenney module (Track._addGrandstandCrowds);
- *   Mountain gets stands only (no mid-stage gallery).
+ *   without a collider army. Track plants start/finish bleacher banks with
+ *   audiences sitting on each row (Track._addGrandstandCrowds); Kenney covered
+ *   modules stay as native-scale VIP boxes. Mountain is stands-only.
  * HOW IT CONNECTS: Track._addSpectators() / _addGrandstandCrowds() build a
  *   CrowdField; Track.update() and RallyAudio consume crowd points for Doppler.
  *
@@ -18,7 +18,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=53";
+import { propCharacterParts, propCharacterMaterial } from "./prop-kit.js?v=55";
 
 /** Authored biped spectators — assets/props/character-*.glb (full diversity pack). */
 export const CROWD_CHARACTER_KINDS = Object.freeze([
@@ -274,17 +274,20 @@ export class CrowdField {
           ? Math.max(0, Math.sin(timeSec * 7.2 * rate + (p.phase || 0)) * (cheer - 0.45)) * 0.14
           : 0;
     const lean = cheer * 0.22 + leanToward * 0.12;
-    const hop = bob * 0.1 + cheer * 0.08 + jump;
-    const knee = cheer > 0.35 ? 0.97 - cheer * 0.06 : 1;
+    const sit = !!p.sit;
+    const hop = sit
+      ? bob * 0.02 + cheer * 0.02
+      : bob * 0.1 + cheer * 0.08 + jump;
+    const knee = sit ? 0.52 + cheer * 0.03 : cheer > 0.35 ? 0.97 - cheer * 0.06 : 1;
     d.position.set(p.x, p.y + hop, p.z);
     d.rotation.order = "YXZ";
     d.rotation.set(
-      sway * 0.07 - lean + leanToward * 0.08,
+      sway * 0.07 - lean * (sit ? 0.35 : 1) + leanToward * 0.08 + (sit ? 0.32 : 0),
       p.ry || 0,
       sway * 0.05 + leanToward * 0.04
     );
     const pulse = 1 + bob * 0.025 + cheer * 0.03;
-    d.scale.set(s * pulse, s * (knee + bob * 0.04 + cheer * 0.05), s * pulse);
+    d.scale.set(s * (sit ? 1 : pulse), s * (knee + (sit ? 0 : bob * 0.04 + cheer * 0.05)), s * (sit ? 1 : pulse));
     d.updateMatrix();
     mesh.setMatrixAt(i, d.matrix);
   }
@@ -310,7 +313,7 @@ export class CrowdField {
     const lx = shoulder.x * s;
     const ly = shoulder.y * s;
     const lz = shoulder.z * s;
-    const hop = bob * 0.1 + cheer * 0.08;
+    const hop = p.sit ? bob * 0.02 + cheer * 0.02 : bob * 0.1 + cheer * 0.08;
     const wx = p.x + lx * cos - lz * sin;
     const wz = p.z + lx * sin + lz * cos;
     const wy = p.y + ly + hop;
@@ -319,12 +322,16 @@ export class CrowdField {
     const rate = p.animRate != null ? p.animRate : 1;
     const clap = Math.sin(timeSec * 9.2 * rate + phase * 1.9) * cheer * 0.48;
     const wave = Math.sin(timeSec * 4.6 * rate + phase * 0.8) * 0.35;
+    const sit = !!p.sit;
     const rest = -0.18;
     let raise = rest;
     let roll = sway * 0.06 * side;
     let yawOff = 0;
 
-    if (style === 0) {
+    if (sit) {
+      raise = rest + cheer * 1.05 + clap * 0.45;
+      roll += side * cheer * 0.1;
+    } else if (style === 0) {
       raise = rest + cheer * 2.95 + clap;
       roll += side * cheer * 0.18;
     } else if (style === 1) {
@@ -398,6 +405,49 @@ export class CrowdField {
         if (armL) armL.instanceMatrix.needsUpdate = true;
         if (armR) armR.instanceMatrix.needsUpdate = true;
       }
+    }
+  }
+
+  /**
+   * Snap every person to the visible land after stands / tiles settle.
+   * Verge feet embed a few cm. Grandstand hips keep their seat lift.
+   * @param {(x:number,z:number)=>number} landFn
+   */
+  replant(landFn) {
+    if (typeof landFn !== "function") return;
+    for (let i = 0; i < this.poses.length; i++) {
+      const p = this.poses[i];
+      const land = landFn(p.x, p.z);
+      if (!Number.isFinite(land)) continue;
+      p.y = p.seatLift != null ? land + p.seatLift : land - 0.05;
+    }
+    if (this.points) {
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.poses[i];
+        if (!p || !this.points[i]) continue;
+        this.points[i].x = p.x;
+        this.points[i].y = p.y + (p.sit ? 0.85 : 1.25);
+        this.points[i].z = p.z;
+      }
+    }
+    for (let b = 0; b < this._bodies.length; b++) {
+      const body = this._bodies[b];
+      const armL = this._armsL[b];
+      const armR = this._armsR[b];
+      const rig = this._rig[b];
+      const list = body && body.userData ? body.userData.crowdPoses : null;
+      if (!list) continue;
+      const partsShoulderL = rig && rig.shoulderL;
+      const partsShoulderR = rig && rig.shoulderR;
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        this._writeBody(body, i, p, 0, 0, 0, 0, 0);
+        if (armL && partsShoulderL) this._writeArm(armL, i, p, -1, partsShoulderL, 0, 0, 0, 0, 0);
+        if (armR && partsShoulderR) this._writeArm(armR, i, p, 1, partsShoulderR, 0, 0, 0, 0, 0);
+      }
+      if (body) body.instanceMatrix.needsUpdate = true;
+      if (armL) armL.instanceMatrix.needsUpdate = true;
+      if (armR) armR.instanceMatrix.needsUpdate = true;
     }
   }
 

@@ -4,7 +4,8 @@
  * WHO THIS IS FOR: the race loop + pause NAVIGATOR slider.
  * WHAT IT DOES: plays spoken grade clips (easy/medium/hard/hairpin L/R + jump)
  *   once per turn or jump. Long / uncertain arcs chain "long" + grade + "maybe"
- *   (AM3 Kenneth Ibrahim style). Own gain bus.
+ *   (AM3 Kenneth Ibrahim style). Own gain bus. Actor is Emma cheerful
+ *   (`NAV_ACTOR` in engine.js) — young, upbeat original lines.
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 

@@ -20,9 +20,9 @@ import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=55";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=1";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=3";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 
@@ -1278,7 +1278,7 @@ function tessellateAperturePane(hull2, subdiv, bulge, offset) {
  * @param {number} topCut 0..0.35 fraction of height removed from the top
  * @returns {{geo:THREE.BufferGeometry, gw:number, gh:number}|null}
  */
-function buildRainApertureLocal(hull2, inset, topCut) {
+function buildRainApertureLocal(hull2, inset, topCut, minGw = 0.35, minGh = 0.18) {
   if (!hull2 || hull2.length < 3) return null;
   let cx = 0;
   let cy = 0;
@@ -1321,7 +1321,7 @@ function buildRainApertureLocal(hull2, inset, topCut) {
   }
   const gw = maxX - minX;
   const gh = maxY - minY;
-  if (gw < 0.35 || gh < 0.18) return null;
+  if (gw < minGw || gh < minGh) return null;
   const midX = (minX + maxX) * 0.5;
   const midY = (minY + maxY) * 0.5;
   const positions = [];
@@ -2884,7 +2884,7 @@ const ACKERMANN = 0.12;
  * @param {number} steer
  * @param {number} [chassisRoll=0] vehicle.roll, radians
  * @param {number[]} [wheelY] per-wheel suspension offset (metres, + = hub down)
- * @param {number} [deckLift=0] metres to raise/lower hubs vs the painted deck
+ * @param {number} [deckLift=0] metres to raise hubs vs the painted deck
  */
 export function chassisDeckEmbed(vehicle, drawY, mesh) {
   const plant = 0.014;
@@ -2909,7 +2909,8 @@ export function chassisDeckEmbed(vehicle, drawY, mesh) {
         ? vehicle._deckFilt
         : drawY;
   signed += plantDeck - drawY;
-  return Math.max(-0.02, Math.min(0.06, signed));
+  // Never a negative lift — that shoved every hub through the painted deck.
+  return Math.max(0, Math.min(0.06, signed));
 }
 
 /** Walk to the car root that owns `userData.wheels` (the pitched / rolled mesh). */
@@ -2922,13 +2923,16 @@ function chassisRootOf(wheel) {
   return wheel && wheel.parent ? wheel.parent : null;
 }
 
-/** Pose wheels: spin, steer, roll/pitch plant, and `deckLift` from `chassisDeckEmbed`. */
-export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0) {
+/**
+ * Pose wheels: spin, steer, sprung shocks, and `deckLift`.
+ * Extension below the painted deck only when `dropOk[i]` (verge).
+ */
+export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0, dropOk = null) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
-  const lift = Math.max(-0.02, Math.min(0.06, Number.isFinite(deckLift) ? deckLift : 0));
+  const lift = Math.max(0, Math.min(0.06, Number.isFinite(deckLift) ? deckLift : 0));
   const root = wheels && wheels[0] ? chassisRootOf(wheels[0]) : null;
   const pitch = root && Number.isFinite(root.rotation.x) ? root.rotation.x : 0;
   const pitchClamped = Math.max(-0.35, Math.min(0.35, pitch));
@@ -2957,12 +2961,16 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
       // Parent +Rx (nose down) lowers the front and lifts the tail. Plant
       // hubs by z·tan(pitch) so the body can dive without floating rears.
       const pitchPlant = Math.max(-0.16, Math.min(0.16, tanPitch * zLong));
-      // Travel already includes sprung-body pitch. Keep road compression
-      // (arch tuck); pitch plant owns the dive/squat reach — so a travel
-      // cap in the caller cannot hide the weight.
-      const roadComp = Math.min(0, travelRaw + pitchPlant);
       const rollPlant = Math.max(-0.14, Math.min(0.14, tanRoll * xLat));
-      w.position.y = data.restPosY - roadComp - rollPlant + lift + pitchPlant;
+      // Shocks tuck the hub into the arch (travel −). Extension (travel +)
+      // only drops onto the verge — never through the painted slab.
+      const tuck = -Math.min(0, travelRaw);
+      const canDrop = !!(dropOk && dropOk[i]);
+      const drop = canDrop ? Math.min(0.16, Math.max(0, travelRaw)) : 0;
+      const attitude = data.restPosY + lift + pitchPlant - rollPlant;
+      let y = attitude + tuck - drop;
+      if (!canDrop) y = Math.max(attitude, y);
+      w.position.y = y;
     }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;
@@ -6040,6 +6048,140 @@ function attachPovDriverArms(root) {
  * @param {THREE.Object3D} root
  * @returns {THREE.Mesh|null}
  */
+/**
+ * Front door glass: side −1 is the driver pane, +1 the passenger pane.
+ * @param {THREE.Object3D} root
+ * @param {number} side
+ * @returns {THREE.Mesh|null}
+ */
+function findSideWindowMesh(root, side) {
+  let best = null;
+  let bestScore = -1;
+  const c = new THREE.Vector3();
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return;
+    if (obj.userData.povRainGlass || obj.userData.povRainSide || obj.userData.povWiper) return;
+    const n = `${obj.name || ""} ${matName(obj)}`.toLowerCase();
+    if (/x0_window_f\b|windshield|windscreen/.test(n) && !/x0_window_f[lr]/.test(n)) return;
+    if (/x0_window_b\b|backlight|rear.?glass/.test(n) && !/x0_window_b[lr]/.test(n)) return;
+    const fl = /x0_window_fl|window_fl|door.?glass.?l|side.?glass.?l/.test(n);
+    const fr = /x0_window_fr|window_fr|door.?glass.?r|side.?glass.?r/.test(n);
+    if (side < 0 && fr) return;
+    if (side > 0 && fl) return;
+    const named = fl || fr || /x0_window_f[lr]|window_f[lr]|door.?glass|side.?glass/.test(n);
+    const sideish = named || isTitleSideWindowMesh(obj, root);
+    if (!sideish) return;
+    obj.updateWorldMatrix(true, false);
+    const box = new THREE.Box3().setFromObject(obj);
+    box.getCenter(c);
+    root.worldToLocal(c);
+    if (side < 0 && c.x > -0.18) return;
+    if (side > 0 && c.x < 0.18) return;
+    const size = box.getSize(new THREE.Vector3());
+    let score = size.y * Math.max(size.z, size.x) + (named ? 2.4 : 0);
+    if (c.z > -0.2) score += 1.4;
+    if (Math.abs(c.x) > 0.45) score += 0.5;
+    if (score > bestScore) {
+      bestScore = score;
+      best = obj;
+    }
+  });
+  return best;
+}
+
+/**
+ * Droplet canvases on the driver and passenger door glass. World layer so
+ * chase and POV both see the drip. Fitted to the authored aperture.
+ * @param {THREE.Object3D} root
+ */
+function attachPovSideRainGlass(root) {
+  if (!root || root.userData.povRainSideL || root.userData.povRainSideR) return;
+  root.updateMatrixWorld(true);
+  const hull = localHull(root);
+  const carMid = new THREE.Vector3(
+    (hull.minX + hull.maxX) * 0.5,
+    (hull.minY + hull.maxY) * 0.5,
+    (hull.minZ + hull.maxZ) * 0.5
+  );
+  const makeSide = (side) => {
+    const key = side < 0 ? "L" : "R";
+    let gw = 0.52;
+    let gh = 0.3;
+    const paneLocal = new THREE.Vector3(side * 0.74, 0.98, 0.12);
+    const quat = new THREE.Quaternion();
+    let paneGeo = null;
+    const src = findSideWindowMesh(root, side);
+    if (src) {
+      const points = collectUniqueLocalPoints(src, root);
+      if (points.length >= 3 && fitWindowPlane(points, carMid)) {
+        if (_winV.y < 0) {
+          _winV.negate();
+          _winU.negate();
+        }
+        const pts2 = [];
+        for (let i = 0; i < points.length; i++) {
+          _winTmp.copy(points[i]).sub(_winO);
+          pts2.push({ x: _winTmp.dot(_winU), y: _winTmp.dot(_winV) });
+        }
+        const hull2 = convexHull2(pts2);
+        const built = buildRainApertureLocal(hull2, 0.04, 0, 0.12, 0.14);
+        if (built) {
+          gw = built.gw;
+          gh = built.gh;
+          paneGeo = built.geo;
+          paneLocal
+            .copy(_winO)
+            .addScaledVector(_winU, built.midX)
+            .addScaledVector(_winV, built.midY)
+            .addScaledVector(_winN, 0.016);
+          quat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(_winU, _winV, _winN));
+        }
+      }
+    }
+    if (!paneGeo) {
+      paneGeo = new THREE.PlaneGeometry(gw, gh);
+      quat.setFromEuler(new THREE.Euler(0, side < 0 ? Math.PI * 0.5 : -Math.PI * 0.5, 0, "YXZ"));
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = 384;
+    canvas.height = 288;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = false;
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+      fog: false,
+      toneMapped: false,
+      alphaTest: 0.03,
+    });
+    const pane = new THREE.Mesh(paneGeo, mat);
+    pane.name = side < 0 ? "pov-rain-side-L" : "pov-rain-side-R";
+    pane.userData.povRainSide = key;
+    pane.userData.povRainCtx = ctx;
+    pane.userData.povRainTex = tex;
+    pane.userData.povGlassW = gw;
+    pane.userData.povGlassH = gh;
+    pane.visible = false;
+    pane.renderOrder = 5;
+    pane.frustumCulled = false;
+    pane.position.copy(paneLocal);
+    pane.quaternion.copy(quat);
+    root.add(pane);
+    if (side < 0) root.userData.povRainSideL = pane;
+    else root.userData.povRainSideR = pane;
+  };
+  makeSide(-1);
+  makeSide(1);
+}
+
 function findFrontWindshieldMesh(root) {
   let best = null;
   let bestScore = -1;
@@ -6104,8 +6246,8 @@ function attachPovWeatherGlass(root) {
         pts2.push({ x: _winTmp.dot(_winU), y: _winTmp.dot(_winV) });
       }
       const hull2 = convexHull2(pts2);
-      // Inset + top cut keeps droplets off the roof band / rearview.
-      const built = buildRainApertureLocal(hull2, 0.1, 0.16);
+      // Fit the full windshield aperture — only a hair off the header / pillars.
+      const built = buildRainApertureLocal(hull2, 0.02, 0.03);
       if (built) {
         gw = built.gw;
         gh = built.gh;
@@ -6135,12 +6277,14 @@ function attachPovWeatherGlass(root) {
   weather.quaternion.copy(quat);
 
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 288;
+  canvas.width = 768;
+  canvas.height = 432;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  // PlaneGeometry has v=0 at the top. Keep canvas y=0 = roof so ram-air (−v) climbs.
+  tex.flipY = false;
   tex.needsUpdate = true;
   const mat = new THREE.MeshBasicMaterial({
     map: tex,
@@ -6176,8 +6320,8 @@ function attachPovWeatherGlass(root) {
     roughness: 0.95,
     metalness: 0.02,
   });
-  // Tandem GT-Four style: pivots on the cowl. 25% shorter than the first fit.
-  const reach = Math.min(gw * 0.78, Math.hypot(gw * 0.58, gh * 0.98)) * 0.75;
+  // Tandem GT-Four style: pivots on the cowl. 30% shorter than the last fit.
+  const reach = Math.min(gw * 0.78, Math.hypot(gw * 0.58, gh * 0.98)) * 0.75 * 0.7;
   const armLen = Math.max(0.12, reach * 0.4);
   const bladeLen = Math.max(0.22, reach * 0.82);
   const totalLen = armLen * 0.95 + bladeLen;
@@ -6248,6 +6392,7 @@ function attachPovWeatherGlass(root) {
   root.userData.wiperFar = 1.26;
   root.userData.wiperL = makeArm(-1);
   root.userData.wiperR = makeArm(1);
+  attachPovSideRainGlass(root);
 }
 
 function ensurePovHead(root, rig) {

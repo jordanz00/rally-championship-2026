@@ -26,30 +26,40 @@ import { isPhonePlay } from "./ui/touch-controls.js?v=3";
  * @returns {THREE.CanvasTexture}
  */
 function makeDustSprite() {
+  const s = 128;
   const c = document.createElement("canvas");
-  c.width = 64;
-  c.height = 64;
+  c.width = s;
+  c.height = s;
   const g = c.getContext("2d");
-  g.clearRect(0, 0, 64, 64);
-  // Hard clod filling the middle of the point. A 3px core on a 64px map
-  // shrinks a 6px point to half a pixel and the roost vanishes.
-  g.fillStyle = "rgba(255,255,255,1)";
-  g.beginPath();
-  g.moveTo(32, 14);
-  g.lineTo(46, 24);
-  g.lineTo(44, 40);
-  g.lineTo(30, 48);
-  g.lineTo(16, 40);
-  g.lineTo(14, 26);
-  g.closePath();
-  g.fill();
-  g.fillStyle = "rgba(255,255,255,0.92)";
-  g.beginPath();
-  g.arc(40, 22, 6, 0, Math.PI * 2);
-  g.fill();
-  g.beginPath();
-  g.arc(22, 34, 5, 0, Math.PI * 2);
-  g.fill();
+  const img = g.createImageData(s, s);
+  const d = img.data;
+  const cx = s * 0.5;
+  const cy = s * 0.5;
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const dx = (x - cx) / cx;
+      const dy = (y - cy) / cy;
+      const r2 = dx * dx + dy * dy;
+      const n =
+        Math.abs(Math.sin(x * 0.31 + y * 0.19) * 0.45 + Math.sin(x * 0.73 - y * 0.41) * 0.35) +
+        ((x * 12.9898 + y * 78.233) % 1) * 0.2;
+      const lobeA = (x - 58) / 38;
+      const lobeB = (y - 50) / 34;
+      const clod = Math.min(1, r2 * 1.15 + lobeA * lobeA * 0.35 + lobeB * lobeB * 0.28);
+      let a = Math.max(0, 1 - clod);
+      a *= 0.72 + n * 0.4;
+      if (r2 > 0.92) a = 0;
+      // Speck holes so the puff is grit, not a disc.
+      if (((x * 17 + y * 31) % 97) > 91 && r2 > 0.08) a *= 0.15;
+      const i = (y * s + x) * 4;
+      const v = Math.min(255, 210 + n * 45);
+      d[i] = v;
+      d[i + 1] = v;
+      d[i + 2] = v;
+      d[i + 3] = Math.min(255, a * 255);
+    }
+  }
+  g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -92,24 +102,24 @@ function particleMaterial(spec, phone = false) {
 const PROFILE = {
   // size is metres. A grain is about 0.8–2.5 cm. The tire throws it; gravity brings it down.
   sand: {
-    rate: 160, size: [0.008, 0.02], life: [0.28, 0.5], gravity: 9.8, damp: 0.7,
-    spread: 0.16, lift: 2.6, kick: 4.4, chunks: 0.86, plume: 0.02, bounce: 0.16, stick: 0,
+    rate: 175, size: [0.012, 0.032], life: [0.32, 0.58], gravity: 9.4, damp: 0.62,
+    spread: 0.18, lift: 2.8, kick: 4.6, chunks: 0.78, plume: 0.08, bounce: 0.16, stick: 0,
   },
   dirt: {
-    rate: 190, size: [0.01, 0.026], life: [0.26, 0.48], gravity: 9.8, damp: 0.8,
-    spread: 0.14, lift: 3.1, kick: 5.2, chunks: 0.9, plume: 0.01, bounce: 0.2, stick: 0,
+    rate: 200, size: [0.014, 0.036], life: [0.3, 0.54], gravity: 9.6, damp: 0.72,
+    spread: 0.16, lift: 3.2, kick: 5.3, chunks: 0.82, plume: 0.06, bounce: 0.2, stick: 0,
   },
   gravel: {
-    rate: 70, size: [0.012, 0.03], life: [0.22, 0.4], gravity: 11.2, damp: 0.55,
-    spread: 0.18, lift: 2.2, kick: 3.8, chunks: 0.94, plume: 0, bounce: 0.34, stick: 0,
+    rate: 78, size: [0.014, 0.038], life: [0.24, 0.44], gravity: 11.2, damp: 0.52,
+    spread: 0.2, lift: 2.3, kick: 3.9, chunks: 0.9, plume: 0.02, bounce: 0.36, stick: 0,
   },
   mud: {
-    rate: 80, size: [0.012, 0.028], life: [0.18, 0.36], gravity: 12.4, damp: 1.15,
-    spread: 0.1, lift: 1.7, kick: 2.8, chunks: 0.92, plume: 0, bounce: 0.05, stick: 1,
+    rate: 88, size: [0.016, 0.036], life: [0.2, 0.4], gravity: 12.4, damp: 1.1,
+    spread: 0.11, lift: 1.8, kick: 2.9, chunks: 0.88, plume: 0.02, bounce: 0.05, stick: 1,
   },
   grass: {
-    rate: 40, size: [0.008, 0.018], life: [0.16, 0.32], gravity: 10.5, damp: 0.9,
-    spread: 0.14, lift: 1.8, kick: 2.6, chunks: 0.8, plume: 0.02, bounce: 0.1, stick: 0,
+    rate: 48, size: [0.01, 0.024], life: [0.18, 0.36], gravity: 10.5, damp: 0.85,
+    spread: 0.15, lift: 1.9, kick: 2.7, chunks: 0.74, plume: 0.04, bounce: 0.1, stick: 0,
   },
 };
 
@@ -163,13 +173,14 @@ void main() {
   vec2 uv = gl_PointCoord - 0.5;
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   float mask = texture2D(uMap, uv).a;
-  // Stay solid until the grain dies. Squaring life turned clods into haze.
-  float fade = smoothstep(0.0, 0.06, vLife);
-  float alpha = mask * fade * uAlpha;
+  float grit = fract(sin(dot(uv * 18.0, vec2(12.9898, 78.233))) * 43758.5453);
+  float mott = fract(sin(dot(uv * 7.3 + vLife, vec2(39.4, 17.1))) * 23421.63);
+  float fade = smoothstep(0.0, 0.08, vLife);
+  float alpha = mask * fade * uAlpha * (0.78 + grit * 0.34);
   if (alpha < 0.012) discard;
   float fog = clamp((vDepth - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
-  // Soft haze only — prior fog*0.72 wiped the wake in Desert/Forest fog.
-  gl_FragColor = vec4(mix(vColor, uFogColor, fog * 0.42), alpha * (1.0 - fog * 0.38));
+  vec3 c3 = vColor * (0.86 + grit * 0.2 + mott * 0.08);
+  gl_FragColor = vec4(mix(c3, uFogColor, fog * 0.42), alpha * (1.0 - fog * 0.38));
 }
 `;
 
@@ -216,9 +227,9 @@ export class Dust {
       {
         uniforms: {
           uMap: { value: makeDustSprite() },
-          uScale: { value: phone ? 60 : 1100 },
-          uMaxPx: { value: phone ? 3 : 7 },
-          uAlpha: { value: phone ? 0.0 : 0.86 },
+          uScale: { value: phone ? 60 : 1280 },
+          uMaxPx: { value: phone ? 3 : 9 },
+          uAlpha: { value: phone ? 0.0 : 0.9 },
           uFogColor: { value: new THREE.Color(0xc9b48a) },
           uFogNear: { value: 100 },
           uFogFar: { value: 480 },
@@ -290,6 +301,28 @@ export class Dust {
       this._wind.set(0, 0, 0);
     }
     this._dustStrength = L.dustStrength != null ? L.dustStrength : 0.28;
+  }
+
+  /**
+   * Kill every live particle. Replay snaps the car back to tape t=0 —
+   * leftover wake at the finish reads as a trail through the shot.
+   */
+  reset() {
+    this.alive = 0;
+    this._emitDirty = false;
+    this._hadLive = false;
+    this._bodyN = 0;
+    this._carry = new WeakMap();
+    for (let i = 0; i < this.count; i++) {
+      this.pos[i * 3 + 1] = -40;
+      this.life[i] = 0;
+      this.fade[i] = 0;
+      this.gnd[i] = -20;
+    }
+    if (this.geo && this.geo.attributes) {
+      if (this.geo.attributes.position) this.geo.attributes.position.needsUpdate = true;
+      if (this.geo.attributes.aLife) this.geo.attributes.aLife.needsUpdate = true;
+    }
   }
 
   /**
@@ -606,8 +639,8 @@ export class Dust {
     sz *= 1.05 + speedK * 0.18;
     if (this.cockpit) sz *= 0.85;
     if (this._phone) sz *= 0.45;
-    if (sz < 0.006) sz = 0.006;
-    if (sz > 0.034) sz = 0.034;
+    if (sz < 0.008) sz = 0.008;
+    if (sz > 0.046) sz = 0.046;
     this.size[i] = sz;
 
     this.angle[i] = Math.random() * 6.283;
@@ -961,12 +994,15 @@ export class ImpactSparks {
 const MARK_VERT = /* glsl */ `
 attribute float aAlpha;
 attribute vec3 aColor;
+attribute vec2 aUv;
 varying float vAlpha;
 varying vec3 vColor;
 varying vec2 vWorldXZ;
+varying vec2 vUv;
 void main() {
   vAlpha = aAlpha;
   vColor = aColor;
+  vUv = aUv;
   vec4 wp = modelMatrix * vec4(position, 1.0);
   vWorldXZ = wp.xz;
   gl_Position = projectionMatrix * viewMatrix * wp;
@@ -979,13 +1015,34 @@ const MARK_FRAG = /* glsl */ `
 varying float vAlpha;
 varying vec3 vColor;
 varying vec2 vWorldXZ;
+varying vec2 vUv;
+float markHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float markNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = markHash(i);
+  float b = markHash(i + vec2(1.0, 0.0));
+  float c = markHash(i + vec2(0.0, 1.0));
+  float d = markHash(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
 void main() {
   if (vAlpha < 0.016) discard;
-  // Cheap grit so trails read as compressed earth / rubber, not flat paint.
-  float grit = fract(sin(dot(vWorldXZ * 0.85, vec2(12.9898, 78.233))) * 43758.5453);
-  float a = vAlpha * (0.9 + grit * 0.18);
+  float across = vUv.x;
+  float along = vUv.y;
+  float edge = smoothstep(0.0, 0.16, across) * smoothstep(1.0, 0.84, across);
+  float n1 = markNoise(vWorldXZ * 2.6);
+  float n2 = markNoise(vWorldXZ * 8.4 + 4.0);
+  float n3 = markNoise(vWorldXZ * 18.0 + 11.0);
+  float tread = abs(sin(along * 26.0 + n1 * 1.4));
+  float groove = smoothstep(0.12, 0.62, tread);
+  float grit = 0.72 + n1 * 0.18 + n2 * 0.1 + n3 * 0.06;
+  float a = vAlpha * edge * (0.62 + groove * 0.38) * grit;
   if (a < 0.016) discard;
-  vec3 c = vColor * (0.9 + grit * 0.18);
+  vec3 c = vColor * (0.78 + n1 * 0.16 + n2 * 0.08) * mix(0.7, 1.08, groove);
   gl_FragColor = vec4(c, a);
 }
 `;
@@ -1095,6 +1152,7 @@ export class TireMarks {
     this.pos = new Float32Array(this.count * 6 * 3);
     this.col = new Float32Array(this.count * 6 * 3);
     this.alpha = new Float32Array(this.count * 6);
+    this.uv = new Float32Array(this.count * 6 * 2);
     this.baseAlpha = new Float32Array(this.count);
     this.life = new Float32Array(this.count);
     this.maxLife = new Float32Array(this.count);
@@ -1102,6 +1160,7 @@ export class TireMarks {
     this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute("aColor", new THREE.BufferAttribute(this.col, 3));
     this.geo.setAttribute("aAlpha", new THREE.BufferAttribute(this.alpha, 1));
+    this.geo.setAttribute("aUv", new THREE.BufferAttribute(this.uv, 2));
     this.mat = RENDER_CAPS.glslCustom
       ? new THREE.ShaderMaterial({
           vertexShader: MARK_VERT,
@@ -1392,11 +1451,15 @@ export class TireMarks {
     const dz = bz0 - nz * halfWidth;
     const verts = [ax, ay0, az, bx, ay0, bz, cx, by0, cz, cx, by0, cz, bx, ay0, bz, dx, by0, dz];
     for (let v = 0; v < 18; v++) this.pos[base + v] = verts[v];
+    const uvs = [0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1];
+    const ub = i * 12;
+    for (let v = 0; v < 12; v++) this.uv[ub + v] = uvs[v];
     for (let v = 0; v < 6; v++) {
       const ci = base + v * 3;
-      this.col[ci] = r;
-      this.col[ci + 1] = g;
-      this.col[ci + 2] = bl;
+      const speck = 0.88 + ((Math.abs((ax0 + v) * 37.17 + az0 * 19.3) % 1) * 0.22);
+      this.col[ci] = r * speck;
+      this.col[ci + 1] = g * speck;
+      this.col[ci + 2] = bl * speck;
       this.alpha[i * 6 + v] = alpha;
     }
     this.baseAlpha[i] = alpha;
@@ -1440,6 +1503,7 @@ export class TireMarks {
       this.geo.attributes.position.needsUpdate = true;
       this.geo.attributes.aColor.needsUpdate = true;
       this.geo.attributes.aAlpha.needsUpdate = true;
+      if (this.geo.attributes.aUv) this.geo.attributes.aUv.needsUpdate = true;
       this._gpuDirty = false;
     } else if (alphaDirty) {
       this.geo.attributes.aAlpha.needsUpdate = true;

@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=175";
+import { Vehicle } from "./physics/vehicle.js?v=183";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=215";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=225";
 
 const G = 9.81;
 
@@ -203,7 +203,7 @@ export class Opponent {
      */
     const attack = 0.9 + (hashNoise(index + 53, 9) + 1) * 0.05;
     // Slower pack than a committed player — handbrake passes should stick.
-    this.pace = (0.74 + this.skill * 0.16) * (index === 0 ? 0.98 : attack);
+    this.pace = (0.78 + this.skill * 0.15) * (index === 0 ? 0.98 : attack);
     /** Reaction speed when the car steps out, 1/s. Slower rivals flail more. */
     this.reflex = 5.4 + this.skill * 6.2;
     /** How much opposite lock they feed in per radian of slide. */
@@ -343,7 +343,7 @@ export class Opponent {
 
     // Steering: aim at a point on the chosen line, blended with the local
     // heading so hairpins are followed rather than cut.
-    const look = 12 + Math.min(22, spd * 0.4) + curve * 8;
+    const look = 14 + Math.min(26, spd * 0.44) + curve * 8;
     const target = track.sample(Math.min(end, v.progress + look), this._target);
     const tx = target.x + target.nx * lat;
     const tz = target.z + target.nz * lat;
@@ -374,8 +374,10 @@ export class Opponent {
     let brake = 0;
     let hb = 0;
     const overspeed = spd - vLimit;
-    if (spd < 3.5) {
-      throttle = 0.95;
+    if (spd < 3.5 || (v.progress < 82 && spd < 22 && Math.abs(d1) < 0.22)) {
+      // Start town: leave with the player. First corner still has to brake.
+      throttle = 1;
+      if (v.progress < 82 && Math.abs(d1) < 0.22) brake = 0;
     } else if (overspeed > 1.2) {
       // Softer surfaces need a longer run-up, so grip scales the urgency.
       brake = clamp(overspeed / (5 + surfNear.muPeak * 9), 0.12, 0.95);
@@ -612,14 +614,15 @@ export class Opponent {
     this.mesh.rotation.set(d.pitch, d.yaw, d.roll, "YXZ");
     // Same travel cap as the player — pack must look planted, not springy.
     let wy = d.wheelY;
+    const dropOk = this.vehicle && this.vehicle._hubDropOk;
     if (wy) {
       const cap = 0.085;
       if (!this._wheelYScratch) this._wheelYScratch = [0, 0, 0, 0];
       const s = this._wheelYScratch;
-      s[0] = Math.max(-cap, Math.min(cap, wy[0]));
-      s[1] = Math.max(-cap, Math.min(cap, wy[1]));
-      s[2] = Math.max(-cap, Math.min(cap, wy[2]));
-      s[3] = Math.max(-cap, Math.min(cap, wy[3]));
+      for (let i = 0; i < 4; i++) {
+        const hi = dropOk && dropOk[i] ? cap : 0;
+        s[i] = Math.max(-cap, Math.min(hi, wy[i]));
+      }
       wy = s;
     }
     applyWheelPose(
@@ -628,7 +631,8 @@ export class Opponent {
       d.steer,
       d.roll,
       wy,
-      chassisDeckEmbed(this.vehicle, d.y, this.mesh)
+      chassisDeckEmbed(this.vehicle, d.y, this.mesh),
+      dropOk
     );
     const braking = this.vehicle.brake > 0.08 || this.vehicle.handbrake > 0.28;
     if (this.mesh.userData.brakeOn !== braking) {

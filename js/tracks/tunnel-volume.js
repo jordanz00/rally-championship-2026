@@ -25,7 +25,7 @@
  * }} TunnelVolume
  */
 
-import { TunnelConfig } from "./world-config.js?v=1";
+import { TunnelConfig } from "./world-config.js?v=2";
 
 /** Default bore height (metres) — interior clearance above deck. */
 export const TUNNEL_HEIGHT = TunnelConfig.height;

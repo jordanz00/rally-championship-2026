@@ -12,12 +12,15 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { armProjectedMaps } from "../gfx/pbr.js?v=55";
-import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=4";
+import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
+import { armProjectedMaps } from "../gfx/pbr.js?v=58";
+import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=5";
 
 const TEX_BASE = "assets/env/forest";
 /** Poly Haven boulder_01 tile size (metres) — unique UVs, not one stretch. */
-const TILE_M = 2.0;
+const TILE_M = 1.45;
+/** Metres past paint to the inner rock face. The old 0.55 m lip felt like a drain. */
+export const FOREST_BORE_INSET = 3.4;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, armMap:THREE.Texture|null}|null} */
@@ -36,6 +39,50 @@ export async function prepareForestTunnelPbr() {
 }
 
 /**
+ * Wall-mount pose for a Forest sconce. Origin sits on the inner rock face.
+ * +Z of the fixture goes into the stone; the cage hangs into the cabin.
+ * @param {{x:number,y:number,z:number,nx:number,nz:number,heading?:number}} frame
+ * @param {number} clearHalf
+ * @param {number} side -1 or 1
+ * @param {number} openH
+ * @returns {{x:number,y:number,z:number,nx:number,nz:number,fx:number,fz:number}}
+ */
+export function forestTunnelSconcePose(frame, clearHalf, side, openH) {
+  const spring = openH * 0.62;
+  const mountH = Math.min(2.48, spring - 0.55);
+  const nx = (frame.nx || 0) * side;
+  const nz = (frame.nz || 0) * side;
+  const embed = 0.045;
+  return {
+    x: frame.x + nx * (clearHalf + embed),
+    y: frame.y + mountH,
+    z: frame.z + nz * (clearHalf + embed),
+    nx,
+    nz,
+    fx: Math.sin(frame.heading || 0),
+    fz: Math.cos(frame.heading || 0),
+  };
+}
+
+/**
+ * Backplate + cage + drip lip. Local +Z embeds in the wall.
+ * @returns {THREE.BufferGeometry}
+ */
+export function createForestTunnelSconceGeometry() {
+  const plate = new THREE.BoxGeometry(0.5, 0.74, 0.09);
+  plate.translate(0, 0, 0.03);
+  const cage = new THREE.BoxGeometry(0.28, 0.3, 0.18);
+  cage.translate(0, -0.05, -0.13);
+  const lip = new THREE.BoxGeometry(0.56, 0.07, 0.11);
+  lip.translate(0, 0.3, -0.02);
+  const geo = mergeGeometries([plate, cage, lip], false);
+  plate.dispose();
+  cage.dispose();
+  lip.dispose();
+  return geo || new THREE.BoxGeometry(0.36, 0.42, 0.16);
+}
+
+/**
  * Shared PBR rock material with unique repeat (cloned per mesh).
  * @param {"bore"|"face"} kind
  * @returns {THREE.MeshStandardMaterial}
@@ -46,7 +93,7 @@ export function createForestTunnelMaterial(kind) {
   const normalMap = rockSet && rockSet.normalMap ? cloneTracked(rockSet.normalMap) : null;
   const arm = rockSet && rockSet.armMap ? cloneTracked(rockSet.armMap) : null;
   const mat = new THREE.MeshStandardMaterial({
-    color: map ? (bore ? 0x6a655c : 0xb0a898) : bore ? 0x2e2c28 : 0x5a564c,
+    color: map ? (bore ? 0x8a8478 : 0xb0a898) : bore ? 0x4a4640 : 0x5a564c,
     map,
     normalMap,
     normalScale: normalMap ? new THREE.Vector2(bore ? 1.05 : 1.22, bore ? 1.05 : 1.22) : undefined,

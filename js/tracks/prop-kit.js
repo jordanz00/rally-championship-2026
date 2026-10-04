@@ -746,7 +746,7 @@ export function styleTitleRock(root, variant = 0) {
         const t = ROCK_TEX.clone();
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
         t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = Math.max(4, ROCK_TEX.anisotropy || 4);
+        t.anisotropy = Math.max(16, ROCK_TEX.anisotropy || 16);
         // Slight UV scale variety so clones do not tile as one sheet.
         const u = 1.15 + (variant % 5) * 0.12;
         t.repeat.set(u, u * 0.92);
@@ -1321,7 +1321,7 @@ function adoptPackMaterial(src, kind, opts) {
   }
   if (mat.map) {
     mat.map.colorSpace = THREE.SRGBColorSpace;
-    mat.map.anisotropy = 8;
+    mat.map.anisotropy = 16;
     mat.map.needsUpdate = true;
   }
   if (mat.normalMap) mat.normalMap.needsUpdate = true;
@@ -1368,7 +1368,9 @@ function loadNatureTextures() {
         (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          tex.anisotropy = 8;
+          tex.anisotropy = 16;
+          tex.generateMipmaps = true;
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
           resolve(tex);
         },
         undefined,
@@ -1513,10 +1515,12 @@ function extractCrowdCharacterParts(root, kind) {
   const shoulderR = armRGeo ? shoulderPivot(armRGeo, 1) : { x: 0.34, y: 1.38, z: 0 };
   if (armLGeo) {
     repivotToShoulder(armLGeo, shoulderL);
+    if (armLooksTPose(armLGeo, -1)) orientArmDownFromTPose(armLGeo, -1);
     armLGeo.userData.shared = true;
   }
   if (armRGeo) {
     repivotToShoulder(armRGeo, shoulderR);
+    if (armLooksTPose(armRGeo, 1)) orientArmDownFromTPose(armRGeo, 1);
     armRGeo.userData.shared = true;
   }
 
@@ -1618,12 +1622,23 @@ function splitCrowdCharacter(geo) {
  * @param {THREE.BufferGeometry} geo
  * @param {-1|1} side
  */
+function armLooksTPose(geo, side) {
+  if (!geo) return false;
+  geo.computeBoundingBox();
+  const box = geo.boundingBox;
+  if (!box) return false;
+  const spanX = box.max.x - box.min.x;
+  const spanY = box.max.y - box.min.y;
+  return spanX > spanY * 1.12;
+}
+
 function orientArmDownFromTPose(geo, side) {
   const q = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 0, 1),
     side > 0 ? -Math.PI * 0.5 : Math.PI * 0.5
   );
   geo.applyQuaternion(q);
+  geo.computeBoundingBox();
   geo.computeBoundingSphere();
 }
 

@@ -117,10 +117,10 @@ Desert friend-ship does **not** wait on this table.
 ### GRANDSTAND_HERO — PARTIAL / MISSING HQ
 
 ```
-Have (runtime): Kenney CC0 `grandstand` / `grandstand_covered` via prop-kit
-  (height scale ~4.6 / 5.4 m). Start/finish plant covered modules with Quaternius
-  audiences seated *inside* each module footprint (rows climb back from the track);
-  finish dual modules/side; Mountain stands-only. Still Kenney mesh.
+Have (runtime): authored stepped bleacher banks (deck / riser / seat / steel /
+  rail / canopy) at start + finish; Kenney CC0 `grandstand` / `grandstand_covered`
+  plant at native scale as a press/VIP box behind the top row. Quaternius
+  audiences sit on each bleacher row. Mountain stands-only.
 Gap: CC0/CC-BY PBR filled grandstand (albedo+normal+rough, seated deck readable
   at 5–30 m chase/medium cam). Kenney alone is not PASS for hero finish.
 Status: PARTIAL (Kenney + seated in-module crowd) — HQ filled stand MISSING.

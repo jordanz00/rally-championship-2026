@@ -103,7 +103,7 @@ export function paintedTexture(key, paint, opts = {}) {
       // them shimmers into noise at speed, which reads as a frame-rate problem.
       tex.minFilter = opts.mips === false ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
       tex.generateMipmaps = opts.mips !== false;
-      if (opts.aniso) tex.anisotropy = opts.aniso;
+      tex.anisotropy = opts.aniso != null ? opts.aniso : opts.mips === false ? 1 : 12;
       tex.needsUpdate = true;
       tex.userData.shared = true;
     } catch (err) {

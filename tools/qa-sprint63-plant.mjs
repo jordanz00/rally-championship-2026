@@ -86,6 +86,16 @@ check(
     /chassisDeckEmbed\(p, d\.y/.test(game) &&
     /chassisDeckEmbed\(this\.vehicle, d\.y/.test(ai)
 );
+check(
+  "on-paint hubs cannot extend through the slab",
+  /const canDrop = !!\(dropOk && dropOk\[i\]\)/.test(celica) &&
+    /if \(!canDrop\) y = Math\.max\(attitude, y\)/.test(celica) &&
+    /this\._hubDropOk/.test(vehicle)
+);
+check(
+  "sprung shocks still tuck into the arch",
+  /_stepSuspension\(dt\)/.test(vehicle) && /const tuck = -Math\.min\(0, travelRaw\)/.test(celica)
+);
 check("cache-bust chain", cacheOk && Number(gameV) >= 379, `main=${mainV} game=${gameV}`);
 
 if (fail) {

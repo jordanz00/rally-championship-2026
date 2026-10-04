@@ -1,12 +1,15 @@
-Navigator clips — single voice pack
+Navigator clips — single young voice pack (emma-cheerful)
 
-All spoken lines (turn grades, jump, start-grid countdown) are rendered with
-macOS `say` (Daniel, en_GB) and the same radio EQ chain.
+All spoken lines (turn grades, jump, start-grid countdown) are original
+spoken lines rendered with Microsoft Edge neural TTS
+(en-US-EmmaMultilingualNeural — Cheerful, Clear, Conversational) and a
+bright cabin EQ. Not Sega audio. Not compact macOS Daniel / Samantha.
 
-Rebuild: `tools/build-nav-grade-vo.sh`
+Actor id: emma-cheerful
+Rebuild: `tools/build-nav-grade-vo.sh` (uses tools/render-nav-vo.py)
 
 Turn grades: easy / medium / hard / hairpin, left and right
-Jump: "jump"
-Qualifiers: "long" / "maybe" (AM3 Kenneth Ibrahim style — judge the corner)
-Finish: "finish!"
-Countdown: "three" / "two" / "one" / "go"
+Jump: "Jump!"
+Qualifiers: "Long" / "Maybe" (AM3 Kenneth Ibrahim style — judge the corner)
+Finish: "Finish!"
+Countdown: "Three!" / "Two!" / "One!" / "Go!"

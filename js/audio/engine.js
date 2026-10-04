@@ -28,6 +28,8 @@ const COUNT_GO_BEEP_MS = 280;
 const VOL_MUSIC_KEY = "rally-vol-music";
 const VOL_SFX_KEY = "rally-vol-sfx";
 const VOL_NAV_KEY = "rally-vol-navigator";
+/** Young cheerful navigator — Emma neural, not Daniel / Samantha compact. */
+export const NAV_ACTOR = "emma-cheerful";
 const NAV_CLIPS = [
   "easy-left",
   "easy-right",
@@ -458,7 +460,7 @@ export class RallyAudio {
     if (this._navBooted || !this.ctx) return;
     this._navBooted = true;
     for (const key of NAV_CLIPS) {
-      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=6`).then((buf) => {
+      loadSample(this.ctx, `assets/sfx/nav/${key}.mp3?v=8`).then((buf) => {
         this._navClips[key] = buf;
       });
     }

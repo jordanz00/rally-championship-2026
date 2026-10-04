@@ -1,11 +1,13 @@
 /**
- * WebTSR appearance net — hand-authored 3×3 residual after temporal SR.
+ * WebTSR appearance net — hand-authored residual after temporal SR.
  *
  * WHO THIS IS FOR: the WebTSR SDK and this rally title. Legal analog of
  *   DLSS-class *appearance* (lighting / material richness), not NVIDIA.
  * WHAT IT DOES: half-res 3×3 kernels read reconstructed colour + depth +
- *   view-space normals + motion, then add a luma-clamped residual on the
- *   HDR buffer *before* ACES. Never stacked with TSR present RCAS.
+ *   view-space normals + motion, write a residual only, then composite
+ *   that residual onto the full-res TSR buffer *before* ACES. Never stacked with TSR present RCAS.
+ *   Never replaces the resolve with a
+ *   bilinear upsample (that was softening LOOK).
  * HOW IT CONNECTS: createWebTsr({ appearance: true }) runs this after
  *   TSR + guided residual, then the host still presents presentScene.
  *
@@ -25,7 +27,7 @@ export const APPEAR_LUMA_HEADROOM = 1.02;
 /**
  * Game default. Forest LOOK p50 was never proven ≤ 33 ms (G-buffer walk
  * ~47 ms then abort; compile spikes ~20 ms). Plan gate: default off.
- * `?appear=1` or Pause LOOK still opt in.
+ * `?appear=1` or Pause LOOK still opt in on desktop.
  */
 export const APPEAR_DEFAULT = false;
 
@@ -68,8 +70,8 @@ void main() {
 `;
 
 /**
- * Half-res field: 4 oriented 3×3 kernels (edge / contact / sheen / bounce)
- * plus a residual mix. Luma of the output cannot exceed input × headroom.
+ * Half-res residual field. Writes the *delta* only so the compose pass
+ * can add it back onto the full-res TSR colour.
  */
 const FIELD_FRAG = /* glsl */ `
 precision mediump float;
@@ -77,6 +79,7 @@ uniform sampler2D tColor;
 uniform sampler2D tDepth;
 uniform sampler2D tNormal;
 uniform sampler2D tVel;
+uniform sampler2D tResHist;
 uniform vec2 texel;
 uniform vec2 uLowSize;
 uniform vec2 uOutSize;
@@ -84,8 +87,8 @@ uniform float cameraNear;
 uniform float cameraFar;
 uniform float uHasNormal;
 uniform float uHasVel;
+uniform float uHasHist;
 uniform float uGain;
-uniform float uHeadroom;
 varying vec2 vUv;
 
 float luma(vec3 c) {
@@ -106,14 +109,13 @@ void main() {
   vec2 lowUv = vUv;
   float depth = texture2D(tDepth, lowUv).x;
   if (depth > 0.999) {
-    gl_FragColor = vec4(src, 1.0);
+    gl_FragColor = vec4(0.0);
     return;
   }
 
   vec2 px = 1.0 / max(uOutSize, vec2(1.0));
   vec2 nPx = 1.0 / max(uLowSize, vec2(1.0));
 
-  // 3×3 colour neighbourhood (half-res taps on the resolved buffer).
   vec3 c00 = texture2D(tColor, vUv + vec2(-px.x, -px.y)).rgb;
   vec3 c10 = texture2D(tColor, vUv + vec2( 0.0, -px.y)).rgb;
   vec3 c20 = texture2D(tColor, vUv + vec2( px.x, -px.y)).rgb;
@@ -123,18 +125,16 @@ void main() {
   vec3 c12 = texture2D(tColor, vUv + vec2( 0.0,  px.y)).rgb;
   vec3 c22 = texture2D(tColor, vUv + vec2( px.x,  px.y)).rgb;
 
-  // Oriented 3×3: edge (Sobel-ish), contact (center-weighted), sheen, bounce.
   vec3 edgeH = (c20 + 2.0 * c21 + c22) - (c00 + 2.0 * c01 + c02);
   vec3 edgeV = (c02 + 2.0 * c12 + c22) - (c00 + 2.0 * c10 + c20);
   vec3 edge = sqrt(edgeH * edgeH + edgeV * edgeV) * 0.25;
-  vec3 contact = src * 4.0 + c10 + c01 + c21 + c12;
-  contact = contact * 0.125;
-  vec3 sheen = src * 5.0 - (c00 + c20 + c02 + c22) * 0.25;
+  vec3 contact = (src * 4.0 + c10 + c01 + c21 + c12) * 0.125;
+  vec3 sheen = src * 4.0 - (c00 + c20 + c02 + c22) * 0.25;
   vec3 bounce = (c00 + c10 + c20 + c01 + c21 + c02 + c12 + c22) * 0.125;
 
   float viewZ = perspectiveDepthToViewZ(depth, cameraNear, cameraFar);
   float dist = max(1.0, -viewZ);
-  float distFade = 1.0 - smoothstep(36.0, 88.0, dist);
+  float distFade = 1.0 - smoothstep(28.0, 72.0, dist);
 
   vec3 nrm = vec3(0.0, 0.0, 1.0);
   float nDotV = 1.0;
@@ -144,8 +144,8 @@ void main() {
     vec3 ny = decodeN(clamp(lowUv + vec2(0.0, nPx.y), nPx, 1.0 - nPx));
     float crease = clamp(1.0 - max(dot(nrm, nx), dot(nrm, ny)), 0.0, 1.0);
     nDotV = clamp(nrm.z, 0.0, 1.0);
-    contact *= 1.0 - crease * 0.35;
-    bounce += src * crease * 0.12;
+    contact *= 1.0 - crease * 0.28;
+    bounce += src * crease * 0.08;
   }
 
   float motion = 0.0;
@@ -155,21 +155,55 @@ void main() {
   }
 
   float srcL = luma(src);
-  // Facing-camera mid-luma reads as wet tarmac / car paint.
-  float wet = smoothstep(0.08, 0.28, srcL) * (1.0 - smoothstep(0.55, 0.92, srcL)) * nDotV;
-  vec3 residual = vec3(0.0);
-  residual -= edge * (0.18 * distFade);
-  residual += (bounce - src) * (0.10 * distFade * (1.0 - motion));
-  residual += sheen * (0.07 * wet * (1.0 - motion));
-  residual += (contact - src) * (0.08 * distFade);
+  float wet = smoothstep(0.08, 0.28, srcL) * (1.0 - smoothstep(0.55, 0.88, srcL)) * nDotV;
+  // Ringing guard: do not push a residual along a hard luma edge.
+  float ring = clamp(luma(edge) * 1.8, 0.0, 1.0);
+  float still = (1.0 - motion) * distFade * (1.0 - ring * 0.65);
 
-  vec3 outC = src + residual * uGain;
+  vec3 residual = vec3(0.0);
+  residual -= edge * (0.10 * still);
+  residual += (bounce - src) * (0.08 * still);
+  residual += sheen * (0.045 * wet * still);
+  residual += (contact - src) * (0.06 * still);
+
+  if (uHasHist > 0.5) {
+    vec3 hist = texture2D(tResHist, vUv).rgb;
+    residual = mix(residual, hist, 0.38 * (1.0 - motion));
+  }
+
+  gl_FragColor = vec4(residual * uGain, 1.0);
+}
+`;
+
+/**
+ * Full-res compose: TSR colour + upsampled residual, luma-clamped.
+ */
+const COMPOSE_FRAG = /* glsl */ `
+precision mediump float;
+uniform sampler2D tColor;
+uniform sampler2D tResidual;
+uniform float uHeadroom;
+uniform float uPassthrough;
+varying vec2 vUv;
+
+float luma(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec3 src = texture2D(tColor, vUv).rgb;
+  if (uPassthrough > 0.5) {
+    gl_FragColor = vec4(src, 1.0);
+    return;
+  }
+  vec3 res = texture2D(tResidual, vUv).rgb;
+  vec3 outC = src + res;
+  float srcL = luma(src);
   float outL = luma(outC);
   float cap = srcL * uHeadroom;
   if (outL > cap && outL > 1e-5) {
     outC *= cap / outL;
   }
-  // Never lift a dark well above the source (contact GI must stay subtractive).
   if (outL > srcL && srcL < 0.12) {
     outC = src;
   }
@@ -194,50 +228,16 @@ export function createAppearance(renderer, opts = {}) {
   const gain = opts.gain != null ? opts.gain : 1.0;
   const supported = !!(renderer && renderer.capabilities && renderer.capabilities.isWebGL2);
 
-  const fieldMat = new THREE.ShaderMaterial({
-    uniforms: {
-      tColor: { value: null },
-      tDepth: { value: null },
-      tNormal: { value: null },
-      tVel: { value: null },
-      texel: { value: new THREE.Vector2(1, 1) },
-      uLowSize: { value: new THREE.Vector2(1, 1) },
-      uOutSize: { value: new THREE.Vector2(1, 1) },
-      cameraNear: { value: 0.18 },
-      cameraFar: { value: 1400 },
-      uHasNormal: { value: 0 },
-      uHasVel: { value: 0 },
-      uGain: { value: gain },
-      uHeadroom: { value: APPEAR_LUMA_HEADROOM },
-    },
-    vertexShader: VERT,
-    fragmentShader: FIELD_FRAG,
-    depthTest: false,
-    depthWrite: false,
-    toneMapped: false,
-    fog: false,
-    lights: false,
-  });
-
-  const blitMat = new THREE.ShaderMaterial({
-    uniforms: { tSrc: { value: null } },
-    vertexShader: VERT,
-    fragmentShader: BLIT_FRAG,
-    depthTest: false,
-    depthWrite: false,
-    toneMapped: false,
-    fog: false,
-    lights: false,
-  });
-
-  const geom = new THREE.PlaneGeometry(2, 2);
-  const quad = new THREE.Mesh(geom, fieldMat);
-  const scene = new THREE.Scene();
-  scene.add(quad);
-  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  let fieldMat = null;
+  let composeMat = null;
+  let blitMat = null;
+  let geom = null;
+  let quad = null;
+  let scene = null;
+  let cam = null;
 
   let fieldRT = null;
-  let outRT = null;
+  let histRT = null;
   let w = 0;
   let h = 0;
   let lastMs = 0;
@@ -245,17 +245,80 @@ export function createAppearance(renderer, opts = {}) {
   let sumMs = 0;
   let warmupSkips = 0;
   let pinned = false;
-  let enabled = supported;
+  let enabled = supported && APPEAR_DEFAULT;
+  let frames = 0;
+  let needReset = true;
   const dummy = new THREE.Texture();
+
+  function ensureMaterials() {
+    if (fieldMat || !supported) return;
+    fieldMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tColor: { value: null },
+        tDepth: { value: null },
+        tNormal: { value: null },
+        tVel: { value: null },
+        tResHist: { value: null },
+        texel: { value: new THREE.Vector2(1, 1) },
+        uLowSize: { value: new THREE.Vector2(1, 1) },
+        uOutSize: { value: new THREE.Vector2(1, 1) },
+        cameraNear: { value: 0.18 },
+        cameraFar: { value: 1400 },
+        uHasNormal: { value: 0 },
+        uHasVel: { value: 0 },
+        uHasHist: { value: 0 },
+        uGain: { value: gain },
+      },
+      vertexShader: VERT,
+      fragmentShader: FIELD_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+      lights: false,
+    });
+    composeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tColor: { value: null },
+        tResidual: { value: null },
+        uHeadroom: { value: APPEAR_LUMA_HEADROOM },
+        uPassthrough: { value: 1 },
+      },
+      vertexShader: VERT,
+      fragmentShader: COMPOSE_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+      lights: false,
+    });
+    blitMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null } },
+      vertexShader: VERT,
+      fragmentShader: BLIT_FRAG,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+      lights: false,
+    });
+    geom = new THREE.PlaneGeometry(2, 2);
+    quad = new THREE.Mesh(geom, fieldMat);
+    scene = new THREE.Scene();
+    scene.add(quad);
+    cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
 
   function ensure(nw, nh) {
     const fw = Math.max(1, Math.floor(nw * 0.5));
     const fh = Math.max(1, Math.floor(nh * 0.5));
-    if (fieldRT && fieldRT.width === fw && fieldRT.height === fh && outRT && outRT.width === nw && outRT.height === nh) {
+    if (fieldRT && fieldRT.width === fw && fieldRT.height === fh) {
+      w = nw;
+      h = nh;
       return;
     }
     if (fieldRT) fieldRT.dispose();
-    if (outRT) outRT.dispose();
+    if (histRT) histRT.dispose();
     const optsRT = {
       type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,
@@ -267,9 +330,10 @@ export function createAppearance(renderer, opts = {}) {
       generateMipmaps: false,
     };
     fieldRT = new THREE.WebGLRenderTarget(fw, fh, optsRT);
-    outRT = new THREE.WebGLRenderTarget(nw, nh, optsRT);
+    histRT = new THREE.WebGLRenderTarget(fw, fh, optsRT);
     w = nw;
     h = nh;
+    needReset = true;
   }
 
   /**
@@ -287,6 +351,7 @@ export function createAppearance(renderer, opts = {}) {
    */
   function render(color, dest, guide) {
     if (!supported || !enabled || !color || !dest) return;
+    ensureMaterials();
     const nw = dest.width || w;
     const nh = dest.height || h;
     ensure(nw, nh);
@@ -296,6 +361,7 @@ export function createAppearance(renderer, opts = {}) {
     u.tDepth.value = g.depth || dummy;
     u.tNormal.value = g.normal || dummy;
     u.tVel.value = g.velocity || dummy;
+    u.tResHist.value = histRT.texture;
     u.texel.value.set(1 / Math.max(1, fieldRT.width), 1 / Math.max(1, fieldRT.height));
     u.uLowSize.value.set(g.depthWidth || fieldRT.width, g.depthHeight || fieldRT.height);
     u.uOutSize.value.set(nw, nh);
@@ -303,18 +369,31 @@ export function createAppearance(renderer, opts = {}) {
     u.cameraFar.value = g.far != null ? g.far : 1400;
     u.uHasNormal.value = g.normal ? 1 : 0;
     u.uHasVel.value = g.velocity ? 1 : 0;
+    u.uHasHist.value = needReset ? 0 : 1;
     u.uGain.value = gain;
     quad.material = fieldMat;
     const t0 = performance.now();
     renderer.setRenderTarget(fieldRT);
     renderer.render(scene, cam);
+
     blitMat.uniforms.tSrc.value = fieldRT.texture;
     quad.material = blitMat;
+    renderer.setRenderTarget(histRT);
+    renderer.render(scene, cam);
+
+    frames += 1;
+    // First two frames: compile + empty hist. Pass TSR colour through so
+    // LOOK cannot flash a black or half-soft frame on enable / spawn.
+    const pass = needReset || frames <= 2;
+    composeMat.uniforms.tColor.value = color;
+    composeMat.uniforms.tResidual.value = fieldRT.texture;
+    composeMat.uniforms.uHeadroom.value = APPEAR_LUMA_HEADROOM;
+    composeMat.uniforms.uPassthrough.value = pass ? 1 : 0;
+    quad.material = composeMat;
     renderer.setRenderTarget(dest);
     renderer.render(scene, cam);
     lastMs = performance.now() - t0;
-    // Shader compile / first RT alloc can be 10–200 ms; those must not
-    // trip the budget or LOOK dies on the loading screen.
+    needReset = false;
     if (lastMs < 8) {
       samples += 1;
       sumMs += lastMs;
@@ -333,6 +412,10 @@ export function createAppearance(renderer, opts = {}) {
     },
     set enabled(v) {
       enabled = !!v && supported;
+      if (enabled) {
+        frames = 0;
+        needReset = true;
+      }
     },
     /** URL `?appear=1` / Pause LOOK on — do not auto-off on a compile spike. */
     pin(on) {
@@ -346,7 +429,12 @@ export function createAppearance(renderer, opts = {}) {
       return samples ? sumMs / samples : 0;
     },
     setSize(nw, nh) {
+      if (!supported) return;
       ensure(Math.max(1, Math.floor(nw)), Math.max(1, Math.floor(nh)));
+    },
+    reset() {
+      frames = 0;
+      needReset = true;
     },
     render,
     measure(color, dest, guide) {
@@ -355,12 +443,16 @@ export function createAppearance(renderer, opts = {}) {
     },
     dispose() {
       if (fieldRT) fieldRT.dispose();
-      if (outRT) outRT.dispose();
-      fieldMat.dispose();
-      blitMat.dispose();
-      geom.dispose();
+      if (histRT) histRT.dispose();
+      if (fieldMat) fieldMat.dispose();
+      if (composeMat) composeMat.dispose();
+      if (blitMat) blitMat.dispose();
+      if (geom) geom.dispose();
       fieldRT = null;
-      outRT = null;
+      histRT = null;
+      fieldMat = null;
+      composeMat = null;
+      blitMat = null;
     },
   };
 }
