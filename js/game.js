@@ -10,8 +10,8 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=184";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=225";
-import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=7";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=226";
+import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=8";
 import { Track } from "./tracks/track.js?v=418";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
@@ -122,25 +122,32 @@ easeFirstDrive();
  */
 function raceTunnelLighting(courseId) {
   const TC = tunnelLightingFor(courseId);
-  if (courseId !== "forest") return TC;
-  return Object.assign({}, TC, {
-    ambientFloor: 0.4,
-    hemiRetain: 0.58,
-    fillRetain: 0.34,
-    caveInt: 22,
-    wallInt: 62,
-    wallDistance: 76,
-    wallDecay: 0.96,
-    wallColor: 0xffe0a8,
-    fog: 0x3c362c,
-    fogNear: 22,
-    fogFar: 230,
-    exposureBoost: 1.0,
-    // Config Forest beams were a white-out (1850). Keep the tunnel boost;
-    // drop candela ~30% so the sconces and the rock still read.
-    headEmissive: 34,
-    headBeam: 1295,
-  });
+  if (courseId === "forest") {
+    return Object.assign({}, TC, {
+      ambientFloor: 0.4,
+      hemiRetain: 0.58,
+      fillRetain: 0.34,
+      caveInt: 22,
+      wallInt: 62,
+      wallDistance: 76,
+      wallDecay: 0.96,
+      wallColor: 0xffe0a8,
+      fog: 0x3c362c,
+      fogNear: 22,
+      fogFar: 230,
+      exposureBoost: 1.0,
+      // Config Forest beams were a white-out (1850). Keep the tunnel boost;
+      // drop candela ~30% so the sconces and the rock still read.
+      headEmissive: 34,
+      headBeam: 1295,
+    });
+  }
+  // Outdoor ACES + returning sun already light the mouth. Do not pump
+  // exposure in the bore or the exit flashes white (Desert noon / Mountain rain).
+  if (courseId === "desert" || courseId === "mountain" || courseId === "lakeside") {
+    return Object.assign({}, TC, { exposureBoost: 1.0 });
+  }
+  return TC;
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
@@ -151,8 +158,11 @@ import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {
   applyStageLights,
   applyDaylightLook,
+  applyHarshSpecClamp,
   applyShadowQualityContract,
+  clampRaceExposure,
   configurePBRRenderer,
+  harshEnvLook,
   isolateLocalLights,
   enableLocalLightReceiver,
   tagTunnelWorldReceivers,
@@ -163,7 +173,7 @@ import {
   updateShadowFrustum,
   snapShadowCamera,
   horizonFogColor,
-} from "./gfx/lighting-rig.js?v=30";
+} from "./gfx/lighting-rig.js?v=31";
 
 /** Consecutive failing frames before we stop logging and show the error. */
 const FRAME_FAIL_LIMIT = 30;
@@ -5663,7 +5673,7 @@ export class RallyGame {
    */
   _applyLighting(courseId) {
     const L = LIGHTING[courseId] || LIGHTING.desert;
-    this.renderer.toneMappingExposure = L.exposure;
+    this.renderer.toneMappingExposure = clampRaceExposure(L, 0, 1, courseId);
     if (this.post) this.post.syncFromConfig(L);
     if (!this.sky) {
       this.sky = createSky();
@@ -5717,6 +5727,17 @@ export class RallyGame {
     this._tunnelFog.setHex(TC.fog != null ? TC.fog : 0x5a4030);
     this._tunnelBlend = 0;
     this._updateLights();
+  }
+
+  /**
+   * Ceiling-only IBL / clearcoat clamp on the player car. Softens white
+   * lacquer flash on harsh sun without touching rival livery.
+   * @param {object} L
+   * @param {number} tunnelBlend
+   */
+  _applyHarshSpecClamp(L, tunnelBlend) {
+    if (!this.playerMesh) return;
+    applyHarshSpecClamp(this.playerMesh, harshEnvLook(L, tunnelBlend, this.courseId));
   }
 
   /**
@@ -5809,6 +5830,7 @@ export class RallyGame {
         updateShadowFrustum(this.sun, SUN_SHADOW_EXTENT, GFX.shadowNear, GFX.shadowFar);
       }
       this._seatSunShadows();
+      this._applyHarshSpecClamp(L, this._tunnelBlend || 0);
       if (this.courseId === "forest" || this.courseId === "mountain") {
         if (this.ambient.intensity < 0.2) this.ambient.intensity = 0.2;
         if (this.fill.intensity < 0.32) this.fill.intensity = 0.32;
@@ -5867,7 +5889,9 @@ export class RallyGame {
     this._seatSunShadows();
     const boost = TC.exposureBoost != null ? TC.exposureBoost : 1.04;
     // V1: near-unity boost — lamps + sun dim own the tunnel look, not ACES pump.
-    this.renderer.toneMappingExposure = L.exposure * (1 + (boost - 1) * t);
+    // Peak clamp: desert noon / tunnel exit / forest shafts cannot flash white.
+    this.renderer.toneMappingExposure = clampRaceExposure(L, t, boost, this.courseId);
+    this._applyHarshSpecClamp(L, t);
     // Forest and mountain shade was a black verge under a bright sky.
     // Open daylight keeps a sky fill and a ground bounce so the road reads,
     // without raising the sun or blowing the clouds.

@@ -3,7 +3,7 @@
  *
  * WHO THIS IS FOR: POV camera + cockpit immersion without external mocap files.
  * WHAT IT DOES: spring-damped steering wheel, gear-shift punch, impact head-nod,
- *   hand countersteer offset, and two-bone POV arms tracking gloved wrists.
+ *   hand countersteer offset, and two-bone POV arms tracking racing-glove wrists.
  * HOW IT CONNECTS: game.js calls updateCockpitMotion() from the race loop after
  *   updateCockpit() gauge needles.
  */

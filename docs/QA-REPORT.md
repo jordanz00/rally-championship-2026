@@ -1,5 +1,39 @@
 # QA report — quality-control pass
 
+## POV racing gloves — real digits on the rim (2026-10-04)
+
+**Player moment:** C into the cockpit. Both hands sit at 10 and 2. Each finger is a racing-glove digit (phalanges, knuckles, cream stitch) wrapped around the leather. Thumbs rest over the inner rim / spoke. Turn and the gloves rotate with the wheel; sleeves follow the wrists.
+
+**Cause:** POV grip used capsule sausages and a boxed palm. At cockpit distance they read as mittens / floaters, not fingers on the tube.
+
+**Fix:** Keep hands parented to `steer-spin`. `measureSpinRim` still plants in spin-local space. Each finger is three sculpted phalanges + knuckles + tip on `tubePoint` / `orientOnTube`; thumb opposes with two phalanges. Leather / suede maps, contrast stitch, cuff strap, original chevron mark (no team logos). Overlay materials stay `emissiveMap` + `toneMapped: false`. No `gripLean`. Attract plant, replay pack/trails, TSR car-history kill, v990 deck plant, and in-flight lighting/livery WIP untouched.
+
+**Proof:** `node tools/qa-pov-hands.mjs` · `node tools/qa-pov-steer.mjs`
+
+**Boot:** `main.js?v=992` · `game.js?v=992` · `celica.js?v=226` · `pov-driver.js?v=4` · `cockpit-anim.js?v=8`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=992
+
+## Harsh lighting — peak clamp (2026-10-04)
+
+**Player moment:** All four cup stages. Sun still sculpts the car and the road. Desert noon, tunnel exit, Forest canopy gaps, and Mountain rain no longer flash the frame white or crush shade to ink.
+
+**What was harsh:** Seat boost stacked fill ×2.15 / hemi ×1.22 on the authored key. Desert sat near fill 0.40 + exposure 0.97 + worldEnv 1.05 + lacquer IBL (`carEnv` 1.32 × paint 1.15) so hood and sand blew out. Forest shafts were the same key on a dark ribbon. Tunnel `exposureBoost` 1.02 piled ACES on the returning sun. Mountain wet env (`dryE * 2.05`) strobed the road. Bloom was not the lever.
+
+**Shipped:**
+- `lighting-rig.js` `HARSH_PEAKS` + `clampRaceExposure` + `harshEnvLook` / `applyHarshSpecClamp` — outdoor exposure pulled (Desert 0.90, Forest 0.86, Mountain 0.90, Lakeside 0.90). Fill/hemi/rim peaks capped; Forest/Mountain shade floors held (amb ≥0.2, fill ≥0.32, hemi ≥0.62).
+- High-sun spec/env ceiling on the player car only (no rival livery edit). Forest fog stays woodland `#8f937a`.
+- `raceTunnelLighting` keeps Forest `headBeam` **1295**. Desert / Mountain / Lakeside `exposureBoost` 1.0 so the mouth does not dump white.
+- **`this.sun.intensity *= 1 - 0.22 * open` left alone.** `config.js` untouched. ACES stays.
+
+**Not touched:** `vehicle.js`, `pov-driver.js`, `cockpit-anim.js`, `broadcast-replay.js`, `celica.js` / `ai.js` paint, `rain.js`, `Track.query()`, Forest 3485, Desert 1654. Preview :8766 left running.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lighting-harsh.mjs` · `node tools/qa-forest-headlights.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-fog.mjs`
+
+**Boot:** `main.js?v=991` · `game.js?v=991` · `lighting-rig.js?v=31`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=991
+
 ## E-brake / accel deck plant (2026-10-04)
 
 **Player moment:** Floor it. Yank the handbrake into a powerslide. The Celica rotates and stays catchable — the deck does not hop or jitter.

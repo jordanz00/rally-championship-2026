@@ -75,6 +75,25 @@ check(
   "hands parented to spin; sleeves track the gripping wrists"
 );
 
+check(
+  "each hand has four wrapped fingers plus an opposing thumb",
+  /finger-index/.test(driver) &&
+    /finger-pinky/.test(driver) &&
+    /addWrappedFinger/.test(driver) &&
+    /addWrappedThumb/.test(driver) &&
+    /phalange-\$\{i\}/.test(driver) &&
+    /userData\.phalanges = 3/.test(driver),
+  "index/middle/ring/pinky + thumb; three phalanges wrap the tube"
+);
+
+check(
+  "10/2 clock and overlay emissive gloves",
+  /clock = side > 0 \? 0\.62/.test(driver) &&
+    /emissiveMap: GLOVE_MAP/.test(driver) &&
+    /toneMapped: false/.test(driver),
+  "layer-1 overlay needs emissive + toneMapped false"
+);
+
 const celicaV = game.match(/celica\.js\?v=(\d+)/);
 const animV = game.match(/cockpit-anim\.js\?v=(\d+)/);
 const gameV = main.match(/game\.js\?v=(\d+)/);
@@ -132,10 +151,32 @@ async function live() {
       const hubMove = hub0 && hub1
         ? Math.hypot(hub1.x - hub0.x, hub1.y - hub0.y, hub1.z - hub0.z)
         : 99;
+      const grips = spin && spin.getObjectByName("pov-driver-grips");
+      const handL = spin && spin.getObjectByName("hand-L");
+      const handR = spin && spin.getObjectByName("hand-R");
+      let fingers = 0;
+      let thumbs = 0;
+      let phalanges = 0;
+      let layer = -1;
+      if (grips) {
+        grips.traverse((o) => {
+          if (/^finger-/.test(o.name)) fingers += 1;
+          if (o.name === "thumb") thumbs += 1;
+          if (/^phalange-/.test(o.name)) phalanges += 1;
+          if (o.isMesh && layer < 0) layer = o.layers.mask;
+        });
+      }
       return {
         hasSpin: !!spin,
         hasGlb: !!glb,
         parentName,
+        gripsParent: grips && grips.parent ? grips.parent.name : "",
+        fingers,
+        thumbs,
+        phalanges,
+        clockL: handL && handL.userData ? handL.userData.clock : null,
+        clockR: handR && handR.userData ? handR.userData.clock : null,
+        overlayLayer: layer,
         z,
         hubMove,
         steer: g.player.steer
@@ -163,6 +204,38 @@ async function live() {
       sample.hubMove < 0.002,
       `hub moved ${Number(sample.hubMove).toFixed(4)} m`
     );
+    if (sample.gripsParent) {
+      check(
+        "gloves parent to steer-spin",
+        sample.gripsParent === "steer-spin",
+        `parent="${sample.gripsParent}"`
+      );
+      check(
+        "live finger count is 4+4 with two thumbs",
+        sample.fingers === 8 && sample.thumbs === 2,
+        `fingers=${sample.fingers} thumbs=${sample.thumbs}`
+      );
+      check(
+        "live phalanges wrap both hands (3×4 + 2×2)",
+        sample.phalanges >= 16,
+        `phalanges=${sample.phalanges}`
+      );
+      check(
+        "live 10/2 clock",
+        sample.clockL != null &&
+          Math.abs(sample.clockL - 0.62) < 0.02 &&
+          sample.clockR != null &&
+          Math.abs(sample.clockR - (Math.PI - 0.62)) < 0.02,
+        `L=${sample.clockL} R=${sample.clockR}`
+      );
+      check(
+        "glove meshes live on the POV overlay layer",
+        (sample.overlayLayer & 2) === 2,
+        `mask=${sample.overlayLayer}`
+      );
+    } else {
+      console.log("  skip  live glove graph (title LOD has no cabin — static wrap contract still applies)");
+    }
   } finally {
     await browser.close();
     await server.close();

@@ -27,9 +27,15 @@ let GLOVE_MAP = null;
 let GLOVE_BUMP = null;
 
 const _v = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _inv = new THREE.Matrix4();
-const _yAxis = new THREE.Vector3(0, 1, 0);
+const _basis = new THREE.Matrix4();
+/** @type {THREE.MeshStandardMaterial|null} */
+let STITCH_MAT = null;
+/** @type {THREE.MeshStandardMaterial|null} */
+let KNUCKLE_MAT = null;
 
 /**
  * @param {string} key
@@ -66,19 +72,19 @@ function ensureGloveMaps() {
         ((Math.sin(x * 1.7 + y * 0.9) + 1) * 0.5) * 0.25 +
         ((Math.sin((x + y) * 0.11) + 1) * 0.5) * 0.2;
       const stripe = x > w * 0.42 && x < w * 0.58 ? 1 : 0;
-      const stitchU = Math.abs((x % 18) - 9) < 0.9 || Math.abs((y % 22) - 11) < 0.9;
-      let r = 28 + n * 22;
-      let gr = 24 + n * 18;
-      let b = 22 + n * 14;
+      const stitchU = Math.abs((x % 14) - 7) < 0.7 || Math.abs((y % 16) - 8) < 0.7;
+      let r = 22 + n * 18;
+      let gr = 18 + n * 14;
+      let b = 16 + n * 12;
       if (stripe) {
-        r = 120 + n * 40;
-        gr = 18 + n * 10;
-        b = 22 + n * 8;
+        r = 132 + n * 36;
+        gr = 16 + n * 8;
+        b = 20 + n * 6;
       }
       if (stitchU) {
-        r = Math.min(255, r + 55);
-        gr = Math.min(255, gr + 48);
-        b = Math.min(255, b + 40);
+        r = Math.min(255, r + 92);
+        gr = Math.min(255, gr + 78);
+        b = Math.min(255, b + 52);
       }
       const kx = ((x / w) * 4) | 0;
       const ky = ((y / h) * 3) | 0;
@@ -179,6 +185,30 @@ function ensureMats() {
     side: THREE.DoubleSide,
   });
   CUFF_MAT.userData.shared = true;
+  STITCH_MAT = new THREE.MeshStandardMaterial({
+    color: 0xd4c4a4,
+    roughness: 0.55,
+    metalness: 0.02,
+    envMapIntensity: 0.35,
+    emissive: 0x6e624c,
+    emissiveIntensity: 0.62,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  STITCH_MAT.userData.shared = true;
+  KNUCKLE_MAT = new THREE.MeshStandardMaterial({
+    color: 0x1a1210,
+    roughness: 0.48,
+    metalness: 0.1,
+    envMapIntensity: 0.5,
+    bumpMap: GLOVE_BUMP,
+    bumpScale: 0.4,
+    emissive: 0x120c0a,
+    emissiveIntensity: 0.58,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  KNUCKLE_MAT.userData.shared = true;
 }
 
 /**
@@ -239,17 +269,90 @@ export function measureSpinRim(spin) {
 }
 
 /**
- * Capsule along +Y, origin at base.
- * @param {number} r
+ * Rounded-box phalanx along +Y. +Z is the tube belly; −Z is the glove back.
+ * @param {number} wide
+ * @param {number} thin
  * @param {number} len
  * @param {string} key
  */
-function capsuleAlongY(r, len, key) {
+function phalanxGeo(wide, thin, len, key) {
   return geo(key, () => {
-    const g = new THREE.CapsuleGeometry(r, Math.max(0.001, len - r * 2), 6, 12);
+    const g = new THREE.BoxGeometry(wide * 2, len, thin * 2, 5, 4, 4);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      let x = pos.getX(i);
+      const y = pos.getY(i);
+      let z = pos.getZ(i);
+      const ny = (y + len * 0.5) / Math.max(1e-5, len);
+      const taper = 1 - ny * 0.2;
+      const nx = x / Math.max(1e-5, wide);
+      const nz = z / Math.max(1e-5, thin);
+      const mag = Math.hypot(nx, nz);
+      if (mag > 1e-4) {
+        const pull = 0.58 + 0.42 / Math.max(1, mag);
+        x *= pull * taper;
+        z *= pull * taper;
+      }
+      if (z > 0) z *= 0.78;
+      pos.setXYZ(i, x, y, z);
+    }
     g.translate(0, len * 0.5, 0);
+    g.computeVertexNormals();
     return g;
   });
+}
+
+/**
+ * Knuckle pad on the back of a joint.
+ * @param {number} r
+ * @param {string} key
+ */
+function knuckleGeo(r, key) {
+  return geo(key, () => new THREE.SphereGeometry(r, 10, 8));
+}
+
+/**
+ * Fingertip leather cap.
+ * @param {number} r
+ * @param {string} key
+ */
+function tipGeo(r, key) {
+  return geo(key, () => {
+    const g = new THREE.SphereGeometry(r, 10, 8);
+    g.scale(1.05, 0.82, 0.88);
+    return g;
+  });
+}
+
+/**
+ * Contrast stitch ridge along a phalanx back.
+ * @param {number} len
+ * @param {string} key
+ */
+function stitchGeo(len, key) {
+  return geo(key, () => new THREE.BoxGeometry(0.0011, Math.max(0.006, len * 0.78), 0.0009));
+}
+
+/**
+ * Seat a digit so +Y follows the wrap and +Z hugs the tube.
+ * @param {THREE.Object3D} joint
+ * @param {{x:number,y:number,z:number}} p0
+ * @param {{x:number,y:number,z:number}} p1
+ */
+function orientOnTube(joint, p0, p1) {
+  _v.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+  const len = _v.length();
+  if (len < 1e-5) return;
+  _v.multiplyScalar(1 / len);
+  _v2.set(-p0.x, 0, -p0.z);
+  if (_v2.lengthSq() < 1e-8) _v2.set(0, 0, 1);
+  _v2.normalize();
+  _v3.crossVectors(_v, _v2);
+  if (_v3.lengthSq() < 1e-8) _v3.set(0, 1, 0);
+  _v3.normalize();
+  _v2.crossVectors(_v3, _v).normalize();
+  _basis.makeBasis(_v3, _v, _v2);
+  joint.quaternion.setFromRotationMatrix(_basis);
 }
 
 /**
@@ -266,70 +369,120 @@ function mesh(mat, geometry) {
 }
 
 /**
- * Three phalanges sitting on the tube, wrapping driver → outside → dash.
+ * Three sculpted phalanges + knuckles wrapping driver → outside → dash.
  * @param {THREE.Group} hand
  * @param {number} along
  * @param {number} lenScale
  * @param {number} tubeR
  * @param {number} startA
  * @param {number} sweep
+ * @param {string} name
  */
-function addWrappedFinger(hand, along, lenScale, tubeR, startA, sweep) {
-  const lens = [0.028 * lenScale, 0.023 * lenScale, 0.018 * lenScale];
-  const radii = [0.008, 0.0072, 0.0064];
+function addWrappedFinger(hand, along, lenScale, tubeR, startA, sweep, name) {
+  const finger = new THREE.Group();
+  finger.name = name;
+  finger.userData.digit = "finger";
+  finger.userData.phalanges = 3;
+  const lens = [0.03 * lenScale, 0.024 * lenScale, 0.018 * lenScale];
+  const wides = [0.0079, 0.0072, 0.0063];
+  const thins = [0.0066, 0.0059, 0.0052];
   const n = 3;
   const da = sweep / n;
   for (let i = 0; i < n; i++) {
     const a0 = startA + da * i;
     const a1 = a0 + da;
-    const p0 = tubePoint(a0, along, tubeR, 0.0018);
-    const p1 = tubePoint(a1, along, tubeR, 0.0018);
+    const p0 = tubePoint(a0, along, tubeR, 0.0026);
+    const p1 = tubePoint(a1, along, tubeR, 0.0026);
     const joint = new THREE.Group();
+    joint.name = `phalange-${i}`;
+    joint.userData.phalange = i;
     joint.position.set(p0.x, p0.y, p0.z);
-    _v.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
-    const len = _v.length();
-    if (len > 1e-5) {
-      _v.multiplyScalar(1 / len);
-      joint.quaternion.setFromUnitVectors(_yAxis, _v);
+    orientOnTube(joint, p0, p1);
+    const body = mesh(
+      GLOVE_MAT,
+      phalanxGeo(wides[i], thins[i], lens[i], `ph-${i}-${lenScale.toFixed(2)}`)
+    );
+    body.userData.digitPart = "phalange";
+    joint.add(body);
+    if (i < n - 1) {
+      const kn = mesh(KNUCKLE_MAT, knuckleGeo(wides[i] * 1.05, `kn-${i}`));
+      kn.name = `knuckle-${i}`;
+      kn.position.set(0, lens[i] * 0.9, -thins[i] * 0.62);
+      kn.scale.set(1.2, 0.62, 0.82);
+      kn.userData.digitPart = "knuckle";
+      joint.add(kn);
+    } else {
+      const tip = mesh(GLOVE_MAT, tipGeo(wides[i] * 1.05, `tip-${lenScale.toFixed(2)}`));
+      tip.name = "fingertip";
+      tip.position.set(0, lens[i] * 0.96, 0.001);
+      tip.userData.digitPart = "tip";
+      joint.add(tip);
     }
-    joint.add(mesh(GLOVE_MAT, capsuleAlongY(radii[i], lens[i], `grip-f${i}-${lenScale.toFixed(2)}`)));
-    hand.add(joint);
+    const st = mesh(STITCH_MAT, stitchGeo(lens[i], `st-${i}`));
+    st.position.set(0, lens[i] * 0.48, -thins[i] * 0.78);
+    st.userData.digitPart = "stitch";
+    joint.add(st);
+    finger.add(joint);
   }
+  hand.add(finger);
 }
 
 /**
- * Thumb wraps the inner / underside of the tube toward the hub.
+ * Thumb opposes the fingers and rests over the inner rim / spoke.
  * @param {THREE.Group} hand
  * @param {number} tubeR
  */
 function addWrappedThumb(hand, tubeR) {
-  const along = -0.016;
-  const startA = -0.15;
-  const sweep = -1.55;
-  const lens = [0.03, 0.024];
-  const radii = [0.0086, 0.0074];
+  const thumb = new THREE.Group();
+  thumb.name = "thumb";
+  thumb.userData.digit = "thumb";
+  thumb.userData.phalanges = 2;
+  const along = -0.02;
+  const startA = 0.06;
+  const sweep = -1.48;
+  const lens = [0.032, 0.024];
+  const wides = [0.0088, 0.0076];
+  const thins = [0.0072, 0.0062];
   const n = 2;
   const da = sweep / n;
   for (let i = 0; i < n; i++) {
     const a0 = startA + da * i;
     const a1 = a0 + da;
-    const p0 = tubePoint(a0, along, tubeR, 0.002);
-    const p1 = tubePoint(a1, along, tubeR, 0.002);
+    const p0 = tubePoint(a0, along, tubeR, 0.0028);
+    const p1 = tubePoint(a1, along, tubeR, 0.0028);
     const joint = new THREE.Group();
+    joint.name = `phalange-${i}`;
+    joint.userData.phalange = i;
     joint.position.set(p0.x, p0.y, p0.z);
-    _v.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
-    const len = _v.length();
-    if (len > 1e-5) {
-      _v.multiplyScalar(1 / len);
-      joint.quaternion.setFromUnitVectors(_yAxis, _v);
+    orientOnTube(joint, p0, p1);
+    const body = mesh(GLOVE_MAT, phalanxGeo(wides[i], thins[i], lens[i], `th-ph-${i}`));
+    body.userData.digitPart = "phalange";
+    joint.add(body);
+    if (i === 0) {
+      const kn = mesh(KNUCKLE_MAT, knuckleGeo(wides[i] * 1.08, "th-kn"));
+      kn.name = "knuckle-0";
+      kn.position.set(0, lens[i] * 0.88, -thins[i] * 0.58);
+      kn.scale.set(1.18, 0.64, 0.8);
+      kn.userData.digitPart = "knuckle";
+      joint.add(kn);
+    } else {
+      const tip = mesh(GLOVE_MAT, tipGeo(wides[i] * 1.08, "th-tip"));
+      tip.name = "fingertip";
+      tip.position.set(0, lens[i] * 0.94, 0.001);
+      tip.userData.digitPart = "tip";
+      joint.add(tip);
     }
-    joint.add(mesh(GLOVE_MAT, capsuleAlongY(radii[i], lens[i], `grip-th${i}`)));
-    hand.add(joint);
+    const st = mesh(STITCH_MAT, stitchGeo(lens[i], `th-st-${i}`));
+    st.position.set(0, lens[i] * 0.48, -thins[i] * 0.76);
+    st.userData.digitPart = "stitch";
+    joint.add(st);
+    thumb.add(joint);
   }
+  hand.add(thumb);
 }
 
 /**
- * Gloved hand gripping 9 o'clock (then mirrored to 3).
+ * Gloved hand gripping 10 o'clock (then mirrored to 2).
  * Local +X = outward, +Y = toward 12, +Z = into the dash.
  * @param {number} side +1 left / −1 right
  * @param {number} rimR
@@ -342,6 +495,7 @@ function makeHand(side, rimR, tubeR) {
   mount.name = side > 0 ? "hand-L" : "hand-R";
   // 10 and 2 — 9/3 sits on the rim's bottom corners and reads as empty.
   const clock = side > 0 ? 0.62 : Math.PI - 0.62;
+  mount.userData.clock = clock;
   mount.position.set(Math.cos(clock) * rimR, Math.sin(clock) * rimR, 0);
   mount.rotation.z = clock;
   if (side < 0) mount.scale.x = -1;
@@ -354,45 +508,93 @@ function makeHand(side, rimR, tubeR) {
   const palm = mesh(
     GLOVE_MAT,
     geo("palm-cup", () => {
-      const box = new THREE.BoxGeometry(0.034, 0.062, 0.028, 4, 4, 3);
+      const box = new THREE.BoxGeometry(0.038, 0.068, 0.03, 5, 6, 4);
       const pos = box.attributes.position;
       for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        const z = pos.getZ(i);
-        const cup = 1 - Math.min(1, (Math.abs(y) / 0.031) * 0.18);
-        pos.setXYZ(i, x * cup + 0.004, y, z - Math.abs(y) * 0.08);
+        let x = pos.getX(i);
+        let y = pos.getY(i);
+        let z = pos.getZ(i);
+        const ay = Math.abs(y) / 0.034;
+        const cup = 1 - Math.min(1, ay * 0.2);
+        const wrist = y < -0.012 ? 0.82 + (y + 0.034) * 2.2 : 1;
+        x = x * cup * wrist + 0.005;
+        z = z - ay * 0.09 - (x > 0.01 ? 0.004 : 0);
+        if (y > 0.018 && x > 0.004) z -= 0.006;
+        pos.setXYZ(i, x, y, z);
       }
       box.computeVertexNormals();
       return box;
     })
   );
-  const driver = tubePoint(0.22, 0.006, tubeR, 0.01);
-  palm.position.set(driver.x + 0.004, driver.y, driver.z);
-  palm.rotation.y = 0.35;
+  const driver = tubePoint(0.2, 0.004, tubeR, 0.011);
+  palm.position.set(driver.x + 0.005, driver.y, driver.z);
+  palm.rotation.y = 0.32;
   hand.add(palm);
+
+  const thenar = mesh(
+    GLOVE_MAT,
+    geo("thenar", () => {
+      const g = new THREE.SphereGeometry(0.016, 10, 8);
+      g.scale(1.15, 0.85, 0.72);
+      return g;
+    })
+  );
+  thenar.position.set(driver.x - 0.002, -0.016, driver.z + 0.002);
+  hand.add(thenar);
 
   const pads = mesh(
     GLOVE_ACCENT,
-    geo("pads", () => new THREE.BoxGeometry(0.016, 0.048, 0.012, 2, 2, 1))
+    geo("pads", () => new THREE.BoxGeometry(0.012, 0.05, 0.008, 2, 3, 1))
   );
-  pads.position.set(driver.x + 0.014, 0.01, driver.z - 0.002);
-  pads.rotation.y = 0.28;
+  pads.position.set(driver.x + 0.016, 0.008, driver.z - 0.004);
+  pads.rotation.y = 0.26;
   hand.add(pads);
+
+  const knY = [0.024, 0.008, -0.008, -0.022];
+  for (let k = 0; k < 4; k++) {
+    const mk = mesh(KNUCKLE_MAT, knuckleGeo(0.0072, "palm-kn"));
+    mk.name = `metacarpal-${k}`;
+    mk.position.set(driver.x + 0.012, knY[k], driver.z - 0.01);
+    mk.scale.set(1.05, 0.7, 0.78);
+    hand.add(mk);
+  }
+
+  const brand = mesh(
+    GLOVE_ACCENT,
+    geo("brand-plate", () => new THREE.BoxGeometry(0.01, 0.016, 0.0024))
+  );
+  brand.name = "glove-mark";
+  brand.position.set(driver.x + 0.018, 0.002, driver.z - 0.012);
+  brand.rotation.y = 0.22;
+  hand.add(brand);
+  const chevron = mesh(
+    STITCH_MAT,
+    geo("brand-chevron", () => {
+      const g = new THREE.ConeGeometry(0.0042, 0.007, 3);
+      g.rotateZ(Math.PI);
+      return g;
+    })
+  );
+  chevron.name = "glove-mark-chevron";
+  chevron.position.set(driver.x + 0.019, 0.002, driver.z - 0.014);
+  chevron.rotation.y = 0.22;
+  chevron.rotation.x = Math.PI * 0.5;
+  hand.add(chevron);
 
   const alongs = [0.026, 0.01, -0.006, -0.022];
   const lens = [0.96, 1.04, 1.0, 0.86];
-  const startA = 0.18;
-  const sweep = 2.15;
+  const names = ["finger-index", "finger-middle", "finger-ring", "finger-pinky"];
+  const startA = 0.16;
+  const sweep = 2.28;
   for (let i = 0; i < 4; i++) {
-    addWrappedFinger(hand, alongs[i], lens[i], tubeR, startA + i * 0.04, sweep);
+    addWrappedFinger(hand, alongs[i], lens[i], tubeR, startA + i * 0.035, sweep, names[i]);
   }
   addWrappedThumb(hand, tubeR);
 
   const cuff = mesh(
     CUFF_MAT,
     geo("cuff", () => {
-      const c = new THREE.CylinderGeometry(0.02, 0.024, 0.042, 14, 1, true);
+      const c = new THREE.CylinderGeometry(0.019, 0.025, 0.046, 16, 1, true);
       c.rotateZ(Math.PI * 0.5);
       return c;
     })
@@ -400,6 +602,13 @@ function makeHand(side, rimR, tubeR) {
   cuff.position.set(0.006, -0.006, -tubeR - 0.034);
   cuff.rotation.y = 0.45;
   hand.add(cuff);
+  const strap = mesh(
+    GLOVE_ACCENT,
+    geo("cuff-strap", () => new THREE.BoxGeometry(0.028, 0.01, 0.004))
+  );
+  strap.position.set(0.01, -0.004, -tubeR - 0.03);
+  strap.rotation.y = 0.4;
+  hand.add(strap);
 
   const wrist = new THREE.Object3D();
   wrist.name = "wrist";

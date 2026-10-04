@@ -22,9 +22,11 @@ import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=3";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=4";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar } from "./rival-livery.js?v=1";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
+export { RIVAL_LIVERIES, aiLiveryForIndex };
 
 const GARAGE = {
   celica: {
@@ -131,37 +133,17 @@ function requireCarModel(id, context = "spawn") {
 }
 
 /**
- * One unique body colour per rival slot (championship packs up to 14).
- * Solid lacquer — GLB sticker maps are stripped on rivals so each car reads
- * as a distinct colour at chase-cam distance, not eight muddy Castrol clones.
+ * Pack liveries — eight authored Group-A looks, then hue/dirt recycles.
+ * Candy hex tints (hot-pink / lime / cyan) are gone; see rival-livery.js.
  */
-export const AI_TINTS = [
-  { body: 0xe01820, name: "racing-red" },
-  { body: 0x1a4cdb, name: "electric-blue" },
-  { body: 0xf2f0e6, name: "pearl-white" },
-  { body: 0xf5c400, name: "sun-yellow" },
-  { body: 0x1a1a1e, name: "carbon-black" },
-  { body: 0x7a28c8, name: "royal-purple" },
-  { body: 0x0c9a3c, name: "castrol-green" },
-  { body: 0xff6a14, name: "rally-orange" },
-  { body: 0x00b8c8, name: "cyan" },
-  { body: 0xff2a7a, name: "hot-pink" },
-  { body: 0x8fd400, name: "lime" },
-  { body: 0x0a2a6a, name: "navy" },
-  { body: 0xb87333, name: "copper" },
-  { body: 0xc8ccd4, name: "silver" },
-  { body: 0x5c3a1e, name: "tobacco" },
-  { body: 0x2ec4b6, name: "teal" },
-];
+export const AI_TINTS = RIVAL_LIVERIES;
 
 /**
- * Tint for rival index — always a unique slot colour (wraps only past palette).
+ * Livery for rival / attract / replay slot.
  * @param {number} index
- * @returns {{body:number, name?:string}}
  */
 export function aiTintForIndex(index) {
-  const i = ((index | 0) % AI_TINTS.length + AI_TINTS.length) % AI_TINTS.length;
-  return AI_TINTS[i];
+  return aiLiveryForIndex(index);
 }
 
 /**
@@ -1423,7 +1405,8 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null) {
     }
     throw new Error("[garage] no GLB loaded for AI rivals");
   }
-  const root = enableCarShadows(cloneRival(template, tint));
+  const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
+  const root = enableCarShadows(cloneRival(template, livery, variant));
   root.userData.carId = chassis;
   return root;
 }
