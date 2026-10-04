@@ -12,7 +12,7 @@ import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=96";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=227";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=8";
-import { Track } from "./tracks/track.js?v=418";
+import { Track } from "./tracks/track.js?v=419";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=5";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
 import { Opponent } from "./ai.js?v=217";
@@ -152,7 +152,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=7";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=9";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=10";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=3";
 import {
@@ -5009,13 +5009,13 @@ export class RallyGame {
         reel.bindCars(meshes);
         this._attractReel = reel;
         this._attractFx = document.getElementById("attract-fx");
-        paintAttractFx(this._attractFx, { fade: 1, flash: 0, label: "WORLD FEED", kind: "heli" }, true);
+        paintAttractFx(this._attractFx, { fade: 1, flash: 0, label: "PACK FLY-BY", kind: "packfly" }, true);
         if (this._titleWorld) this._titleWorld.visible = false;
         if (this.playerMesh && meshes.indexOf(this.playerMesh) < 0) this.playerMesh.visible = false;
         const crt = document.getElementById("crt");
         if (crt) crt.classList.add("attract-live");
         const tag = document.querySelector(".sr-attract-tag");
-        if (tag) tag.textContent = "ATTRACT · WORLD FEED";
+        if (tag) tag.textContent = "ATTRACT · WORLD RALLY FEED";
       })
       .catch((err) => {
         this._attractBooting = false;
@@ -5054,12 +5054,12 @@ export class RallyGame {
     this.sun.position.set(p.x + d.x * 48, p.y + d.y * 42, p.z + d.z * 48);
     this.sun.target.position.set(p.x, p.y + 0.4, p.z);
     this.sun.target.updateMatrixWorld();
-    this.sun.intensity = Math.min(this.sun.intensity, 1.55);
-    if (this.renderer) this.renderer.toneMappingExposure = 0.82;
+    this.sun.intensity = Math.min(this.sun.intensity, 1.72);
+    if (this.renderer) this.renderer.toneMappingExposure = 0.94;
     if (this.scene && this.scene.fog) {
-      this.scene.fog.color.setHex(0x8aa8c0);
-      this.scene.fog.near = 36;
-      this.scene.fog.far = 260;
+      this.scene.fog.color.setHex(0x7e9ab4);
+      this.scene.fog.near = 28;
+      this.scene.fog.far = 230;
     }
   }
 

@@ -1,5 +1,33 @@
 # QA report — quality-control pass
 
+## Start / finish gantries — planted cloth, not paper cards (2026-10-04)
+
+**Player moment:** Leave the line and cross the line on Desert, Forest, Mountain, and Lakeside. START and FINISH read as real rally gantries — steel poles in the dirt, taut vinyl with **RALLY CHAMPIONSHIP** plus START/FINISH, a little wind in the cloth. Festive verge flags stay.
+
+**What was fake:** START was a one-poly `PlaneGeometry` hung on a stretched Kenney arch or box posts. FINISH skipped the overhead banner (blob fix) so the gate was only flags + a deck stripe. Paper-thin, unplanted, no cloth sim.
+
+**Fix:** `createGantryBanner` in `flag-cloth.js` — two buried steel poles + beam/hem frame, 18×7 Verlet vinyl pinned on top and sides, lit double-sided cloth, `skipSeat`/`keepY`. `_addGantry` plants it at both ends from `_visualLandY`. No Kenney stretch, no 1-poly card. HQ gantry GLB is still MISSING in the manifest; this is the existing cloth system, not a cube substitute.
+
+**Proof:** `node tools/qa-start-finish-banner.mjs` · `node tools/qa-cloth-flags.mjs` · `node tools/qa-seat-scenery.mjs`
+
+**Boot:** `main.js?v=998` · `game.js?v=998` · `track.js?v=419` · `flag-cloth.js?v=9` · `seat-scenery.js?v=5`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=998
+
+## Attract reel — MTV / WRC-TV open (2026-10-04)
+
+**Player moment:** Title attract. Hard cuts, letterbox, LIVE slug, chroma, grain, pack fly-bys, jump slow-mo, dirt. The ribbon reads as a desert stage with a forest crest — not a grey void and a spinning car.
+
+**What was flat:** Ten polite holds on a dirt strip over a flat sand plane. No berms, no kit scenery, no pack-aware fly-by, no speed ramp. Overlay grade was soft.
+
+**Fix:** Faster cycle (packfly / nose / rear / bank / smash). Director aims between lead and P2 on fly-bys. Jump ramps pack time to 0.56, smash/whip 1.24; `prefers-reduced-motion` stays blend-only with `.is-calm`. Land follows the ribbon; gravel shoulder + berms; title rocks + desert cactus; Forest LOD1 heroes on the crest with `forest_floor`. Dirt grit / tire stamps / 14 mm plant unchanged. Cars stay opaque.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=998` · `game.js?v=998` · `attract-reel.js?v=10` · `game.css?v=59`
+
+**Public:** https://jordanz00.github.io/rally-championship-2026/?v=998
+
 ## Rival pack liveries — Group-A lacquer (2026-10-04)
 
 **Player moment:** Championship grid, attract reel, result replay. Fourteen rivals read as distinct Group-A / WRC-era cars — ivory sash, navy gold, bottle green, sunburst, graphite ember, nordic white, dune, cellar — not 14 clones of one toy hex.

@@ -41,19 +41,26 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check("AttractReel export", /export class AttractReel/.test(reel));
 check("AttractDirector shots", /bumper/.test(reel) && /whip/.test(reel) && /headon/.test(reel) && /smash/.test(reel));
+check("mtv pack fly-by + nose + rear + bank", /packfly/.test(reel) && /nose/.test(reel) && /rear/.test(reel) && /bank/.test(reel));
+check("speed ramp timeScale", /_timeScale/.test(reel) && /kind === "jump"/.test(reel));
 check("no Track import in reel", !/from ["'].*tracks\/track/.test(reel));
 check("closed rally spline", /KNOTS/.test(reel) && /CatmullRomCurve3/.test(reel));
+check("sculpted land follows ribbon", /nearestRibbon/.test(reel) && /attract-berm/.test(reel) && /attract-shoulder/.test(reel));
+check("desert kit backdrop", /loadTitleRocks/.test(reel) && /cactus_tall/.test(reel));
+check("forest crest heroes", /forest_hero_tree/.test(reel) && /attract-forest-floor/.test(reel));
 check("game starts reel after IBL", /_startAttractReel/.test(game) && /_revealTitleShowroom/.test(game));
 check("game stops reel before race", /_stopAttractReel\(\)/.test(game));
-check("attract-fx overlay in index", /id="attract-fx"/.test(index) && /attract-letterbox/.test(index));
+check("attract-fx overlay in index", /id="attract-fx"/.test(index) && /attract-letterbox/.test(index) && /attract-smear/.test(index));
 check("letterbox + flash CSS", /attract-letterbox/.test(css) && /attract-flash/.test(css) && /attract-live/.test(css));
+check("chroma smear FX flags", /attract-chroma/.test(css) && /attract-smear/.test(css) && /attract-lower/.test(css));
+check("reduced-motion safe", /prefers-reduced-motion/.test(css) && /is-calm/.test(css) && /this\.reduced/.test(reel));
 check("title CRT is dark for footage", /#crt\.is-title/.test(css) && /#050705/.test(css));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 985 && Number(mainV) >= 985,
+  cacheOk && Number(gameV) >= 998 && Number(mainV) >= 998,
   `main=${mainV} game=${gameV}`
 );
-check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 9);
+check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 10);
 check("reel imports attract-plant", /attract-plant\.js\?v=1/.test(reel));
 check("no chassis hover pad", !/pose\.y \+ embed \+ 0\.16/.test(reel) && !/position\.set\(pose\.x, pose\.y \+/.test(reel));
 check("plant uses attractChassisY", /attractChassisY\(pose\.y\)/.test(reel));
@@ -93,6 +100,7 @@ check("no giant pale points", !/size: 0\.42/.test(reel) && !/0xd8c4a0/.test(reel
 check("dirt grit sprite + small point cap", /makeGritSprite/.test(reel) && /min\(aSize \* uScale \/ dist, 5\.5\)/.test(reel));
 check("tire tracks on the ribbon", /attract-tracks/.test(reel) && /_stampTracks/.test(reel));
 check("dust is dirt brown", /0\.4 \* shade, 0\.26 \* shade, 0\.12 \* shade/.test(reel));
+check("paintAttractFx smear + chroma + calm", /attract-smear/.test(reel) && /shot\.chroma/.test(reel) && /is-calm/.test(reel));
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "attract reel armed"}`);
 process.exit(fail ? 1 : 0);
