@@ -22,8 +22,8 @@ import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=5";
-import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar } from "./rival-livery.js?v=1";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=10";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=2";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -517,6 +517,8 @@ function upgradeRacePaint(src, obj) {
     if (src.normalMap) {
       phys.normalMap = src.normalMap;
       if (src.normalScale) phys.normalScale.copy(src.normalScale);
+    } else {
+      applyLacquerDetail(phys);
     }
     if (src.roughnessMap) phys.roughnessMap = src.roughnessMap;
     if (src.metalnessMap) phys.metalnessMap = src.metalnessMap;
@@ -552,6 +554,7 @@ function upgradeRacePaint(src, obj) {
     src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 1.25);
     if (src.roughness != null) src.roughness = Math.min(src.roughness, 0.34);
     src.userData.kind = src.userData.kind || "paint";
+    if (!src.normalMap && (isPaintName || src.userData.kind === "paint")) applyLacquerDetail(src);
     src.needsUpdate = true;
   } else if (!src.transparent && (isPaintName || src.metalness == null || src.metalness < 0.55)) {
     src.userData.kind = src.userData.kind || "paint";
@@ -965,6 +968,7 @@ function dressTitleCarShowroom(root) {
         phys.color.copy(src.color);
         if (src.map) phys.map = src.map;
         if (src.normalMap) phys.normalMap = src.normalMap;
+        else applyLacquerDetail(phys);
         if (src.roughnessMap) phys.roughnessMap = src.roughnessMap;
         if (src.metalnessMap) phys.metalnessMap = src.metalnessMap;
         if (src.aoMap) phys.aoMap = src.aoMap;
@@ -1852,6 +1856,7 @@ async function loadRivalGltf(id, url) {
   sanitizeGltfWheels(root);
   isolateWheelHubMaterials(root);
   mergeBodyPanels(root);
+  smoothRivalShell(root);
   hideShowroomCabinMeshes(root);
   root.userData.wheels = findWheels(root);
   root.userData.carId = spec.id;
@@ -1859,6 +1864,21 @@ async function loadRivalGltf(id, url) {
   plantOnContactPatch(root);
   rivalTemplates[spec.id] = root;
   console.info(`[garage] rival ${id}: GLB merged (${root.userData.mergedPanels || 0} panels)`);
+}
+
+/**
+ * Recompute vertex normals on the pack shell so a decimated panel reads as
+ * a continuous surface instead of flat facets. Wheels and glass stay as authored.
+ * @param {THREE.Object3D} root
+ */
+function smoothRivalShell(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry || !obj.geometry.attributes.position) return;
+    if (isUnmergeable(obj, root, false)) return;
+    const count = obj.geometry.attributes.position.count;
+    if (count < 24 || count > 120000) return;
+    obj.geometry.computeVertexNormals();
+  });
 }
 
 /**
@@ -2145,6 +2165,55 @@ function plantOnContactPatch(root) {
       const kids = root.children;
       for (let i = 0; i < kids.length; i++) kids[i].position.y += extra;
     }
+  }
+  cacheHubContacts(root);
+}
+
+/**
+ * Parent-space Y from the hub origin down to the tread.
+ * Measured once after the contact plant. `applyWheelPose` adds this to the
+ * hub and solves that point onto the road under the corner.
+ * @param {THREE.Object3D} root
+ */
+function cacheHubContacts(root) {
+  const wheels = root.userData && root.userData.wheels;
+  if (!wheels) return;
+  root.updateMatrixWorld(true);
+  const origin = new THREE.Vector3();
+  const tread = new THREE.Vector3();
+  const box = new THREE.Box3();
+  for (let i = 0; i < wheels.length; i++) {
+    const hub = wheels[i];
+    const parent = hub && hub.parent;
+    if (!hub || !parent) continue;
+    hub.updateWorldMatrix(true, true);
+    hub.getWorldPosition(origin);
+    let minY = Infinity;
+    let anyY = Infinity;
+    hub.traverse((obj) => {
+      if (!obj.isMesh || !obj.visible || !obj.geometry) return;
+      if (obj.userData && obj.userData.axleScrap) return;
+      const n = `${obj.name || ""} ${matName(obj)}`;
+      const rubberish =
+        isTireRubberName(n, obj) ||
+        !!(obj.material && obj.material.userData && obj.material.userData.kind === "rubber");
+      box.setFromObject(obj);
+      if (!Number.isFinite(box.min.y)) return;
+      if (box.min.y < anyY) anyY = box.min.y;
+      if (rubberish && box.min.y < minY) minY = box.min.y;
+    });
+    if (!Number.isFinite(minY)) minY = anyY;
+    if (!Number.isFinite(minY)) {
+      hub.userData.contactOffY = null;
+      continue;
+    }
+    // Store the drop in the parent's Y, not the hub's spun axis. Hubs rest
+    // at 90° so hub-local Y is the axle.
+    const hubWorld = hub.getWorldPosition(tread);
+    parent.worldToLocal(origin);
+    const hubLocalY = origin.y;
+    parent.worldToLocal(origin.set(hubWorld.x, minY, hubWorld.z));
+    hub.userData.contactOffY = origin.y - hubLocalY;
   }
 }
 
@@ -2838,6 +2907,8 @@ const ACKERMANN = 0.12;
  * @param {number} [chassisRoll=0] vehicle.roll, radians
  * @param {number[]} [wheelY] per-wheel suspension offset (metres, + = hub down)
  * @param {number} [deckLift=0] metres to raise hubs vs the painted deck
+ * @param {boolean[]|null} [dropOk]
+ * @param {number[]|null} [cornerY] road height per probe corner (front −X, front +X, rear −X, rear +X)
  */
 export function chassisDeckEmbed(vehicle, drawY, mesh) {
   const plant = 0.014;
@@ -2866,6 +2937,20 @@ export function chassisDeckEmbed(vehicle, drawY, mesh) {
   return Math.max(0, Math.min(0.06, signed));
 }
 
+/**
+ * Probe bag order is front −X, front +X, rear −X, rear +X at yaw 0.
+ * Visual hubs are sorted +X first, so the index is not the wheel index.
+ * @param {{front?:boolean, side?:number}} data
+ * @param {number} index
+ * @returns {number}
+ */
+function probeCornerSlot(data, index) {
+  const front = data.front === true || (data.front == null && index < 2);
+  const positiveX = data.side === 1 || (data.side == null && index % 2 === 0);
+  if (front) return positiveX ? 1 : 0;
+  return positiveX ? 3 : 2;
+}
+
 /** Walk to the car root that owns `userData.wheels` (the pitched / rolled mesh). */
 function chassisRootOf(wheel) {
   let n = wheel;
@@ -2880,13 +2965,14 @@ function chassisRootOf(wheel) {
  * Pose wheels: spin, steer, sprung shocks, and `deckLift`.
  * Extension below the painted deck only when `dropOk[i]` (verge).
  */
-export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0, dropOk = null) {
+export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0, dropOk = null, cornerY = null) {
   _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
   const lift = Math.max(0, Math.min(0.06, Number.isFinite(deckLift) ? deckLift : 0));
   const root = wheels && wheels[0] ? chassisRootOf(wheels[0]) : null;
+  if (cornerY && root && root.updateMatrixWorld) root.updateMatrixWorld(true);
   const pitch = root && Number.isFinite(root.rotation.x) ? root.rotation.x : 0;
   const pitchClamped = Math.max(-0.35, Math.min(0.35, pitch));
   const tanPitch = Math.tan(pitchClamped);
@@ -2913,8 +2999,8 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
             : 0;
       // Parent +Rx (nose down) lowers the front and lifts the tail. Plant
       // hubs by z·tan(pitch) so the body can dive without floating rears.
-      const pitchPlant = Math.max(-0.16, Math.min(0.16, tanPitch * zLong));
-      const rollPlant = Math.max(-0.14, Math.min(0.14, tanRoll * xLat));
+      const pitchPlant = Math.max(-0.48, Math.min(0.48, tanPitch * zLong));
+      const rollPlant = Math.max(-0.36, Math.min(0.36, tanRoll * xLat));
       // Shocks tuck the hub into the arch (travel −). Extension (travel +)
       // only drops onto the verge — never through the painted slab.
       const tuck = -Math.min(0, travelRaw);
@@ -2923,7 +3009,13 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
       const attitude = data.restPosY + lift + pitchPlant - rollPlant;
       let y = attitude + tuck - drop;
       if (!canDrop) y = Math.max(attitude, y);
+      // Rest X/Z every frame. The shock may ride a parent axis that is not Y
+      // (scaled LOD hubs), and that offset must not accumulate.
+      if (data.restPosX != null) w.position.x = data.restPosX;
+      if (data.restPosZ != null) w.position.z = data.restPosZ;
       w.position.y = y;
+      data._poseY = y;
+      data._canDrop = canDrop;
     }
     const isFront = data.front === true || (data.front == null && i < 2);
     const side = data.side === -1 ? -1 : data.side === 1 ? 1 : i % 2 === 0 ? 1 : -1;
@@ -2941,16 +3033,92 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     else w.quaternion.copy(_wheelPose);
     const spin = data.spin;
     const hub = spin && spin.isObject3D && spin.rotation ? spin : null;
-    if (!hub || hub === w) continue;
-    const axis = data.spinAxis || "x";
-    // Mirrored L/R tire meshes share a local +X axle; same signed spin rolls
-    // both sides forward. Only invert when the hub was authored flipped on Z.
-    const sign = data.spinSign != null ? data.spinSign : 1;
-    const ang = (spinArr[i] || 0) * sign;
-    hub.rotation.x = axis === "x" ? ang : 0;
-    hub.rotation.y = axis === "y" ? ang : 0;
-    hub.rotation.z = axis === "z" ? ang : 0;
+    if (hub && hub !== w) {
+      const axis = data.spinAxis || "x";
+      // Mirrored L/R tire meshes share a local +X axle; same signed spin rolls
+      // both sides forward. Only invert when the hub was authored flipped on Z.
+      const sign = data.spinSign != null ? data.spinSign : 1;
+      const ang = (spinArr[i] || 0) * sign;
+      hub.rotation.x = axis === "x" ? ang : 0;
+      hub.rotation.y = axis === "y" ? ang : 0;
+      hub.rotation.z = axis === "z" ? ang : 0;
+    }
+    // Pose first, then plant. Steering and spin swing the tread; measuring
+    // the rest pose left the rubber inside the deck after the hub turned.
+    const slot = probeCornerSlot(data, i);
+    const roadY = cornerY && slot >= 0 ? cornerY[slot] : NaN;
+    if (!Number.isFinite(roadY) || !w.parent || data._poseY == null) continue;
+    const bottom = hubWorldBottom(w);
+    if (!Number.isFinite(bottom)) continue;
+    // 1 mm above the surface so the tread kisses it and does not enter it.
+    let delta = roadY + 0.001 - bottom;
+    const bump = 0.45;
+    const droop = data._canDrop ? 0.16 : 0.1;
+    if (delta > 0.001) delta = Math.min(bump, delta);
+    else if (delta < -0.002) delta = Math.max(-droop, delta);
+    else delta = 0;
+    const ride = shockAxisStep(w.parent, delta);
+    if (!ride) continue;
+    if (ride.axis === "x") w.position.x += ride.step;
+    else if (ride.axis === "z") w.position.z += ride.step;
+    else w.position.y += ride.step;
   }
+}
+
+/**
+ * Parent-local move that changes world Y by `deltaWorld`.
+ * Most cars ride local Y. Scaled LOD hubs ride local Z (Y is the axle).
+ * @param {THREE.Object3D} parent
+ * @param {number} deltaWorld
+ * @returns {{axis:"x"|"y"|"z", step:number}|null}
+ */
+function shockAxisStep(parent, deltaWorld) {
+  if (!parent || !deltaWorld) return null;
+  parent.updateWorldMatrix(true, false);
+  const e = parent.matrixWorld.elements;
+  const axes = [
+    { axis: "x", along: e[1] },
+    { axis: "y", along: e[5] },
+    { axis: "z", along: e[9] },
+  ];
+  let best = axes[1];
+  for (let i = 0; i < axes.length; i++) {
+    if (Math.abs(axes[i].along) > Math.abs(best.along)) best = axes[i];
+  }
+  if (!(Math.abs(best.along) > 1e-8)) return null;
+  return { axis: best.axis, step: deltaWorld / best.along };
+}
+
+/**
+ * Lowest world Y of the visible wheel. Uses the posed matrices so a turned
+ * tire is measured where it actually is, not at the bind pose.
+ * @param {THREE.Object3D} hub
+ * @returns {number}
+ */
+function hubWorldBottom(hub) {
+  let minY = Infinity;
+  hub.updateWorldMatrix(true, true);
+  hub.traverse((obj) => {
+    if (!obj.isMesh || !obj.visible || !obj.geometry) return;
+    if (obj.userData && obj.userData.axleScrap) return;
+    if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+    const b = obj.geometry.boundingBox;
+    if (!b) return;
+    obj.updateWorldMatrix(true, false);
+    const e = obj.matrixWorld.elements;
+    const xs = [b.min.x, b.max.x];
+    const ys = [b.min.y, b.max.y];
+    const zs = [b.min.z, b.max.z];
+    for (let a = 0; a < 2; a++) {
+      for (let c = 0; c < 2; c++) {
+        for (let d = 0; d < 2; d++) {
+          const wy = e[1] * xs[a] + e[5] * ys[c] + e[9] * zs[d] + e[13];
+          if (wy < minY) minY = wy;
+        }
+      }
+    }
+  });
+  return minY;
 }
 
 function applyTint(root, tint) {
@@ -3198,6 +3366,7 @@ function makeRallyWheel(rimHex, hubHex, rubberHex, detail = false, side = 1) {
   }
 
   const wheel = new THREE.Mesh(geos.geo, [geos.tread, rimMat]);
+  wheel.name = "tyre";
   // Rubber colour lives on the shared tread material, so a car that wants a
   // different compound colour gets it from the tint pass, not a new material.
   void rubberHex;

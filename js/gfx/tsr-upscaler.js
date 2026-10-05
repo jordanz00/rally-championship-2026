@@ -36,9 +36,9 @@ import * as THREE from "../../vendor/three.module.js";
 export const TSR_MODES = Object.freeze({
   off: 0,
   dlaa: 1.0,
-  quality: 0.77,
-  balanced: 0.67,
-  performance: 0.59,
+  quality: 0.84,
+  balanced: 0.7,
+  performance: 0.58,
 });
 
 /**
@@ -713,8 +713,8 @@ export class TsrUpscaler {
     this.mode = "off";
     this.scale = 0;
     this.debug = new Set(opts.debug || []);
-    /** @type {number} RCAS sharpness 0..1 (softer than 0.5 — less fence ring). */
-    this.sharpness = 0.38;
+    /** @type {number} RCAS sharpness 0..1. 0.5 reads on foliage without a hard ring. */
+    this.sharpness = 0.5;
     this.maxHistory = 12;
     this.kernelSigma = 0.47;
     this.clipGamma = 1.0;

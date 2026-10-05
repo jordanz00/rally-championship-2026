@@ -16,7 +16,7 @@ const UP_HOLD = 90;
 
 export class QualityManager {
   constructor() {
-    this.renderScale = 0.9;
+    this.renderScale = 1;
     this._ema = TARGET_MS;
     this._down = 0;
     this._up = 0;
@@ -63,7 +63,7 @@ export class QualityManager {
     return { changed, renderScale: this.renderScale };
   }
 
-  reset(scale = 0.9) {
+  reset(scale = 1) {
     this.renderScale = scale;
     this._ema = TARGET_MS;
     this._down = 0;

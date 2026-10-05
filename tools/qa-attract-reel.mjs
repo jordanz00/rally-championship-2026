@@ -68,9 +68,9 @@ check(
   cacheOk && Number(gameV) >= 1006 && Number(mainV) >= 1006,
   `main=${mainV} game=${gameV}`
 );
-check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 12);
+check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 14);
 check("no white cut flash", /flash: 0/.test(reel) && /this\.flash = 0/.test(reel));
-check("shots hold 2s+", /bumper: 2\.35/.test(reel) && /_mustCut/.test(reel) && /shotT < 2/.test(reel));
+check("shots hold 4s+", /bumper: 4\.4/.test(reel) && /_mustCut/.test(reel) && /shotT < 2/.test(reel));
 check("reel imports attract-plant", /attract-plant\.js\?v=2/.test(reel));
 check("no chassis hover pad", !/pose\.y \+ embed \+ 0\.16/.test(reel) && !/position\.set\(pose\.x, pose\.y \+/.test(reel));
 check("plant uses attractChassisY", /attractChassisY\(pose\.y\)/.test(reel));

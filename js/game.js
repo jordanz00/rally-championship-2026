@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=193";
+import { Vehicle } from "./physics/vehicle.js?v=201";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=229";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=239";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=9";
 import { Track } from "./tracks/track.js?v=430";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=227";
+import { Opponent } from "./ai.js?v=236";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -47,11 +47,11 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=1033";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1034";
 import { createPerfTier } from "./gfx/perf-tier.js?v=55";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
-import { QualityManager } from "./gfx/quality-manager.js?v=4";
+import { QualityManager } from "./gfx/quality-manager.js?v=5";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { Spring1, Spring3, criticalDamp } from "./camera/camera-spring.js?v=1";
 import { createPerformanceMonitor } from "./debug/performance-monitor.js?v=4";
@@ -152,8 +152,8 @@ function raceTunnelLighting(courseId) {
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
-import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=13";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=14";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -712,8 +712,12 @@ export class RallyGame {
     } else {
       // Desktop presents at 60. Do not trade the frame for a 30 Hz lock,
       // and do not shrink the framebuffer or the shadow atlas to get there.
+      // Sharper race buffer. Title keeps its own smaller cap. TSR still
+      // shades under this, and a late GPU steps the mode and the scale down.
       GFX.preferLock30 = false;
       GFX.forceLock30AtSettle = false;
+      GFX.maxPixelRatio = 1.5;
+      GFX.maxPixels = 3200000;
       armStreamBudget();
     }
     const created = await createGameRenderer({
@@ -3233,8 +3237,10 @@ export class RallyGame {
       ? /Android/i.test(navigator.userAgent || "")
         ? 0.62
         : 0.78
-      : 0.88;
-    this._softRenderScale = isPhonePlay() ? 0.78 : 0.9;
+      : 1;
+    // Phones stay under the panel. Desktop uses the output cap; TSR is the
+    // internal cut, so a second 0.9 scale was just blur.
+    this._softRenderScale = isPhonePlay() ? 0.78 : 1;
     if (this.qualityMgr) this.qualityMgr.reset(this._softRenderScale);
     if (this.pipeline && this.pipeline.setRenderScale) {
       this.pipeline.setRenderScale(this._softRenderScale);
@@ -4374,6 +4380,7 @@ export class RallyGame {
         if (o.mesh) o.mesh.visible = false;
         continue;
       }
+      if (o.vehicle) o.vehicle._visTrack = this.track;
       if (typeof o.applyReplayPose === "function") {
         o.applyReplayPose(rp, dt, spins[i]);
       }
@@ -4387,13 +4394,15 @@ export class RallyGame {
    * @param {{position:{x:number,z:number},progress?:number,surfaceId?:string}|null} vehicle
    */
   _bindReplaySurface(vehicle) {
-    if (!vehicle || !vehicle.position || !this.track || !this.track.query) return;
-    const q = this.track.query(
-      vehicle.position.x,
-      vehicle.position.z,
-      this._replayQuery || (this._replayQuery = {}),
-      vehicle.progress || 0
-    );
+    if (!vehicle || !vehicle.position || !this.track) return;
+    const bag = this._replayQuery || (this._replayQuery = {});
+    const along = vehicle.progress;
+    const q =
+      Number.isFinite(along) && this.track.sample
+        ? this.track.sample(along, bag)
+        : this.track.query
+          ? this.track.query(vehicle.position.x, vehicle.position.z, bag, along || 0)
+          : null;
     if (q && q.surface) vehicle.surfaceId = q.surface;
     vehicle.onGround = !(q && q.jumpKind === "gap");
   }
@@ -4405,7 +4414,9 @@ export class RallyGame {
    */
   _emitReplayTrails(dt) {
     if (!(dt > 0)) return;
-    if (this.tireMarks) {
+    this._replayFxN = (this._replayFxN || 0) + 1;
+    const write = this._replayFxN % 2 === 0;
+    if (this.tireMarks && write) {
       this.tireMarks.mesh.visible = true;
       if (this.player) this.tireMarks.emit(this.player, this.track, dt);
       const pack = this.opponents || [];
@@ -4416,7 +4427,7 @@ export class RallyGame {
       }
       this.tireMarks.step(dt);
     }
-    if (this.dust && !isPhonePlay()) {
+    if (this.dust && !isPhonePlay() && write) {
       if (this.player) this.dust.emit(this.player, dt, this.track);
       const pack = this.opponents || [];
       let near0 = -1;
@@ -4445,7 +4456,7 @@ export class RallyGame {
       if (near1 >= 0) this.dust.emit(pack[near1].vehicle, dt, this.track);
       this.dust.step(dt, this.track);
     }
-    if (this.track && this.track.wheelRuts && this.track.wheelRuts.flush) {
+    if (write && this._replayFxN % 4 === 0 && this.track && this.track.wheelRuts && this.track.wheelRuts.flush) {
       this.track.wheelRuts.flush();
     }
   }
@@ -4542,6 +4553,7 @@ export class RallyGame {
    * @param {object|null} pose
    */
   _onBroadcastCut(pose) {
+    this._replayCutWarm = 2;
     if (this.tsr && this.tsr.reset) this.tsr.reset();
     if (this.mobilePresent && this.mobilePresent.reset) this.mobilePresent.reset();
     if (!pose) return;
@@ -4637,14 +4649,19 @@ export class RallyGame {
     spin[1] = (spin[1] + omega * step) % wrap;
     spin[2] = (spin[2] + omega * step) % wrap;
     spin[3] = (spin[3] + omega * step) % wrap;
+    const deckY = pose && Number.isFinite(pose.y) ? pose.y : mesh.position.y;
+    if (this.player && this.player.sampleVisualCorners && this.track) {
+      this.player.sampleVisualCorners(this.track, deckY + 0.014, pose && pose.progress);
+    }
     applyWheelPose(
       wheels,
       spin,
       pose && pose.steer ? pose.steer : 0,
       pose && pose.roll ? pose.roll : 0,
       null,
-      chassisDeckEmbed(this.player, pose && Number.isFinite(pose.y) ? pose.y : mesh.position.y, mesh),
-      null
+      chassisDeckEmbed(this.player, deckY, mesh),
+      null,
+      this.player && this.player._cornerRoadY
     );
   }
 
@@ -4858,6 +4875,16 @@ export class RallyGame {
         wy[i] = Math.max(-cap, Math.min(hi, raw));
       }
     }
+    if (
+      p.onGround &&
+      this.track &&
+      p.sampleVisualCorners &&
+      p._cornerRoadY &&
+      !Number.isFinite(p._cornerRoadY[0])
+    ) {
+      const center = p._q && Number.isFinite(p._q.height) ? p._q.height : d.y + 0.014;
+      p.sampleVisualCorners(this.track, center, p.progress || 0);
+    }
     applyWheelPose(
       this.playerMesh.userData.wheels || [],
       d.spin,
@@ -4865,7 +4892,8 @@ export class RallyGame {
       d.roll,
       d.wheelY ? wy : null,
       chassisDeckEmbed(p, d.y, this.playerMesh),
-      dropOk
+      dropOk,
+      p._cornerRoadY
     );
     const braking = p.brake > 0.08 || p.handbrake > 0.28;
     if (this.playerMesh.userData.brakeOn !== braking) {
@@ -6815,8 +6843,13 @@ export class RallyGame {
     ) {
       return;
     }
+    if ((this._replayCutWarm || 0) > 0) {
+      this._replayCutWarm -= 1;
+      return;
+    }
+    const compileMs = this.broadcast ? Math.min(4, budgetMs) : budgetMs;
     try {
-      this.track.drainCompileQueue(this.renderer, this.scene, this.camera, budgetMs);
+      this.track.drainCompileQueue(this.renderer, this.scene, this.camera, compileMs);
     } catch (err) {
       console.warn("Stream compile budget failed", err);
     }

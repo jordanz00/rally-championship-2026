@@ -1,10 +1,11 @@
 /**
- * Attract reel — music-video + WRC-TV title coverage, not a spinning pad car.
+ * Attract reel — rally television on the title, not a spinning pad car.
  *
  * WHO THIS IS FOR: title + SELECT MODE.
  * WHAT IT DOES: builds a lightweight closed rally ribbon (no Track.create),
  *   dresses a desert/forest hero stretch from existing kits, drives a pack,
- *   and cuts a director with hard cuts, pack fly-bys, speed ramps, and flash.
+ *   and holds broadcast cameras (heli, chase, roadside, head-on) without a
+ *   speed ramp or a dutch tilt.
  * HOW IT CONNECTS: RallyGame starts this after title IBL; CSS overlays live
  *   in index.html (#attract-fx). Does not own physics or Track.query.
  */
@@ -26,54 +27,51 @@ const ROAD_HALF = 7.4;
 const SAMPLE_STEP = 2.2;
 const KIT_V = "23";
 const SHOT_HOLD = {
-  bumper: 2.35,
-  moto: 2.25,
-  whip: 2.15,
-  heli: 2.7,
-  headon: 2.2,
-  lowside: 2.25,
-  jump: 2.45,
-  dutch: 2.2,
-  crane: 2.5,
-  smash: 2.15,
-  nose: 2.2,
-  packfly: 2.4,
-  rear: 2.3,
-  bank: 2.25,
+  bumper: 4.4,
+  moto: 5.0,
+  whip: 4.2,
+  heli: 5.6,
+  headon: 4.2,
+  lowside: 4.3,
+  jump: 4.6,
+  dutch: 4.2,
+  crane: 5.2,
+  smash: 4.1,
+  nose: 4.4,
+  packfly: 4.8,
+  rear: 5.0,
+  bank: 4.5,
 };
 
 const SHOT_LABEL = {
-  bumper: "BUMPER · SEND IT",
-  moto: "CHASE CAM",
-  whip: "WHIP · DO NOT BLINK",
+  bumper: "REAR TRACKING",
+  moto: "CHASE",
+  whip: "ROADSIDE",
   heli: "HELICOPTER",
-  headon: "HEAD-ON · FLINCH",
+  headon: "HEAD-ON",
   lowside: "WHEEL CAM",
-  jump: "CREST · AIRTIME",
-  dutch: "DUTCH · MUSIC VID",
-  crane: "CRANE",
-  smash: "HARD CUT",
-  nose: "NOSE CAM",
-  packfly: "PACK FLY-BY",
-  rear: "REAR 3/4",
-  bank: "BANKED",
+  jump: "CREST",
+  dutch: "SWEEPER",
+  crane: "JIB",
+  smash: "TRACKSIDE",
+  nose: "NOSE",
+  packfly: "FIELD CAM",
+  rear: "PACK",
+  bank: "APEX",
 };
 
 const CYCLE = [
-  "packfly",
-  "whip",
-  "bumper",
-  "headon",
-  "lowside",
-  "jump",
-  "dutch",
-  "nose",
-  "crane",
-  "smash",
   "heli",
   "rear",
-  "bank",
+  "bumper",
+  "lowside",
+  "nose",
+  "crane",
   "moto",
+  "headon",
+  "bank",
+  "packfly",
+  "jump",
 ];
 
 /** Closed desert-rally knots — long flyby, crest, sweeper, hairpin. */
@@ -752,9 +750,11 @@ export class AttractDirector {
     }
     this.kind = next;
     this.shotT = 0;
-    this.hold = (SHOT_HOLD[this.kind] || 2.2) * (this.reduced ? 1.35 : 1.85 + Math.random() * 0.35);
-    this.phase = this.reduced ? "blend" : "out";
+    this.hold = SHOT_HOLD[this.kind] || 4.4;
+    if (this.reduced) this.hold *= 1.2;
+    this.phase = "hold";
     this.phaseT = 0;
+    this.fade = 0;
     this.justCut = true;
     this.flash = 0;
   }
@@ -783,7 +783,7 @@ export class AttractDirector {
   }
 
   _follow(dt) {
-    const k = 1 - Math.exp(-dt * (this.kind === "whip" || this.kind === "smash" ? 16 : 8.2));
+    const k = 1 - Math.exp(-dt * 6.5);
     this.eye.lerp(this._te, k);
     this.look.lerp(this._tl, k);
     this.fov += (this._tfov - this.fov) * k;
@@ -826,7 +826,7 @@ export class AttractDirector {
     if (kind === "bumper") {
       this._te.set(pose.x - fx * 5.1 + nx * 0.35, deck + 1.08, pose.z - fz * 5.1 + nz * 0.35);
       this._tl.set(pose.x + fx * 10, lookY + 0.15, pose.z + fz * 10);
-      this._tfov = 62;
+      this._tfov = 46;
     } else if (kind === "moto") {
       this._te.set(pose.x - fx * 8.4 + nx * 1.1, deck + 1.7, pose.z - fz * 8.4 + nz * 1.1);
       this._tl.set(pose.x + fx * 9, lookY, pose.z + fz * 9);
@@ -846,7 +846,7 @@ export class AttractDirector {
       this._tl.set(pose.x, lookY, pose.z);
       this._tfov = 34;
     } else if (kind === "lowside") {
-      this._te.set(pose.x + nx * 4.4 - fx * 2.8, deck + 0.34, pose.z + nz * 4.4 - fz * 2.8);
+      this._te.set(pose.x + nx * 4.4 - fx * 2.8, deck + 0.92, pose.z + nz * 4.4 - fz * 2.8);
       this._tl.set(pose.x + fx * 3, lookY - 0.12, pose.z + fz * 3);
       this._tfov = 48;
     } else if (kind === "jump") {
@@ -857,8 +857,8 @@ export class AttractDirector {
       const mate = pack && pack.second ? pack.second : pose;
       this._te.set(mate.x - fx * 7 + nx * 5.1, deck + 1.45, mate.z - fz * 7 + nz * 5.1);
       this._tl.set(pose.x + fx * 2, lookY, pose.z + fz * 2);
-      this._tfov = 48;
-      this._tdutch = this.reduced ? 0.08 : 0.26;
+      this._tfov = 44;
+      this._tdutch = 0;
     } else if (kind === "crane") {
       this._te.set(pose.x - fx * 6 + nx * 2, deck + 2.05 + Math.min(9, this.shotT * 5.2), pose.z - fz * 6 + nz * 2);
       this._tl.set(pose.x + fx * 8, lookY, pose.z + fz * 8);
@@ -866,7 +866,7 @@ export class AttractDirector {
     } else if (kind === "nose") {
       this._te.set(pose.x + fx * 1.2 + nx * 0.18, deck + 0.9, pose.z + fz * 1.2 + nz * 0.18);
       this._tl.set(pose.x + fx * 14, lookY + 0.04, pose.z + fz * 14);
-      this._tfov = 68;
+      this._tfov = 42;
     } else if (kind === "packfly") {
       const aim = this._aim(pose, pack, 0.45);
       const side = pose.t % 10 < 5 ? 1 : -1;
@@ -882,11 +882,11 @@ export class AttractDirector {
       this._te.set(pose.x + nx * 7.1 - fx * 1.4, deck + 0.5, pose.z + nz * 7.1 - fz * 1.4);
       this._tl.set(pose.x + fx * 5, lookY - 0.04, pose.z + fz * 5);
       this._tfov = 40;
-      this._tdutch = this.reduced ? 0.06 : 0.2;
+      this._tdutch = 0;
     } else {
       this._te.set(pose.x + nx * 3.1 - fx * 1.4, deck + 0.72, pose.z + nz * 3.1 - fz * 1.4);
       this._tl.set(pose.x, lookY + 0.2, pose.z);
-      this._tfov = 66;
+      this._tfov = 44;
     }
   }
 }
@@ -1258,13 +1258,7 @@ export class AttractReel {
    */
   update(dt, camera, hooks) {
     if (!this.ready) return this.director._out();
-    const kind = this.director.kind;
-    let scale = 1;
-    if (!this.reduced) {
-      if (kind === "jump") scale = 0.56;
-      else if (kind === "crane") scale = 0.8;
-      else if (kind === "smash" || kind === "whip") scale = 1.24;
-    }
+    const scale = 1;
     this._timeScale = scale;
     this.t += dt * scale;
     const n = Math.max(1, this.cars.length);
@@ -1533,9 +1527,9 @@ export function paintAttractFx(root, shot, on) {
   const clock = root.querySelector(".attract-clock");
   if (fade) fade.style.opacity = String(Math.max(0, Math.min(1, shot.fade)));
   if (flash) flash.style.opacity = "0";
-  if (chroma) chroma.style.opacity = "0";
-  if (smear) smear.style.opacity = "0";
-  if (speed) speed.style.opacity = "0";
+  if (chroma) chroma.style.opacity = String(Math.max(0, Math.min(1, shot.chroma || 0)));
+  if (smear) smear.style.opacity = String(Math.max(0, Math.min(1, shot.smear || 0)));
+  if (speed) speed.style.opacity = String(Math.max(0, Math.min(1, shot.speedFx || 0)));
   if (slug && slug.textContent !== shot.label) slug.textContent = shot.label;
   if (clock && shot.clock && clock.textContent !== shot.clock) clock.textContent = shot.clock;
   root.dataset.kind = shot.kind || "";

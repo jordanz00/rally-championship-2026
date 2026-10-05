@@ -1,0 +1,13 @@
+POV driver hands
+
+Source: Godot XR Tools hand meshes (Hand_Nails_L / Hand_Nails_R)
+https://github.com/GodotVR/godot-xr-tools/tree/master/addons/godot-xr-tools/hands
+
+Author of the Godot XR Tools hand models: DigitalN8m4r3 (Miodrag Sejic), Austria, 7 November 2022.
+The mesh was built from the MakeHuman Community Edition base, which MakeHuman releases as CC0.
+Godot XR Tools publishes these hand models under CC0 1.0 Universal.
+https://github.com/GodotVR/godot-xr-tools/blob/master/addons/godot-xr-tools/hands/License.md
+https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md
+
+This game uses a subdivided, grip-posed export of those rigs (26 bones, skinned).
+You can copy, modify, and ship them, including in a commercial build.

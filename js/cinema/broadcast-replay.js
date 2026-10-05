@@ -12,9 +12,9 @@
 
 const SAMPLE_HZ = 20;
 const MAX_SAMPLES = 16000;
-const FADE_IN = 0.28;
-export const HOLD_MIN = 2.0;
-export const HOLD_MAX = 3.0;
+const FADE_IN = 0.16;
+export const HOLD_MIN = 3.6;
+export const HOLD_MAX = 6.2;
 const DEFAULT_ASPECT = 16 / 9;
 
 /** Hull aim point above the taped contact patch. */
@@ -49,14 +49,14 @@ export const BROADCAST_SHOTS = Object.freeze([
 export const HERO_SHOTS = new Set(["bumper", "chase", "heli", "nose", "threeq", "crane", "hero"]);
 
 export const SHOT_HOLD = {
-  bumper: 2.15,
-  chase: 2.45,
-  flyby: 2.2,
-  heli: 2.7,
-  nose: 2.15,
-  threeq: 2.5,
-  crane: 2.8,
-  hero: 2.6,
+  bumper: 4.2,
+  chase: 5.1,
+  flyby: 4.4,
+  heli: 5.8,
+  nose: 4.0,
+  threeq: 5.2,
+  crane: 5.6,
+  hero: 4.8,
 };
 
 export const SHOT_LABEL = {
@@ -162,6 +162,7 @@ export class ReplayTape {
     this.samples = [];
     this.t = 0;
     this._acc = 0;
+    this._cursor = 0;
     this.active = true;
     this.courseId = courseId || "";
     this.carId = carId || "";
@@ -233,8 +234,10 @@ export class ReplayTape {
     if (s.length < 2) return null;
     const lastT = s[s.length - 1].t;
     const loopT = lastT > 0.4 ? ((t % lastT) + lastT) % lastT : 0;
-    let i = 0;
+    let i = this._cursor | 0;
+    if (i < 0 || i >= s.length || s[i].t > loopT) i = 0;
     while (i < s.length - 1 && s[i + 1].t < loopT) i++;
+    this._cursor = i;
     const a = s[i];
     const b = s[Math.min(i + 1, s.length - 1)];
     const u = b.t > a.t ? (loopT - a.t) / (b.t - a.t) : 0;
@@ -408,12 +411,12 @@ export function composeBroadcastShot(kind, pose, track, opts) {
       fov = 42;
     }
   } else if (shot === "nose") {
-    lead = 0.4;
+    lead = 0.55;
     back = 0;
-    ahead = 15.2;
-    lat = 0.28;
-    up = 1.38;
-    fov = 36;
+    ahead = 22;
+    lat = 1.6;
+    up = 1.55;
+    fov = 38;
   } else if (shot === "flyby") {
     lead = 2.35;
     back = -6.4;
@@ -861,13 +864,21 @@ export class BroadcastDirector {
   }
 
   /**
-   * Hard lock — tracking snaps every frame. Cuts never leave a half-lerp.
+   * Ease onto the locked shot. A cut still snaps. If the hull leaves the
+   * frame, snap back so the car cannot drift out of the broadcast.
    * @param {number} dt
    * @param {ReplaySample} pose
    */
   _follow(dt, pose) {
     if (!(dt > 0)) return;
-    this._snapEye();
+    const k = 1 - Math.exp(-dt * 14);
+    this.eyeX += (this._tx - this.eyeX) * k;
+    this.eyeY += (this._ty - this.eyeY) * k;
+    this.eyeZ += (this._tz - this.eyeZ) * k;
+    this.lookX += (this._lx - this.lookX) * k;
+    this.lookY += (this._ly - this.lookY) * k;
+    this.lookZ += (this._lz - this.lookZ) * k;
+    this.fov += (this._tfov - this.fov) * k;
     if (pose && !this._eyeFramesPlayer(pose)) this._snapEye();
   }
 }

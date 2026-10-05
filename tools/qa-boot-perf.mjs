@@ -32,13 +32,16 @@ console.log(`BOOT / FRAME BUDGET  ·  ${new Date().toISOString()}\n`);
 
 check("main imports game.js?v=1021+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1021);
 check("index boots main.js?v=1021+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1021);
-check("modulepreload main", /rel="modulepreload" href="js\/main\.js\?v=1021"/.test(html));
+check("modulepreload main", /rel="modulepreload" href="js\/main\.js\?v=\d+"/.test(html));
 check("no splash HDR prefetch", !/kloofendal_partly_cloudy_2k\.hdr/.test(html));
 check("stream budget helper", /function armStreamBudget/.test(game) && /settleLookaheadMeters/.test(game));
 check("faster quality down", /DOWN_HOLD = 10/.test(qm) && /minScale = 0\.62/.test(qm));
 check("2k maps wait", /HI_MS = 24000/.test(stream) && /__rallyHiMaps/.test(stream));
 check("1k boot timeout 900", /BOOT_MS = 900/.test(stream));
-check("race starts below native scale", /_softRenderScale = isPhonePlay\(\) \? 0\.78 : 0\.9/.test(game));
+check(
+  "phone stays soft, desktop output is full scale",
+  /_softRenderScale = isPhonePlay\(\) \? 0\.78 : 1/.test(game)
+);
 check("present budget adapt", /_adaptPresentBudget/.test(game) && /setMode\("balanced"\)/.test(game));
 check("shadow every from tier", /_qualityShadowEvery/.test(game) && /shadowEvery: 2/.test(perf));
 check("compile overlay shorter", /_drainStreamCompileUnderOverlay\(480\)/.test(game));

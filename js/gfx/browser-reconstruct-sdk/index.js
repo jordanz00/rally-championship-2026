@@ -30,7 +30,7 @@ import {
   TSR_CAR_HISTORY_KILL,
   TSR_RESURRECT_INTERVAL,
   NORMAL_BUDGET_MS,
-} from "../tsr-upscaler.js?v=988";
+} from "../tsr-upscaler.js?v=989";
 import {
   createReconstruct,
   persistReconEnabled,

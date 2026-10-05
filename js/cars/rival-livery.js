@@ -2,7 +2,7 @@
  * Rival liveries — original Group-A / WRC-era paint for the AI pack.
  *
  * WHO THIS IS FOR: celica.js rival / attract / replay clones.
- * WHAT IT DOES: eight unique lacquer looks (then hue+dirt recycles) so a
+ * WHAT IT DOES: fourteen unique lacquer looks (then hue+dirt recycles) so a
  *   14-car field is not one cheap hue. Physical clearcoat, env-aware
  *   roughness, object-space panel blocks, and readable door numbers.
  *   Sponsor copy is invented — no licensed works marks.
@@ -16,7 +16,7 @@ import * as THREE from "../../vendor/three.module.js";
 const RIVAL_NUMBERS = ["4", "7", "11", "14", "18", "21", "23", "28", "33", "36", "41", "44", "5", "2"];
 
 /**
- * Eight authored looks. Recycled slots shift hue and add stage dirt.
+ * Fourteen authored looks — one per grid slot. Extra slots shift hue and add dirt.
  * Colours are period privateer / works-adjacent, not licensed lockups.
  */
 export const RIVAL_LIVERIES = [
@@ -140,6 +140,96 @@ export const RIVAL_LIVERIES = [
     roughness: 0.22,
     metalness: 0.12,
   },
+  {
+    id: "glacier",
+    name: "Glacier",
+    body: 0x7eb0c8,
+    secondary: 0xf4f7f8,
+    accent: 0x9a1c24,
+    plate: 0xf4f7f8,
+    ink: 0x142028,
+    team: "GLACIER",
+    sponsor: "ICE NOTE",
+    wear: 0.14,
+    style: 8,
+    roughness: 0.18,
+    metalness: 0.13,
+  },
+  {
+    id: "quarry",
+    name: "Quarry",
+    body: 0x4a5340,
+    secondary: 0x121410,
+    accent: 0xd4a24a,
+    plate: 0x121410,
+    ink: 0xf0e6c8,
+    team: "QUARRY",
+    sponsor: "HAUL ROAD",
+    wear: 0.32,
+    style: 9,
+    roughness: 0.28,
+    metalness: 0.1,
+  },
+  {
+    id: "harbor",
+    name: "Harbor",
+    body: 0x0e4a52,
+    secondary: 0xf2efe6,
+    accent: 0xe07a28,
+    plate: 0xf2efe6,
+    ink: 0x102428,
+    team: "HARBOR",
+    sponsor: "DOCK LINE",
+    wear: 0.19,
+    style: 10,
+    roughness: 0.21,
+    metalness: 0.12,
+  },
+  {
+    id: "kiln",
+    name: "Kiln",
+    body: 0xc45a22,
+    secondary: 0x141210,
+    accent: 0xf3ead8,
+    plate: 0x141210,
+    ink: 0xf3ead8,
+    team: "KILN",
+    sponsor: "HEAT CHECK",
+    wear: 0.27,
+    style: 11,
+    roughness: 0.24,
+    metalness: 0.11,
+  },
+  {
+    id: "paper",
+    name: "Paper",
+    body: 0xf7f4ee,
+    secondary: 0x1a1a1c,
+    accent: 0xb4232c,
+    plate: 0x1a1a1c,
+    ink: 0xf7f4ee,
+    team: "PAPER STAGE",
+    sponsor: "BLANK PAGE",
+    wear: 0.12,
+    style: 12,
+    roughness: 0.17,
+    metalness: 0.12,
+  },
+  {
+    id: "basalt",
+    name: "Basalt",
+    body: 0x2a2c30,
+    secondary: 0xc8ccd2,
+    accent: 0xa31820,
+    plate: 0xc8ccd2,
+    ink: 0x16181c,
+    team: "BASALT",
+    sponsor: "ROCK NOTE",
+    wear: 0.23,
+    style: 13,
+    roughness: 0.22,
+    metalness: 0.16,
+  },
 ];
 
 const paintCache = new Map();
@@ -150,6 +240,8 @@ let decalGeo = null;
 let flakeMap = null;
 /** @type {THREE.Texture|null} */
 let gritMap = null;
+/** @type {THREE.Texture|null} */
+let lacquerNormal = null;
 
 const FIT = {
   celica: { halfW: 0.88, doorY: 0.7, doorZ: 0.1, hoodY: 0.78, hoodZ: 1.1, roofY: 1.2, roofZ: 0.2 },
@@ -208,38 +300,86 @@ export function aiLiveryForIndex(index) {
 }
 
 /**
- * Shared flake albedo — greyscale multiply so any GLB UV still reads as lacquer.
+ * Shared flake albedo — near-white so the livery colour stays, with metallic fleck.
  */
 function getFlakeMap() {
   if (flakeMap) return flakeMap;
+  const size = 512;
   const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
+  c.width = size;
+  c.height = size;
   const g = c.getContext("2d");
-  g.fillStyle = "#d8d8d8";
-  g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 2200; i++) {
-    const x = (hash01(i) * 256) | 0;
-    const y = (hash01(i + 17) * 256) | 0;
-    const v = 150 + ((hash01(i + 41) * 70) | 0);
-    g.fillStyle = `rgb(${v},${v},${v})`;
-    g.fillRect(x, y, 1, 1);
+  g.fillStyle = "#f2f2f2";
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 9000; i++) {
+    const x = (hash01(i) * size) | 0;
+    const y = (hash01(i + 17) * size) | 0;
+    const v = 210 + ((hash01(i + 41) * 45) | 0);
+    g.fillStyle = `rgb(${v},${v},${Math.min(255, v + 8)})`;
+    g.fillRect(x, y, hash01(i + 5) > 0.82 ? 2 : 1, 1);
   }
-  for (let p = 0; p < 18; p++) {
-    const y = 12 + p * 14;
-    g.strokeStyle = "rgba(20,20,20,0.06)";
+  for (let p = 0; p < 28; p++) {
+    const y = 8 + p * 18;
+    g.strokeStyle = "rgba(40,40,40,0.045)";
     g.beginPath();
-    g.moveTo(0, y + hash01(p + 3) * 4);
-    g.lineTo(256, y + hash01(p + 9) * 4);
+    g.moveTo(0, y + hash01(p + 3) * 6);
+    g.lineTo(size, y + hash01(p + 9) * 6);
     g.stroke();
   }
   flakeMap = new THREE.CanvasTexture(c);
   flakeMap.wrapS = THREE.RepeatWrapping;
   flakeMap.wrapT = THREE.RepeatWrapping;
-  flakeMap.repeat.set(2.2, 1.6);
+  flakeMap.repeat.set(2.4, 1.8);
   flakeMap.colorSpace = THREE.SRGBColorSpace;
-  flakeMap.anisotropy = 4;
+  flakeMap.anisotropy = 8;
   return flakeMap;
+}
+
+/**
+ * Orange-peel clearcoat normal. Flat is (128, 128, 255). Shared by rivals and the hero.
+ * @returns {THREE.CanvasTexture}
+ */
+export function getLacquerNormal() {
+  if (lacquerNormal) return lacquerNormal;
+  const size = 512;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const g = c.getContext("2d");
+  const img = g.createImageData(size, size);
+  const d = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const peel =
+        Math.sin(x * 0.37) * Math.cos(y * 0.41) * 10 +
+        Math.sin(x * 1.7 + y * 0.6) * 4;
+      const seam = Math.abs((y % 96) - 2) < 1.5 ? -18 : 0;
+      d[i] = 128 + peel + seam;
+      d[i + 1] = 128 + peel * 0.65;
+      d[i + 2] = 255;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  lacquerNormal = new THREE.CanvasTexture(c);
+  lacquerNormal.wrapS = THREE.RepeatWrapping;
+  lacquerNormal.wrapT = THREE.RepeatWrapping;
+  lacquerNormal.repeat.set(3, 2);
+  lacquerNormal.colorSpace = THREE.NoColorSpace;
+  lacquerNormal.anisotropy = 8;
+  return lacquerNormal;
+}
+
+/**
+ * Put lacquer peel on a body material that has no authored normal.
+ * @param {THREE.Material} mat
+ */
+export function applyLacquerDetail(mat) {
+  if (!mat || mat.normalMap) return;
+  mat.normalMap = getLacquerNormal();
+  mat.normalScale = new THREE.Vector2(0.28, 0.28);
+  mat.needsUpdate = true;
 }
 
 /**
@@ -280,15 +420,17 @@ export function getRivalPaintMaterial(livery) {
   mat = new THREE.MeshPhysicalMaterial({
     color: livery.body,
     map: getFlakeMap(),
+    normalMap: getLacquerNormal(),
+    normalScale: new THREE.Vector2(0.32, 0.32),
     roughness: livery.roughness,
     roughnessMap: getGritMap(),
     metalness: livery.metalness,
     clearcoat: 1,
-    clearcoatRoughness: 0.034 + livery.wear * 0.1,
-    clearcoatEnvMapIntensity: 2.15,
-    envMapIntensity: 1.28,
-    sheen: 0.08,
-    sheenRoughness: 0.45,
+    clearcoatRoughness: 0.028 + livery.wear * 0.08,
+    clearcoatEnvMapIntensity: 2.35,
+    envMapIntensity: 1.45,
+    sheen: 0.1,
+    sheenRoughness: 0.4,
     sheenColor: new THREE.Color(livery.body).multiplyScalar(0.35),
   });
   mat.name = `rival-paint-${livery.id}`;
@@ -340,26 +482,44 @@ uniform float uRivalStyle;`
   float mask = 0.0;
   float accMask = 0.0;
   if (uRivalStyle < 0.5) {
-    mask = 1.0 - smoothstep(0.11, 0.2, abs(p.y - 0.64 - p.z * 0.07));
+    mask = 1.0 - smoothstep(0.16, 0.28, abs(p.y - 0.62 - p.z * 0.08));
   } else if (uRivalStyle < 1.5) {
-    mask = smoothstep(0.48, 0.72, p.z) * smoothstep(0.5, 0.7, p.y);
+    mask = smoothstep(0.35, 0.62, p.z) * smoothstep(0.42, 0.62, p.y);
   } else if (uRivalStyle < 2.5) {
-    mask = smoothstep(0.98, 1.14, p.y);
+    mask = smoothstep(0.9, 1.08, p.y);
   } else if (uRivalStyle < 3.5) {
-    accMask = 1.0 - smoothstep(0.28, 0.42, p.y);
+    accMask = 1.0 - smoothstep(0.34, 0.5, p.y);
   } else if (uRivalStyle < 4.5) {
-    mask = smoothstep(0.52, 0.62, abs(p.x)) * (1.0 - smoothstep(0.82, 0.92, p.y)) * smoothstep(0.46, 0.56, p.y);
+    mask = smoothstep(0.42, 0.55, abs(p.x)) * (1.0 - smoothstep(0.88, 1.02, p.y)) * smoothstep(0.4, 0.52, p.y);
   } else if (uRivalStyle < 5.5) {
-    mask = smoothstep(0.42, 0.58, p.y) * (1.0 - smoothstep(0.78, 0.9, p.y));
-    accMask = 1.0 - smoothstep(0.26, 0.4, p.y);
+    mask = smoothstep(0.38, 0.52, p.y) * (1.0 - smoothstep(0.82, 0.96, p.y));
+    accMask = 1.0 - smoothstep(0.32, 0.46, p.y);
   } else if (uRivalStyle < 6.5) {
-    mask = smoothstep(1.05, 1.28, abs(p.z));
+    mask = smoothstep(0.85, 1.15, abs(p.z));
+  } else if (uRivalStyle < 7.5) {
+    accMask = 1.0 - smoothstep(0.08, 0.16, abs(p.y - 0.96));
+    mask = smoothstep(0.92, 1.06, p.y);
+  } else if (uRivalStyle < 8.5) {
+    mask = 1.0 - smoothstep(0.14, 0.26, abs(p.y - 0.55 - p.z * 0.42));
+    accMask = 1.0 - smoothstep(0.05, 0.1, abs(p.x));
+  } else if (uRivalStyle < 9.5) {
+    mask = 1.0 - smoothstep(0.08, 0.16, abs(abs(p.x) - 0.48));
+    accMask = smoothstep(0.7, 0.95, p.y);
+  } else if (uRivalStyle < 10.5) {
+    mask = smoothstep(0.48, 0.62, p.y) * (1.0 - smoothstep(0.78, 0.9, p.y));
+    accMask = smoothstep(0.2, 0.55, p.z) * smoothstep(0.5, 0.7, p.y);
+  } else if (uRivalStyle < 11.5) {
+    mask = 1.0 - smoothstep(0.4, 0.55, p.y);
+    accMask = smoothstep(1.0, 1.16, p.y);
+  } else if (uRivalStyle < 12.5) {
+    mask = 1.0 - smoothstep(0.1, 0.2, abs(p.x));
+    accMask = smoothstep(0.9, 1.2, abs(p.z)) * smoothstep(0.45, 0.6, p.y);
   } else {
-    accMask = 1.0 - smoothstep(0.06, 0.12, abs(p.y - 0.92));
-    mask = smoothstep(0.98, 1.12, p.y);
+    mask = 1.0 - smoothstep(0.07, 0.14, abs(p.y - 1.02));
+    accMask = 1.0 - smoothstep(0.22, 0.36, p.y);
   }
-  diffuseColor.rgb = mix(diffuseColor.rgb, uRivalSec, clamp(mask, 0.0, 0.92));
-  diffuseColor.rgb = mix(diffuseColor.rgb, uRivalAcc, clamp(accMask, 0.0, 0.88));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uRivalSec, clamp(mask, 0.0, 0.94));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uRivalAcc, clamp(accMask, 0.0, 0.9));
   float skirt = smoothstep(0.58, 0.2, p.y);
   float grit = skirt * uRivalWear;
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.16, 0.12), grit * 0.5);
@@ -389,7 +549,7 @@ function canvasMark(key, w, h, draw) {
   draw(g, w, h);
   tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   markCache.set(key, tex);
   return tex;
 }
@@ -408,49 +568,49 @@ function drawDirt(g, w, h, amount) {
 }
 
 function doorTexture(livery) {
-  return canvasMark(`door|${livery.id}|${livery.number}`, 256, 192, (g, w, h) => {
+  return canvasMark(`door|${livery.id}|${livery.number}`, 512, 384, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.secondary);
-    g.fillRect(0, 0, w, 14);
-    g.fillRect(0, h - 14, w, 14);
+    g.fillRect(0, 0, w, 28);
+    g.fillRect(0, h - 28, w, 28);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 108px Impact, Arial Black, sans-serif";
+    g.font = "bold 216px Impact, Arial Black, sans-serif";
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.number, w * 0.5, h * 0.46);
-    g.font = "bold 22px Arial, sans-serif";
+    g.font = "bold 44px Arial, sans-serif";
     g.fillText(livery.team, w * 0.5, h * 0.84);
     drawDirt(g, w, h, livery.wear);
   });
 }
 
 function hoodTexture(livery) {
-  return canvasMark(`hood|${livery.id}`, 512, 160, (g, w, h) => {
+  return canvasMark(`hood|${livery.id}`, 1024, 320, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.secondary);
-    g.fillRect(0, 0, 28, h);
-    g.fillRect(w - 28, 0, 28, h);
+    g.fillRect(0, 0, 56, h);
+    g.fillRect(w - 56, 0, 56, h);
     g.fillStyle = hexCss(livery.accent);
-    g.fillRect(36, 12, w - 72, 10);
+    g.fillRect(72, 24, w - 144, 20);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 42px Arial Black, Arial, sans-serif";
+    g.font = "bold 84px Arial Black, Arial, sans-serif";
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.team, w * 0.5, h * 0.42);
-    g.font = "bold 26px Arial, sans-serif";
+    g.font = "bold 52px Arial, sans-serif";
     g.fillText(livery.sponsor, w * 0.5, h * 0.74);
     drawDirt(g, w, h, livery.wear * 1.1);
   });
 }
 
 function roofTexture(livery) {
-  return canvasMark(`roof|${livery.id}|${livery.number}`, 256, 96, (g, w, h) => {
+  return canvasMark(`roof|${livery.id}|${livery.number}`, 512, 192, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 70px Impact, Arial Black, sans-serif";
+    g.font = "bold 140px Impact, Arial Black, sans-serif";
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.number, w * 0.5, h * 0.55);

@@ -136,13 +136,13 @@ check("director cuts more than one shot", kinds.size >= 2);
 check("fade used", faded || dir.reduced);
 
 check("shot vocab has 8 cinematic setups", BROADCAST_SHOTS.length >= 8);
-check("old 1.2 s floor is gone", HOLD_MIN > 1.2 && HOLD_MIN >= 2);
-check("hold range is 2.0–3.0 s", HOLD_MIN === 2 && HOLD_MAX === 3);
+check("old 1.2 s floor is gone", HOLD_MIN > 1.2 && HOLD_MIN >= 3.6);
+check("hold range is broadcast length", HOLD_MIN === 3.6 && HOLD_MAX === 6.2);
 const holdsOk = BROADCAST_SHOTS.every((k) => SHOT_HOLD[k] >= HOLD_MIN && SHOT_HOLD[k] <= HOLD_MAX);
-check("every kind hold is 2.0–3.0 s", holdsOk);
+check("every kind hold is 3.6–6.2 s", holdsOk);
 const rolled = BROADCAST_SHOTS.map((k) => rollShotHold(k));
-check("rollShotHold never drops below 2 s", rolled.every((h) => h >= 2));
-check("rollShotHold never exceeds 3 s", rolled.every((h) => h <= 3));
+check("rollShotHold never drops below 3.6 s", rolled.every((h) => h >= 3.6));
+check("rollShotHold never exceeds 6.2 s", rolled.every((h) => h <= 6.2));
 check("1.2 s is no longer a legal hold", !rolled.some((h) => h < 2) && HOLD_MIN !== 1.2);
 
 function poseAtProgress(progress, extras) {
@@ -235,8 +235,8 @@ for (let i = 0; i < 400; i++) {
   }
 }
 check("director actually cuts", cuts >= 2);
-check("no shot shorter than 2 s", cutTimes.length >= 1 && cutTimes.every((d) => d >= 1.99));
-check("holds stay at or under 3 s", cutTimes.every((d) => d <= 3.05));
+check("no shot shorter than 3.6 s", cutTimes.length >= 1 && cutTimes.every((d) => d >= 3.55));
+check("holds stay at or under 6.2 s", cutTimes.every((d) => d <= 6.25));
 
 const recutDir = new BroadcastDirector(track, tape, { reducedMotion: false, aspect: 16 / 9 });
 recutDir.snapTo(mid);
@@ -261,6 +261,7 @@ for (let i = 0; i < 80; i++) {
 }
 check("mustCut does not recut every frame", recuts <= 2);
 check("mustCut lockout is at least 2 s", recutGaps.every((g) => g >= 1.99));
+recutDir.hardCut(tape.poseAt(0.4));
 check("hardCut snaps eye without leftover lerp", recutDir.eyeX === recutDir._tx && recutDir.eyeZ === recutDir._tz);
 
 const startFn = (gameSrc.match(/_startBroadcastReplay\(\) \{[\s\S]*?\n  \}/) || [])[0] || "";
@@ -283,7 +284,7 @@ check("marks can forget stamps without wipe", /forgetStamps\(\)/.test(fxSrc));
 check("rival LOD mesh gets replay pose", /applyReplayPose\(pose, dt, spin\)/.test(aiSrc));
 check("rival replay keeps mesh visible", /this\.mesh\.visible = true/.test(aiSrc));
 check("attract reel import stays put", /attract-reel\.js\?v=\d+/.test(gameSrc));
-check("broadcast module cache-bust is v8+", Number((gameSrc.match(/broadcast-replay\.js\?v=(\d+)/) || [])[1] || 0) >= 8);
+check("broadcast module cache-bust is v9+", Number((gameSrc.match(/broadcast-replay\.js\?v=(\d+)/) || [])[1] || 0) >= 9);
 check("replay cut resets TSR history", /_onBroadcastCut\(/.test(gameSrc) && /shot\.didCut/.test(gameSrc) && /this\.tsr\.reset/.test(gameSrc));
 check("replay cut re-poses pack at dt 0", /_onBroadcastCut\([\s\S]*?_poseReplayPack\(pose, 0\)/.test(gameSrc));
 check("hard cut has no camera blend leftover", !/BLEND_SEC/.test(fs.readFileSync(path.join(ROOT, "js/cinema/broadcast-replay.js"), "utf8")));

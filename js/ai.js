@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=193";
+import { Vehicle } from "./physics/vehicle.js?v=201";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=229";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=239";
 
 const G = 9.81;
 
@@ -632,7 +632,8 @@ export class Opponent {
       d.roll,
       wy,
       chassisDeckEmbed(this.vehicle, d.y, this.mesh),
-      dropOk
+      dropOk,
+      this.vehicle && this.vehicle._cornerRoadY
     );
     const braking = this.vehicle.brake > 0.08 || this.vehicle.handbrake > 0.28;
     if (this.mesh.userData.brakeOn !== braking) {
@@ -675,6 +676,9 @@ export class Opponent {
     this.mesh.visible = true;
     this.mesh.position.set(pose.x, pose.y, pose.z);
     this.mesh.rotation.set(pose.pitch || 0, pose.yaw, pose.roll || 0, "YXZ");
+    if (v && v.sampleVisualCorners && v._visTrack && Number.isFinite(pose.y)) {
+      v.sampleVisualCorners(v._visTrack, pose.y + 0.014, pose.progress || 0);
+    }
     const wheels = this.mesh.userData && this.mesh.userData.wheels;
     if (wheels && wheels.length && spin) {
       const radius = v && v.spec && v.spec.wheelRadius > 0.05 ? v.spec.wheelRadius : 0.32;
@@ -692,7 +696,8 @@ export class Opponent {
         pose.roll || 0,
         null,
         chassisDeckEmbed(v, pose.y, this.mesh),
-        null
+        null,
+        v && v._cornerRoadY
       );
     }
     const braking = (pose.brake || 0) > 0.08 || (pose.handbrake || 0) > 0.28;

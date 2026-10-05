@@ -49,17 +49,17 @@ const main = read("js/main.js");
 const index = read("index.html");
 
 check("rival-livery module exists", /export const RIVAL_LIVERIES/.test(livery), "RIVAL_LIVERIES");
-check("eight authored looks", (livery.match(/id:\s*"/g) || []).length >= 8, "need 8 unique ids");
+check("fourteen authored looks", (livery.match(/id:\s*"/g) || []).length >= 14, "need 14 unique ids");
 
 const bodies = hexes(livery);
 const uniqueBodies = new Set(bodies);
-check("unique body palette ≥ 8", uniqueBodies.size >= 8, `got ${uniqueBodies.size}: ${[...uniqueBodies].join(", ")}`);
+check("unique body palette ≥ 14", uniqueBodies.size >= 14, `got ${uniqueBodies.size}: ${[...uniqueBodies].join(", ")}`);
 
 const slots = [];
 const slotRe = /id:\s*"([^"]+)"/g;
 let sm;
 while ((sm = slotRe.exec(livery))) slots.push(sm[1]);
-check("unique livery ids ≥ 8", new Set(slots).size >= 8, `ids=${slots.join(",")}`);
+check("unique livery ids ≥ 14", new Set(slots).size >= 14, `ids=${slots.join(",")}`);
 
 const quoted = [...livery.matchAll(/["'`]([^"'`]{0,48})["'`]/g)].map((m) => m[1]).join("\n");
 const banned = /castrol|toyota|michelin|martini|repsol|rothmans|marlboro|pirelli|subaru|555/i;
@@ -72,6 +72,7 @@ check("roughness authored", /roughness:\s*livery\.roughness/.test(livery), "roug
 check("env-aware paint", /envMapIntensity:\s*1\.\d+/.test(livery), "envMapIntensity");
 check("object-space panels", /vRivalLocal/.test(livery), "panel shader");
 check("door numbers", /doorTexture|Impact/.test(livery) && /livery\.number/.test(livery), "readable numbers");
+check("lacquer normal on paint", /getLacquerNormal/.test(livery) && /normalMap: getLacquerNormal/.test(livery), "peel");
 check("hue/dirt recycle", /shiftHex/.test(livery) && /wear/.test(livery), "14-car recycle");
 check("dressRivalCar hook", /export function dressRivalCar/.test(livery), "shared dress");
 

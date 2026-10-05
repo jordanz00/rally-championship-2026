@@ -1,5 +1,97 @@
 # QA report — quality-control pass
 
+## POV hands grip the wheel (2026-10-05)
+
+**Player moment:** Cockpit view. A left and a right human hand sit on the rim, fingers curled, and turn with the wheel.
+
+**Shipped:** Block fingers are gone. The grip is the CC0 26-bone MakeHuman hand (Godot XR Tools), subdivided, skinned, and posed on local Z so the fingers wrap the tube. See `assets/driver/ATTRIBUTION.txt`.
+
+**Boot:** `main.js?v=1056` · `celica.js?v=239` · `pov-driver.js?v=10`
+
+## Rival repaint, lacquer, and weight (2026-10-05)
+
+**Player moment:** Every car in the pack wears its own paint. Brake loads the nose. A corner leans. The shell reads as lacquer, not a flat toy colour.
+
+**Shipped:** Fourteen liveries (Glacier, Quarry, Harbor, Kiln, Paper, Basalt, plus the eight already in the field). Door and hood plates are twice the resolution. Body paint has flake and an orange-peel normal; the hero gets that peel when the GLB has no normal of its own. Pack shells recompute smooth normals. Longitudinal weight transfer is stronger, and brake dive / body roll read a little harder. Player power cut stays at 0.9×.
+
+**Boot:** `main.js?v=1054` · `celica.js?v=237` · `rival-livery.js?v=2` · `vehicle.js?v=201`
+
+## POV hands are a rigged human mesh (2026-10-05)
+
+**Player moment:** In the cockpit the hands on the wheel are a real left and right hand, fingers curled on the rim, not block fingers.
+
+**Source:** CC0 MakeHuman hands published with Godot XR Tools (26-bone skin, nails). Subdivided and posed into a grip. See `assets/driver/ATTRIBUTION.txt`.
+
+**Boot:** `main.js?v=1053` · `celica.js?v=236` · `pov-driver.js?v=8`
+
+## Player drive cut 10% (2026-10-05)
+
+**Player moment:** The car still pulls, but it does not leap away from the pack. Acceleration is a tenth softer from a stop and through the gears.
+
+**Shipped:** While the player is on the throttle, forward acceleration is 0.9×. Braking and the pack stay as they were.
+
+**Boot:** `main.js?v=1050` · `vehicle.js?v=200`
+
+## Sharper race picture (2026-10-05)
+
+**Player moment:** The stage reads clearer. Edges and the car are less soft. The title still paints before the music file, and a late GPU still steps the picture down.
+
+**Cause:** Desktop raced at 88% of the pixel cap, then another 90%, then TSR shaded 77% of what was left.
+
+**Shipped:** Desktop output cap is 1.5× and 3.2M pixels. TSR Quality shades at 84% of that and sharpens a little more. Phones and the title stay on the smaller buffer. Title music no longer preloads ahead of the engine.
+
+**Boot:** `main.js?v=1048` · `tsr-upscaler.js?v=989`
+
+## Jump landings ease out of the air pose (2026-10-05)
+
+**Player moment:** The car meets the road still carrying the nose and roll it had in the air, then settles. A nose-high landing rocks forward. A rolled landing stays leaned. A flat one plants smoothly.
+
+**Cause:** Touchdown rewrote pitch and roll toward one short settle pose in the same frame.
+
+**Shipped:** Contact keeps the airborne attitude and spin. A spring, soft at the kiss and firmer as the tires load, brings the chassis onto the road. Nose angle, roll, and impact change the rock.
+
+**Boot:** `main.js?v=1046` · `vehicle.js?v=198` · `jump.js?v=38`
+
+## Side of a jump throws a messy landing (2026-10-05)
+
+**Player moment:** Hitting the outer edge or shoulder of a jump leaves the ground. The car rolls, yaws, and lands crooked. The middle of the jump still flies clean.
+
+**Cause:** Off the paint, the height query is the skirt, so the car rode the shoulder past the lip. Takeoff only fired inside the hole.
+
+**Shipped:** The outer half of the road arms an edge hop once the lip is steep. That hop is shorter, rolled, and shoved off line, and the landing keeps the lean.
+
+**Boot:** `main.js?v=1045` · `vehicle.js?v=197` · `jump.js?v=37`
+
+## Brake hold creeps into reverse (2026-10-05)
+
+**Player moment:** Hold S after the car has stopped. It rolls backward slowly, about 10 km/h, and the tires turn with it. From speed, S still brakes.
+
+**Shipped:** Reverse starts only under walking pace, with the brake held, throttle off, and the lights-out lock finished. The pack does not reverse when it brakes for a corner.
+
+**Boot:** `main.js?v=1043` · `vehicle.js?v=195`
+
+## Wheel suspension — tires stay on the road (2026-10-05)
+
+**Player moment:** Brake, crest, and crown. The tread meets the deck. The tire and the rim do not sit inside the road.
+
+**Cause:** The hub was locked to the chassis. Pitch and roll compensation was capped, and on the paint the shock was not allowed to extend, so the rubber stayed buried when the surface under that corner was higher or lower than the hull.
+
+**Shipped:** Each corner reads the road under the hub. The shock compresses up to 16 cm and droops up to 12 cm (16 cm on the verge) so the tread kisses that height. The hull stays on the painted ribbon.
+
+**Boot:** `main.js?v=1042` · `vehicle.js?v=194` · `celica.js?v=233` · `ai.js?v=230`
+
+## Broadcast replay and attract (2026-10-05)
+
+**Player moment:** After the finish, the tape starts without a stall and holds each angle like a rally TV truck. The title reel uses the same cameras: helicopter, chase, roadside, head-on. No dutch tilt, no speed ramp, no blink cut.
+
+**Cause:** Every replay frame searched the road for the whole pack, rebuilt ruts, and compiled newly visible slices on the cut. Shots lasted about two seconds, so the picture never settled.
+
+**Shipped:** Tape lookup keeps its place. Surface comes from the taped metre. Marks and ruts write on a cadence. A cut skips two compile frames, then compiles in a 4 ms budget. Holds are 3.6–6.2 s and the lens eases inside the shot. Attract cuts are clean and level.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-broadcast-replay.mjs` · `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=1038` · `broadcast-replay.js?v=9` · `attract-reel.js?v=14`
+
 ## Burnout graphics and fire removed (2026-10-05)
 
 **Player moment:** The race picture stays a rally grade. No hot bloom, color fringe, orange speed glow, tail flames, or ON FIRE / RUSH callouts. Driving is unchanged.

@@ -70,6 +70,8 @@ export class JumpModel {
     this.launchGrade = 0;
     this.lastLanding = 0;
     this.aiHeightScale = aiScale;
+    /** 0–1 when the car left from the outer edge of a lip. 0 is a clean line. */
+    this.sideHit = 0;
   }
 
   /**
@@ -102,7 +104,7 @@ export class JumpModel {
    * @param {number} rawVelY
    * @param {number} grade
    * @param {number} springBoost
-   * @param {{pitchRate?:number, roll?:number, rollRate?:number, yawRate?:number, lateral?:number, speed?:number, throttle?:number, brake?:number, dist?:number, jumpThrow?:number, jumpLip?:number, surfaceBump?:number, lipGrade?:number}} [body]
+   * @param {{pitchRate?:number, roll?:number, rollRate?:number, yawRate?:number, lateral?:number, speed?:number, throttle?:number, brake?:number, dist?:number, jumpThrow?:number, jumpLip?:number, surfaceBump?:number, lipGrade?:number, sideHit?:number, sideSign?:number}} [body]
    */
   launch(rawVelY, grade, springBoost = 0, body = {}) {
     const credit = clamp(this.technique, 0, 1);
@@ -149,19 +151,32 @@ export class JumpModel {
     );
 
     const lat = Number(body.lateral) || 0;
-    const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
+    const side = clamp(Number(body.sideHit) || 0, 0, 1);
+    const sideSign = Math.sign(Number(body.sideSign) || 0) || (lat >= 0 ? 1 : -1);
+    this.sideHit = side;
+    const rollMax = (JUMP.airRollMax != null ? JUMP.airRollMax : 0.28) * (1 + side * 1.7);
     this.roll = clamp(
-      (Number(body.roll) || 0) * 0.78 + lat * (0.032 + spd * 0.00028),
+      (Number(body.roll) || 0) * 0.78 +
+        lat * (0.032 + spd * 0.00028) +
+        sideSign * side * (0.42 + Math.min(0.38, spd * 0.009)),
       -rollMax,
       rollMax
     );
+    const rateCap = 1.4 + side * 2.4;
     this.rollRate = clamp(
       (Number(body.rollRate) || 0) * 0.55 +
         lat * spd * 0.01 * jumpLip +
-        grain * 0.4 * jumpLip,
-      -1.4,
-      1.4
+        grain * 0.4 * jumpLip +
+        sideSign * side * (1.7 + spd * 0.03),
+      -rateCap,
+      rateCap
     );
+    if (side > 0.2) {
+      // Edge of the lip: shorter hop, nose and roll already leaving crooked.
+      vy *= 1 - side * 0.34;
+      this.noseUp = clamp(this.noseUp + sideSign * side * 0.08, -JUMP.airPitchMax, JUMP.airPitchMax);
+      this.noseUpRate = clamp(this.noseUpRate - side * 0.45 + sideSign * side * 0.55, -2.6, 2.6);
+    }
     return vy;
   }
 
@@ -191,8 +206,11 @@ export class JumpModel {
       this.noseUpRate *= 0.28;
     }
 
-    const rollMax = JUMP.airRollMax != null ? JUMP.airRollMax : 0.28;
-    const rollDamp = JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.35;
+    const side = clamp(this.sideHit || 0, 0, 1);
+    const rollMax =
+      (JUMP.airRollMax != null ? JUMP.airRollMax : 0.28) * (side > 0.2 ? 1 + side * 1.7 : 1);
+    const rollDamp =
+      (JUMP.airRollDamp != null ? JUMP.airRollDamp : 1.35) * (side > 0.2 ? 0.38 : 1);
     const yaw = Number(extra.yawRate) || 0;
     const vLat = Number(extra.vLat) || 0;
     const steer = Number(extra.steer) || 0;
@@ -252,11 +270,13 @@ export class JumpModel {
     const dropMod = clamp((Number(ctx.jumpDrop) || 2.6) / 2.6, 0.65, 1.55);
     const energy = clamp((impact * impact) / 0.72, 0, 1.65);
     const fast = clamp(speed / 34, 0, 1);
-    const upset =
+    const side = clamp(this.sideHit || 0, 0, 1);
+    let upset =
       (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) *
       landMod *
       (0.72 + energy * 0.38) *
       (0.78 + fast * 0.28);
+    if (side > 0.2) upset = clamp(upset * (1 + side * 0.9) + side * 0.42, 0, 1.45);
     this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
     const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod * 0.7;
     const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
@@ -266,8 +286,9 @@ export class JumpModel {
         : 0;
     // Keep some tumble rate into the vehicle settle spring — hard rate kills
     // made every land look like an upright keyframe the frame after contact.
-    this.noseUpRate *= 0.72;
-    this.rollRate *= 0.78;
+    // Keep the air spin. Killing it here made every touchdown start from rest.
+    this.noseUpRate *= 0.92;
+    this.rollRate *= side > 0.2 ? 0.96 : 0.9;
     this.technique = 0;
     const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.7 + 0.3 * impact);
     const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight);
