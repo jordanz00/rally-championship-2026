@@ -724,9 +724,9 @@ export class AttractDirector {
       label: this.label(),
       dutch: this.dutch,
       fov: this.fov,
-      chroma: this.reduced ? 0.18 : hot ? 0.98 : 0.64,
-      smear: this.reduced ? 0 : this.kind === "whip" || this.kind === "smash" ? 0.58 : this.kind === "bumper" || this.kind === "nose" ? 0.3 : 0.07,
-      speedFx: this.reduced ? 0 : this.kind === "bumper" || this.kind === "whip" || this.kind === "nose" ? 0.72 : 0.32,
+      chroma: 0,
+      smear: 0,
+      speedFx: 0,
       ramp: this.kind === "jump" ? "slow" : this.kind === "smash" || this.kind === "whip" ? "fast" : "live",
       energy: hot ? "hot" : "live",
       calm: this.reduced,
@@ -1533,9 +1533,9 @@ export function paintAttractFx(root, shot, on) {
   const clock = root.querySelector(".attract-clock");
   if (fade) fade.style.opacity = String(Math.max(0, Math.min(1, shot.fade)));
   if (flash) flash.style.opacity = "0";
-  if (chroma) chroma.style.opacity = String(Math.max(0, Math.min(1, shot.chroma == null ? 0.64 : shot.chroma)));
-  if (smear) smear.style.opacity = String(Math.max(0, Math.min(1, shot.smear || 0)));
-  if (speed) speed.style.opacity = String(Math.max(0, Math.min(1, shot.speedFx == null ? 0.35 : shot.speedFx)));
+  if (chroma) chroma.style.opacity = "0";
+  if (smear) smear.style.opacity = "0";
+  if (speed) speed.style.opacity = "0";
   if (slug && slug.textContent !== shot.label) slug.textContent = shot.label;
   if (clock && shot.clock && clock.textContent !== shot.clock) clock.textContent = shot.clock;
   root.dataset.kind = shot.kind || "";

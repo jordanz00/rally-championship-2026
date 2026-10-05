@@ -27,14 +27,14 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=47";
-import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=101";
+} from "./ui/hud.js?v=48";
+import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
 import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=29";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
-import { PhotoRealPost } from "./gfx/postfx.js?v=43";
+import { PhotoRealPost } from "./gfx/postfx.js?v=44";
 import { RallyRush } from "./gameplay/rally-rush.js?v=7";
 import {
   createWebTsr,
@@ -153,7 +153,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=8";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=12";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=13";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -3921,19 +3921,6 @@ export class RallyGame {
         this.player.rushHeat = dump.heat;
         this.player.rushDrive = dump.accel;
         this.player.rushFire = dump.fire;
-        if (dump.justPass && this.hud) {
-          const n = dump.passStreak || 1;
-          this.hud.flashMessage(n >= 4 ? "UNREAL" : n >= 2 ? "SICK" : "NEAR MISS");
-        }
-        if (dump.justFire && this.hud) this.hud.flashMessage("ON FIRE");
-        else if (dump.justDump && this.hud) this.hud.flashMessage("RUSH");
-        if (dump.heat > 0.16 || dump.fire > 0.18) {
-          this._camFovKick = Math.max(
-            this._camFovKick || 0,
-            2.8 + dump.heat * 2.4 + dump.fire * 2.2
-          );
-          this._shake = Math.max(this._shake || 0, 0.055 * dump.heat + 0.04 * dump.fire);
-        }
       }
       this.player.step(FIXED_DT, this.input, this.track);
       for (const o of this.opponents) o.step(FIXED_DT, this.player.progress, pack);

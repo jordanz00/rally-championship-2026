@@ -98,21 +98,8 @@ export class Hud {
       this._speedTxt = speedTxt;
       this.speed.textContent = speedTxt;
     }
-    this.speed.dataset.fast = mph > 90 || (s.rushHeat || 0) > 0.28 || (s.rushFire || 0) > 0.3 ? "1" : "0";
-    if (this.rush && this.rushFill) {
-      const tank = clamp01(s.rush != null ? s.rush : 0);
-      const hot = (s.rushHeat || 0) > 0.18 ? "1" : "0";
-      const fire = (s.rushFire || 0) > 0.35 ? "1" : "0";
-      this.rush.hidden = false;
-      this.rushFill.style.transform = `scaleX(${tank.toFixed(3)})`;
-      if (this.rush.dataset.hot !== hot) this.rush.dataset.hot = hot;
-      if (this.rush.dataset.fire !== fire) this.rush.dataset.fire = fire;
-      if (this.rushLabel) {
-        const combo = s.rushCombo > 1.2 ? ` x${Math.min(9, s.rushCombo).toFixed(1)}` : "";
-        const label = fire === "1" ? `ON FIRE${combo}` : `RUSH${combo}`;
-        if (this.rushLabel.textContent !== label) this.rushLabel.textContent = label;
-      }
-    }
+    this.speed.dataset.fast = "0";
+    if (this.rush) this.rush.hidden = true;
     const gearTxt = s.gear === 0 ? "N" : String(s.gear);
     if (this._gearTxt !== gearTxt) {
       this._gearTxt = gearTxt;

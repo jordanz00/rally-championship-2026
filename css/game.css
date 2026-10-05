@@ -850,47 +850,17 @@ button.ghost {
   animation: flashGo 1.25s ease-out;
 }
 
-#hud-flash.show.is-rush {
-  top: 20%;
-  font-size: 56px;
-  letter-spacing: 0.32em;
-  color: #ffb000;
-  text-shadow: 0 0 28px rgba(255, 140, 0, 0.8), 3px 3px 0 #000;
-}
-
-#hud-flash.show.is-fire {
-  top: 16%;
-  font-size: 68px;
-  letter-spacing: 0.36em;
-  color: #fff4c8;
-  text-shadow: 0 0 36px rgba(255, 90, 0, 0.95), 0 0 12px #ff6a00, 4px 4px 0 #000;
-}
-
-#hud-flash.show.is-miss {
-  top: 22%;
-  font-size: 42px;
-  letter-spacing: 0.22em;
-  color: #ff8a1a;
-  text-shadow: 0 0 22px rgba(255, 120, 0, 0.7), 3px 3px 0 #000;
-}
-
-#hud-flash.show.is-sick {
-  top: 18%;
-  font-size: 62px;
-  letter-spacing: 0.34em;
-  color: #ffe14a;
-  text-shadow: 0 0 32px rgba(255, 160, 0, 0.9), 4px 4px 0 #000;
-}
-
+#hud-flash.show.is-rush,
+#hud-flash.show.is-fire,
+#hud-flash.show.is-miss,
+#hud-flash.show.is-sick,
 #hud-flash.show.is-unreal {
-  top: 16%;
-  font-size: 70px;
-  letter-spacing: 0.38em;
-  color: #fff4c8;
-  text-shadow: 0 0 36px rgba(255, 70, 0, 0.95), 4px 4px 0 #000;
+  color: #f4f0e0;
+  text-shadow: 3px 3px 0 #000;
 }
 
 #hud-rush {
+  display: none;
   position: absolute;
   left: 50%;
   bottom: 118px;
@@ -1075,17 +1045,14 @@ button.ghost {
 #hud-speed {
   font-size: 82px;
   line-height: 0.78;
-  color: #ffb000;
+  color: #f4f0e0;
   letter-spacing: 0.05em;
-  text-shadow: 0 0 22px rgba(255, 140, 0, 0.5), 0 3px 0 #000;
+  text-shadow: 0 3px 0 #000;
 }
 
 #hud-speed[data-fast="1"] {
-  color: #fff6c4;
-  text-shadow:
-    0 0 28px rgba(255, 180, 0, 0.78),
-    0 0 48px rgba(255, 80, 0, 0.38),
-    0 3px 0 #000;
+  color: #f4f0e0;
+  text-shadow: 0 3px 0 #000;
 }
 
 #hud-pos[data-place="1"] {
@@ -2290,24 +2257,23 @@ button.ui-ghost:focus-visible {
   inset: 0;
   background:
     radial-gradient(ellipse 62% 54% at 50% 40%, rgba(0, 0, 0, 0) 0%, rgba(4, 6, 10, 0.42) 100%),
-    linear-gradient(180deg, rgba(12, 48, 88, 0.16) 0%, rgba(255, 120, 40, 0.14) 100%);
+    linear-gradient(180deg, rgba(8, 12, 18, 0.08) 0%, rgba(8, 12, 18, 0.12) 100%);
   mix-blend-mode: soft-light;
-  filter: contrast(1.18) saturate(1.12);
+  filter: none;
 }
 
 .attract-fx[data-kind="jump"] .attract-grade {
   background:
     radial-gradient(ellipse 70% 58% at 50% 38%, rgba(0, 0, 0, 0) 0%, rgba(8, 10, 16, 0.36) 100%),
-    linear-gradient(180deg, rgba(40, 90, 140, 0.14) 0%, rgba(255, 170, 70, 0.16) 100%);
+    linear-gradient(180deg, rgba(8, 12, 18, 0.06) 0%, rgba(8, 12, 18, 0.1) 100%);
 }
 
 .attract-chroma {
   position: absolute;
   inset: -3%;
-  background:
-    linear-gradient(90deg, rgba(0, 210, 255, 0.14), transparent 16%, transparent 84%, rgba(255, 40, 50, 0.16));
-  mix-blend-mode: screen;
-  opacity: 0.7;
+  background: none;
+  mix-blend-mode: normal;
+  opacity: 0;
 }
 
 .attract-smear {
@@ -2456,7 +2422,7 @@ button.ui-ghost:focus-visible {
 }
 
 .attract-fx.is-calm .attract-chroma {
-  opacity: 0.18 !important;
+  opacity: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2469,6 +2435,6 @@ button.ui-ghost:focus-visible {
   }
 
   .attract-chroma {
-    opacity: 0.18 !important;
+    opacity: 0 !important;
   }
 }

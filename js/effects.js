@@ -965,36 +965,11 @@ export class ImpactSparks {
   }
 
   /**
-   * Burnout dump wake — orange spray off the tail. Cheap, reused spark pool.
-   * @param {{position:{x:number,y?:number,z:number},yaw:number,velocity?:{x:number,z:number}}} car
-   * @param {number} heat
+   * Tail spray is off. Wall hits still use burst().
+   * @param {{position:{x:number,y?:number,z:number},yaw:number}} _car
+   * @param {number} _heat
    */
-  wake(car, heat) {
-    if (!car || !car.position || !(heat > 0.12)) return;
-    const n = heat > 0.55 ? 5 : 3;
-    const fx = Math.sin(car.yaw || 0);
-    const fz = Math.cos(car.yaw || 0);
-    const px = car.position.x - fx * 1.55;
-    const py = (car.position.y || 0.6) + 0.28;
-    const pz = car.position.z - fz * 1.55;
-    const vx = car.velocity ? car.velocity.x : fx * 20;
-    const vz = car.velocity ? car.velocity.z : fz * 20;
-    for (let k = 0; k < n; k++) {
-      const i = this.i % this.count;
-      this.i += 1;
-      this.pos[i * 3] = px + (Math.random() - 0.5) * 0.35;
-      this.pos[i * 3 + 1] = py + Math.random() * 0.22;
-      this.pos[i * 3 + 2] = pz + (Math.random() - 0.5) * 0.35;
-      this.vel[i * 3] = vx * 0.35 - fx * (8 + heat * 10) + (Math.random() - 0.5) * 3;
-      this.vel[i * 3 + 1] = 0.6 + Math.random() * 2.4;
-      this.vel[i * 3 + 2] = vz * 0.35 - fz * (8 + heat * 10) + (Math.random() - 0.5) * 3;
-      this.maxLife[i] = 0.16 + Math.random() * 0.2;
-      this.life[i] = this.maxLife[i];
-      this.size[i] = 8 + heat * 10 + Math.random() * 8;
-    }
-    this.alive = 1;
-    this.geo.attributes.aSize.needsUpdate = true;
-  }
+  wake(_car, _heat) {}
 
   /**
    * @param {number} dt
@@ -1066,7 +1041,7 @@ export class BoostWake {
     this.points = new THREE.Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 7;
-    this.points.visible = this.count > 0 && RENDER_CAPS.glslCustom;
+    this.points.visible = false;
     if (scene && this.count) scene.add(this.points);
     this.i = 0;
     this.alive = 0;
@@ -1074,39 +1049,12 @@ export class BoostWake {
   }
 
   /**
-   * @param {{position:{x:number,y?:number,z:number},yaw:number,velocity?:{x:number,z:number}}} car
-   * @param {number} heat
-   * @param {number} [fire]
+   * Orange boost ribbon is off.
+   * @param {{position:{x:number,y?:number,z:number}}} _car
+   * @param {number} _heat
+   * @param {number} [_fire]
    */
-  emit(car, heat, fire = 0) {
-    if (!this.count || !car || !car.position) return;
-    if (!(heat > 0.08 || fire > 0.12)) return;
-    const n = fire > 0.45 ? 16 : heat > 0.55 ? 11 : 7;
-    const fx = Math.sin(car.yaw || 0);
-    const fz = Math.cos(car.yaw || 0);
-    const px = car.position.x - fx * 1.72;
-    const py = (car.position.y || 0.6) + 0.22;
-    const pz = car.position.z - fz * 1.72;
-    const vx = car.velocity ? car.velocity.x : fx * 22;
-    const vz = car.velocity ? car.velocity.z : fz * 22;
-    for (let k = 0; k < n; k++) {
-      const i = this.i % this.count;
-      this.i += 1;
-      const lane = (Math.random() - 0.5) * (0.55 + fire * 0.35);
-      this.pos[i * 3] = px + lane * fz;
-      this.pos[i * 3 + 1] = py + Math.random() * 0.28;
-      this.pos[i * 3 + 2] = pz - lane * fx;
-      const shove = 12 + heat * 18 + fire * 10;
-      this.vel[i * 3] = vx * 0.22 - fx * shove + (Math.random() - 0.5) * 2.2;
-      this.vel[i * 3 + 1] = 0.35 + Math.random() * 1.6 + fire * 0.8;
-      this.vel[i * 3 + 2] = vz * 0.22 - fz * shove + (Math.random() - 0.5) * 2.2;
-      this.maxLife[i] = 0.32 + Math.random() * 0.42 + fire * 0.16;
-      this.life[i] = this.maxLife[i];
-      this.size[i] = 16 + heat * 26 + fire * 18 + Math.random() * 14;
-    }
-    this.alive = 1;
-    this.geo.attributes.aSize.needsUpdate = true;
-  }
+  emit(_car, _heat, _fire = 0) {}
 
   /**
    * @param {number} dt

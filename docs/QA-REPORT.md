@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## Burnout graphics and fire removed (2026-10-05)
+
+**Player moment:** The race picture stays a rally grade. No hot bloom, color fringe, orange speed glow, tail flames, or ON FIRE / RUSH callouts. Driving is unchanged.
+
+**Shipped:** Grade holds at the authored contrast and bloom. Boost wake and tail spray do not emit. Rush bar stays hidden. Title chroma and smear stay off.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-rally-rush.mjs`
+
+**Boot:** `main.js?v=1037` · `game.js?v=1037` · `postfx.js?v=44` · `effects.js?v=102` · `game.css?v=67`
+
 ## Mountain trees keep one model (2026-10-04)
 
 **Player moment:** Stage 3. A tree stays the same model as the car passes it. It does not flip to a card or a coarse stand-in.
