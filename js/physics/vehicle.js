@@ -1238,6 +1238,8 @@ export class Vehicle {
     let q2 = track.query(this.position.x, this.position.z, this._q, this.progress);
     q2 = this._preferSolidRoad(track, q2);
     q2 = this._keepOnRibbon(track, q2, dt);
+    // Hairpin exit (Forest ~3654): a stale arm must not become the floor.
+    q2 = this._holdPaintedRibbon(track, q2, prevProgress);
     this._stalePit = q2.jumpKind === "gap" && !this._xzOnRibbon(track, q2.dist, 6).on;
     const axles = this._axleRoad(track, q2.height, q2.dist);
     this._plantSlideDeck(track, axles, q2);
@@ -1304,7 +1306,13 @@ export class Vehicle {
       // Restore last validated XZ — never a hard-coded map coordinate.
       // During lights-out, do NOT yank back to the grid stash: that fought
       // throttle and read as a start-line glitch on every stage.
-      if (this._launchHold > 0 && this.throttle > 0.12 && this.brake < 0.25) {
+      // On the painted deck, lifting Y is the recovery. Restoring an older
+      // XZ is the backward teleport at the Forest hairpin exit.
+      if (this._onPaintedDeck(track)) {
+        this._liftOntoPaintedDeck(track);
+        this._envDeep = false;
+        this._envIntersect = false;
+      } else if (this._launchHold > 0 && this.throttle > 0.12 && this.brake < 0.25) {
         this._envDeep = false;
         this._envIntersect = false;
       } else {
@@ -2681,6 +2689,44 @@ export class Vehicle {
    * @param {import('../tracks/track.js').Track} track
    * @param {object} q
    */
+  /**
+   * Stay on the ribbon under the chassis. A hairpin's earlier arm can report
+   * ditch height and a dist behind the car; bounceOffRoad then walks the
+   * pack backward. Forest stage 2 at ~3654 m is that exit.
+   * @param {import('../tracks/track.js').Track} track
+   * @param {object} q
+   * @param {number} prevProgress
+   * @returns {object}
+   */
+  _holdPaintedRibbon(track, q, prevProgress) {
+    if (!q || !track || !Number.isFinite(prevProgress)) return q;
+    const here = this._xzOnRibbon(track, prevProgress, 1.6);
+    if (!here.on || !here.line) return q;
+    const kind = here.line.jumpKind || "";
+    if (kind === "gap" || kind === "ramp" || kind === "crest") return q;
+    const deck = (here.line.y || 0) + ROAD_DECK;
+    const behind = Number.isFinite(q.dist) && q.dist < prevProgress - 4;
+    const offDeck =
+      Number.isFinite(q.height) && (q.height < deck - 0.35 || q.height > deck + 0.55);
+    if (!behind && !offDeck) return q;
+    this._noteGlitch("paint-hold", {
+      prev: prevProgress,
+      dist: q.dist,
+      h: q.height,
+      deck,
+    });
+    const pinned = this._pinQuery(track, q);
+    if (this.onGround && Number.isFinite(pinned.height)) {
+      const want = pinned.height - TIRE_PLANT;
+      if (this.position.y > want + 0.12 || this.position.y < want - 0.35) {
+        this.position.y = want;
+        this.velY = 0;
+        this._airTime = 0;
+      }
+    }
+    return pinned;
+  }
+
   _pinQuery(track, q) {
     const line = track.sample(this.progress, this._sample);
     const r = q || this._q || {};

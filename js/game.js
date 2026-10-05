@@ -7,7 +7,7 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=192";
+import { Vehicle } from "./physics/vehicle.js?v=193";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=229";
@@ -15,7 +15,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=9";
 import { Track } from "./tracks/track.js?v=430";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=226";
+import { Opponent } from "./ai.js?v=227";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -6969,12 +6969,15 @@ export class RallyGame {
     const fogFarRaw = fog && fog.far ? fog.far : 520;
     const heroR = Math.min(64, Math.max(28, fogFarRaw * 0.48));
     const hero2 = heroR * heroR;
-    // Stage 2 keeps one mesh out to the fog. A card or a coarse stand-in is
-    // a different tree, and the handoff reads as foliage popping in.
+    // Stage 2 and stage 3 keep one mesh out to the fog. A card or a coarse
+    // stand-in is a different tree, and the handoff reads as foliage popping
+    // in as the car passes.
     const forestStage = this.courseId === "forest";
+    const mountainStage = this.courseId === "mountain";
+    const holdOneTree = forestStage || mountainStage;
     const forestHold = fogFar + 8;
     const forestHold2 = forestHold * forestHold;
-    const foliageR = forestStage ? forestHold : heroR;
+    const foliageR = holdOneTree ? forestHold : heroR;
     const foliage2 = foliageR * foliageR;
     for (let m = 0; m < list.length; m++) {
       const mesh = list[m];
@@ -7051,7 +7054,8 @@ export class RallyGame {
           const carD2 =
             (x - car.x) * (x - car.x) + (y - car.y) * (y - car.y) + (z - car.z) * (z - car.z);
           if (dist2 > split2 && carD2 > shadow2) continue;
-          if (midMesh && carD2 > shadow2) {
+          // Stage 3: the mid copy is a different model. Keep the planted mesh.
+          if (midMesh && !mountainStage && carD2 > shadow2) {
             midIdx[midKept] = i;
             midSig = Math.imul(midSig ^ (i + 1), 16777619);
             midKept++;
@@ -7062,7 +7066,7 @@ export class RallyGame {
           }
           continue;
         }
-        const heroLimit2 = forestStage ? forestHold2 : hero2;
+        const heroLimit2 = holdOneTree ? forestHold2 : hero2;
         const hero = !farMesh || dist2 <= heroLimit2 || nearCar;
         if (hero) {
           idx[kept] = i;

@@ -1,5 +1,29 @@
 # QA report — quality-control pass
 
+## Mountain trees keep one model (2026-10-04)
+
+**Player moment:** Stage 3. A tree stays the same model as the car passes it. It does not flip to a card or a coarse stand-in.
+
+**Cause:** Forest already held one mesh out to the fog. Mountain still swapped at about 28–64 m, then again onto the mid copy inside the shadow ring.
+
+**Shipped:** Stage 3 uses that same fog hold, and it never draws the mid stand-in. Desert and Lakeside still use the short band.
+
+**Proof:** `node tools/qa-mountain-trees.mjs`
+
+**Boot:** `main.js?v=1036` · `game.js?v=1036`
+
+## Forest 3654 hairpin exit (2026-10-04)
+
+**Player moment:** Stage 2, about 3654 m — the end of the right hairpin. Cars stay on the painted road. They do not hang in the air, and they do not get sent back to an earlier point.
+
+**Cause:** A stale ribbon lock at that exit can report ditch height and a dist behind the car. The runoff haul and the embed restore then walk the chassis backward.
+
+**Shipped:** On the painted deck, a query behind the car or off the deck is pinned to the ribbon under the chassis. A deep embed on that paint lifts Y and keeps XZ. No `Track.query()` rewrite.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3654.mjs`
+
+**Boot:** `main.js?v=1035` · `vehicle.js?v=193` · `ai.js?v=227`
+
 ## Lessons from the failed tries (2026-10-04)
 
 **Player moment:** Pack holds the door. Tarmac still stops; mud still slides first. START reads forwards from the grid. Cars are characters, not spec sheets.
