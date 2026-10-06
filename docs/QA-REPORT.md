@@ -1,12 +1,24 @@
 # QA report — quality-control pass
 
+## POV hands actually close on the rim (2026-10-05)
+
+**Player moment:** Cockpit. Both fists stay closed on the leather, thumbs up, wrists toward the driver.
+
+**Cause:** `poseGrip` zeroed the finger bones (opened the fist) and parked the mesh 12 cm off the tube. The armature yaw left the palms facing sideways.
+
+**Shipped:** Keep the exported curl. Undo the armature yaw, turn the wrist toward the seat, roll the right hand so the thumb stays at 12.
+
+**Boot:** `main.js?v=1058` · `celica.js?v=241` · `pov-driver.js?v=12`
+
 ## POV hands grip the wheel (2026-10-05)
 
 **Player moment:** Cockpit view. A left and a right human hand sit on the rim, fingers curled, and turn with the wheel.
 
 **Shipped:** Block fingers are gone. The grip is the CC0 26-bone MakeHuman hand (Godot XR Tools), subdivided, skinned, and posed on local Z so the fingers wrap the tube. See `assets/driver/ATTRIBUTION.txt`.
 
-**Boot:** `main.js?v=1056` · `celica.js?v=239` · `pov-driver.js?v=10`
+**Boot:** `main.js?v=1057` · `celica.js?v=240` · `pov-driver.js?v=11`
+
+The GLB rest pose is the closed grip. Finger bones stay at rest so the skin weights are not torn by a second curl.
 
 ## Rival repaint, lacquer, and weight (2026-10-05)
 

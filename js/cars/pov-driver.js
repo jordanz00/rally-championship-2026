@@ -317,38 +317,22 @@ function seatRig(mount, rig) {
 }
 
 /**
- * Curl the open rest pose around the rim. Bone +Y runs along each finger.
- * Flexion that wraps the tube is local Z (local X only bends in the wheel plane).
- * Left and right use opposite signs. The right mount's tangent is flipped,
- * so that hand sits on negative local Y.
+ * Park the closed grip on the tube. Finger bones stay as exported — zeroing
+ * them opens the fist. The armature node is yawed 90°, so that yaw is undone,
+ * the wrist is turned back toward the seat, and the right hand is rolled so
+ * its thumb still points at 12 after the mount tangent flips.
  * @param {THREE.Object3D} rig
  * @param {number} side +1 left / −1 right
  */
 function poseGrip(rig, side) {
-  const sign = side > 0 ? 1 : -1;
-  if (side > 0) rig.position.set(-0.06, 0.12, 0.02);
-  else rig.position.set(0, -0.14, 0.02);
-  rig.rotation.set(0, 0, 0);
-  const tag = side > 0 ? "L" : "R";
-  const fingers = ["Index", "Middle", "Ring", "Little"];
-  const joints = [
-    ["Metacarpal", 0.3],
-    ["Proximal", 1.15],
-    ["Intermediate", 1.25],
-    ["Distal", 0.7],
-  ];
-  for (let i = 0; i < fingers.length; i++) {
-    for (let j = 0; j < joints.length; j++) {
-      const bone = rig.getObjectByName(`${fingers[i]}_${joints[j][0]}_${tag}`);
-      if (bone) bone.rotation.set(0, 0, sign * joints[j][1]);
-    }
+  const arm = rig.getObjectByName("Armature");
+  if (!arm) return;
+  const seat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+  if (side < 0) {
+    seat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
   }
-  const meta = rig.getObjectByName(`Thumb_Metacarpal_${tag}`);
-  const proximal = rig.getObjectByName(`Thumb_Proximal_${tag}`);
-  const distal = rig.getObjectByName(`Thumb_Distal_${tag}`);
-  if (meta) meta.rotation.set(0.3, sign * -0.35, sign * 0.45);
-  if (proximal) proximal.rotation.set(0, 0, sign * 0.55);
-  if (distal) distal.rotation.set(0, 0, sign * 0.35);
+  rig.quaternion.copy(seat).multiply(arm.quaternion.clone().invert());
+  rig.position.copy(arm.position).applyQuaternion(rig.quaternion).negate();
 }
 
 /**

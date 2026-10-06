@@ -66,16 +66,21 @@ check(
 );
 check("grips sit at 9 and 3", /CLOCK_9_3 = 0\.14/.test(driver) && /clock = side > 0 \? CLOCK_9_3/.test(driver));
 check("license is CC0 and attributed", /CC0/.test(attr) && /MakeHuman/.test(attr) && /godot-xr-tools/.test(attr));
-check("celica imports pov-driver.js?v=10+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 10);
+check("celica imports pov-driver.js?v=11+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 11);
 check(
   "celica split still resolves rival-livery if imported",
   !/rival-livery\.js/.test(car) || fs.existsSync(path.join(ROOT, "js/cars/rival-livery.js"))
 );
 check("game imports cockpit-anim.js?v=9+", Number((game.match(/cockpit-anim\.js\?v=(\d+)/) || [])[1]) >= 9);
-check("game imports celica.js?v=239+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 239);
-check("boot cache is 1056+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1056);
-check("index boots main.js?v=1056+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1056);
-check("grip pose curls the finger bones", /function poseGrip/.test(driver) && /rotation\.set\(0, 0, sign/.test(driver));
+check("game imports celica.js?v=240+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 240);
+check("boot cache is 1057+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1057);
+check("index boots main.js?v=1057+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1057);
+check(
+  "grip keeps the exported fist and seats it on the tube",
+  /function poseGrip/.test(driver) &&
+    !/bone\.rotation\.set\(0, 0, 0\)/.test(driver) &&
+    /arm\.quaternion/.test(driver)
+);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "rigged hands grip the rim"}`);
 process.exit(fail ? 1 : 0);
