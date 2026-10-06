@@ -50,7 +50,7 @@ function poseArm(driver, side) {
   cosA = Math.max(-1, Math.min(1, cosA));
   const bend = Math.acos(cosA);
 
-  axis.set(0, -1, side === "L" ? -0.25 : 0.25);
+  axis.set(side === "L" ? -0.42 : 0.42, -0.82, 0.2);
   perp.crossVectors(along, axis);
   if (perp.lengthSq() < 1e-8) perp.set(side === "L" ? 0.2 : -0.2, 0, 1);
   perp.normalize();

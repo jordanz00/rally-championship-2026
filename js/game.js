@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=202";
+import { Vehicle } from "./physics/vehicle.js?v=203";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=241";
-import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=9";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=246";
+import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=430";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=238";
+import { Opponent } from "./ai.js?v=243";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -4661,7 +4661,8 @@ export class RallyGame {
       null,
       chassisDeckEmbed(this.player, deckY, mesh),
       null,
-      this.player && this.player._cornerRoadY
+      this.player && this.player._cornerRoadY,
+      !(this.player && this.player.onGround)
     );
   }
 
@@ -4893,7 +4894,8 @@ export class RallyGame {
       d.wheelY ? wy : null,
       chassisDeckEmbed(p, d.y, this.playerMesh),
       dropOk,
-      p._cornerRoadY
+      p._cornerRoadY,
+      !p.onGround
     );
     const braking = p.brake > 0.08 || p.handbrake > 0.28;
     if (this.playerMesh.userData.brakeOn !== braking) {
@@ -5169,7 +5171,9 @@ export class RallyGame {
         const ids = isPhonePlay() ? ["celica", "delta"] : ["celica", "delta", "stratos", "celica"];
         for (let i = 0; i < ids.length; i++) {
           try {
-            meshes.push(createRivalCar(aiTintForIndex(i), i, ids[i]));
+            meshes.push(
+              i === 0 ? createAttractLead() : createRivalCar(aiTintForIndex(i), i, ids[i], true)
+            );
           } catch {
             try {
               meshes.push(createTitleCar(ids[i]));

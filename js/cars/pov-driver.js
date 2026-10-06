@@ -279,8 +279,7 @@ function makeMount(side, rimR, tubeR) {
   mount.userData.clock = clock;
   mount.position.set(Math.cos(clock) * rimR, Math.sin(clock) * rimR, 0);
   mount.rotation.z = clock;
-  const fit = THREE.MathUtils.clamp(rimR / 0.155, 0.88, 1.15);
-  mount.scale.setScalar(fit);
+  mount.scale.setScalar(0.72);
   const wrist = new THREE.Object3D();
   wrist.name = "wrist-placeholder";
   wrist.position.set(0.01, -0.02, -tubeR - 0.05);
@@ -314,6 +313,7 @@ function seatRig(mount, rig) {
   const proximal = rig.getObjectByName(mount.name === "hand-L" ? "Index_Proximal_L" : "Index_Proximal_R");
   mount.userData.gripBone = proximal ? proximal.name : "";
   poseGrip(rig, mount.name === "hand-L" ? 1 : -1);
+  relaxGrip(rig, mount.name === "hand-L" ? 1 : -1);
 }
 
 /**
@@ -333,6 +333,34 @@ function poseGrip(rig, side) {
   }
   rig.quaternion.copy(seat).multiply(arm.quaternion.clone().invert());
   rig.position.copy(arm.position).applyQuaternion(rig.quaternion).negate();
+}
+
+/**
+ * Open the baked fist into a wheel wrap. Fingers curl less. Thumb lies on the rim.
+ * @param {THREE.Object3D} rig
+ * @param {number} side +1 left / −1 right
+ */
+function relaxGrip(rig, side) {
+  const tag = side > 0 ? "L" : "R";
+  const ease = { Proximal: -0.28, Intermediate: -0.48, Distal: -0.16 };
+  for (const finger of ["Index", "Middle", "Ring", "Little"]) {
+    for (const part of Object.keys(ease)) {
+      const bone = rig.getObjectByName(`${finger}_${part}_${tag}`);
+      if (bone) bone.rotateZ(ease[part]);
+    }
+  }
+  const meta = rig.getObjectByName(`Thumb_Metacarpal_${tag}`);
+  const prox = rig.getObjectByName(`Thumb_Proximal_${tag}`);
+  const dist = rig.getObjectByName(`Thumb_Distal_${tag}`);
+  if (side > 0) {
+    if (meta) meta.rotateZ(0.42);
+    if (prox) prox.rotateZ(-0.22);
+    if (dist) dist.rotateZ(-0.18);
+  } else {
+    if (meta) meta.rotateY(0.32);
+    if (prox) prox.rotateZ(0.5);
+    if (dist) dist.rotateZ(0.28);
+  }
 }
 
 /**
@@ -464,8 +492,8 @@ export function attachPovDriverArms(root, hooks) {
     tubeR,
     trisL: 0,
     trisR: 0,
-    upperLen: 0.3,
-    foreLen: 0.26,
+    upperLen: 0.28,
+    foreLen: 0.24,
     _tmpA: new THREE.Vector3(),
     _tmpB: new THREE.Vector3(),
     _tmpC: new THREE.Vector3(),

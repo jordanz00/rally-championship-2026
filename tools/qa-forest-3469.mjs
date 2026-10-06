@@ -2,8 +2,8 @@
 /**
  * qa-forest-3469.mjs — Stage 2 pin where the car nearly stopped.
  *
- * 3469 m is on the Medium-left-to-finish, same XZ family as the late bore.
- * v987 / qa-forest-3485 allowed 9.1% on a 7.4 m deck. This file fails that.
+ * The long Forest no longer crosses its own bore here. 3469 m is flat dirt
+ * on the tunnel floor. A climb back onto a 7.4 m deck would be a new wall.
  *
  * RUN: node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-3469.mjs
  */
@@ -46,9 +46,9 @@ const pts = track.points;
 const pin = pts.reduce((best, p) => (Math.abs(p.dist - PIN) < Math.abs(best.dist - PIN) ? p : best), pts[0]);
 const deck = pts.reduce((best, p) => (Math.abs(p.dist - 3485) < Math.abs(best.dist - 3485) ? p : best), pts[0]);
 
-check("Forest length ~3903", track.length > 3800 && track.length < 4100, `${track.length.toFixed(1)} m`);
+check("Forest is the long stage", track.length > 4700 && track.length < 5200, `${track.length.toFixed(1)} m`);
 check("3469 is dirt on-road", pin.surface === "dirt" && (pin.width || 0) >= 16, `w=${(pin.width || 0).toFixed(1)} ${pin.surface}`);
-check("3469 sits on the 7.4 m deck", pin.y >= 7.8 && pin.y <= 10.2 && Math.abs(pin.y - deck.y) <= 0.25, `y=${pin.y.toFixed(2)}`);
+check("3469 stays level with 3485", Math.abs(pin.y - deck.y) <= 0.25, `y=${pin.y.toFixed(2)} deck=${deck.y.toFixed(2)}`);
 
 let worst = 0;
 let worstAt = 0;

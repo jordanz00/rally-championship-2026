@@ -58,15 +58,17 @@ applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
 
 // Seamless takeoff → kiss → roll-out. config.js stays pinned at ?v=241.
 JUMP.springFraction = 0.09;
-JUMP.landVelAbsorb = 0.91;
 JUMP.landBounceImpact = 7.6;
 JUMP.landReairMin = 1.2;
 JUMP.landSettleMin = 0.2;
-JUMP.landSettleMax = 0.52;
-JUMP.landCompressZeta = 0.97;
-JUMP.landCompressWn = 15.5;
-JUMP.landSettleDamp = 4.6;
-JUMP.landImpactSquash = 0.014;
+// Heavy touchdown. A ~3 t hit damps out; it does not float or pogo.
+JUMP.landCompressZeta = 1.45;
+JUMP.landCompressWn = 38;
+JUMP.landCompressMax = 0.15;
+JUMP.landSettleDamp = 10.5;
+JUMP.landSettleMax = 0.22;
+JUMP.landImpactSquash = 0.034;
+JUMP.landVelAbsorb = 0.96;
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
 const TMP = {
@@ -3188,7 +3190,7 @@ export class Vehicle {
     this.rollRate = clamp(this.rollRate, -3.4, 3.4);
     this.jump.sideHit = 0;
     // Sprung mass nods with the impact. It does not replace the air attitude.
-    this._suspPitchRate += clamp(hit * 0.028 * (0.35 + clamp(noseUp, 0, 1)), 0, 0.4);
+    this._suspPitchRate += clamp(hit * 0.07 * (0.55 + clamp(Math.abs(noseUp), 0, 1)), 0, 1.05);
     this._suspRollRate += clamp(airRoll * (0.7 + messy * 1.4), -1.3, 1.3);
   }
 
@@ -3198,13 +3200,13 @@ export class Vehicle {
    * @param {number} [upset]
    */
   _seedLandCompress(impact = 0, upset = 0) {
-    const gain = JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.09;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.11;
-    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.02;
-    const seed = clamp(impact * gain + upset * 0.012, 0.012, maxC);
+    const gain = (JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.09) * 1.55;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.15;
+    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.034;
+    const seed = clamp(impact * gain + upset * 0.02, 0.028, maxC);
     this._landCompress = Math.max(this._landCompress || 0, seed);
-    // Initial compress velocity — enough for one rebound, not a trampoline hop.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.016);
+    // Dive into the bump stops on the first frames. Rebound is overdamped.
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.08);
     this._landSquash = clamp(
       Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.28),
       0.01,
@@ -3235,7 +3237,7 @@ export class Vehicle {
         0,
         1.4
       );
-      const easeRate = 1 / (0.38 + crooked * 0.42);
+      const easeRate = 1 / (0.14 + crooked * 0.18);
       this._landEase = Math.min(1, (this._landEase || 0) + dt * easeRate);
     }
 
@@ -4177,10 +4179,9 @@ export class Vehicle {
         0,
         1
       );
-      // Soft at the kiss, firmer as the tires take the weight. Crooked
-      // arrivals stay underdamped so the nose and roll actually rock.
-      const wn = lerp(3.1, 11.5, ease * ease) * (this.ai ? 1.2 : 1);
-      const zeta = lerp(crooked > 0.28 ? 0.58 : 0.9, crooked > 0.28 ? 0.88 : 1.12, ease);
+      // Heavy kiss. The air pose slams onto the road instead of floating down.
+      const wn = lerp(14, 24, ease * ease) * (this.ai ? 1.15 : 1);
+      const zeta = lerp(crooked > 0.28 ? 1.05 : 1.25, crooked > 0.28 ? 1.35 : 1.6, ease);
       const rollTarget = (this._suspRoll || 0) + (this._roadRoll || 0);
       this._springAxis("roll", rollTarget, dt, wn * 0.82, zeta);
       this.roll = clamp(this.roll, -0.95, 0.95);
@@ -4216,8 +4217,8 @@ export class Vehicle {
         0,
         1
       );
-      const wn = lerp(3.1, 11.5, ease * ease) * (this.ai ? 1.2 : 1);
-      const zeta = lerp(crooked > 0.28 ? 0.58 : 0.9, crooked > 0.28 ? 0.88 : 1.12, ease);
+      const wn = lerp(14, 24, ease * ease) * (this.ai ? 1.15 : 1);
+      const zeta = lerp(crooked > 0.28 ? 1.05 : 1.25, crooked > 0.28 ? 1.35 : 1.6, ease);
       const road = this._visPitch + (this._bodyPitch || 0);
       this._springAxis("pitch", road, dt, wn, zeta);
       if (

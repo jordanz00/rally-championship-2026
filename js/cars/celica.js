@@ -22,8 +22,8 @@ import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=12";
-import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=2";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=13";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=4";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -1391,9 +1391,11 @@ function buildSmoothWindowPane(src, root, carMid) {
  * Generic rally coupe for the AI pack. Shared geometry, unique paint.
  * Not a licensed silhouette — reads as a car rather than Saturn boxes.
  */
-export function createRivalCar(tint = {}, variant = 0, chassisId = null) {
+export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShell = true) {
   const chassis = chassisId || rivalChassisForIndex(variant);
+  const hi = heroShell ? templates[chassis] || templates.celica : null;
   const template =
+    hi ||
     rivalTemplates[chassis] ||
     templates[chassis] ||
     rivalTemplates.celica ||
@@ -1411,7 +1413,23 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null) {
   }
   const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
   const root = enableCarShadows(cloneRival(template, livery, variant));
+  if (hi) hideHeavyInterior(root);
   root.userData.carId = chassis;
+  root.userData.heroShell = !!hi;
+  return root;
+}
+
+/** Attract lead. Hero mesh. Race rally paint. No rival livery. */
+export function createAttractLead() {
+  const root = enableCarShadows(cloneCar("celica"));
+  hideHeavyInterior(root);
+  dressPlayerCarRace(root);
+  setCockpitView(root, false);
+  rebindClonedWheels(root);
+  root.userData.wheels = findWheels(root);
+  root.userData.body = root;
+  root.userData.carId = "celica";
+  root.userData.attractLead = true;
   return root;
 }
 
@@ -2964,9 +2982,24 @@ function chassisRootOf(wheel) {
 /**
  * Pose wheels: spin, steer, sprung shocks, and `deckLift`.
  * Extension below the painted deck only when `dropOk[i]` (verge).
+ * In the air the mesh pitch is the whole car. Cancelling it, or chasing the
+ * road under the jump, pulls the hubs out of the arches.
+ * @param {boolean} [airborne]
  */
-export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0, dropOk = null, cornerY = null) {
-  _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
+export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY = null, deckLift = 0, dropOk = null, cornerY = null, airborne = false) {
+  const probedAir =
+    !airborne &&
+    cornerY &&
+    cornerY.length >= 4 &&
+    !Number.isFinite(cornerY[0]) &&
+    !Number.isFinite(cornerY[1]) &&
+    !Number.isFinite(cornerY[2]) &&
+    !Number.isFinite(cornerY[3]);
+  const inAir = !!airborne || !!probedAir;
+  /** Unloaded hang (m). Still inside the arch. */
+  const AIR_HANG = 0.05;
+  if (inAir) _qRoll.identity();
+  else _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
@@ -2999,16 +3032,17 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
             : 0;
       // Parent +Rx (nose down) lowers the front and lifts the tail. Plant
       // hubs by z·tan(pitch) so the body can dive without floating rears.
-      const pitchPlant = Math.max(-0.48, Math.min(0.48, tanPitch * zLong));
-      const rollPlant = Math.max(-0.36, Math.min(0.36, tanRoll * xLat));
+      // Flight pitch is the car, not dive — leave the hubs in the wells.
+      const pitchPlant = inAir ? 0 : Math.max(-0.48, Math.min(0.48, tanPitch * zLong));
+      const rollPlant = inAir ? 0 : Math.max(-0.36, Math.min(0.36, tanRoll * xLat));
       // Shocks tuck the hub into the arch (travel −). Extension (travel +)
       // only drops onto the verge — never through the painted slab.
       const tuck = -Math.min(0, travelRaw);
-      const canDrop = !!(dropOk && dropOk[i]);
+      const canDrop = !inAir && !!(dropOk && dropOk[i]);
       const drop = canDrop ? Math.min(0.16, Math.max(0, travelRaw)) : 0;
-      const attitude = data.restPosY + lift + pitchPlant - rollPlant;
-      let y = attitude + tuck - drop;
-      if (!canDrop) y = Math.max(attitude, y);
+      const attitude = data.restPosY + (inAir ? 0 : lift) + pitchPlant - rollPlant;
+      let y = inAir ? data.restPosY - AIR_HANG : attitude + tuck - drop;
+      if (!inAir && !canDrop) y = Math.max(attitude, y);
       // Rest X/Z every frame. The shock may ride a parent axis that is not Y
       // (scaled LOD hubs), and that offset must not accumulate.
       if (data.restPosX != null) w.position.x = data.restPosX;
@@ -3046,13 +3080,14 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     // Pose first, then plant. Steering and spin swing the tread; measuring
     // the rest pose left the rubber inside the deck after the hub turned.
     const slot = probeCornerSlot(data, i);
-    const roadY = cornerY && slot >= 0 ? cornerY[slot] : NaN;
+    const roadY = !inAir && cornerY && slot >= 0 ? cornerY[slot] : NaN;
     if (!Number.isFinite(roadY) || !w.parent || data._poseY == null) continue;
     const bottom = hubWorldBottom(w);
     if (!Number.isFinite(bottom)) continue;
     // 1 mm above the surface so the tread kisses it and does not enter it.
     let delta = roadY + 0.001 - bottom;
-    const bump = 0.45;
+    // One shock stroke. 0.45 m chased the road under a jump and left the arches.
+    const bump = 0.12;
     const droop = data._canDrop ? 0.16 : 0.1;
     if (delta > 0.001) delta = Math.min(bump, delta);
     else if (delta < -0.002) delta = Math.max(-droop, delta);

@@ -1,5 +1,35 @@
 # QA report — quality-control pass
 
+## POV grip (2026-10-06)
+
+**Player moment:** Cockpit. Smaller hands. Fingers wrap the rim. Thumbs sit on it. Arms follow the turn.
+
+**Boot:** `main.js?v=1062` · `pov-driver.js?v=13` · `cockpit-anim.js?v=10`
+
+## Rival rally paint (2026-10-06)
+
+**Player moment:** Attract lead keeps the hero rally paint. Pack cars wear the rally liveries on the hero shell. Decals and flake are 2×.
+
+**Boot:** `main.js?v=1061` · `celica.js?v=243` · `rival-livery.js?v=3`
+
+## Jump wheels stay on the car (2026-10-06)
+
+**Player moment:** A jump. The tires stay in the arches, hang a few centimetres, and spin with the car. Touchdown squats hard and damps, like a heavy car.
+
+**Cause:** Air pitch was cancelled on the hubs, and the pose chased the road under the jump (up to 45 cm). The wheels left the body.
+
+**Shipped:** In the air the hubs keep the car’s pitch and roll, hang 5 cm, and do not chase the deck. Landing spring is overdamped (wn 38, zeta 1.45) with a deeper bump-stop hit.
+
+**Boot:** `main.js?v=1060` · `vehicle.js?v=203` · `celica.js?v=242`
+
+## Five agent tasks (2026-10-06)
+
+**Player moment:** Start banners stay drum-tight, phones boot with no rotate card, cockpit fists stay on the rim, the attract reel holds, and Forest 3469 m does not stop the car.
+
+**Shipped:** Banners, phone boot, POV hands, and attract already passed their gates. Forest 3469 m is flat dirt on the long stage (4894 m), not the old 7.4 m flyover. The pin gate now locks that level road and the speed hold.
+
+**Boot:** `main.js?v=1059`
+
 ## Player accel cut 40% (2026-10-06)
 
 **Player moment:** The car still pulls, but it leaves the line much slower. Pack and brakes stay the same.

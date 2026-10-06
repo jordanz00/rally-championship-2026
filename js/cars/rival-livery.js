@@ -304,14 +304,14 @@ export function aiLiveryForIndex(index) {
  */
 function getFlakeMap() {
   if (flakeMap) return flakeMap;
-  const size = 512;
+  const size = 1024;
   const c = document.createElement("canvas");
   c.width = size;
   c.height = size;
   const g = c.getContext("2d");
   g.fillStyle = "#f2f2f2";
   g.fillRect(0, 0, size, size);
-  for (let i = 0; i < 9000; i++) {
+  for (let i = 0; i < 22000; i++) {
     const x = (hash01(i) * size) | 0;
     const y = (hash01(i + 17) * size) | 0;
     const v = 210 + ((hash01(i + 41) * 45) | 0);
@@ -331,7 +331,7 @@ function getFlakeMap() {
   flakeMap.wrapT = THREE.RepeatWrapping;
   flakeMap.repeat.set(2.4, 1.8);
   flakeMap.colorSpace = THREE.SRGBColorSpace;
-  flakeMap.anisotropy = 8;
+  flakeMap.anisotropy = 16;
   return flakeMap;
 }
 
@@ -341,7 +341,7 @@ function getFlakeMap() {
  */
 export function getLacquerNormal() {
   if (lacquerNormal) return lacquerNormal;
-  const size = 512;
+  const size = 1024;
   const c = document.createElement("canvas");
   c.width = size;
   c.height = size;
@@ -367,7 +367,7 @@ export function getLacquerNormal() {
   lacquerNormal.wrapT = THREE.RepeatWrapping;
   lacquerNormal.repeat.set(3, 2);
   lacquerNormal.colorSpace = THREE.NoColorSpace;
-  lacquerNormal.anisotropy = 8;
+  lacquerNormal.anisotropy = 16;
   return lacquerNormal;
 }
 
@@ -388,11 +388,12 @@ export function applyLacquerDetail(mat) {
 function getGritMap() {
   if (gritMap) return gritMap;
   const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
+  const size = 512;
+  c.width = size;
+  c.height = size;
   const g = c.getContext("2d");
-  const img = g.createImageData(256, 256);
-  for (let i = 0; i < 256 * 256; i++) {
+  const img = g.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
     const n = hash01(i * 0.37 + 2);
     const v = (90 + n * 140) | 0;
     img.data[i * 4] = v;
@@ -482,41 +483,41 @@ uniform float uRivalStyle;`
   float mask = 0.0;
   float accMask = 0.0;
   if (uRivalStyle < 0.5) {
-    mask = 1.0 - smoothstep(0.16, 0.28, abs(p.y - 0.62 - p.z * 0.08));
+    mask = 1.0 - smoothstep(0.28, 0.46, abs(p.y - 0.62 - p.z * 0.08));
   } else if (uRivalStyle < 1.5) {
-    mask = smoothstep(0.35, 0.62, p.z) * smoothstep(0.42, 0.62, p.y);
+    mask = smoothstep(0.15, 0.45, p.z) * smoothstep(0.38, 0.7, p.y);
   } else if (uRivalStyle < 2.5) {
-    mask = smoothstep(0.9, 1.08, p.y);
+    mask = smoothstep(0.82, 1.02, p.y);
   } else if (uRivalStyle < 3.5) {
-    accMask = 1.0 - smoothstep(0.34, 0.5, p.y);
+    accMask = 1.0 - smoothstep(0.42, 0.62, p.y);
   } else if (uRivalStyle < 4.5) {
-    mask = smoothstep(0.42, 0.55, abs(p.x)) * (1.0 - smoothstep(0.88, 1.02, p.y)) * smoothstep(0.4, 0.52, p.y);
+    mask = smoothstep(0.28, 0.48, abs(p.x)) * (1.0 - smoothstep(0.9, 1.08, p.y)) * smoothstep(0.32, 0.5, p.y);
   } else if (uRivalStyle < 5.5) {
-    mask = smoothstep(0.38, 0.52, p.y) * (1.0 - smoothstep(0.82, 0.96, p.y));
-    accMask = 1.0 - smoothstep(0.32, 0.46, p.y);
+    mask = smoothstep(0.28, 0.42, p.y) * (1.0 - smoothstep(0.88, 1.05, p.y));
+    accMask = 1.0 - smoothstep(0.22, 0.4, p.y);
   } else if (uRivalStyle < 6.5) {
-    mask = smoothstep(0.85, 1.15, abs(p.z));
+    mask = smoothstep(0.55, 0.95, abs(p.z));
   } else if (uRivalStyle < 7.5) {
-    accMask = 1.0 - smoothstep(0.08, 0.16, abs(p.y - 0.96));
-    mask = smoothstep(0.92, 1.06, p.y);
+    accMask = 1.0 - smoothstep(0.12, 0.22, abs(p.y - 0.96));
+    mask = smoothstep(0.84, 1.0, p.y);
   } else if (uRivalStyle < 8.5) {
-    mask = 1.0 - smoothstep(0.14, 0.26, abs(p.y - 0.55 - p.z * 0.42));
-    accMask = 1.0 - smoothstep(0.05, 0.1, abs(p.x));
+    mask = 1.0 - smoothstep(0.22, 0.4, abs(p.y - 0.55 - p.z * 0.42));
+    accMask = 1.0 - smoothstep(0.08, 0.16, abs(p.x));
   } else if (uRivalStyle < 9.5) {
-    mask = 1.0 - smoothstep(0.08, 0.16, abs(abs(p.x) - 0.48));
-    accMask = smoothstep(0.7, 0.95, p.y);
+    mask = 1.0 - smoothstep(0.14, 0.26, abs(abs(p.x) - 0.48));
+    accMask = smoothstep(0.62, 0.88, p.y);
   } else if (uRivalStyle < 10.5) {
-    mask = smoothstep(0.48, 0.62, p.y) * (1.0 - smoothstep(0.78, 0.9, p.y));
-    accMask = smoothstep(0.2, 0.55, p.z) * smoothstep(0.5, 0.7, p.y);
+    mask = smoothstep(0.4, 0.55, p.y) * (1.0 - smoothstep(0.82, 0.98, p.y));
+    accMask = smoothstep(0.05, 0.4, p.z) * smoothstep(0.42, 0.65, p.y);
   } else if (uRivalStyle < 11.5) {
-    mask = 1.0 - smoothstep(0.4, 0.55, p.y);
-    accMask = smoothstep(1.0, 1.16, p.y);
+    mask = 1.0 - smoothstep(0.48, 0.66, p.y);
+    accMask = smoothstep(0.92, 1.1, p.y);
   } else if (uRivalStyle < 12.5) {
-    mask = 1.0 - smoothstep(0.1, 0.2, abs(p.x));
-    accMask = smoothstep(0.9, 1.2, abs(p.z)) * smoothstep(0.45, 0.6, p.y);
+    mask = 1.0 - smoothstep(0.16, 0.3, abs(p.x));
+    accMask = smoothstep(0.7, 1.05, abs(p.z)) * smoothstep(0.38, 0.55, p.y);
   } else {
-    mask = 1.0 - smoothstep(0.07, 0.14, abs(p.y - 1.02));
-    accMask = 1.0 - smoothstep(0.22, 0.36, p.y);
+    mask = 1.0 - smoothstep(0.12, 0.22, abs(p.y - 1.02));
+    accMask = 1.0 - smoothstep(0.28, 0.46, p.y);
   }
   diffuseColor.rgb = mix(diffuseColor.rgb, uRivalSec, clamp(mask, 0.0, 0.94));
   diffuseColor.rgb = mix(diffuseColor.rgb, uRivalAcc, clamp(accMask, 0.0, 0.9));
@@ -549,7 +550,7 @@ function canvasMark(key, w, h, draw) {
   draw(g, w, h);
   tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   markCache.set(key, tex);
   return tex;
 }
@@ -568,49 +569,49 @@ function drawDirt(g, w, h, amount) {
 }
 
 function doorTexture(livery) {
-  return canvasMark(`door|${livery.id}|${livery.number}`, 512, 384, (g, w, h) => {
+  return canvasMark(`door|${livery.id}|${livery.number}`, 1024, 768, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.secondary);
-    g.fillRect(0, 0, w, 28);
-    g.fillRect(0, h - 28, w, 28);
+    g.fillRect(0, 0, w, h * 0.073);
+    g.fillRect(0, h - h * 0.073, w, h * 0.073);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 216px Impact, Arial Black, sans-serif";
+    g.font = `bold ${Math.round(h * 0.56)}px Impact, Arial Black, sans-serif`;
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.number, w * 0.5, h * 0.46);
-    g.font = "bold 44px Arial, sans-serif";
+    g.font = `bold ${Math.round(h * 0.115)}px Arial, sans-serif`;
     g.fillText(livery.team, w * 0.5, h * 0.84);
     drawDirt(g, w, h, livery.wear);
   });
 }
 
 function hoodTexture(livery) {
-  return canvasMark(`hood|${livery.id}`, 1024, 320, (g, w, h) => {
+  return canvasMark(`hood|${livery.id}`, 2048, 640, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.secondary);
-    g.fillRect(0, 0, 56, h);
-    g.fillRect(w - 56, 0, 56, h);
+    g.fillRect(0, 0, w * 0.055, h);
+    g.fillRect(w - w * 0.055, 0, w * 0.055, h);
     g.fillStyle = hexCss(livery.accent);
-    g.fillRect(72, 24, w - 144, 20);
+    g.fillRect(w * 0.07, h * 0.075, w * 0.86, h * 0.062);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 84px Arial Black, Arial, sans-serif";
+    g.font = `bold ${Math.round(h * 0.26)}px Arial Black, Arial, sans-serif`;
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.team, w * 0.5, h * 0.42);
-    g.font = "bold 52px Arial, sans-serif";
+    g.font = `bold ${Math.round(h * 0.16)}px Arial, sans-serif`;
     g.fillText(livery.sponsor, w * 0.5, h * 0.74);
     drawDirt(g, w, h, livery.wear * 1.1);
   });
 }
 
 function roofTexture(livery) {
-  return canvasMark(`roof|${livery.id}|${livery.number}`, 512, 192, (g, w, h) => {
+  return canvasMark(`roof|${livery.id}|${livery.number}`, 1024, 384, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
     g.fillRect(0, 0, w, h);
     g.fillStyle = hexCss(livery.ink);
-    g.font = "bold 140px Impact, Arial Black, sans-serif";
+    g.font = `bold ${Math.round(h * 0.73)}px Impact, Arial Black, sans-serif`;
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(livery.number, w * 0.5, h * 0.55);
