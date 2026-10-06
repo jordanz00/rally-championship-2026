@@ -4730,10 +4730,9 @@ export class Vehicle {
       }
     }
     let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
-    // Player pull is a tenth softer. Applied on the accel the hull actually
-    // gets, so a sand launch that was already traction-limited still slows.
-    // Braking and the pack are unchanged.
-    if (!this.ai && this.throttle > 0.2 && axTire > 0) axTire *= 0.9;
+    // Player pull is 40% softer than the old tenth-off cut (0.9 × 0.6).
+    // Applied on the accel the hull actually gets. Braking and the pack stay.
+    if (!this.ai && this.throttle > 0.2 && axTire > 0) axTire *= 0.54;
     this._axDrive += (axTire - this._axDrive) * (1 - Math.exp(-AX_DRIVE_RATE * dt));
     vx += this._axDrive * dt;
     // Lights-out / respawn: throttle means GO forward. Gravity, leftover

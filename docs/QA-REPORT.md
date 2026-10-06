@@ -1,5 +1,13 @@
 # QA report — quality-control pass
 
+## Player accel cut 40% (2026-10-06)
+
+**Player moment:** The car still pulls, but it leaves the line much slower. Pack and brakes stay the same.
+
+**Shipped:** Player forward accel is 0.54× (the old 0.9× cut, then another 40% off).
+
+**Boot:** `main.js?v=1059` · `vehicle.js?v=202`
+
 ## POV hands actually close on the rim (2026-10-05)
 
 **Player moment:** Cockpit. Both fists stay closed on the leather, thumbs up, wrists toward the driver.

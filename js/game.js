@@ -7,7 +7,7 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=201";
+import { Vehicle } from "./physics/vehicle.js?v=202";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=241";
@@ -15,7 +15,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=9";
 import { Track } from "./tracks/track.js?v=430";
 import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=237";
+import { Opponent } from "./ai.js?v=238";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
