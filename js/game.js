@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=14";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=15";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -5177,8 +5177,9 @@ export class RallyGame {
    * @param {number} dt
    */
   /**
-   * Swap the spinning pad for a looping rally reel after IBL.
-   * Never calls Track.create — the reel owns a lightweight ribbon.
+   * Swap the spinning pad for a Saturn-style stage tour after IBL.
+   * Builds real championship tracks (Desert → Forest → Mountain → Lakeside)
+   * and cuts like a music video across jumps and apexes.
    */
   _startAttractReel() {
     if (this._attractReel || this._attractBooting) return;
@@ -5187,7 +5188,23 @@ export class RallyGame {
     void prepareRivalLods().catch(() => {});
     const reduced =
       typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const reel = new AttractReel({ phone: isPhonePlay(), reducedMotion: reduced });
+    const reel = new AttractReel({
+      phone: isPhonePlay(),
+      reducedMotion: reduced,
+      armVeg: () => armVegBudget(this._qualityTierId || raceStartTier()),
+      onStage: (id) => {
+        try {
+          this._applyLighting(id);
+        } catch (err) {
+          console.warn("[attract] lighting", err);
+        }
+        const tag = document.querySelector(".sr-attract-tag");
+        if (tag) {
+          const name = id ? String(id).toUpperCase() : "RALLY";
+          tag.textContent = `ATTRACT · ${name}`;
+        }
+      },
+    });
     void reel
       .mount(this.scene)
       .then(() => {
@@ -5215,13 +5232,17 @@ export class RallyGame {
         reel.bindCars(meshes);
         this._attractReel = reel;
         this._attractFx = document.getElementById("attract-fx");
-        paintAttractFx(this._attractFx, { fade: 1, flash: 0, label: "PACK FLY-BY", kind: "packfly" }, true);
+        paintAttractFx(
+          this._attractFx,
+          { fade: 1, flash: 0, label: "DESERT", kind: "heli", stage: reel.stageId || "desert" },
+          true
+        );
         if (this._titleWorld) this._titleWorld.visible = false;
         if (this.playerMesh && meshes.indexOf(this.playerMesh) < 0) this.playerMesh.visible = false;
         const crt = document.getElementById("crt");
         if (crt) crt.classList.add("attract-live");
         const tag = document.querySelector(".sr-attract-tag");
-        if (tag) tag.textContent = "ATTRACT · WORLD RALLY FEED";
+        if (tag) tag.textContent = `ATTRACT · ${(reel.stageId || "desert").toUpperCase()}`;
       })
       .catch((err) => {
         this._attractBooting = false;
@@ -5254,19 +5275,18 @@ export class RallyGame {
    */
   _updateAttractLights(dt) {
     if (!this._attractReel || !this.sun) return;
-    this._updateTitleLights(dt || 0);
     const p = this._attractReel.lead;
-    const d = this._titleSunDir;
-    this.sun.position.set(p.x + d.x * 48, p.y + d.y * 42, p.z + d.z * 48);
+    const stage = this._attractReel.stageId || "desert";
+    const L = LIGHTING[stage] || LIGHTING.desert;
+    const dir = L.sunDir || [0.5, 0.75, 0.35];
+    const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+    this.sun.position.set(p.x + (dir[0] / dl) * 52, p.y + (dir[1] / dl) * 46, p.z + (dir[2] / dl) * 52);
     this.sun.target.position.set(p.x, p.y + 0.4, p.z);
     this.sun.target.updateMatrixWorld();
-    this.sun.intensity = Math.min(this.sun.intensity, 1.72);
-    if (this.renderer) this.renderer.toneMappingExposure = 0.94;
-    if (this.scene && this.scene.fog) {
-      this.scene.fog.color.setHex(0x7e9ab4);
-      this.scene.fog.near = 28;
-      this.scene.fog.far = 230;
+    if (this.renderer && L.exposure != null) {
+      this.renderer.toneMappingExposure = Math.min(1.05, L.exposure);
     }
+    void dt;
   }
 
   _titleCam(dt) {

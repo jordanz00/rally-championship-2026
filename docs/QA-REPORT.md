@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Attract is Saturn TV on real stages (2026-10-22)
+
+**Player moment:** Title. Hard cuts. Desert Safari jump, Forest crest, Mountain hairpin, Lakeside shore — real tracks, not the junk ribbon. Pack flies. Jump goes slow-mo.
+
+**Cause:** AttractReel built a closed CatmullRom pad with kit props. It never loaded championship stages.
+
+**Shipped:** Tour `COURSES` via `Track.create`. Highlight beats from jump lips and apexes. Sub-2s MTV holds. Stage lighting swaps with each course.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=1083` · `game.js?v=1083` · `attract-reel.js?v=15`
+
 ## Desert rivals load again (2026-10-22)
 
 **Player moment:** Start Desert. The pack appears. Stage builds.
