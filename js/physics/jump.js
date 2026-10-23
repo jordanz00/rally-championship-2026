@@ -13,7 +13,8 @@
  * (nose down), so Vehicle negates noseUp for display.
  *
  * Determinism: two identical lips fly identical. Different speed, line, or
- * pedal at the lip fly different — never RNG.
+ * pedal at the lip fly different — never RNG. Variety is 100% state-driven
+ * (speed × grade × technique × lateral × surface), proven by qa-jump-physics-fun.
  */
 
 import { JUMP } from "../config.js?v=241";
@@ -36,10 +37,13 @@ function lipGrain(dist, lat, speed = 0) {
   const d = Number(dist) || 0;
   const l = Number(lat) || 0;
   const spd = Math.max(0, Number(speed) || 0);
+  // Multi-scale lip roughness — same line repeats; off-line changes the hop.
   const base =
-    Math.sin(d * 0.37 + l * 0.9) * 0.62 + Math.sin(d * 1.17 + l * 2.4) * 0.38;
+    Math.sin(d * 0.37 + l * 0.9) * 0.48 +
+    Math.sin(d * 1.17 + l * 2.4) * 0.32 +
+    Math.sin(d * 2.63 + l * 5.1) * 0.2;
   const fast = clamp(spd / 28, 0, 1);
-  return base * (0.82 + fast * 0.38);
+  return base * (0.78 + fast * 0.48);
 }
 
 /** Surface bump → spring pop and landing sink (passed from vehicle). */
@@ -271,33 +275,45 @@ export class JumpModel {
     const energy = clamp((impact * impact) / 0.72, 0, 1.65);
     const fast = clamp(speed / 34, 0, 1);
     const side = clamp(this.sideHit || 0, 0, 1);
+    const tech = clamp(this.technique, 0, 1);
+    // Good technique forgives; flat-out mismatch pays more.
+    const techSoft = lerp(1.12, 0.72, tech);
     let upset =
-      (tailFirst * (0.48 + 0.52 * impact) + noseFirst * 0.28 * impact) *
+      (tailFirst * (0.52 + 0.58 * impact) + noseFirst * 0.34 * impact) *
       landMod *
-      (0.72 + energy * 0.38) *
-      (0.78 + fast * 0.28);
-    if (side > 0.2) upset = clamp(upset * (1 + side * 0.9) + side * 0.42, 0, 1.45);
-    this.unsettled = clamp(this.unsettled + upset * 0.88, 0, 1);
-    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.18) * landMod * dropMod * 0.7;
-    const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
-    const bounce =
-      Math.max(0, -fallSpeed) > need
-        ? Math.max(0, -fallSpeed) * bounceAmp * (0.04 + tailFirst * 0.96) * (0.7 + energy * 0.45)
-        : 0;
-    // Keep some tumble rate into the vehicle settle spring — hard rate kills
-    // made every land look like an upright keyframe the frame after contact.
-    // Keep the air spin. Killing it here made every touchdown start from rest.
-    this.noseUpRate *= 0.92;
-    this.rollRate *= side > 0.2 ? 0.96 : 0.9;
+      (0.72 + energy * 0.42) *
+      (0.78 + fast * 0.32) *
+      techSoft;
+    if (side > 0.2) upset = clamp(upset * (1 + side * 1.05) + side * 0.48, 0, 1.55);
+    this.unsettled = clamp(this.unsettled + upset * 0.92, 0, 1);
+    const bounceAmp = (JUMP.landBounce != null ? JUMP.landBounce : 0.16) * landMod * dropMod;
+    const need = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.6;
+    const fall = Math.max(0, -fallSpeed);
+    // Soft landings still squash; hard mismatched ones can leave the pad once.
+    let bounce = 0;
+    if (fall > need * 0.45) {
+      bounce =
+        fall *
+        bounceAmp *
+        (0.08 + tailFirst * 0.92) *
+        (0.55 + energy * 0.55) *
+        (0.7 + side * 0.45);
+    }
+    this.noseUpRate *= 0.9;
+    this.rollRate *= side > 0.2 ? 0.96 : 0.88;
+    // +1 rear dig (tail-first), −1 nose dig — suspension heave reads the hit.
+    this._landAxleBias = clamp(tailFirst - noseFirst, -1, 1);
     this.technique = 0;
-    const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.7 + 0.3 * impact);
-    const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight);
-    const scrub = lerp(scrubBase, scrubBase * 0.92, clamp(landMod - 1, 0, 0.35));
+    const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.72 + 0.28 * impact);
+    const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight * techSoft);
+    const scrub = lerp(scrubBase, scrubBase * 0.9, clamp(landMod - 1, 0, 0.4));
     return {
       scrub,
-      upsetYaw: upset * JUMP.landUpsetYaw + this.roll * 0.9,
+      upsetYaw: upset * JUMP.landUpsetYaw + this.roll * 0.95,
       upset,
-      bounce: Math.min(2.8 * dropMod, bounce),
+      bounce: Math.min(3.2 * dropMod, bounce),
+      axleBias: this._landAxleBias,
+      compress: clamp(fall * 0.08 * (0.65 + bad * 0.7) * landMod, 0.02, 0.22),
     };
   }
 

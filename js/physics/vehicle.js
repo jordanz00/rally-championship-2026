@@ -51,24 +51,36 @@ import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=241";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
-import { JumpModel } from "./jump.js?v=38";
-import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=5";
+import { JumpModel } from "./jump.js?v=40";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=6";
 
 applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
 
-// Seamless takeoff → kiss → roll-out. config.js stays pinned at ?v=241.
-JUMP.springFraction = 0.09;
-JUMP.landReairMin = 1.2;
+// Arcade-sim jump: ballistic leave + one readable land rebound, then plant.
+// config.js stays pinned at ?v=241 — live knobs mutate JUMP here.
+JUMP.springFraction = 0.14;
+JUMP.lipGrain = 0.16;
+JUMP.landReairMin = 0.72;
 JUMP.landSettleMin = 0.2;
-// Heavy touchdown. A ~3 t hit damps out; it does not float or pogo.
-JUMP.landCompressZeta = 1.9;
-JUMP.landCompressWn = 26;
-JUMP.landBounceImpact = 12;
-JUMP.landCompressMax = 0.15;
-JUMP.landSettleDamp = 10.5;
-JUMP.landSettleMax = 0.22;
-JUMP.landImpactSquash = 0.034;
-JUMP.landVelAbsorb = 0.96;
+JUMP.landSettleMax = 0.48;
+// Slightly underdamped so a hard hit shows weight, then snaps level.
+JUMP.landCompressZeta = 0.78;
+JUMP.landCompressWn = 17.5;
+JUMP.landBounceImpact = 5.6;
+JUMP.landBounce = 0.16;
+JUMP.landCompressMax = 0.2;
+JUMP.landCompressGain = 0.12;
+JUMP.landCompressExtMin = -0.022;
+JUMP.landSettleDamp = 5.4;
+JUMP.landSettleDampEnd = 12.5;
+JUMP.landImpactSquash = 0.042;
+JUMP.landVelAbsorb = 0.86;
+JUMP.mismatchFull = 0.2;
+JUMP.flatScrub = 0.995;
+JUMP.worstScrub = 0.52;
+JUMP.landUpsetYaw = 0.95;
+JUMP.balanceDecay = 3.2;
+JUMP.balanceGripLoss = 0.34;
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
 
 const TMP = {
@@ -192,8 +204,8 @@ const LAUNCH_HOLD_S = 0.55;
  * Desert's first corner is still 220 m out. Drive reaches the dirt instead
  * of smoking the rears, then first-corner slides stay catchable.
  */
-const GO_RUSH_S = 2.05;
-const GO_RUSH_DRIVE = 1.78;
+const GO_RUSH_S = 1.55;
+const GO_RUSH_DRIVE = 1.28;
 /** Ignore sub-centimetre along-track noise when undoing a launch shove. */
 const LAUNCH_REVERSE_EPS = 0.015;
 /**
@@ -671,6 +683,8 @@ export class Vehicle {
     /** Overdamped land spring (metres of visual sink) + rate. */
     this._landCompress = 0;
     this._landCompressVel = 0;
+    /** +rear / −front land axle dig from JumpModel (drives heave bias). */
+    this._landAxleBias = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -902,6 +916,7 @@ export class Vehicle {
     this._landSquash = 0;
     this._landCompress = 0;
     this._landCompressVel = 0;
+    this._landAxleBias = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -2000,6 +2015,7 @@ export class Vehicle {
     });
     this._jumpBounce = res.bounce || 0;
     this.lastLandUpset = res.upset;
+    if (res.axleBias != null) this._landAxleBias = clamp(res.axleBias, -1, 1);
     this._surfShock = Math.max(this._surfShock, clamp(impact / 12, 0.2, 0.85) * (0.5 + res.upset));
     this.velocity.x *= res.scrub;
     this.velocity.z *= res.scrub;
@@ -3200,18 +3216,22 @@ export class Vehicle {
    * @param {number} [upset]
    */
   _seedLandCompress(impact = 0, upset = 0) {
-    const gain = (JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.09) * 1.55;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.15;
-    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.034;
-    const seed = clamp(impact * gain + upset * 0.02, 0.028, maxC);
+    const gain = JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.12;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.2;
+    const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.042;
+    // Harder hits + mismatch dig deeper — soft kisses barely load the spring.
+    const seed = clamp(impact * gain * (0.7 + upset * 0.85) + upset * 0.035, 0.02, maxC);
     this._landCompress = Math.max(this._landCompress || 0, seed);
-    // Dive into the bump stops on the first frames. Rebound is overdamped.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.035);
+    // Dive velocity so the first frames compress; rebound is underdamped once.
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * (0.055 + upset * 0.04));
     this._landSquash = clamp(
-      Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.28),
+      Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.32),
       0.01,
-      0.1
+      0.12
     );
+    // Tail-first vs nose-first axle bias for suspension heave (deterministic).
+    const bias = this.jump && this.jump._landAxleBias != null ? this.jump._landAxleBias : 0;
+    this._landAxleBias = clamp(bias, -1, 1);
   }
 
   /**
@@ -3241,24 +3261,24 @@ export class Vehicle {
       this._landEase = Math.min(1, (this._landEase || 0) + dt * easeRate);
     }
 
-    const wn = JUMP.landCompressWn != null ? JUMP.landCompressWn : 20.5;
-    const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 0.86;
+    const wn = JUMP.landCompressWn != null ? JUMP.landCompressWn : 17.5;
+    const zeta = JUMP.landCompressZeta != null ? JUMP.landCompressZeta : 0.78;
     let x = this._landCompress || 0;
     let v = this._landCompressVel || 0;
-    // A slide or brake after touchdown must not get a second hop from rebound.
-    if (v < 0) v *= 0.2;
+    // Allow one rebound cycle, then kill a second hop (arcade plant).
+    if (v < 0 && x < -0.004) v *= 0.55;
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
-    const extMin = JUMP.landCompressExtMin != null ? JUMP.landCompressExtMin : -0.014;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.11;
+    const extMin = JUMP.landCompressExtMin != null ? JUMP.landCompressExtMin : -0.022;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.2;
     if (x < extMin) {
       x = extMin;
-      if (v < 0) v *= 0.08;
+      if (v < 0) v *= 0.22;
     }
     if (x > maxC) {
       x = maxC;
-      if (v > 0) v = 0;
+      if (v > 0) v *= 0.35;
     }
     this._landCompress = x;
     this._landCompressVel = v;
@@ -4024,11 +4044,12 @@ export class Vehicle {
     const dLat = m * ay * h;
     const dLatF = (dLat / tF) * shareF;
     const dLatR = (dLat / tR) * (1 - shareF);
-    // Landing heave: the overdamped land spring is a real compression of all
-    // four corners — stiff load spike on touchdown, gone in ~0.2 s.
+    // Landing heave: land spring compresses all four corners. Tail-first
+    // digs the rears; nose-first digs the fronts (axleBias from JumpModel).
     const heave = this._landCompress || 0;
-    const heaveF = heave > 0 ? k * heave * 0.92 : 0;
-    const heaveR = heave > 0 ? k * heave * 1.12 : 0;
+    const bias = clamp(this._landAxleBias || 0, -1, 1);
+    const heaveF = heave > 0 ? k * heave * (0.88 - bias * 0.28) : 0;
+    const heaveR = heave > 0 ? k * heave * (1.08 + bias * 0.32) : 0;
     const loads = this._wheelLoad;
     // Outside wheels are on the −ay side (vy, ay are + toward the body right vector).
     const minF = staticF * 0.08;
@@ -4133,9 +4154,12 @@ export class Vehicle {
     // ---- hub deflection: the body moved, the tires did not ----
     const theta = this._suspPitch;
     const heave = this._landCompress || 0;
+    const bias = clamp(this._landAxleBias || 0, -1, 1);
+    const heaveFMul = heave > 0 ? 0.88 - bias * 0.3 : 0.8;
+    const heaveRMul = heave > 0 ? 1.12 + bias * 0.34 : 0.95;
     const st = this._suspTravel;
-    st[0] = st[1] = -theta * lf - (heave > 0 ? heave * 0.92 : heave * 0.8);
-    st[2] = st[3] = theta * lr - (heave > 0 ? heave * 1.12 : heave * 0.95);
+    st[0] = st[1] = -theta * lf - heave * heaveFMul;
+    st[2] = st[3] = theta * lr - heave * heaveRMul;
     const maxT = s.travel != null ? s.travel : 0.18;
     const rt = this._roadTravel;
     const wt = this._wheelTravel;
@@ -4731,14 +4755,12 @@ export class Vehicle {
       }
     }
     let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
-    // Player pull is 40% softer than the old tenth-off cut (0.9 × 0.6)
-    // once the first corner is behind you. A committed launch to that
-    // corner keeps full pull so the lights-out boost is not cancelled.
+    // Player-only pull cut so the pack stays in the fight. Always on —
+    // the old first-260 m "commit" free pass let the hero rocket away at GO.
+    // Slides keep a bit more drive so exit punch still pays.
     if (!this.ai && this.throttle > 0.2 && axTire > 0) {
       const slideKeep = clamp(Math.abs(this._alphaR || 0) / 0.35, 0, 1);
-      const commit = this.progress < 260 && this.throttle > 0.45 ? 1 : 0;
-      const pull = lerp(0.54, 0.78, slideKeep);
-      axTire *= lerp(pull, 1, commit);
+      axTire *= lerp(0.52, 0.68, slideKeep);
     }
     this._axDrive += (axTire - this._axDrive) * (1 - Math.exp(-AX_DRIVE_RATE * dt));
     vx += this._axDrive * dt;

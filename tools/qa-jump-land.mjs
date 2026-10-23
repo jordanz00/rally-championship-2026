@@ -56,8 +56,8 @@ check(
   "hard plantDeck assign was the thud"
 );
 check(
-  "overdamped land spring",
-  /landCompressZeta = 0\.97/.test(vehSrc) && /springFraction = 0\.09/.test(vehSrc)
+  "near-critical land spring (readable bounce)",
+  /landCompressZeta = 0\.78/.test(vehSrc) && /springFraction = 0\.14/.test(vehSrc)
 );
 
 console.log("\nlive desert spline");

@@ -77,9 +77,9 @@ check(
 check("30 fps hard floor jumps straight to min", /hardFloorMs/.test(perf));
 
 console.log("\npixel ratio cap");
-check("maxPixelRatio cap declared", /maxPixelRatio: 1\.5/.test(perf));
+check("maxPixelRatio cap declared", /maxPixelRatio: 2/.test(perf));
 const cfgPr = Number((config.match(/maxPixelRatio:\s*([\d.]+)/) || [])[1]);
-check(`config pixel ratio ceiling is ${cfgPr} (<= 1.5)`, cfgPr > 0 && cfgPr <= 1.5);
+check(`config pixel ratio ceiling is ${cfgPr} (<= 2)`, cfgPr > 0 && cfgPr <= 2);
 check(
   "resize clamps against the cap",
   /QUALITY_CAPS\.maxPixelRatio/.test(game) || /capPr/.test(game),

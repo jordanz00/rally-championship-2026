@@ -528,9 +528,18 @@ function bannerTexture(label, scenery) {
   g.fillStyle = finish ? "#d4b15a" : "#f0d27a";
   g.font = "600 28px sans-serif";
   g.fillText(stageWord(scenery), w * 0.5, 98);
+  // FINISH must read at chase distance — larger than START / stage marks.
+  const big = finish ? 196 : word.length > 9 ? 92 : word.length > 6 ? 120 : 168;
+  g.font = `900 ${big}px Impact, "Arial Black", sans-serif`;
+  if (finish) {
+    g.fillStyle = "#0a0a0c";
+    const o = 6;
+    g.fillText(word, w * 0.5 - o, 230);
+    g.fillText(word, w * 0.5 + o, 230);
+    g.fillText(word, w * 0.5, 230 - o);
+    g.fillText(word, w * 0.5, 230 + o);
+  }
   g.fillStyle = "#f7f3ea";
-  const big = word.length > 9 ? 92 : word.length > 6 ? 120 : 168;
-  g.font = `800 ${big}px sans-serif`;
   g.fillText(word, w * 0.5, 230);
   finishCloth(g, w, h);
   const tex = new THREE.CanvasTexture(c);

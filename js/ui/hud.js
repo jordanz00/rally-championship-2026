@@ -238,6 +238,7 @@ export class Hud {
     this.flash.classList.toggle("is-count", text === "3" || text === "2" || text === "1");
     this.flash.classList.toggle("is-pass", text === "PASS");
     this.flash.classList.toggle("is-go", text === "GO!");
+    this.flash.classList.toggle("is-finish", text === "FINISH");
     this.flash.classList.toggle("is-miss", text === "NEAR MISS");
     this.flash.classList.toggle("is-sick", text === "SICK");
     this.flash.classList.toggle("is-unreal", text === "UNREAL");

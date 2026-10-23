@@ -320,21 +320,22 @@ export function compileSegment(seg, ctx) {
  * Playable lane — wider ribbon, opened corners. Tight hooks open the most;
  * sweepers still ease so every stage turn is holdable.
  */
-const PLAY_WIDTH = 1.34;
-const PLAY_TIGHT_RADIUS = 1.4;
-const PLAY_MEDIUM_RADIUS = 1.28;
-const PLAY_SWEEP_RADIUS = 1.16;
-const PLAY_SPEED_TIGHT = 1.22;
-const PLAY_SPEED_SWEEP = 1.16;
+/** Wider lane + longer straights — pro rally feel, room to slide. */
+const PLAY_WIDTH = 1.52;
+const PLAY_TIGHT_RADIUS = 1.42;
+const PLAY_MEDIUM_RADIUS = 1.3;
+const PLAY_SWEEP_RADIUS = 1.18;
+const PLAY_SPEED_TIGHT = 1.24;
+const PLAY_SPEED_SWEEP = 1.18;
 const PLAY_WIDTH_MIN = 6;
-const PLAY_WIDTH_MAX = 32;
-const PLAY_TUNNEL_EXTRA = 2.2;
-const PLAY_STRAIGHT = 1.72;
+const PLAY_WIDTH_MAX = 36;
+const PLAY_TUNNEL_EXTRA = 2.4;
+const PLAY_STRAIGHT = 2.2;
 const PLAY_FINISH_PAD = {
-  desert: 240,
-  forest: 220,
-  mountain: 220,
-  lakeside: 200,
+  desert: 320,
+  forest: 300,
+  mountain: 300,
+  lakeside: 280,
   physlab: 48,
 };
 

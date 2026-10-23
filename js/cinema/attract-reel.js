@@ -1,10 +1,10 @@
 /**
- * Attract reel — Saturn-style music-video tour of the real championship stages.
+ * Attract reel — smooth cinematic tour of the real championship stages.
  *
  * WHO THIS IS FOR: title + SELECT MODE.
  * WHAT IT DOES: builds Desert → Forest → Mountain → Lakeside (actual Track
- *   worlds, not a junk ribbon), flies the pack through authored jumps and
- *   apexes, and hard-cuts the camera like a rally TV edit.
+ *   worlds), rolls the pack continuously, and eases the camera between long
+ *   holds — no MTV flash edits.
  * HOW IT CONNECTS: RallyGame starts this after title IBL; CSS overlays live
  *   in index.html (#attract-fx). Uses Track.create + Track.sample. Does not
  *   own race physics.
@@ -26,30 +26,30 @@ let CoursesMap = null;
 async function loadStageApi() {
   if (TrackCtor && CoursesMap) return;
   const [trackMod, courseMod] = await Promise.all([
-    import("../tracks/track.js?v=435"),
-    import("../tracks/courses.js?v=98"),
+    import("../tracks/track.js?v=439"),
+    import("../tracks/courses.js?v=99"),
   ]);
   TrackCtor = trackMod.Track;
   CoursesMap = courseMod.COURSES;
 }
 
-/** Music-video holds — short, punchy (Saturn attract energy). */
+/** Cinematic holds — long enough to read the stage (no flash edits). */
 const SHOT_HOLD = {
-  bumper: 1.05,
-  moto: 1.25,
-  whip: 0.9,
-  heli: 1.45,
-  headon: 0.95,
-  lowside: 1.0,
-  jump: 1.7,
-  dutch: 0.85,
-  crane: 1.35,
-  smash: 0.8,
-  nose: 1.0,
-  packfly: 1.15,
-  rear: 1.2,
-  bank: 1.05,
-  land: 1.1,
+  bumper: 3.4,
+  moto: 3.8,
+  whip: 3.2,
+  heli: 4.4,
+  headon: 3.6,
+  lowside: 3.0,
+  jump: 4.2,
+  dutch: 3.4,
+  crane: 4.0,
+  smash: 2.8,
+  nose: 3.2,
+  packfly: 4.0,
+  rear: 3.6,
+  bank: 3.5,
+  land: 3.4,
 };
 
 const SHOT_LABEL = {
@@ -70,13 +70,18 @@ const SHOT_LABEL = {
   land: "LANDING",
 };
 
-const CYCLE = ["heli", "packfly", "whip", "moto", "jump", "headon", "bank", "nose", "crane", "rear", "smash", "bumper"];
+/** Calmer cycle — fewer lenses, less repeat thrash. */
+const CYCLE = ["heli", "moto", "packfly", "headon", "bank", "crane", "rear", "jump"];
 
 const STAGE_ORDER = ["desert", "forest", "mountain", "lakeside"];
 const STAGE_ORDER_PHONE = ["desert", "forest", "lakeside"];
 
-/** Seconds on one stage before the hard cut to the next course. */
-const STAGE_DWELL = 11.5;
+/** Seconds on one stage before a soft fade to the next course. */
+const STAGE_DWELL = 22;
+
+/** Soft crossfade durations (seconds). */
+const FADE_OUT = 0.55;
+const FADE_IN = 0.7;
 
 const STAGE_TITLE = {
   desert: "DESERT",
@@ -151,7 +156,7 @@ function buildBeats(track) {
 }
 
 /**
- * Music-video director — fast cuts, jump priority.
+ * Cinematic director — long holds, ease between lenses, jump priority.
  */
 export class AttractDirector {
   /**
@@ -176,6 +181,7 @@ export class AttractDirector {
     this._tdutch = 0;
     this.justCut = false;
     this._forced = null;
+    this._pendingKind = null;
     this._labelOverride = null;
   }
 
@@ -220,41 +226,34 @@ export class AttractDirector {
       this._cut(pose);
     }
     this._phase(dt, pose);
-    if (this.justCut || this.phase === "in") this.snap(pose);
-    else this._follow(dt);
+    // Always ease — snap only on first boot via AttractReel.
+    this._follow(dt);
     return this._out();
   }
 
   _out() {
-    const hot =
-      this.kind === "smash" ||
-      this.kind === "whip" ||
-      this.kind === "headon" ||
-      this.kind === "packfly" ||
-      this.kind === "jump";
+    const hot = this.kind === "jump" || this.kind === "headon" || this.kind === "packfly";
     return {
-      fade: Math.min(0.55, this.fade),
+      fade: Math.min(0.72, this.fade),
       flash: 0,
       kind: this.kind,
       label: this.label(),
       dutch: this.dutch,
       fov: this.fov,
-      chroma: hot && !this.reduced ? 0.12 : 0,
-      smear: this.kind === "whip" || this.kind === "smash" ? 0.18 : 0,
-      speedFx: this.kind === "jump" ? 0 : hot ? 0.22 : 0.08,
-      ramp: this.kind === "jump" ? "slow" : hot ? "fast" : "live",
-      energy: hot ? "hot" : "live",
-      calm: this.reduced,
+      chroma: hot && !this.reduced ? 0.04 : 0,
+      smear: 0,
+      speedFx: this.kind === "jump" ? 0.06 : hot ? 0.08 : 0.03,
+      ramp: this.kind === "jump" ? "slow" : "live",
+      energy: "live",
+      calm: true,
       justCut: this.justCut,
     };
   }
 
   _mustCut(pose) {
-    if (this.shotT < 0.55) return false;
-    if (pose && pose.jump && this.kind !== "jump" && this.shotT > 0.7) return true;
-    if (this.kind === "headon" && this.shotT > 0.85) return true;
-    if (this.kind === "smash" && this.shotT > 0.7) return true;
-    if (!this.reduced && this.kind === "whip" && this.shotT > 0.75) return true;
+    // Only break early for a real jump — never thrash on whip/smash timers.
+    if (this.shotT < 1.8) return false;
+    if (pose && pose.jump && this.kind !== "jump" && this.shotT > 2.2) return true;
     return false;
   }
 
@@ -268,9 +267,9 @@ export class AttractDirector {
         next = CYCLE[(i + 1) % CYCLE.length];
       }
     }
-    this.kind = next;
+    this._pendingKind = next;
     this.shotT = 0;
-    this.hold = (SHOT_HOLD[this.kind] || 1.1) * (this.reduced ? 1.45 : 1);
+    this.hold = (SHOT_HOLD[next] || 3.2) * (this.reduced ? 1.35 : 1);
     this.phase = "out";
     this.phaseT = 0;
     this.fade = 0;
@@ -281,15 +280,20 @@ export class AttractDirector {
   _phase(dt, pose) {
     this.phaseT += dt;
     if (this.phase === "out") {
-      const u = Math.min(1, this.phaseT / 0.05);
+      const u = Math.min(1, this.phaseT / FADE_OUT);
       this.fade = u * u * (3 - 2 * u);
       if (u >= 1) {
-        this.snap(pose);
+        if (this._pendingKind) {
+          this.kind = this._pendingKind;
+          this._pendingKind = null;
+        }
+        this._compose(this.kind, pose);
+        // Soft handoff — ease into the new lens, do not hard snap.
         this.phase = "in";
         this.phaseT = 0;
       }
     } else if (this.phase === "in") {
-      const u = Math.min(1, this.phaseT / 0.09);
+      const u = Math.min(1, this.phaseT / FADE_IN);
       this.fade = 1 - u * u * (3 - 2 * u);
       if (u >= 1) {
         this.phase = "hold";
@@ -301,7 +305,9 @@ export class AttractDirector {
   }
 
   _follow(dt) {
-    const k = 1 - Math.exp(-dt * 9.5);
+    // Creamy tracking — slower during crossfade so the cut never pops.
+    const rate = this.phase === "hold" ? 3.2 : 5.5;
+    const k = 1 - Math.exp(-dt * rate);
     this.eye.lerp(this._te, k);
     this.look.lerp(this._tl, k);
     this.fov += (this._tfov - this.fov) * k;
@@ -427,6 +433,9 @@ export class AttractReel {
     this.armVeg = opts && opts.armVeg ? opts.armVeg : null;
     this.group = new THREE.Group();
     this.group.name = "attract-reel";
+    /** Seconds between soft seeks to the next authored beat (continuous drive). */
+    this._beatInterval = 9.5;
+    this._beatClock = 0;
     this.tour = null;
     this.cars = [];
     this.director = new AttractDirector({ reducedMotion: this.reduced });
@@ -508,10 +517,23 @@ export class AttractReel {
     this._beats = buildBeats(track);
     this._beatI = 0;
     this._stageT = 0;
+    this._beatClock = 0;
     this._anchorDist = this._beats[0] ? this._beats[0].dist : 40;
     this.t = this._anchorDist / Math.max(1, this._pace);
-    this._applyBeatCam(this._beats[0]);
+    const open = this._beats[0];
+    if (open) {
+      const shot = open.shot || "heli";
+      this.director.kind = shot;
+      this.director.hold = (SHOT_HOLD[shot] || 3.2) * (this.reduced ? 1.35 : 1);
+      this.director.shotT = 0;
+      this.director.phase = "hold";
+      this.director.phaseT = 0;
+      this.director.fade = 0;
+      this.director._labelOverride = open.label || STAGE_TITLE[courseId] || "WORLD FEED";
+      this.director._pendingKind = null;
+    }
     this._plantAll(0, null);
+    this.director.snap(this.lead);
     if (this.onStage) this.onStage(courseId, track);
     this._building = null;
     if (scene && !this.group.parent) scene.add(this.group);
@@ -569,23 +591,34 @@ export class AttractReel {
   _applyBeatCam(beat) {
     if (!beat) return;
     const shot = beat.shot || (beat.kind === "jump" ? "jump" : "packfly");
-    this.director.kind = shot;
-    this.director.hold = (SHOT_HOLD[shot] || 1.1) * (this.reduced ? 1.4 : 1);
-    this.director.shotT = 0;
-    this.director.phase = "in";
-    this.director.phaseT = 0;
-    this.director._labelOverride = beat.label || STAGE_TITLE[this.stageId] || "WORLD FEED";
-    this.director.justCut = true;
+    // Ease into the beat lens — never hard-snap mid-tour.
+    this.director.forceNext(shot, beat.label || STAGE_TITLE[this.stageId] || "WORLD FEED");
+    if (this.director.phase === "hold") {
+      this.director._cut(this.lead);
+    } else {
+      this.director.kind = shot;
+      this.director.hold = (SHOT_HOLD[shot] || 3.2) * (this.reduced ? 1.35 : 1);
+      this.director.shotT = 0;
+      this.director._labelOverride = beat.label || STAGE_TITLE[this.stageId] || "WORLD FEED";
+    }
   }
 
-  /** Jump the pack to the next authored highlight. */
+  /**
+   * Soft seek to the next authored highlight — keep rolling, swap lens gently.
+   * Instant teleports were the flashy "repeating edit" feel.
+   */
   _advanceBeat() {
     if (!this._beats.length) return;
     this._beatI = (this._beatI + 1) % this._beats.length;
     const beat = this._beats[this._beatI];
-    this._anchorDist = beat.dist;
-    this.t = beat.dist / Math.max(1, this._pace);
+    // Nudge the pack toward the beat without teleporting if we are close.
+    const gap = beat.dist - this._anchorDist;
+    if (Math.abs(gap) > 120) {
+      this._anchorDist = beat.dist - 28;
+      this.t = this._anchorDist / Math.max(1, this._pace);
+    }
     this._applyBeatCam(beat);
+    this._beatClock = 0;
   }
 
   /**
@@ -712,27 +745,23 @@ export class AttractReel {
     }
 
     const jumpSlow = this.lead.jump && this.director.kind === "jump";
-    this._timeScale = jumpSlow ? 0.55 : 1;
+    this._timeScale = jumpSlow ? 0.72 : 1;
     const step = dt * this._timeScale;
     this.t += step;
     this._stageT += step;
+    this._beatClock += step;
     this._anchorDist += this._pace * step;
 
     this._plantAll(step, hooks);
 
     const shot = this.director.update(step, this.lead, { second: this.second });
-    if (shot.justCut) {
-      // Jump airtime: keep the pack on this crest and only switch the lens.
-      // Timed holds teleport to the next authored highlight (music-video edit).
-      if (!(this.lead.jump && shot.kind === "jump")) {
-        this._advanceBeat();
-      } else {
-        this.director._labelOverride = "OVER JUMP";
-      }
-      this._plantAll(0, hooks);
-      this.director.snap(this.lead);
+    if (shot.justCut && this.lead.jump && shot.kind === "jump") {
+      this.director._labelOverride = "OVER JUMP";
       shot.label = this.director.label();
-      shot.justCut = true;
+    }
+    // Continuous drive — seek a new highlight on a long clock, not every lens change.
+    if (this._beatClock >= this._beatInterval * (this.reduced ? 1.25 : 1)) {
+      this._advanceBeat();
     }
 
     if (this.track.update && camera) {

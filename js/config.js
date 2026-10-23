@@ -1915,8 +1915,8 @@ export const AI = {
    * Pack is deliberately a beat slower than a committed player so handbrake
    * slides and exits feel like passing moves, not a same-pace train.
    */
-  skillFloor: 0.72,
-  skillCeiling: 0.94,
+  skillFloor: 0.8,
+  skillCeiling: 0.98,
   /** Corner-entry braking bias. Higher = more trail-braking, later apex. */
   trailBrake: 0.52,
   /** Seconds between a rival's chances to make a small mistake. */
@@ -1931,9 +1931,9 @@ export const AI = {
    * Catch-up authority, as a fraction of throttle. Softer so slowed rivals
    * stay beatable after a player slide pass.
    */
-  rubberBand: 0.078,
+  rubberBand: 0.11,
   /** Metres of gap at which the rubber band reaches full (still tiny) effect. */
-  rubberBandRange: 200,
+  rubberBandRange: 175,
   /** Pro line: tighter apex on tarmac, wider on loose surfaces. */
   proLineTarmac: 1.18,
   proLineLoose: 0.82,
@@ -2007,7 +2007,7 @@ export const RACE_FEEDBACK = {
   /** Minimum seconds between place pulses. */
   placeCooldownSec: 1.05,
   /** Flash centre banner on gains (e.g. "2ND!"). */
-  flashGains: true,
+  flashGains: false,
   /** Soft chirp under a gain flash. */
   gainChirp: true,
 };

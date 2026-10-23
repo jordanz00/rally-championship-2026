@@ -12,10 +12,10 @@ import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=241";
 import { roadMicroHeight } from "./road-micro.js?v=13";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=13";
+import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
-import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=8";
+import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=9";
 import {
   shadowGeometry,
   shadowMaterial,
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=58";
+} from "../gfx/pbr.js?v=60";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -62,7 +62,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=62";
+} from "./forest-pbr.js?v=64";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -70,7 +70,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=62";
+} from "./desert-pbr.js?v=64";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -88,7 +88,7 @@ import {
 } from "./forest-tunnel.js?v=24";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=14";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=15";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -192,10 +192,10 @@ const SKIRT_PLANT_BIAS = 0.04;
  * @returns {number}
  */
 function skirtBaseReach(scenery) {
-  if (scenery === "desert") return 6.8;
-  if (scenery === "mountain") return 8.5;
-  if (scenery === "forest") return 7.6;
-  if (scenery === "lakeside") return 6.4;
+  if (scenery === "desert") return 9.2;
+  if (scenery === "mountain") return 11.0;
+  if (scenery === "forest") return 10.2;
+  if (scenery === "lakeside") return 8.8;
   return 6.8;
 }
 
@@ -243,14 +243,15 @@ function skirtYAlong(clearance, reach, kerbY, outerY, roadH) {
 }
 
 /** How often each surface texture tiles along the ribbon (1 / meters per repeat). */
+/** Lower = less ribbon striping; world-XZ projection owns the look. */
 const ROAD_UV_SCALE = {
-  tarmac: 0.07,
-  gravel: 0.2,
-  dirt: 0.14,
-  cobble: 0.09,
-  grass: 0.16,
-  sand: 0.11,
-  mud: 0.13,
+  tarmac: 0.045,
+  gravel: 0.11,
+  dirt: 0.08,
+  cobble: 0.055,
+  grass: 0.09,
+  sand: 0.065,
+  mud: 0.075,
 };
 
 /**
@@ -1519,9 +1520,10 @@ export class Track {
    * @returns {number}
    */
   _landPad(scenery) {
-    if (scenery === "forest" || scenery === "mountain") return 720;
-    if (scenery === "desert") return 640;
-    if (scenery === "lakeside") return 560;
+    // Vista pad without the 60 Hz tax of the ultra-wide beauty bump.
+    if (scenery === "forest" || scenery === "mountain") return 820;
+    if (scenery === "desert") return 760;
+    if (scenery === "lakeside") return 700;
     return STREAM.terrainTileSize * 0.5;
   }
 
@@ -2476,16 +2478,39 @@ export class Track {
   _biomeTint(c, scenery, h, roadY, x, z, near) {
     const lift = clamp((h - roadY) / 24, -0.4, 1);
     const hi = this._terrainRealismOn();
+    const over = near && Number.isFinite(near.minOver) ? near.minOver : 80;
+    const wobble =
+      Math.abs(Math.sin(x * 0.41 + z * 0.33)) * 1.55 + Math.abs(Math.sin(x * 0.093 - z * 0.11)) * 0.85;
     if (scenery === "desert") {
-      if (lift > 0.45) {
-        // Raised tunnel ridge: rockier escarpment, not a tall sand dune.
-        c.setRGB(0.62 + lift * 0.16, 0.54 + lift * 0.12, 0.4 + lift * 0.06);
+      // Compacted verge → warm sand → dune crest. Soft distance blend, not a hard sheet.
+      const vergeEnd = 3.4 + wobble;
+      const sandEnd = 11 + wobble * 1.6;
+      const verge = { r: 0.72, g: 0.62, b: 0.42 };
+      const sand = { r: 0.84 + lift * 0.08, g: 0.7 + lift * 0.08, b: 0.46 + lift * 0.04 };
+      const dune = { r: 0.9 + lift * 0.08, g: 0.74 + lift * 0.06, b: 0.48 };
+      const ridge = { r: 0.62 + lift * 0.16, g: 0.54 + lift * 0.12, b: 0.4 + lift * 0.06 };
+      if (over < vergeEnd) {
+        const u = smoothstep(over / vergeEnd);
+        c.setRGB(
+          verge.r + (sand.r - verge.r) * u,
+          verge.g + (sand.g - verge.g) * u,
+          verge.b + (sand.b - verge.b) * u
+        );
+      } else if (over < sandEnd) {
+        const u = smoothstep((over - vergeEnd) / (sandEnd - vergeEnd));
+        const far = lift > 0.45 ? ridge : dune;
+        c.setRGB(
+          sand.r + (far.r - sand.r) * u,
+          sand.g + (far.g - sand.g) * u,
+          sand.b + (far.b - sand.b) * u
+        );
+      } else if (lift > 0.45) {
+        c.setRGB(ridge.r, ridge.g, ridge.b);
       } else {
-        c.setRGB(0.82 + lift * 0.12, 0.68 + lift * 0.1, 0.44 + lift * 0.05);
+        c.setRGB(dune.r, dune.g, dune.b);
       }
       const grit = Math.abs(Math.sin(x * 0.055 + z * 0.049));
       if (grit > 0.82) c.multiplyScalar(0.9);
-      // Visual Pass V4 — stronger crest wash so tall verts read drier from chase.
       if (lift > 0.28) {
         const crestLift = Math.min(1, (lift - 0.28) / 0.45);
         c.r = Math.min(1, c.r * (1 + crestLift * 0.08));
@@ -2493,7 +2518,6 @@ export class Track {
         c.b = Math.min(1, c.b * (1 - crestLift * 0.04));
       }
       if (hi) {
-        // Wind-shadow cool bands + pale crest wash + sparse stone flecks.
         const shadow = Math.abs(Math.sin(x * 0.021 + z * 0.017));
         if (shadow > 0.78 && lift < 0.35) c.multiplyScalar(0.93);
         const crest = Math.abs(Math.sin(x * 0.014 - z * 0.019));
@@ -2508,22 +2532,43 @@ export class Track {
       return;
     }
     if (scenery === "mountain") {
-      c.setRGB(0.55 + lift * 0.14, 0.5 + lift * 0.1, 0.4 + lift * 0.06);
+      const vergeEnd = 2.8 + wobble;
+      const scrubEnd = 9.5 + wobble * 1.5;
+      const verge = { r: 0.5, g: 0.48, b: 0.4 };
+      const scrub = { r: 0.34 + lift * 0.08, g: 0.44 + lift * 0.1, b: 0.24 };
+      const rock = { r: 0.55 + lift * 0.14, g: 0.5 + lift * 0.1, b: 0.4 + lift * 0.06 };
+      if (over < vergeEnd) {
+        const u = smoothstep(over / vergeEnd);
+        c.setRGB(
+          verge.r + (scrub.r - verge.r) * u,
+          verge.g + (scrub.g - verge.g) * u,
+          verge.b + (scrub.b - verge.b) * u
+        );
+      } else if (over < scrubEnd) {
+        const u = smoothstep((over - vergeEnd) / (scrubEnd - vergeEnd));
+        c.setRGB(
+          scrub.r + (rock.r - scrub.r) * u,
+          scrub.g + (rock.g - scrub.g) * u,
+          scrub.b + (rock.b - scrub.b) * u
+        );
+      } else {
+        c.setRGB(rock.r, rock.g, rock.b);
+      }
       const maquis = Math.abs(Math.sin(x * 0.028 + z * 0.025));
-      if (maquis > 0.55 && maquis < 0.82) c.setRGB(0.34 + lift * 0.08, 0.44 + lift * 0.1, 0.24);
+      if (maquis > 0.55 && maquis < 0.82 && over > vergeEnd) {
+        c.setRGB(0.34 + lift * 0.08, 0.44 + lift * 0.1, 0.24);
+      }
       const speck = Math.abs(Math.sin(x * 0.08 + z * 0.07));
       if (speck > 0.84) c.multiplyScalar(0.88);
-      // V4 — high verts read as scree/rock sooner.
       if (lift > 0.4) {
-        const rock = Math.min(1, (lift - 0.4) / 0.5);
+        const rk = Math.min(1, (lift - 0.4) / 0.5);
         c.setRGB(
-          0.55 + lift * 0.14 + rock * 0.08,
-          0.5 + lift * 0.1 + rock * 0.05,
-          0.4 + lift * 0.06 + rock * 0.04
+          0.55 + lift * 0.14 + rk * 0.08,
+          0.5 + lift * 0.1 + rk * 0.05,
+          0.4 + lift * 0.06 + rk * 0.04
         );
       }
       if (hi) {
-        // Pale scree streaks on high lift; darker basalt flecks.
         if (lift > 0.48) {
           const scree = Math.abs(Math.sin(x * 0.045 + z * 0.038));
           if (scree > 0.68) c.setRGB(0.64 + lift * 0.1, 0.6 + lift * 0.08, 0.52 + lift * 0.05);
@@ -2538,15 +2583,35 @@ export class Track {
       return;
     }
     if (scenery === "lakeside") {
-      // Northern-Europe autumn — rust litter, gold canopy wash, damp reed shelves.
-      c.setRGB(0.34 + lift * 0.1, 0.32 + lift * 0.08, 0.16 + lift * 0.05);
+      // Soft shoulder → autumn litter → reed shelf. Distance blend reads cinematic.
+      const vergeEnd = 2.6 + wobble;
+      const litterEnd = 8.5 + wobble * 1.4;
+      const verge = { r: 0.4, g: 0.38, b: 0.22 };
+      const litterCol = { r: 0.48, g: 0.3, b: 0.12 };
+      const floor = { r: 0.34 + lift * 0.1, g: 0.32 + lift * 0.08, b: 0.16 + lift * 0.05 };
+      if (over < vergeEnd) {
+        const u = smoothstep(over / vergeEnd);
+        c.setRGB(
+          verge.r + (litterCol.r - verge.r) * u,
+          verge.g + (litterCol.g - verge.g) * u,
+          verge.b + (litterCol.b - verge.b) * u
+        );
+      } else if (over < litterEnd) {
+        const u = smoothstep((over - vergeEnd) / (litterEnd - vergeEnd));
+        c.setRGB(
+          litterCol.r + (floor.r - litterCol.r) * u,
+          litterCol.g + (floor.g - litterCol.g) * u,
+          litterCol.b + (floor.b - litterCol.b) * u
+        );
+      } else {
+        c.setRGB(floor.r, floor.g, floor.b);
+      }
       const litter = Math.abs(Math.sin(x * 0.021 + z * 0.018));
-      if (litter > 0.55 && litter < 0.92) c.setRGB(0.48, 0.28, 0.1);
+      if (litter > 0.55 && litter < 0.92 && over > vergeEnd) c.setRGB(0.48, 0.28, 0.1);
       const gold = Math.abs(Math.sin(x * 0.014 - z * 0.016));
       if (gold > 0.78) c.setRGB(0.52 + lift * 0.08, 0.38 + lift * 0.06, 0.12);
       const wet = Math.abs(Math.sin(x * 0.03 + z * 0.028));
       if (wet > 0.88) c.setRGB(0.22, 0.36, 0.3);
-      // V4 — stronger wet shelf read below the ribbon.
       if (h < roadY - 0.55) c.setRGB(0.14, 0.26, 0.24);
       if (hi) {
         if (h < roadY - 0.35 && h > roadY - 1.4) {
@@ -2570,11 +2635,8 @@ export class Track {
     }
     // Forest floor: gravel/dust shoulder → packed soil → moss/litter.
     // Vertex colour only — height/trench authority stays in _addLandTile.
-    const over = near && Number.isFinite(near.minOver) ? near.minOver : 80;
-    const wobble =
-      Math.abs(Math.sin(x * 0.41 + z * 0.33)) * 1.55 + Math.abs(Math.sin(x * 0.093 - z * 0.11)) * 0.85;
-    const gravelEnd = 2.15 + wobble;
-    const soilEnd = 6.8 + wobble * 1.4;
+    const gravelEnd = 2.8 + wobble;
+    const soilEnd = 8.4 + wobble * 1.5;
     const gravel = { r: 0.26, g: 0.36, b: 0.16 };
     const soil = { r: 0.16, g: 0.3, b: 0.12 };
     const floor = { r: 0.12 + lift * 0.05, g: 0.34 + lift * 0.14, b: 0.1 + lift * 0.04 };
@@ -11529,7 +11591,7 @@ export class Track {
    */
   _surfaceBlend(dist, here) {
     const pts = this.points;
-    const BLEND = 72;
+    const BLEND = 168;
     let prev = here;
     let prevDist = -1e9;
     let lo = 0;

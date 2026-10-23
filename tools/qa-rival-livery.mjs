@@ -91,6 +91,7 @@ check(
 check("player factory untouched", /export function createPlayerCar/.test(celica) && /dressPlayerCarRace\(root\)/.test(celica), "hero dress");
 check("player not rival-dressed", !/createPlayerCar[\s\S]{0,500}dressRivalCar/.test(celica), "hero not junk");
 check("title car not rival-dressed", !/createTitleCar[\s\S]{0,400}dressRivalCar/.test(celica), "pad hero stays");
+check("player keeps GLB paint (no box wipe)", !/function dressPlayerCarRace[\s\S]*?applyPlayerBoxLivery/.test(celica), "toyota albedo");
 
 check("AI uses tint+index", /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId\)/.test(ai), "race pack");
 check("attract uses same factory", /createRivalCar\(/.test(game) && /aiTintForIndex\(i\)/.test(game), "attract liveries");

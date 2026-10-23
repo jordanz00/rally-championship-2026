@@ -15,7 +15,7 @@ import { COLORS } from "../../config.js?v=241";
  * Packed dirt must read as a road through the trees, not a goat track.
  */
 function forestWidth(w) {
-  return Math.round(w * 1.32 * 10) / 10;
+  return Math.round(w * 1.42 * 10) / 10;
 }
 
 export const FOREST_DEFINITION = {
@@ -36,7 +36,7 @@ export const FOREST_DEFINITION = {
   segments: [
     {
       kind: "straight",
-      length: 88,
+      length: 120,
       surface: "dirt",
       width: forestWidth(13.2),
       purpose: "Start / spectators — cut inside the pack",
@@ -253,9 +253,30 @@ export const FOREST_DEFINITION = {
     },
     {
       kind: "straight",
-      length: 240,
+      length: 96,
       surface: "dirt",
-      width: forestWidth(14.0),
+      width: forestWidth(14.2),
+      purpose: "Glade approach — trees open, light spills in",
+      visual: "forest_glade",
+      landmark: true,
+    },
+    {
+      kind: "fast_sweeper",
+      direction: "right",
+      radius: 168,
+      angle: 48,
+      surface: "dirt",
+      width: forestWidth(14.4),
+      sweep: true,
+      landmark: true,
+      purpose: "Glade sweeper — cinematic canopy break",
+      visual: "forest_glade_sweep",
+    },
+    {
+      kind: "straight",
+      length: 300,
+      surface: "dirt",
+      width: forestWidth(14.6),
       purpose: "Finish straight — top gear through the trees",
     },
   ],

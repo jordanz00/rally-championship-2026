@@ -32,16 +32,18 @@ float snFbm(vec2 p) {
     + snValue(p * 9.61 + 17.0) * 0.1;
 }
 vec3 surfaceGrit(vec3 world, float amt) {
-  float n = snFbm(world.xz * 1.72);
-  float fine = snFbm(world.xz * 6.4 + 11.0);
-  float speckle = snHash(floor(world.xz * 52.0 + 0.5));
-  float grit = (n - 0.5) * 0.34 + (fine - 0.5) * 0.16;
+  float macro = snFbm(world.xz * 0.062 + 2.4);
+  float n = snFbm(world.xz * 1.35);
+  float fine = snFbm(world.xz * 5.2 + 11.0);
+  float dust = snFbm(world.xz * 0.019 + 7.3);
+  float speckle = snHash(floor(world.xz * 42.0 + 0.5));
+  float grit = (macro - 0.5) * 0.26 + (n - 0.5) * 0.28 + (fine - 0.5) * 0.14 + (dust - 0.5) * 0.1;
   float fleck = speckle > 0.955 ? 0.1 : speckle < 0.04 ? -0.08 : 0.0;
   float k = clamp(amt, 0.0, 1.0);
   return vec3(1.0 + (grit + fleck) * k);
 }
 float surfaceGritRough(vec3 world) {
-  return snFbm(world.xz * 3.4 + 5.0);
+  return snFbm(world.xz * 2.8 + 5.0) * 0.62 + snFbm(world.xz * 0.1 + 1.7) * 0.24 + snFbm(world.xz * 0.028 + 3.1) * 0.14;
 }
 `;
 
@@ -109,7 +111,7 @@ ${SURFACE_NOISE_GLSL}`
       );
   };
   mat.customProgramCacheKey = function surfaceNoiseCacheKey() {
-    return `sn-v1-${amt.toFixed(2)}`;
+    return `sn-v3-${amt.toFixed(2)}`;
   };
   mat.needsUpdate = true;
 }

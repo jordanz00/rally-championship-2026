@@ -20,10 +20,10 @@ import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=60";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=19";
-import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyPlayerBoxLivery, applyLacquerDetail } from "./rival-livery.js?v=6";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=7";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -401,11 +401,10 @@ export function createPlayerCar(carId = "celica") {
  */
 export function createTitleCar(carId = "celica") {
   const chassis = GARAGE[carId] ? carId : "celica";
-  const template =
-    rivalTemplates[chassis] ||
-    rivalTemplates.celica ||
-    templates[chassis] ||
-    templates.celica;
+  // Prefer hero GLB (2k Toyota rally albedo) when warm; LOD only as fallback.
+  const hero = templates[chassis] || templates.celica;
+  const lod = rivalTemplates[chassis] || rivalTemplates.celica;
+  const template = hero || lod;
   if (!template) {
     throw new Error(`[garage] ${chassis}: no hero or LOD GLB for title car`);
   }
@@ -419,14 +418,14 @@ export function createTitleCar(carId = "celica") {
   });
   hideHeavyInterior(clone);
   dressTitleCarShowroom(clone);
+  sharpenHeroTextures(clone);
   setCockpitView(clone, false);
   rebindClonedWheels(clone);
   clone.userData.wheels = findWheels(clone);
   clone.userData.body = clone;
   clone.userData.carId = chassis;
-  clone.userData.titleLod = true;
-  clone.userData.titleHero = !rivalTemplates[chassis] && !!templates[chassis];
-  if (clone.userData.titleHero) applyPlayerBoxLivery(clone, isRivalBodyMaterial);
+  clone.userData.titleLod = !hero;
+  clone.userData.titleHero = !!hero;
   // Pad never bakes a sun atlas — casting shadows here still costs draw setup.
   enableCarShadows(clone);
   clone.traverse((o) => {
@@ -439,19 +438,55 @@ export function createTitleCar(carId = "celica") {
 }
 
 /**
- * Race hero dress (Visual Pass V2): upgrade body paint Standard → Physical
- * clearcoat via field assign (never MeshPhysicalMaterial.copy(Standard) —
- * that crash path wiped Delta/Stratos). Glass gets a slight env bump.
- * Materials are already instance clones from cloneCar().
+ * Race hero dress: keep the GLB Toyota rally albedo (Castrol-era Sketchfab
+ * GT4 maps), upgrade Standard → Physical clearcoat, sharpen mip/anisotropy.
+ * Do NOT replace body materials with flat PLAYER_BOX lacquer.
  * @param {THREE.Object3D} root
  */
 function dressPlayerCarRace(root) {
-  applyPlayerBoxLivery(root, isRivalBodyMaterial);
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const list = [].concat(obj.material || []);
     const next = list.map((src) => upgradeRacePaint(src, obj));
     obj.material = next.length === 1 ? next[0] : next;
+  });
+  sharpenHeroTextures(root);
+  root.userData.toyotaRallyPaint = true;
+}
+
+/**
+ * Keep authored 2k body maps crisp at chase distance.
+ * @param {THREE.Object3D} root
+ */
+function sharpenHeroTextures(root) {
+  const seen = new Set();
+  const slots = ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap"];
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const mats = [].concat(obj.material || []);
+    for (let i = 0; i < mats.length; i++) {
+      const mat = mats[i];
+      if (!mat) continue;
+      for (let s = 0; s < slots.length; s++) {
+        const tex = mat[slots[s]];
+        if (!tex || seen.has(tex)) continue;
+        seen.add(tex);
+        if (slots[s] === "map" || slots[s] === "emissiveMap") {
+          tex.colorSpace = THREE.SRGBColorSpace;
+        }
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.anisotropy = Math.max(tex.anisotropy || 1, 16);
+        tex.needsUpdate = true;
+      }
+      // Authored albedo must stay white-tint so the Toyota livery reads true.
+      if (mat.map && mat.color && mat.userData && mat.userData.kind === "paint") {
+        mat.color.setHex(0xffffff);
+      } else if (mat.map && mat.color && /paint|car_body|shiny_painted|mattext/i.test(mat.name || "")) {
+        mat.color.setHex(0xffffff);
+      }
+    }
   });
 }
 
@@ -514,8 +549,13 @@ function upgradeRacePaint(src, obj) {
   if (wantClearcoat) {
     const phys = new THREE.MeshPhysicalMaterial();
     phys.name = src.name || "paint";
-    phys.color.copy(src.color);
-    if (src.map) phys.map = src.map;
+    // Keep Toyota / Sketchfab albedo true — multiply color would wash the livery.
+    if (src.map) {
+      phys.map = src.map;
+      phys.color.setHex(0xffffff);
+    } else {
+      phys.color.copy(src.color);
+    }
     if (src.normalMap) {
       phys.normalMap = src.normalMap;
       if (src.normalScale) phys.normalScale.copy(src.normalScale);
@@ -1835,6 +1875,7 @@ async function loadCarGltf(id, url) {
   root.add(scene);
   if (id === "stratos") prepStratosCadModel(root);
   gameShade(root);
+  sharpenHeroTextures(root);
   fitToRallyCar(root, spec);
   hideHeavyInterior(root);
   sanitizeGltfWheels(root);
@@ -1847,6 +1888,7 @@ async function loadCarGltf(id, url) {
   root.userData.wheels = findWheels(root);
   plantOnContactPatch(root);
   root.userData.carId = spec.id;
+  root.userData.toyotaRallyPaint = true;
   templates[spec.id] = root;
   usingGltf[spec.id] = true;
 }

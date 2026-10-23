@@ -14,9 +14,10 @@ import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=7";
 
 const BASE = "assets/env/forest";
 
-const TILE_DIRT_M = 1.45;
-const TILE_GRAVEL_M = 1.45;
-const TILE_FLOOR_M = 1.5;
+/** Larger tiles = fewer wallpaper repeats at chase distance. */
+const TILE_DIRT_M = 2.9;
+const TILE_GRAVEL_M = 2.75;
+const TILE_FLOOR_M = 4.1;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */
@@ -44,7 +45,7 @@ export function cloneForestMap(tex, rx, ry) {
  * @returns {number}
  */
 export function forestLandRepeat(span, tileMeters = TILE_FLOOR_M) {
-  return Math.max(8, span / Math.max(0.5, tileMeters));
+  return Math.max(4, span / Math.max(0.5, tileMeters));
 }
 
 /**

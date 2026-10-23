@@ -11,22 +11,29 @@
  * @param {object} [A] ARCADE_ASSIST
  */
 export function applyBurnoutDriveTuning(H, A) {
-  if (!H || H._burnoutDriveV5) return;
+  if (!H || H._burnoutDriveV6) return;
   H._burnoutDrive = true;
   H._burnoutDriveV2 = true;
   H._burnoutDriveV3 = true;
   H._burnoutDriveV4 = true;
   H._burnoutDriveV5 = true;
+  H._burnoutDriveV6 = true;
   H.easySlide = true;
   // AM3 lesson: tarmac still stops and needs more steer; mud slides first.
   if (H.easySlideTarmacSteer == null || H.easySlideTarmacSteer < 0.048) H.easySlideTarmacSteer = 0.048;
   if (H.easySlideTarmacThrottle == null || H.easySlideTarmacThrottle < 0.07) H.easySlideTarmacThrottle = 0.07;
   if (H.easySlideTarmacSpeed == null || H.easySlideTarmacSpeed < 4.8) H.easySlideTarmacSpeed = 4.8;
-  if (H.launchBoost < 2.55) H.launchBoost = 2.55;
-  if (H.launchFadeKmh < 155) H.launchFadeKmh = 155;
-  if (H.slideExitBoost < 3.05) H.slideExitBoost = 3.05;
-  if (H.slideExitFadeKmh < 255) H.slideExitFadeKmh = 255;
-  if (H.slideDriveKeep < 2.15) H.slideDriveKeep = 2.15;
+  // Launch punch shared by player + pack — keep arcade snap without
+  // letting a full-throttle hero walk away from every rival at GO.
+  if (H.launchBoost < 1.92) H.launchBoost = 1.92;
+  if (H.launchBoost > 2.05) H.launchBoost = 1.95;
+  if (H.launchFadeKmh < 118) H.launchFadeKmh = 118;
+  if (H.launchFadeKmh > 140) H.launchFadeKmh = 128;
+  if (H.slideExitBoost < 2.45) H.slideExitBoost = 2.45;
+  if (H.slideExitBoost > 2.85) H.slideExitBoost = 2.55;
+  if (H.slideExitFadeKmh < 210) H.slideExitFadeKmh = 210;
+  if (H.slideDriveKeep < 1.72) H.slideDriveKeep = 1.72;
+  if (H.slideDriveKeep > 2.05) H.slideDriveKeep = 1.85;
   if (H.slideSpeedConvert < 1.55) H.slideSpeedConvert = 1.55;
   if (H.slideAeroCut == null || H.slideAeroCut > 0.12) H.slideAeroCut = 0.12;
   if (H.powerSlidePitch < 4.15) H.powerSlidePitch = 4.15;
@@ -54,5 +61,5 @@ export const BURNOUT_STEER_SNAP = 1.58;
 export function rushTorqueMul(heat, fire = 0) {
   const h = heat > 0 ? (heat < 1 ? heat : 1) : 0;
   const f = fire > 0 ? (fire < 1 ? fire : 1) : 0;
-  return 1 + h * 1.05 + f * 0.38;
+  return 1 + h * 0.48 + f * 0.22;
 }

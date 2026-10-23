@@ -1,5 +1,125 @@
 # QA report — quality-control pass
 
+## Consistent 60 Hz present (2026-10-23)
+
+**Player moment:** Race stays at 60. Soft scale + earlier TSR shed protect the frame. Desktop never locks to 30.
+
+**Shipped:** Mac 1.75× / 3.4M · softScaleMin 0.78 · GO headroom 0.94 · QualityManager DOWN_HOLD 6 · TSR Quality 0.86 · LOOK/TSR shed at ~18–22 ms EMA.
+
+**Proof:** `node tools/qa-60fps.mjs` · `node tools/qa-mac-retina.mjs`
+
+**Boot:** `main.js?v=1094` · `quality-manager.js?v=6` · `tsr-upscaler.js?v=991`
+
+## Stage beauty — longer, wider, soft blends, vistas (2026-10-23)
+
+**Player moment:** Every championship stage. Wider lane to slide. Longer rhythm. Soft road→verge→biome texture fade. Landmark vistas (dunes / glade / ridge / lakeshore). Deeper cinematic fog.
+
+**Shipped:** PLAY_WIDTH 1.52 · PLAY_STRAIGHT 2.2 · finish pads ↑ · authored vista beats · BLEND 168 m · skirt reach ↑ · land pad ↑ · organic v9 + sn-v3 · shoulder distance blends on Desert/Mountain/Lakeside · fogFar ×1.32.
+
+**Proof:** `node tools/qa-stage-beauty.mjs` · `node tools/qa-texture-layers.mjs`
+
+**Boot:** `main.js?v=1093` · `track.js?v=438` · `courses.js?v=99` · `pbr.js?v=60`
+
+## Attract splash — front showroom + smooth reel (2026-10-23)
+
+**Player moment:** First splash. Car faces the camera (front), slow orbit. Desktop reel eases between long holds — no MTV flash / repeating cuts.
+
+**Shipped:** `_titleCam` nose→lens. Attract holds 3–4s, FADE 0.55/0.7, continuous drive + beat clock (no teleport every cut), calm overlays.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=1092` · `game.js?v=1092` · `attract-reel.js?v=19`
+
+## Jump / land spring — arcade+sim variety (2026-10-22)
+
+**Player moment:** Crest leave hangs ballistic; land digs suspension (nose vs tail), one readable bounce, then plants. Soft Fujimoto unload forgives; flat-out mismatch taxes.
+
+**Shipped:** Live JUMP knobs (`springFraction` 0.14, `lipGrain` 0.16, zeta 0.78, bounceImpact 5.6). `JumpModel.land` axleBias → vehicle heave F/R. Multi-scale lip grain. Deterministic 10× + 100× micro-variety.
+
+**Proof:** `node tools/qa-jump-physics-fun.mjs` · `node tools/qa-jump-variability.mjs`
+
+**Boot:** `main.js?v=1091` · `game.js?v=1091` · `vehicle.js?v=208` · `jump.js?v=40`
+
+## No PASS flash on overtakes (2026-10-22)
+
+**Player moment:** Pass a rival. No giant PASS / place text. Place glyph still punches; chirp stays.
+
+**Shipped:** `_pulsePlaceChange` no longer `flashMessage`. `RACE_FEEDBACK.flashGains = false`.
+
+**Proof:** `node tools/qa-no-pass-flash.mjs`
+
+**Boot:** `main.js?v=1090`
+
+## Finish VO is FINISH only (2026-10-22)
+
+**Player moment:** Cross the gantry. Navigator says FINISH — not GO overlapping FINISH. HUD flashes FINISH. Banner reads FINISH big.
+
+**Cause:** `_finish` called `countGo()` for podium places, so GO and finish VO fired together.
+
+**Shipped:** Drop finish `countGo()`. `finishCall` + HUD `FINISH`. Larger stroked FINISH on the gantry vinyl.
+
+**Proof:** `node tools/qa-finish-vo.mjs` · `node tools/qa-start-finish-banner.mjs`
+
+**Boot:** `main.js?v=1089` · `hud.js?v=53` · `flag-cloth.js?v=15` · `track.js?v=437` · `game.css?v=71`
+
+## Android Chrome smoke (Pixel UA) — PASS (2026-10-22)
+
+**Player moment:** Android Chrome. Splash stays dark HTML (no white tab). PRESS START boots WebGL. Menu opens. No fatal.
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 CHROME_PATH=…/chrome-headless-shell node tools/qa-android-smoke.mjs` — deferred WebGL until START, canvas 309×686, dprScale 0.55, lock30, no `_gfxFailed`. Also `qa-mobile-boot.mjs` + `qa-mobile-controls.mjs` PASS.
+
+**Note:** Emulated Pixel 7 UA on host headless Chrome — not a physical handset race. Human Android Chrome drive still required before claiming ship-on-phone.
+
+**Boot:** `main.js?v=1088`
+
+## M1 MacBook Retina clarity + 60 Hz (2026-10-22)
+
+**Player moment:** MacBook Pro. Stage and title read sharp on the Retina panel. Present targets 60.
+
+**Cause:** Desktop capped DPR at 1.5 and 3.2M pixels (~1.47× on a 14" MBP). TSR Quality shaded at 0.84. Safari omits `deviceMemory`, so Mac always opened `medium`.
+
+**Shipped:** Mac desktop → DPR 2.0 / 4.8M pixels / title 1.5×. TSR Quality 0.92. Missing `deviceMemory` → high start. Prefer 60, no lock-30 on desktop.
+
+**Proof:** `node tools/qa-mac-retina.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1088` · `game.js?v=1088` · `tsr-upscaler.js?v=990` · `perf-tier.js?v=56` · SDK `?v=1035`
+
+## Player Toyota rally paint restored (2026-10-22)
+
+**Player moment:** Title and race. The Celica wears the Sketchfab GT4 Toyota rally albedo again (works green / white / red), not flat Rally Co lacquer. Body maps stay sharp at chase distance.
+
+**Cause:** `applyPlayerBoxLivery` replaced `Car_Body_Paint` (2k embedded map) with solid PLAYER_BOX + vinyl plates. Title preferred the 512 LOD.
+
+**Shipped:** Race / attract / title keep GLB maps + clearcoat. Title prefers hero `gt4.glb`. Anisotropy 16 + mip sharpen. White tint on mapped paint.
+
+**Proof:** `node tools/qa-player-toyota-paint.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1087` · `game.js?v=1087` · `celica.js?v=255` · `rival-livery.js?v=7`
+
+## Player accel stays with the pack (2026-10-22)
+
+**Player moment:** Lights out. Floor it. The pack stays in the mirror for the first straights — not a solo rocket.
+
+**Cause:** Player pull cut had a first-260 m "commit" free pass (full power). Burnout launchBoost sat at 2.55× through 155 km/h. GO rush drive was 1.78×.
+
+**Shipped:** Always-on player pull ~0.52–0.68×. Launch boost capped ~1.95. GO rush 1.28× / 1.55 s. Softer rush torque. Pack skill floor / rubber band nudged up.
+
+**Proof:** `node tools/qa-player-pack-pace.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1086` · `game.js?v=1086` · `vehicle.js?v=207` · `burnout-drive.js?v=6`
+
+## Road / land textures layer and fade (2026-10-22)
+
+**Player moment:** Chase cam. Dirt and tarmac read as worn ground, not wallpaper. Surface changes ease over ~100 m. Land photos do not stamp the same tile forever.
+
+**Cause:** Mesh ribbon UV dominated. Single-scale world projection. Tight 72 m surface blend. Small photo tile meters.
+
+**Shipped:** Stochastic cell UV + macro/meso/micro map mixes in `pbr.js` (road-organic-v8 / terrain-proj-v5). Stronger grit islands in `surface-noise.js`. Larger forest/desert tiles. Softer `_surfaceBlend` (118 m). Lower `ROAD_UV_SCALE`.
+
+**Proof:** `node tools/qa-texture-layers.mjs` · `node tools/qa-mobile-boot.mjs`
+
+**Boot:** `main.js?v=1085` · `game.js?v=1085` · `pbr.js?v=59` · `surface-noise.js?v=3` · `track.js?v=436` · `forest-pbr.js?v=63` · `desert-pbr.js?v=63` · `attract-reel.js?v=17`
+
 ## Phone / Android boot stays light (2026-10-22)
 
 **Player moment:** Open on iPhone or Android. Title paints fast. PRESS START works. Race loads without a tab kill.

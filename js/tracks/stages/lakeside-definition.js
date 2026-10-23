@@ -5,7 +5,7 @@
 
 import { COLORS } from "../../config.js?v=241";
 
-const W = 14.2;
+const W = 15.6;
 
 export const LAKESIDE_DEFINITION = {
   id: "lakeside",
@@ -22,7 +22,7 @@ export const LAKESIDE_DEFINITION = {
   barriers: true,
   identity: "Autumn lakeside speed stage: sweepers, jumps, one hairpin you slide",
   segments: [
-    { kind: "straight", length: 140, surface: "tarmac", width: W, purpose: "Start — get to top gear" },
+    { kind: "straight", length: 180, surface: "tarmac", width: W, purpose: "Start — get to top gear, lake light ahead" },
     {
       kind: "jump",
       ramp: 20,
@@ -142,6 +142,27 @@ export const LAKESIDE_DEFINITION = {
       sweep: true,
       purpose: "Easy right onto the finish",
     },
-    { kind: "straight", length: 200, surface: "tarmac", width: W, purpose: "Finish — autumn trees, top gear" },
+    {
+      kind: "straight",
+      length: 120,
+      surface: "tarmac",
+      width: W,
+      purpose: "Lakeside vista — water shelf opens to the left",
+      visual: "lake_vista",
+      landmark: true,
+    },
+    {
+      kind: "fast_sweeper",
+      direction: "left",
+      radius: 168,
+      angle: 40,
+      surface: "tarmac",
+      width: W,
+      sweep: true,
+      landmark: true,
+      purpose: "Shoreline sweeper — gold canopy, wet shelf",
+      visual: "shore_sweep",
+    },
+    { kind: "straight", length: 280, surface: "tarmac", width: W, purpose: "Finish — autumn trees, top gear" },
   ],
 };

@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=241";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
-import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=2";
+import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=4";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
 const WORLD_ENV =
@@ -523,13 +523,14 @@ export function armProjectedMaps(mat, opts = {}) {
  */
 function armRoadOrganic(mat, id) {
   const dirty = id === "dirt" || id === "mud" || id === "gravel" || id === "sand";
+  // Prefer world-XZ layers over ribbon UV — mesh UV is what reads as wallpaper.
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: dirty ? 1 : id === "tarmac" ? 0.72 : 0.48,
-    ribbon: dirty ? 0.05 : id === "tarmac" ? 0.42 : id === "cobble" ? 0.16 : 0.24,
-    bump: dirty ? 0.74 : id === "tarmac" ? 0.28 : id === "cobble" ? 0.52 : 0.4,
+    amount: dirty ? 1 : id === "tarmac" ? 0.88 : 0.7,
+    ribbon: dirty ? 0.03 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.1 : 0.08,
+    bump: dirty ? 0.82 : id === "tarmac" ? 0.34 : id === "cobble" ? 0.58 : 0.48,
     blotch: true,
-    key: `road-organic-v7-${id}`,
+    key: `road-organic-v9-${id}`,
   });
 }
 
@@ -543,23 +544,35 @@ function injectProjectedMaps(shader, opts) {
   shader.uniforms.uProjRibbon = { value: opts.ribbon };
   shader.uniforms.uBumpAmt = { value: opts.bump };
   shader.uniforms.uRoadVar = { value: opts.amount };
-  shader.uniforms.uNoiseAmt = { value: opts.amount > 0.7 ? 0.3 : 0.22 };
+  shader.uniforms.uNoiseAmt = { value: opts.amount > 0.7 ? 0.38 : 0.28 };
   const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
+  // Macro islands + meso grain + micro flecks, with soft masks so layers fade
+  // into each other instead of one tiled sheet.
   const blotchSrc = opts.blotch
-    ? `	float n1 = roadNoise( vProjWorld.xz * 0.09 );
-	float n2 = roadNoise( vProjWorld.xz * 0.31 + 17.0 );
-	float n3 = roadNoise( vProjWorld.xz * 0.015 );
-	float n4 = roadNoise( vProjWorld.xz * 0.72 + 41.0 );
-	float n5 = roadNoise( vProjWorld.xz * 0.048 + 9.0 );
-	float blotch = n1 * 0.34 + n2 * 0.26 + n3 * 0.2 + n4 * 0.12 + n5 * 0.08;
-	float hueShift = ( n2 - 0.5 ) * 0.1 * uProjAmt + ( n5 - 0.5 ) * 0.04 * uProjAmt;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.58 + blotch * 0.68 ), uProjAmt );
+    ? `	float n1 = roadNoise( vProjWorld.xz * 0.07 );
+	float n2 = roadNoise( vProjWorld.xz * 0.26 + 17.0 );
+	float n3 = roadNoise( vProjWorld.xz * 0.011 );
+	float n4 = roadNoise( vProjWorld.xz * 0.68 + 41.0 );
+	float n5 = roadNoise( vProjWorld.xz * 0.04 + 9.0 );
+	float n6 = roadNoise( vProjWorld.xz * 0.0038 + 63.0 );
+	float n7 = roadNoise( vProjWorld.xz * 0.0021 + 91.0 );
+	float blotch = n1 * 0.24 + n2 * 0.2 + n3 * 0.16 + n4 * 0.12 + n5 * 0.1 + n6 * 0.1 + n7 * 0.08;
+	float hueShift = ( n2 - 0.5 ) * 0.1 * uProjAmt + ( n5 - 0.5 ) * 0.045 * uProjAmt + ( n6 - 0.5 ) * 0.055 * uProjAmt;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.55 + blotch * 0.72 ), uProjAmt );
 	sampledDiffuseColor.r *= 1.0 + hueShift;
-	sampledDiffuseColor.g *= 1.0 + hueShift * 0.35;
+	sampledDiffuseColor.g *= 1.0 + hueShift * 0.3;
 	sampledDiffuseColor.b *= 1.0 - hueShift * 0.7;
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.37 + vec2( 0.19, 0.11 ) ), 0.22 * uProjAmt );
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 1.7 + vec2( 0.07, 0.23 ) ), 0.14 * uProjAmt );
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.11 + vec2( 0.41, 0.07 ) ), 0.08 * uProjAmt );`
+	// Soft masks — layers dissolve into each other (no hard island edges).
+	float wMacro = smoothstep( 0.18, 0.82, n6 ) * smoothstep( 0.2, 0.75, n7 ) * 0.42 * uProjAmt;
+	float wMeso = smoothstep( 0.15, 0.8, n3 ) * ( 1.0 - wMacro * 0.35 ) * 0.34 * uProjAmt;
+	float wMicro = ( 0.14 + n4 * 0.2 ) * ( 1.0 - wMacro * 0.25 ) * uProjAmt;
+	vec2 uvMacro = stochasticUv( vProjWorld.xz, 0.014, 4.2 );
+	vec2 uvMeso = stochasticUv( vProjWorld.xz, 0.048, 12.5 );
+	vec2 uvMicro = stochasticUv( vProjWorld.xz, 0.34, 26.0 );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMacro ), wMacro );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMeso ), wMeso );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMicro ), wMicro );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.26 + vec2( 0.17, 0.09 ) ), 0.08 * uProjAmt );`
     : "";
   shader.vertexShader = shader.vertexShader
     .replace(
@@ -599,23 +612,40 @@ float roadNoise(vec2 p) {
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
-vec2 projUvA(vec3 w) { return w.xz * 0.078; }
-vec2 projUvB(vec3 w) {
-  return vec2(w.x * 0.049 + w.z * 0.064, w.z * 0.049 - w.x * 0.064);
+vec2 stochasticUv(vec2 xz, float scale, float cell) {
+  vec2 cellId = floor(xz / max(cell, 0.001));
+  float h = roadHash(cellId);
+  float ang = h * 6.2831853;
+  float ca = cos(ang);
+  float sa = sin(ang);
+  vec2 local = fract(xz / max(cell, 0.001)) - 0.5;
+  vec2 rot = vec2(local.x * ca - local.y * sa, local.x * sa + local.y * ca);
+  vec2 off = vec2(roadHash(cellId + 19.0), roadHash(cellId + 47.0));
+  return (rot + 0.5 + off * 0.37) * scale * cell;
 }
-vec2 projUvDetail(vec3 w) { return w.xz * 0.42; }
+vec2 projUvA(vec3 w) { return stochasticUv(w.xz, 0.072, 7.5); }
+vec2 projUvB(vec3 w) {
+  return stochasticUv(vec2(w.x * 0.91 + w.z * 0.22, w.z * 0.91 - w.x * 0.22), 0.061, 11.0);
+}
+vec2 projUvDetail(vec3 w) { return stochasticUv(w.xz, 0.36, 3.2); }
 vec4 projTex(sampler2D tex, vec2 meshUv) {
   vec4 mixW;
 #ifdef USE_PROJ_TRIPLANAR
   vec3 n = abs(normalize(vProjNrm));
   n = pow(n, vec3(4.0));
   n /= max(n.x + n.y + n.z, 1e-4);
-  float sc = 0.48;
+  float sc = 0.42;
   mixW = texture2D(tex, vProjWorld.zy * sc) * n.x
     + texture2D(tex, vProjWorld.xz * sc) * n.y
     + texture2D(tex, vProjWorld.xy * sc) * n.z;
 #else
-  mixW = mix(texture2D(tex, projUvA(vProjWorld)), texture2D(tex, projUvB(vProjWorld)), 0.46 * uProjAmt);
+  float layerMask = smoothstep(0.12, 0.88, roadNoise(vProjWorld.xz * 0.018));
+  float layerMask2 = smoothstep(0.2, 0.8, roadNoise(vProjWorld.xz * 0.009 + 5.0));
+  vec4 a = texture2D(tex, projUvA(vProjWorld));
+  vec4 b = texture2D(tex, projUvB(vProjWorld));
+  mixW = mix(a, b, 0.28 + 0.48 * layerMask * uProjAmt);
+  vec4 macro = texture2D(tex, stochasticUv(vProjWorld.xz, 0.018, 32.0));
+  mixW = mix(mixW, macro, 0.28 * layerMask2 * uProjAmt);
 #endif
   return mix(mixW, texture2D(tex, meshUv), uProjRibbon);
 }
@@ -780,11 +810,11 @@ export function worldTerrainMaterial(opts = {}) {
   mat.userData.kind = "terrain";
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: 0.94,
-    ribbon: 0.1,
-    bump: opts.bumpScale ?? 0.52,
+    amount: 1,
+    ribbon: 0.04,
+    bump: opts.bumpScale ?? 0.62,
     blotch: true,
-    key: "terrain-proj-v4",
+    key: "terrain-proj-v5",
   });
   return mat;
 }
@@ -826,11 +856,11 @@ export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = 
   });
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: 0.95,
-    ribbon: 0.08,
-    bump: 0.48,
+    amount: 1,
+    ribbon: 0.04,
+    bump: 0.58,
     blotch: true,
-    key: "skirt-proj-v4",
+    key: "skirt-proj-v5",
   });
   return mat;
 }

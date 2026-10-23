@@ -17,12 +17,12 @@
  */
 
 import { COLORS } from "../config.js?v=241";
-import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=8";
-import { validateCourseData } from "./stage-data-validate.js?v=4";
-import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=12";
-import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=15";
-import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=11";
-import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=8";
+import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=9";
+import { validateCourseData } from "./stage-data-validate.js?v=5";
+import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=13";
+import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=16";
+import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=12";
+import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=9";
 
 /**
  * Compile + fail-fast gate for a TrackDefinition.

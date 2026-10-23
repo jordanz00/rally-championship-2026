@@ -7,12 +7,12 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=206";
+import { Vehicle } from "./physics/vehicle.js?v=208";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=254";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=256";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=435";
+import { Track } from "./tracks/track.js?v=439";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=7";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
 import { Opponent } from "./ai.js?v=250";
@@ -27,11 +27,11 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=52";
+} from "./ui/hud.js?v=53";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
-import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=58";
+import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=60";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=29";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=44";
@@ -47,11 +47,11 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=1034";
-import { createPerfTier } from "./gfx/perf-tier.js?v=55";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1036";
+import { createPerfTier } from "./gfx/perf-tier.js?v=56";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
-import { QualityManager } from "./gfx/quality-manager.js?v=5";
+import { QualityManager } from "./gfx/quality-manager.js?v=6";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { Spring1, Spring3, criticalDamp } from "./camera/camera-spring.js?v=1";
 import { createPerformanceMonitor } from "./debug/performance-monitor.js?v=4";
@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=16";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=19";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -331,6 +331,22 @@ function armStreamBudget() {
 }
 
 /**
+ * Desktop Safari / Chrome on a MacBook (not iPhone/iPad).
+ * M1/M2/M3 Retina panels report devicePixelRatio 2 — the race path must
+ * honour that or the stage reads soft.
+ * @returns {boolean}
+ */
+function isMacDesktopPlay() {
+  if (isPhonePlay()) return false;
+  try {
+    const ua = navigator.userAgent || "";
+    return /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad|iPod/i.test(ua);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Opening perf tier — desktop starts at medium so settle paints shadows + post
  * before countdown (Sprint 546). Mac `low` left the stage flat until the scaler
  * climbed after GO, which read as a lighting/graphics snap on the VO. Phones
@@ -360,14 +376,13 @@ function raceStartTier() {
   } catch {
     /* ignore */
   }
-  const ua = navigator.userAgent || "";
-  const macDesktop = /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua);
+  const macDesktop = isMacDesktopPlay();
   // Headless CDP uses SwiftShader — cinema clouds stall the loop below 1 fps.
   if (macDesktop && navigator.webdriver) return "medium";
-  // Capable desktops: start high so denser env + shadows land before auto-downgrade.
+  // M-series MacBooks: Safari omits deviceMemory, so treat unknown as high.
   if (macDesktop) {
     const mem = navigator.deviceMemory;
-    if (mem >= 8) return "high";
+    if (mem == null || mem >= 8) return "high";
     return "medium";
   }
   const mem = navigator.deviceMemory;
@@ -530,7 +545,11 @@ export class RallyGame {
     this.pipeline = null;
     this.qualityMgr = new QualityManager();
     this.qualityMgr.configure({
-      minScale: isPhonePlay() ? 0.5 : GFX.softScaleMin != null ? Math.min(GFX.softScaleMin, 0.62) : 0.62,
+      minScale: isPhonePlay()
+        ? 0.5
+        : GFX.softScaleMin != null
+          ? Math.min(1, Math.max(0.62, GFX.softScaleMin))
+          : 0.78,
       maxScale: 1,
     });
     armStreamBudget();
@@ -719,8 +738,32 @@ export class RallyGame {
       // shades under this, and a late GPU steps the mode and the scale down.
       GFX.preferLock30 = false;
       GFX.forceLock30AtSettle = false;
-      GFX.maxPixelRatio = 1.5;
-      GFX.maxPixels = 3200000;
+      GFX.targetFps = 60;
+      GFX.lockRenderFps = true;
+      // Soft scale may shed fill-rate to hold 60 — never lock desktop to 30.
+      GFX.softScaleMin = 0.78;
+      if (isMacDesktopPlay()) {
+        // Retina clarity under a hard 60 Hz budget. 1.75× + 3.4M stays sharp
+        // on 14" MBP; soft scale covers spikes without a 30 Hz lock.
+        GFX.maxPixelRatio = 1.75;
+        GFX.maxPixels = 3400000;
+        GFX.titleMaxPixelRatio = 1.35;
+        GFX.titleMaxPixels = 1800000;
+        GFX.shadowMap = Math.max(GFX.shadowMap || 1536, 1536);
+        if (TITLE_SHOWROOM) {
+          TITLE_SHOWROOM.maxPixelRatio = 1.35;
+          TITLE_SHOWROOM.maxPixels = 1800000;
+        }
+      } else {
+        GFX.maxPixelRatio = 1.5;
+        GFX.maxPixels = 2800000;
+      }
+      if (this.qualityMgr) {
+        this.qualityMgr.configure({
+          minScale: GFX.softScaleMin,
+          maxScale: 1,
+        });
+      }
       armStreamBudget();
     }
     const created = await createGameRenderer({
@@ -3258,9 +3301,9 @@ export class RallyGame {
         ? 0.62
         : 0.78
       : 1;
-    // Phones stay under the panel. Desktop uses the output cap; TSR is the
-    // internal cut, so a second 0.9 scale was just blur.
-    this._softRenderScale = isPhonePlay() ? 0.78 : 1;
+    // Phones stay under the panel. Desktop starts with a little soft-scale
+    // headroom so GO / first corner stay at 60 instead of climbing from late.
+    this._softRenderScale = isPhonePlay() ? 0.78 : 0.94;
     if (this.qualityMgr) this.qualityMgr.reset(this._softRenderScale);
     if (this.pipeline && this.pipeline.setRenderScale) {
       this.pipeline.setRenderScale(this._softRenderScale);
@@ -4258,9 +4301,7 @@ export class RallyGame {
     const gained = pos < prev;
     if (this.hud && this.hud.punchPlace) this.hud.punchPlace(pos, gained ? "gain" : "drop");
     if (!gained) return;
-    if (fb.flashGains !== false && this.hud) {
-      this.hud.flashMessage(early ? "PASS" : `${placeOrdinal(pos).toUpperCase()}!`);
-    }
+    // No full-screen PASS banner — place glyph punch + chirp only.
     if (fb.gainChirp !== false && this.audio && this.audio.placeGain) {
       this.audio.placeGain(pos);
     }
@@ -4796,7 +4837,8 @@ export class RallyGame {
       this._renderResult(`FINISH · ${ordinal(pos)}`, [this.hud.best.textContent]);
       document.getElementById("result-next").hidden = true;
     }
-    if (pos <= 3 && this.audio.ready) this.audio.countGo();
+    // VO: FINISH only — do not play the start-grid GO sting on the podium.
+    if (this.hud) this.hud.flashMessage("FINISH");
     if (this.audio.ready) {
       this.codriver.finishCall(this.audio);
       // Cheer spike before loop fade so the finish reads as an event.
@@ -5355,35 +5397,34 @@ export class RallyGame {
     const sl = Math.hypot(ux, uz) || 1;
     const sx = ux / sl;
     const sz = uz / sl;
-    const drift = Math.sin(t) * 0.38;
+    // Slow orbital drift — camera stays in the front hemisphere.
+    const drift = Math.sin(t) * 0.42;
     const c = Math.cos(drift);
     const s = Math.sin(drift);
-    const ox = -sx * c + sz * s;
-    const oz = -sz * c - sx * s;
-    p.yaw = 1.45 + drift * 0.22;
+    // Front-of-car ring: start facing the sun so lacquer reads, then yaw-orbit.
+    const ox = sx * c - sz * s;
+    const oz = sz * c + sx * s;
+    // Nose points at the lens (forward = sin/cos yaw).
+    p.yaw = Math.atan2(ox, oz);
     p.pitch = 0;
     p.roll = Math.sin(t * 0.55) * 0.008;
     p.steer = Math.sin(t * 0.7) * 0.05;
     this._syncPlayerMesh();
     setHeadlights(this.playerMesh, false);
     this._syncContactBlobs(1);
-    if (this.camera.near !== 0.16 || Math.abs(this.camera.fov - 32) > 0.05) {
+    if (this.camera.near !== 0.16 || Math.abs(this.camera.fov - 34) > 0.05) {
       this.camera.near = 0.16;
-      this.camera.fov = 32;
+      this.camera.fov = 34;
       this.camera.updateProjectionMatrix();
     }
     this.camera.up.set(0, 1, 0);
-    const dist = 7.5 + Math.sin(t * 0.45) * 0.15;
+    const dist = 7.2 + Math.sin(t * 0.45) * 0.12;
     this.camera.position.set(
       p.position.x + ox * dist,
-      p.position.y + 2.2 + Math.sin(t * 0.35) * 0.04,
+      p.position.y + 1.85 + Math.sin(t * 0.35) * 0.04,
       p.position.z + oz * dist
     );
-    this.camera.lookAt(
-      p.position.x + ox * 0.4,
-      p.position.y + 0.42,
-      p.position.z + oz * 0.4
-    );
+    this.camera.lookAt(p.position.x, p.position.y + 0.55, p.position.z);
   }
 
   /**
@@ -5932,10 +5973,13 @@ export class RallyGame {
       this.sky = createSky();
       this.scene.add(this.sky);
     }
-    if (!this.scene.fog) this.scene.fog = new THREE.Fog(L.fog, L.fogNear, L.fogFar);
+    // Cinematic vista fog — pull the horizon out so stages read deep and beautiful.
+    const vistaNear = Math.max(12, (L.fogNear || 40) * 0.92);
+    const vistaFar = Math.min(1100, Math.max(420, (L.fogFar || 400) * 1.32));
+    if (!this.scene.fog) this.scene.fog = new THREE.Fog(L.fog, vistaNear, vistaFar);
     else {
-      this.scene.fog.near = L.fogNear;
-      this.scene.fog.far = L.fogFar;
+      this.scene.fog.near = vistaNear;
+      this.scene.fog.far = vistaFar;
     }
     // Fog = horizon so distant land dissolves into the sky photo, not a band.
     const fogCol = this.scene.fog.color;
@@ -6276,14 +6320,13 @@ export class RallyGame {
     const ms = Number.isFinite(presentDelta) ? presentDelta : 16.7;
     this._presentEma = (this._presentEma || 16.7) * 0.86 + Math.min(40, ms) * 0.14;
     const ema = this._presentEma;
-    // LOOK / Quality stay on through a 60 Hz hitch (compile, GO, cut).
-    // Shed only on a sustained 30 Hz present. Recover when the GPU is back.
+    // Shed LOOK / TSR early enough to protect 60 Hz — not after a 30 Hz lock.
     if (this.appear && !this._appearUserPinned) {
-      if (ema > 28.5 && this.appear.enabled) {
+      if (ema > 19.5 && this.appear.enabled) {
         this.appear.enabled = false;
         const inner = this.tsr && this.tsr.tsr;
         if (inner) inner.writeNormals = false;
-      } else if (ema < 20.4 && !this.appear.enabled && this._appearDefaultOn) {
+      } else if (ema < 16.4 && !this.appear.enabled && this._appearDefaultOn) {
         this.appear.enabled = true;
         const inner = this.tsr && this.tsr.tsr;
         if (inner && !inner._normalsAborted) inner.writeNormals = true;
@@ -6291,13 +6334,13 @@ export class RallyGame {
     }
     if (!this.tsr || this._tsrUserPinned || typeof this.tsr.setMode !== "function") return;
     const mode = String(this.tsr.mode || "quality");
-    if (ema > 32 && mode !== "performance") {
+    if (ema > 22 && mode !== "performance") {
       this.tsr.setMode("performance");
       if (this.tsr.reset) this.tsr.reset();
-    } else if (ema > 28 && mode === "quality") {
+    } else if (ema > 18.2 && (mode === "quality" || mode === "dlaa")) {
       this.tsr.setMode("balanced");
       if (this.tsr.reset) this.tsr.reset();
-    } else if (ema < 19.2 && mode !== "quality") {
+    } else if (ema < 16.2 && mode !== "quality" && mode !== "dlaa") {
       this.tsr.setMode("quality");
     }
   }
@@ -6376,8 +6419,8 @@ export class RallyGame {
     const w = Math.max(1, host.clientWidth || window.innerWidth || 1);
     const h = Math.max(1, host.clientHeight || window.innerHeight || 1);
     const onTitle = this.state === "title" || this.state === "menu";
-    // GFX.maxPixelRatio is the hard ceiling — a 3× phone panel or a
-    // 5K desktop must never be allowed to ask for its native density here.
+    // GFX.maxPixelRatio is the hard ceiling — a 3× phone panel must never
+    // ask for native density; M-series MacBooks may take 2× Retina.
     const capPr = GFX.maxPixelRatio || 1.5;
     const titlePr =
       (TITLE_SHOWROOM && TITLE_SHOWROOM.maxPixelRatio) ||

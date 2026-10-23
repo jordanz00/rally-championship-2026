@@ -224,6 +224,13 @@ check(
   /paceNotesAllowed/.test(driver) && /_heldNote/.test(driver) && /fromHold/.test(driver)
 );
 check("finish countGo does not re-arm the start-grid gate", /if \(!armed\) return/.test(engine));
+check(
+  "finish VO is FINISH only (no podium countGo)",
+  /_finish\(pos\)[\s\S]*?finishCall\(this\.audio\)/.test(game) &&
+    !/_finish\(pos\)[\s\S]{0,900}audio\.countGo\(/.test(game) &&
+    /flashMessage\("FINISH"\)/.test(game),
+  "no GO + FINISH overlap"
+);
 check("engine imports soundtrack.js?v=353+", Number((engine.match(/soundtrack\.js\?v=(\d+)/) || [])[1]) >= 135);
 check("engine still wires SkidVoice", /SkidVoice/.test(engine) && /this\.skid\.setState/.test(engine));
 check("skid gravel pan from driftAngle", /StereoPanner|createStereoPanner/.test(read("js/audio/skid.js")) && /signedYaw|driftAngle/.test(read("js/audio/skid.js")));

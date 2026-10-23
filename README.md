@@ -6,7 +6,9 @@
 
 **https://jordanz00.github.io/rally-championship-2026/**
 
-Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=1076` if assets look stale.
+Hard refresh after updates: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). Add `?v=1094` if assets look stale.
+
+**iPhone / iPad:** Safari or Chrome. Splash stays light until PRESS START (deferred WebGL). Phones use showroom attract + lock-30 budget — no full-stage title build (avoids Safari OOM).
 
 ## Controls
 
@@ -27,7 +29,7 @@ Serve the repo root over HTTP (ES modules require a server):
 python3 -m http.server 8765
 ```
 
-Open `http://127.0.0.1:8765/index.html?v=1076`
+Open `http://127.0.0.1:8765/index.html?v=1094`
 
 ## QA (automated)
 

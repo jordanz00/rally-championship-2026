@@ -36,9 +36,10 @@ import * as THREE from "../../vendor/three.module.js";
 export const TSR_MODES = Object.freeze({
   off: 0,
   dlaa: 1.0,
-  quality: 0.84,
-  balanced: 0.7,
-  performance: 0.58,
+  /** Shade less, reconstruct more — holds 60 on Retina without mush. */
+  quality: 0.86,
+  balanced: 0.78,
+  performance: 0.64,
 });
 
 /**

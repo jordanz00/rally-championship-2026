@@ -47,7 +47,12 @@ check(
     /landCompressExtMin/.test(config),
   "near-critical land spring + short settle window"
 );
-check("land adds nose-down weight (+Rx)", /noseDown/.test(vehicle) && /landImpactSquash/.test(vehicle));
+check(
+  "land adds nose-down weight (+Rx)",
+  /landImpactSquash/.test(vehicle) &&
+    /_landSquash/.test(vehicle) &&
+    /\+pitchRate is nose-down/.test(vehicle)
+);
 check("chase cam lifts / pulls back in air", /airLift/.test(game) && /airBack/.test(game) && /!p\.onGround/.test(game));
 check("no Math.random in jump model", !/Math\.random/.test(jump));
 check(

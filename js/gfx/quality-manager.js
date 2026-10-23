@@ -11,8 +11,11 @@
 
 const TARGET_MS = 16.7;
 const SAMPLE_CLAMP = 48;
-const DOWN_HOLD = 10;
-const UP_HOLD = 90;
+/** React within ~0.1 s when late — protect 60 before judder sets in. */
+const DOWN_HOLD = 6;
+const UP_HOLD = 120;
+const DOWN_STEP = 0.06;
+const UP_STEP = 0.04;
 
 export class QualityManager {
   constructor() {
@@ -40,18 +43,18 @@ export class QualityManager {
     const sample = Math.min(SAMPLE_CLAMP, Math.max(1, frameMs || TARGET_MS));
     this._ema = this._ema * 0.88 + sample * 0.12;
     let next = this.renderScale;
-    if (this._ema > TARGET_MS * 1.12) {
+    if (this._ema > TARGET_MS * 1.06) {
       this._down += 1;
       this._up = 0;
       if (this._down >= DOWN_HOLD) {
-        next = Math.max(this.minScale, Math.round((this.renderScale - 0.05) * 100) / 100);
+        next = Math.max(this.minScale, Math.round((this.renderScale - DOWN_STEP) * 100) / 100);
         this._down = 0;
       }
-    } else if (this._ema < TARGET_MS * 0.78) {
+    } else if (this._ema < TARGET_MS * 0.82) {
       this._up += 1;
       this._down = 0;
       if (this._up >= UP_HOLD) {
-        next = Math.min(this.maxScale, Math.round((this.renderScale + 0.05) * 100) / 100);
+        next = Math.min(this.maxScale, Math.round((this.renderScale + UP_STEP) * 100) / 100);
         this._up = 0;
       }
     } else {

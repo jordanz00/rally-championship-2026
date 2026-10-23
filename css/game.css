@@ -864,6 +864,15 @@ button.ghost {
   animation: flashGo 1.25s ease-out;
 }
 
+#hud-flash.show.is-finish {
+  top: 18%;
+  font-size: 68px;
+  letter-spacing: 0.22em;
+  color: #f7f3ea;
+  text-shadow: 4px 4px 0 #000;
+  animation: flashGo 1.35s ease-out;
+}
+
 #hud-flash.show.is-rush,
 #hud-flash.show.is-fire,
 #hud-flash.show.is-miss,

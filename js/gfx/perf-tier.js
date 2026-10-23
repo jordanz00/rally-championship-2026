@@ -29,7 +29,7 @@
  */
 export const QUALITY_CAPS = {
   /** Never allocate more than this pixel ratio, whatever the display reports. */
-  maxPixelRatio: 1.5,
+  maxPixelRatio: 2,
   /**
    * Sun shadow atlas ceiling (PCFSoft). Race default is lower (GFX.shadowMap);
    * this is the hard QA contract — never allocate above it.

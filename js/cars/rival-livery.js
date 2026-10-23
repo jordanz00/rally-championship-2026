@@ -7,7 +7,8 @@
  *   roughness, object-space panel blocks, and readable door numbers.
  *   Sponsor copy is invented — no licensed works marks.
  * HOW IT CONNECTS: createRivalCar → getRivalPaintMaterial + attach marks.
- *   Player hero uses applyPlayerBoxLivery (number 1, original copy).
+ *   Player hero keeps the GLB Toyota rally albedo (dressPlayerCarRace) —
+ *   applyPlayerBoxLivery is legacy only (do not call on the race hero).
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -687,7 +688,8 @@ export const PLAYER_BOX = {
 };
 
 /**
- * Paint the player hero in PLAYER_BOX and hang number 1 vinyl.
+ * Legacy flat PLAYER_BOX lacquer. Kept exported for tools; race / title /
+ * attract heroes must NOT call this — it wipes the Toyota GLB albedo.
  * @param {THREE.Object3D} root
  * @param {(mat:THREE.Material, mesh:THREE.Mesh)=>boolean} isBody
  */

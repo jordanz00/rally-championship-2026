@@ -157,9 +157,9 @@ const sdkV = Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) |
 const policyV = Number((sdk.match(/tsr-policy\.js\?v=(\d+)/) || [])[1] || 0);
 const mobileV = Number((sdk.match(/mobile-present\.js\?v=(\d+)/) || [])[1] || 0);
 
-check("boot cache-bust main.js", mainV >= 1084, `index boots main.js?v=${mainV} (>=1084)`);
-check("boot cache-bust game.js", gameV >= 1084 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
-check("boot cache-bust css", cssV >= 60, `index loads game.css?v=${cssV} (>=60)`);
+check("boot cache-bust main.js", mainV >= 1090, `index boots main.js?v=${mainV} (>=1090)`);
+check("boot cache-bust game.js", gameV >= 1090 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check("boot cache-bust css", cssV >= 71, `index loads game.css?v=${cssV} (>=71)`);
 check("gfx policy cache-bust", policyV >= 982 && mobileV >= 982 && sdkV >= 989, `policy ${policyV} / mobile ${mobileV} / sdk ${sdkV}`);
 
 if (fail) {

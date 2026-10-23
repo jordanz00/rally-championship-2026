@@ -8,11 +8,11 @@
 import { COLORS } from "../../config.js?v=241";
 
 const W = {
-  start: 15.8,
-  open: 15.6,
-  drift: 15.2,
-  tight: 14.8,
-  finish: 16.0,
+  start: 17.2,
+  open: 16.8,
+  drift: 16.4,
+  tight: 15.6,
+  finish: 17.4,
 };
 
 export const MOUNTAIN_DEFINITION = {
@@ -222,11 +222,32 @@ export const MOUNTAIN_DEFINITION = {
     },
     {
       kind: "straight",
-      length: 220,
+      length: 110,
+      surface: "tarmac",
+      width: W.open,
+      purpose: "Alpine vista — ridge opens, skyline ahead",
+      visual: "alpine_vista",
+      landmark: true,
+    },
+    {
+      kind: "fast_sweeper",
+      direction: "left",
+      radius: 172,
+      angle: 42,
+      surface: "tarmac",
+      width: W.open,
+      sweep: true,
+      landmark: true,
+      purpose: "Ridge sweeper — hold the line, drink the view",
+      visual: "ridge_sweep",
+    },
+    {
+      kind: "straight",
+      length: 280,
       surface: "tarmac",
       width: W.finish,
-      dy: -1.2,
-      purpose: "Finish — stay on the power",
+      dy: -1.4,
+      purpose: "Finish — stay on the power into the village",
       visual: "finish_village",
     },
   ],

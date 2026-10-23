@@ -59,7 +59,11 @@ check(
 check("gravity hangs on nose-up and dives on nose-down", /aeroDive/.test(jump) && /aeroDive/.test(config));
 check("landing grades tail-first vs nose-first", /tailFirst/.test(jump) && /noseFirst/.test(jump));
 check("landing keeps residual air attitude (no upright snap)", /_beginLandSettle\(/.test(vehicle) && /_landSettle/.test(vehicle) && /landSettleMin/.test(config));
-check("land lock does not wipe settle every frame", /_landLock > 0 && this\._landSettle <= 0/.test(vehicle));
+check(
+  "land lock does not wipe settle every frame",
+  /landing && this\._landSettle <= 0 && Math\.abs\(this\._landCompress/.test(vehicle) ||
+    /_landLock > 0 && this\._landSettle <= 0/.test(vehicle)
+);
 check(
   "near-critical land compress spring",
   /_seedLandCompress\(/.test(vehicle) &&
