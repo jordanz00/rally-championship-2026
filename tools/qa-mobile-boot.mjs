@@ -141,12 +141,12 @@ check(
 );
 check(
   "phones cap championship pack size",
-  /phonePlay\) n = Math\.min\(n, 2\)/.test(game),
+  /phonePlay\) n = Math\.min\(n, 1\)/.test(game),
   "14 AI cars melt mid-range GPUs"
 );
 check(
   "phones keep a light practice pack",
-  /phonePlay \? 2 : Math\.max\(10/.test(game),
+  /phonePlay \? 1 : Math\.max\(10/.test(game),
   "practice must not force 10+ rivals on phones"
 );
 
@@ -178,8 +178,8 @@ check(
 check("no rival.glb preload", !/preload[^>]+rival\.glb/.test(index), "preload races module parse");
 check("__rallyPhoneLite before modules", /__rallyPhoneLite = true/.test(index));
 check(
-  "phones cap pack ≤2",
-  /phonePlay\) n = Math\.min\(n, 2\)/.test(game) && /phonePlay \? 2 :/.test(game),
+  "phones cap pack ≤1",
+  /phonePlay\) n = Math\.min\(n, 1\)/.test(game) && /phonePlay \? 1 :/.test(game),
   "handset pack must stay tiny"
 );
 check("no modulepreload", !/rel="modulepreload"/.test(index), "iPhone first paint");

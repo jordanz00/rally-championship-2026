@@ -207,6 +207,21 @@ export async function prepareHeroCar(id) {
 }
 
 /**
+ * Phone first-stage boot — one rival LOD only. Never the 7 MB hero, never
+ * three chassis in parallel (Safari OOM after Desert Track.create).
+ * @param {string} [id]
+ * @returns {Promise<void>}
+ */
+export async function preparePhoneRaceCars(id = "celica") {
+  const chassis = GARAGE[id] ? id : "celica";
+  if (rivalTemplates[chassis] || templates[chassis]) return;
+  await tryRivalGltf(chassis);
+  if (rivalTemplates[chassis] || templates[chassis]) return;
+  // Absolute last resort — still one file, not the whole garage.
+  await tryLocalGltf(chassis);
+}
+
+/**
  * Decimated pack cars for the AI grid. Skips 7 MB hero parses so a race load
  * does not compete with the selected driver's cockpit mesh.
  * @returns {Promise<void>}
@@ -397,8 +412,15 @@ export function createCelica(tint = {}) {
  */
 function cloneCar(id, tint = {}) {
   const requested = GARAGE[id] ? id : "celica";
-  requireCarModel(requested, "player car");
-  const clone = templates[requested].clone(true);
+  // Phone race: rival LOD (~3 MB) is enough. Requiring the 7 MB hero after
+  // Track.create was the Safari tab-kill on first-stage boot.
+  const hero = templates[requested];
+  const lod = rivalTemplates[requested] || rivalTemplates.celica;
+  const src = hero || lod;
+  if (!src) {
+    requireCarModel(requested, "player car");
+  }
+  const clone = (src || templates[requested]).clone(true);
   clone.traverse((obj) => {
     if (obj.isMesh && obj.material) {
       obj.material = Array.isArray(obj.material)
@@ -411,6 +433,7 @@ function cloneCar(id, tint = {}) {
   clone.userData.wheels = findWheels(clone);
   clone.userData.body = clone;
   clone.userData.carId = requested;
+  clone.userData.phoneLod = !hero && !!lod;
   return clone;
 }
 
@@ -420,6 +443,7 @@ function cloneCar(id, tint = {}) {
  */
 export function createPlayerCar(carId = "celica") {
   const root = enableCarShadows(cloneCar(carId));
+  if (root.userData.phoneLod) hideHeavyInterior(root);
   // Visual Pass V2 — player-only clearcoat. Dirt binds after applyEnvMap so
   // lacquer env intensity matches race IBL (see game.js _bindPlayerCarDirt).
   dressPlayerCarRace(root);

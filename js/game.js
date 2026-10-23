@@ -10,7 +10,7 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=259";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=260";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=439";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
@@ -314,13 +314,14 @@ function armStreamBudget() {
   } catch {
     android = false;
   }
-  STREAM.prefetchChunks = android ? 1 : 2;
-  STREAM.lookaheadSeconds = phone ? 2.0 : 2.6;
-  STREAM.settleLookaheadMeters = android ? 360 : phone ? 420 : 620;
-  STREAM.countdownLoadRadius = android ? 360 : phone ? 420 : 560;
-  STREAM.loadRadius = android ? 480 : phone ? 560 : 720;
-  STREAM.unloadRadius = android ? 560 : phone ? 640 : 800;
-  STREAM.minLoadRadius = phone ? 220 : 260;
+  // iPhone first-stage boot: keep the streamed world tiny until after GO.
+  STREAM.prefetchChunks = phone ? 1 : 2;
+  STREAM.lookaheadSeconds = phone ? 1.4 : 2.6;
+  STREAM.settleLookaheadMeters = android ? 280 : phone ? 300 : 620;
+  STREAM.countdownLoadRadius = android ? 280 : phone ? 300 : 560;
+  STREAM.loadRadius = android ? 360 : phone ? 400 : 720;
+  STREAM.unloadRadius = android ? 440 : phone ? 480 : 800;
+  STREAM.minLoadRadius = phone ? 160 : 260;
   try {
     if (typeof window !== "undefined") {
       window.__rallyHiMaps = !phone && raceStartTier() === "high";
@@ -355,18 +356,9 @@ function isMacDesktopPlay() {
  */
 function raceStartTier() {
   if (isPhonePlay()) {
-    try {
-      const ua = navigator.userAgent || "";
-      const android = /Android/i.test(ua);
-      const mem = navigator.deviceMemory;
-      const cores = navigator.hardwareConcurrency || 4;
-      // ≤4 GB or ≤4 cores: Adreno/Mali often cannot hold 768² shadows at race DPR.
-      if (android && ((mem != null && mem <= 4) || cores <= 4)) return "min";
-      if (mem != null && mem <= 2) return "min";
-    } catch {
-      /* ignore */
-    }
-    return "low";
+    // iPhone never reports deviceMemory — "low" still planted too much scenery
+    // and Safari died on first Desert boot. Always min on handsets.
+    return "min";
   }
   try {
     const q = new URLSearchParams(globalThis.location?.search || "");
@@ -1118,6 +1110,8 @@ export class RallyGame {
    * @param {string} id
    */
   _carSelectable(id) {
+    // Phones load the LOD on race start — keep buttons live so championship works.
+    if (isPhonePlay() && GARAGE_CAR_IDS.includes(id)) return true;
     return isGltfCar(id) || isTitleCarReady(id);
   }
 
@@ -1249,7 +1243,8 @@ export class RallyGame {
    * @returns {boolean}
    */
   _promotePlayerCar() {
-    if (!isGltfCar(this.carId)) return false;
+    // Phone race may only have rival LOD warm — still a real GLB shell.
+    if (!isGltfCar(this.carId) && !isTitleCarReady(this.carId)) return false;
     if (
       this.playerMesh &&
       !this.playerMesh.userData.titleLod &&
@@ -1258,7 +1253,7 @@ export class RallyGame {
       return true;
     }
     this._swapPlayerCar(this.carId);
-    return !!(this.playerMesh && !this.playerMesh.userData.titleLod);
+    return !!(this.playerMesh && this.playerMesh.userData.carId === this.carId);
   }
 
   /** @param {string} id */
@@ -2134,15 +2129,14 @@ export class RallyGame {
 
   _showCars() {
     this.state = "menu";
-    // Unlock the car buttons with the decimated rival LODs, which is all
-    // _carSelectable needs (isTitleCarReady accepts a rival template). Warming
-    // the full garage here instead parsed every 7 MB hero GLB right as the
-    // player picked a car, and the parse then fought the track build for the
-    // main thread — the Desert load blew past 120 s. These LODs are needed for
-    // the pack anyway, so this is pull-forward, not extra work.
-    prepareRivalLods(() => this._syncCarSelectButtons()).catch((err) =>
-      console.warn("[garage] LOD warm failed", err)
-    );
+    // Desktop: warm rival LODs for the pack. Phones: do NOT parse three GLBs
+    // here — that plus Desert Track.create was the iOS first-stage crash.
+    // Race load calls preparePhoneRaceCars for the picked chassis only.
+    if (!isPhonePlay()) {
+      prepareRivalLods(() => this._syncCarSelectButtons()).catch((err) =>
+        console.warn("[garage] LOD warm failed", err)
+      );
+    }
     this._syncCarSelectButtons();
     const modeLabel = document.getElementById("cars-mode-label");
     if (modeLabel) {
@@ -2778,7 +2772,11 @@ export class RallyGame {
 
     this.scene.add(this.track.group);
     tagTunnelWorldReceivers(this.track.group);
-    if (this.weather) this.weather.setActive(courseWantsRain(courseId), this.track.group);
+    // Rain particles on first stage boot kill mid-range phones — dry only.
+    if (this.weather) {
+      const wantRain = !isPhonePlay() && courseWantsRain(courseId);
+      this.weather.setActive(wantRain, this.track.group);
+    }
     const bootErr = document.getElementById("boot-error");
     if (bootErr) {
       bootErr.hidden = true;
@@ -2788,10 +2786,17 @@ export class RallyGame {
     if (this.track && this.track.resetWheelDeform) this.track.resetWheelDeform();
     report(fromCache ? 0.94 : 0.88, "Applying stage lighting…");
     // Cars + lighting overlap — do not wait for IBL before starting GLB warm.
+    // Phones: ONE rival LOD only. Hero + three-chassis warm after Desert was
+    // the Safari kill on first-stage boot.
+    const phoneLoad = isPhonePlay();
     const carWarm = !preview
-      ? Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
-          console.warn("[load] car warm", err);
-        })
+      ? phoneLoad
+        ? preparePhoneRaceCars(this.carId).catch((err) => {
+            console.warn("[load] phone car warm", err);
+          })
+        : Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
+            console.warn("[load] car warm", err);
+          })
       : Promise.resolve();
     await tick();
     this._applyLighting(def.id);
@@ -2799,13 +2804,14 @@ export class RallyGame {
     if (!preview) {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
       await carWarm;
-      // Force one garage graph — stale ai.js?v= can leave createRivalCar empty.
-      const packOk = await ensureRivalGarageReady().catch((err) => {
-        console.warn("[load] rival garage", err);
-        return isRivalGarageReady();
-      });
-      if (!packOk) {
-        console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
+      if (!phoneLoad) {
+        const packOk = await ensureRivalGarageReady().catch((err) => {
+          console.warn("[load] rival garage", err);
+          return isRivalGarageReady();
+        });
+        if (!packOk) {
+          console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
+        }
       }
       this._promotePlayerCar();
       if (this.weather && !this.weather.active && this.playerMesh) {
@@ -2833,11 +2839,11 @@ export class RallyGame {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
       // Full 14-car pack melts mid-range phones; keep a readable field.
-      // Handset pack stays tiny — Safari tab-kills past ~2–3 rivals + stage GLBs.
-      if (phonePlay) n = Math.min(n, 2);
+      // One shared rival LOD + Desert mesh — two AI shells still OOM Safari.
+      if (phonePlay) n = Math.min(n, 1);
     } else if (!preview && this.mode === "practice") {
       // Desktop keeps a pack so practice feels like a race. Phones stay light.
-      n = phonePlay ? 2 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
+      n = phonePlay ? 1 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
     if (!preview && n > 0 && !isRivalGarageReady()) n = 0;
 
@@ -2942,21 +2948,33 @@ export class RallyGame {
     }
     this._titleRim.intensity = 0;
     this._titleKick.intensity = 0;
-    this.renderer.shadowMap.enabled = true;
-    this.sun.castShadow = true;
-    this._shadowHold = null;
-    // Settle owns the race atlas size — do not allocate 2048 then shrink (hitch).
-    this._setShadowMapSize(GFX.shadowMap || 1536);
-    if (this.post) {
-      this.post._titleShowroom = false;
-      this.post.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
-      this.post.setQuality("balanced");
+    // Phones stay shadow-off until settle decides — 1536 atlas here was the
+    // second Safari kill (right after Desert + car warm).
+    if (isPhonePlay()) {
+      this.renderer.shadowMap.enabled = false;
+      this.sun.castShadow = false;
+      this._shadowHold = null;
+      if (this.post) {
+        this.post._titleShowroom = false;
+        this.post.enabled = false;
+      }
+    } else {
+      this.renderer.shadowMap.enabled = true;
+      this.sun.castShadow = true;
+      this._shadowHold = null;
+      // Settle owns the race atlas size — do not allocate 2048 then shrink (hitch).
+      this._setShadowMapSize(GFX.shadowMap || 1536);
+      if (this.post) {
+        this.post._titleShowroom = false;
+        this.post.enabled = VISUAL.postFx !== false && (VISUAL.tier || 0) >= 9;
+        this.post.setQuality("balanced");
+      }
+      if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
+      if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
+      if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
+      // Feather the sun edge. A one-texel kernel read as a hard cut on the sand.
+      if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
     }
-    if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
-    if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
-    if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
-    // Feather the sun edge. A one-texel kernel read as a hard cut on the sand.
-    if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
     report(1, "Ready");
   }
 
@@ -3377,32 +3395,32 @@ export class RallyGame {
       if (this._titleWorld.parent) this.scene.remove(this._titleWorld);
     }
 
-    this.renderer.shadowMap.enabled = true;
-    this.sun.castShadow = true;
-    if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
-    if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
-    if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
-    if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
+    const phoneRace = isPhonePlay();
+    // iPhone: shadows off for first stage settle — atlas alloc after Desert OOM.
+    this.renderer.shadowMap.enabled = !phoneRace;
+    this.sun.castShadow = !phoneRace;
+    if (!phoneRace) {
+      if (this._raceShadowBias != null) this.sun.shadow.bias = this._raceShadowBias;
+      if (this._raceShadowNormalBias != null) this.sun.shadow.normalBias = this._raceShadowNormalBias;
+      if (this._raceShadowRadius != null) this.sun.shadow.radius = this._raceShadowRadius;
+      if (this.sun && this.sun.shadow) this.sun.shadow.radius = 4;
+    }
 
     // Title pad leaves a soft DPR floor and cheap sky/post. Reset before warm
     // draws so the first HUD frame already matches race (no snap at "1"/GO).
-    this._perfDprScale = isPhonePlay()
-      ? /Android/i.test(navigator.userAgent || "")
-        ? 0.62
-        : 0.78
-      : 1;
+    this._perfDprScale = phoneRace ? 0.5 : 1;
     // Phones stay under the panel. Desktop starts with a little soft-scale
     // headroom so GO / first corner stay at 60 instead of climbing from late.
-    this._softRenderScale = isPhonePlay() ? 0.78 : 0.94;
+    this._softRenderScale = phoneRace ? 0.62 : 0.94;
     if (this.qualityMgr) this.qualityMgr.reset(this._softRenderScale);
     if (this.pipeline && this.pipeline.setRenderScale) {
       this.pipeline.setRenderScale(this._softRenderScale);
     }
     this._lastPresentCost = 8;
-    this._raceWarmFrames = 32;
+    this._raceWarmFrames = phoneRace ? 8 : 32;
     this._shadowTick = 0;
     this._shadowHold = null;
-    this._armCarSunShadows();
+    if (!phoneRace) this._armCarSunShadows();
     this._qualityDprFloor = null;
     this._qualityShadowFloor = null;
     this._qualityMirrorEvery = 1;
@@ -3414,7 +3432,8 @@ export class RallyGame {
     // Lock-30 still arms later if present cost proves the machine cannot hold 60.
     // Force atlas size even when growing from title 1024 — scaler alone is
     // monotonic-down and can leave the pad map armed across settle.
-    if (tier && tier.shadow) {
+    // Phones: never allocate shadow atlas during first-stage settle.
+    if (!phoneRace && tier && tier.shadow) {
       this._setShadowMapSize(tier.shadow, true);
       this._qualityShadowFloor = tier.shadow;
     }
@@ -3423,32 +3442,38 @@ export class RallyGame {
       this.post._titleShowroom = false;
       // Tier owns post.enabled (low/min skip the RT stack). Do not force
       // cinema post back on after apply — that undid the M1 budget cut.
-      if (tier && tier.post) this.post.setQuality(tier.post);
+      if (phoneRace) {
+        this.post.enabled = false;
+      } else if (tier && tier.post) {
+        this.post.setQuality(tier.post);
+      }
       const L = LIGHTING[this.courseId] || LIGHTING.desert;
       this.post.syncFromConfig(L);
     }
-    if (this.sky && tier && tier.sky) setSkyQuality(this.sky, tier.sky);
+    if (!phoneRace && this.sky && tier && tier.sky) setSkyQuality(this.sky, tier.sky);
     // Allocate race framebuffer + post RTs at race DPR (title skipped setSize).
     this._onResize();
 
     this._updateLights(0);
-    const radius = STREAM.countdownLoadRadius || 720;
+    const radius = phoneRace
+      ? Math.min(220, STREAM.countdownLoadRadius || 300)
+      : STREAM.countdownLoadRadius || 720;
     if (this.track && this.track.prewarmAround && this.player && this.player.position) {
       this.track.prewarmAround(this.player.position, this.camera.position, radius);
     }
-    // Force the first ~km of racing-line slices visible so stream compile
-    // happens here — not on the first hairpin at race speed.
-    if (this.track && this.track.prewarmAlongCourse && this.player) {
+    // Desktop: first ~km of racing-line slices. Phones: grid bubble only —
+    // along-course prewarm after Desert was another Safari spike.
+    if (!phoneRace && this.track && this.track.prewarmAlongCourse && this.player) {
       this.track.prewarmAlongCourse(this.player.progress || 0);
     }
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    await this._drainStreamCompileUnderOverlay(480);
+    await this._drainStreamCompileUnderOverlay(phoneRace ? 120 : 480);
     this._warmPackPhysics();
 
     const present = () => {
-      this.renderer.shadowMap.needsUpdate = true;
+      if (!phoneRace) this.renderer.shadowMap.needsUpdate = true;
       if (this.post && this.post.enabled) this.post.render(this.scene, this.camera);
       else this.renderer.render(this.scene, this.camera);
     };
@@ -3456,20 +3481,24 @@ export class RallyGame {
       // Four warms under the load overlay — enough for atlas + post without
       // a multi-hundred-ms compile hitch on the first race sample.
       present();
-      present();
-      present();
-      present();
+      if (!phoneRace) {
+        present();
+        present();
+        present();
+      }
     } catch (err) {
       console.warn("Race present warm failed", err);
       this.renderer.setRenderTarget(null);
     }
     // Bake live cube reflections once under the load overlay so countdown
-    // never pays a late IBL swap (paint/chrome color pop).
-    try {
-      this._reflectTick = Math.max(0, (GFX.reflectEvery || 1) - 1);
-      this._updateReflections();
-    } catch (err) {
-      console.warn("Race reflect warm failed", err);
+    // never pays a late IBL swap (paint/chrome color pop). Skip on phone.
+    if (!phoneRace) {
+      try {
+        this._reflectTick = Math.max(0, (GFX.reflectEvery || 1) - 1);
+        this._updateReflections();
+      } catch (err) {
+        console.warn("Race reflect warm failed", err);
+      }
     }
     // Re-sync grade after warm presents (post RTs / exposure settle), then freeze.
     if (this.post) {
@@ -6055,13 +6084,23 @@ export class RallyGame {
     const L = LIGHTING[courseId] || LIGHTING.desert;
     this.renderer.toneMappingExposure = clampRaceExposure(L, 0, 1, courseId);
     if (this.post) this.post.syncFromConfig(L);
-    if (!this.sky) {
-      this.sky = createSky();
-      this.scene.add(this.sky);
+    const phoneRace = isPhonePlay();
+    if (!phoneRace) {
+      if (!this.sky) {
+        this.sky = createSky();
+        this.scene.add(this.sky);
+      }
+    } else if (this.sky) {
+      this.sky.visible = false;
     }
     // Cinematic vista fog — pull the horizon out so stages read deep and beautiful.
-    const vistaNear = Math.max(12, (L.fogNear || 40) * 0.92);
-    const vistaFar = Math.min(1100, Math.max(420, (L.fogFar || 400) * 1.32));
+    // Phones: tighter fog so far terrain never streams in during first km.
+    const vistaNear = phoneRace
+      ? Math.max(10, (L.fogNear || 40) * 0.7)
+      : Math.max(12, (L.fogNear || 40) * 0.92);
+    const vistaFar = phoneRace
+      ? Math.min(380, Math.max(220, (L.fogFar || 400) * 0.55))
+      : Math.min(1100, Math.max(420, (L.fogFar || 400) * 1.32));
     if (!this.scene.fog) this.scene.fog = new THREE.Fog(L.fog, vistaNear, vistaFar);
     else {
       this.scene.fog.near = vistaNear;
@@ -6075,23 +6114,25 @@ export class RallyGame {
     } else {
       this.scene.background.setHex(L.skyBack || L.fog);
     }
-    applySky(this.sky, L, courseId).then(() => {
-      if (this._skyEnvCache) delete this._skyEnvCache[courseId];
-      try {
-        this._bakeSkyEnv(courseId);
-      } catch (err) {
-        console.warn("Sky IBL failed", err);
-      }
-    });
-    if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
-    // Sync bake if the HDR was already warm (common after title / prior stage).
-    if (isSkyReady(this.sky) && this.sky.userData.skyStage === courseId) {
-      try {
-        this._bakeSkyEnv(courseId);
-      } catch (err) {
-        console.warn("Sky IBL failed", err);
+    if (!phoneRace) {
+      applySky(this.sky, L, courseId).then(() => {
+        if (this._skyEnvCache) delete this._skyEnvCache[courseId];
+        try {
+          this._bakeSkyEnv(courseId);
+        } catch (err) {
+          console.warn("Sky IBL failed", err);
+        }
+      });
+      // Sync bake if the HDR was already warm (common after title / prior stage).
+      if (isSkyReady(this.sky) && this.sky.userData.skyStage === courseId) {
+        try {
+          this._bakeSkyEnv(courseId);
+        } catch (err) {
+          console.warn("Sky IBL failed", err);
+        }
       }
     }
+    if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
     this.hemi.color.setHex(L.hemiSky);
     this.hemi.groundColor.setHex(L.hemiGround);
     applyStageLights(
@@ -6450,17 +6491,18 @@ export class RallyGame {
     const phoneBudget = isPhonePlay();
     const lockLook = !explicitPotato && !phoneBudget;
     if (this.post && this.post.setQuality) {
-      this.post.setQuality(lockLook ? "high" : t.post);
+      this.post.setQuality(phoneBudget ? "low" : lockLook ? "high" : t.post);
     }
     if (this.post) {
-      const wantPost = lockLook || t.id !== "min";
+      const wantPost = !phoneBudget && (lockLook || t.id !== "min");
       this.post.enabled = wantPost && VISUAL.postFx !== false;
     }
-    if (this.sky) setSkyQuality(this.sky, lockLook ? "high" : t.sky);
+    if (this.sky && !phoneBudget) setSkyQuality(this.sky, lockLook ? "high" : t.sky);
 
     // High / medium / low keep the sun atlas. Min alone kills shadows — never
     // flip shadows ON mid-stage after a flat countdown (that was the GO pop).
-    const shadowsWanted = lockLook || t.id !== "min";
+    // Phones: always off — atlas after Desert was the first-stage Safari kill.
+    const shadowsWanted = !phoneBudget && (lockLook || t.id !== "min");
     if (this.renderer) {
       this.renderer.shadowMap.enabled = shadowsWanted;
       if (this.sun) this.sun.castShadow = shadowsWanted;

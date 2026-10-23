@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## iOS first-stage boot — no Safari kill (2026-10-23)
+
+**Player moment:** PRESS START → pick car → Desert loads → countdown. Tab stays alive.
+
+**Cause:** After `Track.create`, phone path still ran hero + three rival LODs, race HDR/PMREM, 1536 shadow atlas, along-course stream prewarm, and a 2-car pack — Safari OOM on first stage.
+
+**Shipped:** `preparePhoneRaceCars` (one LOD) · pack ≤1 · no menu LOD warm · no race sky/IBL · no settle shadow atlas / post / reflect · tighter stream + fog · rain off · `raceStartTier` always `min` on handsets.
+
+**Proof:** `node tools/qa-iphone.mjs` · `PASSES=20 node tools/qa-phone-stable.mjs`
+
+**Boot:** `main.js?v=1103` · `celica.js?v=260`
+
 ## iPhone Safari compatibility (2026-10-23)
 
 **Player moment:** Open in Safari on iPhone. PRESS START. Menu. Race with 2 rivals. No tab kill.
