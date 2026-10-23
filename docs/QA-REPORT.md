@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## iPhone Safari compatibility (2026-10-23)
+
+**Player moment:** Open in Safari on iPhone. PRESS START. Menu. Race with 2 rivals. No tab kill.
+
+**Shipped:** No `modulepreload` · no title HDR/PMREM/shadow atlas on phones · pack capped at 2 · `__rallyPhoneLite` + iosTouchMac · skip bakeSkyEnv on phone.
+
+**Proof:** `node tools/qa-iphone.mjs` · `PASSES=20 node tools/qa-phone-stable.mjs`
+
+**Boot:** `main.js?v=1101` · `game.css?v=73`
+
 ## Phone crash hard-stop (iOS + Android) (2026-10-23)
 
 **Player moment:** Open on iPhone Safari or Android Chrome. PRESS START. Select mode. Race loads. Tab stays alive.

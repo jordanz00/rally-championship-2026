@@ -17,6 +17,7 @@ const PASSES = Math.max(1, Number(process.env.PASSES) || 20);
 
 const SCRIPTS = [
   "tools/qa-mobile-boot.mjs",
+  "tools/qa-iphone.mjs",
   "tools/qa-static-audit.mjs",
   "tools/qa-garage-cars.mjs",
   "tools/qa-attract-reel.mjs",
@@ -51,8 +52,10 @@ check("__rallyPhoneLite early tag", /__rallyPhoneLite/.test(index) && /is-phone/
 check("isPhonePlay trusts lite flag", /__rallyPhoneLite === true/.test(touch));
 check("phones defer title GLB", /_titleCarWarm = isPhonePlay\(\) \? null/.test(game));
 check("phones skip idle prop kit", /Phones: PRESS START already starts WebGL/.test(game));
-check("phone pack ≤4", /androidPlay \? 3 : 4/.test(game));
+check("phone pack ≤2", /phonePlay\) n = Math\.min\(n, 2\)/.test(game));
 check("practice pack ≤2 on phone", /phonePlay \? 2 :/.test(game));
+check("no modulepreload", !/rel="modulepreload"/.test(index));
+check("no phone title HDR", /No HDR \/ PMREM on iPhone/.test(game));
 check("preferSafeGl iosTouchMac", /__rallyPhoneLite/.test(factory) && /ontouchend/.test(factory));
 check("garagePhoneLite", /garagePhoneLite/.test(celica) && /__rallyPhoneLite/.test(celica));
 check("Opponent soft mesh", /_meshMissing/.test(ai) && /rival-placeholder/.test(ai));
@@ -62,7 +65,7 @@ check("phones block WebGPU remap", /__rallyPhoneLite\) return/.test(index));
 
 const mainV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
-check("boot ≥1100", mainV >= 1100 && gameV === mainV, `main=${mainV} game=${gameV}`);
+check("boot ≥1101", mainV >= 1101 && gameV === mainV, `main=${mainV} game=${gameV}`);
 
 const gCel = (game.match(/celica\.js\?v=(\d+)/) || [])[1];
 const aCel = (ai.match(/celica\.js\?v=(\d+)/) || [])[1];

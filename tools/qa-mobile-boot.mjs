@@ -141,7 +141,7 @@ check(
 );
 check(
   "phones cap championship pack size",
-  /phonePlay\) n = Math\.min\(n, androidPlay \? 3 : 4\)/.test(game),
+  /phonePlay\) n = Math\.min\(n, 2\)/.test(game),
   "14 AI cars melt mid-range GPUs"
 );
 check(
@@ -157,8 +157,8 @@ const sdkV = Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) |
 const policyV = Number((sdk.match(/tsr-policy\.js\?v=(\d+)/) || [])[1] || 0);
 const mobileV = Number((sdk.match(/mobile-present\.js\?v=(\d+)/) || [])[1] || 0);
 
-check("boot cache-bust main.js", mainV >= 1100, `index boots main.js?v=${mainV} (>=1100)`);
-check("boot cache-bust game.js", gameV >= 1100 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check("boot cache-bust main.js", mainV >= 1101, `index boots main.js?v=${mainV} (>=1101)`);
+check("boot cache-bust game.js", gameV >= 1101 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
 check(
   "iOS desktop-UA still phone",
   /iosTouchMac/.test(touch) && /ontouchend/.test(touch),
@@ -178,10 +178,12 @@ check(
 check("no rival.glb preload", !/preload[^>]+rival\.glb/.test(index), "preload races module parse");
 check("__rallyPhoneLite before modules", /__rallyPhoneLite = true/.test(index));
 check(
-  "phones cap pack 3/4",
-  /androidPlay \? 3 : 4/.test(game) && /phonePlay \? 2 :/.test(game),
+  "phones cap pack ≤2",
+  /phonePlay\) n = Math\.min\(n, 2\)/.test(game) && /phonePlay \? 2 :/.test(game),
   "handset pack must stay tiny"
 );
+check("no modulepreload", !/rel="modulepreload"/.test(index), "iPhone first paint");
+check("no phone title HDR", /No HDR \/ PMREM on iPhone/.test(game));
 check(
   "phones skip menu prop-kit warm",
   /Phones: PRESS START already starts WebGL/.test(game),

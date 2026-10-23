@@ -852,7 +852,7 @@ export class RallyGame {
     this._onResize = this._onResize.bind(this);
     window.addEventListener("resize", this._onResize);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", this._onResize);
-    if (isPhonePlay()) this._perfDprScale = /Android/i.test(navigator.userAgent || "") ? 0.55 : 0.72;
+    if (isPhonePlay()) this._perfDprScale = /Android/i.test(navigator.userAgent || "") ? 0.55 : 0.62;
     this._onResize();
     // Rearview RT is race/POV only — allocating it on splash hitchs the first paint.
     if (this.state !== "title" && this.state !== "menu") this._initMirror();
@@ -1069,8 +1069,11 @@ export class RallyGame {
     this._titleIblReady = true;
     if (this.state !== "title" && this.state !== "menu") return;
     try {
-      this._bakeSkyEnv("title");
-      this._applyTitleCarShowcase(true);
+      // Phones never bake PMREM — Safari OOMs on the title pad.
+      if (!isPhonePlay()) {
+        this._bakeSkyEnv("title");
+        this._applyTitleCarShowcase(true);
+      }
     } catch (err) {
       console.warn("Title IBL failed", err);
     }
@@ -2469,18 +2472,26 @@ export class RallyGame {
       this.player.roll = 0;
     }
     this.renderer.toneMappingExposure = L.exposure;
-    this.renderer.shadowMap.enabled = true;
+    const phoneTitle = isPhonePlay();
+    this.renderer.shadowMap.enabled = !phoneTitle;
     // Small atlas, tight on the pad. The hero casts a real contact shadow.
     // Do not shrink an existing race map here — that dispose hitches the splash.
+    // Phones: never allocate a 1024² shadow on PRESS START (Safari tab-kill).
     if (this.sun) {
-      this.sun.castShadow = true;
-      if (!this.sun.shadow.map) this._setShadowMapSize(1024, true);
+      this.sun.castShadow = !phoneTitle;
+      if (!phoneTitle && !this.sun.shadow.map) {
+        this._setShadowMapSize(GFX.titleShadowMap || 1024, true);
+      }
     }
-    if (!this.sky) {
-      this.sky = createSky();
-      this.scene.add(this.sky);
+    if (!phoneTitle) {
+      if (!this.sky) {
+        this.sky = createSky();
+        this.scene.add(this.sky);
+      }
+      this.sky.visible = true;
+    } else if (this.sky) {
+      this.sky.visible = false;
     }
-    this.sky.visible = true;
     if (!this.scene.fog) this.scene.fog = new THREE.Fog(L.fog, L.fogNear, L.fogFar);
     else {
       this.scene.fog.color.setHex(L.fog);
@@ -2492,50 +2503,57 @@ export class RallyGame {
     } else {
       this.scene.background.setHex(L.skyBack);
     }
-    applySky(this.sky, L, "title").then(() => {
-      // Drop cached title IBL so the bake sees the HDR skybox, not a prior empty sphere.
-      if (this._skyEnvCache) delete this._skyEnvCache.title;
-    });
-    // Title budget — skybox has no raymarch cost; quality string kept for QA/docs.
-    const titleSkyQ =
-      (TITLE_SHOWROOM && TITLE_SHOWROOM.skyQuality) || "low";
-    setSkyQuality(this.sky, titleSkyQ);
-    if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
-    this._ensureTitleReflectCam();
-    if (this._titleIblTimer) clearTimeout(this._titleIblTimer);
-    this._titleIblTimer = 0;
-    if (!this._titleIblReady) {
-      const iblDelay =
-        TITLE_SHOWROOM && TITLE_SHOWROOM.iblDelayMs != null ? TITLE_SHOWROOM.iblDelayMs : 420;
-      this._titleIblTimer = setTimeout(() => {
-        this._titleIblTimer = 0;
-        if (this.state !== "title" && this.state !== "menu") return;
-        try {
-          if (!isSkyReady(this.sky)) {
-            // HDR still loading — retry once shortly.
-            this._titleIblTimer = setTimeout(() => {
-              this._titleIblTimer = 0;
-              this._onTitleIblReady();
-            }, 400);
-            return;
-          }
-          this._onTitleIblReady();
-        } catch (err) {
-          console.warn("Title IBL failed", err);
-          this._revealTitleShowroom();
-        }
-      }, iblDelay);
-      // Never leave the pad forever-black if PMREM stalls.
-      if (!this._titleRevealFallback) {
-        this._titleRevealFallback = setTimeout(() => {
-          this._titleRevealFallback = 0;
-          if (this._titleShowroomRevealed) return;
-          if (this.state !== "title" && this.state !== "menu") return;
-          this._revealTitleShowroom();
-        }, Math.max(iblDelay + 1200, 2200));
-      }
-    } else if (this.playerMesh) {
+    if (phoneTitle) {
+      // No HDR / PMREM on iPhone — that path OOMs after PRESS START.
+      this._titleIblReady = true;
+      if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
       this._revealTitleShowroom();
+    } else {
+      applySky(this.sky, L, "title").then(() => {
+        // Drop cached title IBL so the bake sees the HDR skybox, not a prior empty sphere.
+        if (this._skyEnvCache) delete this._skyEnvCache.title;
+      });
+      // Title budget — skybox has no raymarch cost; quality string kept for QA/docs.
+      const titleSkyQ =
+        (TITLE_SHOWROOM && TITLE_SHOWROOM.skyQuality) || "low";
+      setSkyQuality(this.sky, titleSkyQ);
+      if (this.dust && this.dust.setAtmosphere) this.dust.setAtmosphere(L);
+      this._ensureTitleReflectCam();
+      if (this._titleIblTimer) clearTimeout(this._titleIblTimer);
+      this._titleIblTimer = 0;
+      if (!this._titleIblReady) {
+        const iblDelay =
+          TITLE_SHOWROOM && TITLE_SHOWROOM.iblDelayMs != null ? TITLE_SHOWROOM.iblDelayMs : 420;
+        this._titleIblTimer = setTimeout(() => {
+          this._titleIblTimer = 0;
+          if (this.state !== "title" && this.state !== "menu") return;
+          try {
+            if (!isSkyReady(this.sky)) {
+              // HDR still loading — retry once shortly.
+              this._titleIblTimer = setTimeout(() => {
+                this._titleIblTimer = 0;
+                this._onTitleIblReady();
+              }, 400);
+              return;
+            }
+            this._onTitleIblReady();
+          } catch (err) {
+            console.warn("Title IBL failed", err);
+            this._revealTitleShowroom();
+          }
+        }, iblDelay);
+        // Never leave the pad forever-black if PMREM stalls.
+        if (!this._titleRevealFallback) {
+          this._titleRevealFallback = setTimeout(() => {
+            this._titleRevealFallback = 0;
+            if (this._titleShowroomRevealed) return;
+            if (this.state !== "title" && this.state !== "menu") return;
+            this._revealTitleShowroom();
+          }, Math.max(iblDelay + 1200, 2200));
+        }
+      } else if (this.playerMesh) {
+        this._revealTitleShowroom();
+      }
     }
     this.hemi.color.setHex(L.hemiSky);
     this.hemi.groundColor.setHex(L.hemiGround);
@@ -2815,8 +2833,8 @@ export class RallyGame {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
       // Full 14-car pack melts mid-range phones; keep a readable field.
-      // Android / weak iOS: 3 rivals. Stronger iPhone: 4. Never 7+ on a handset.
-      if (phonePlay) n = Math.min(n, androidPlay ? 3 : 4);
+      // Handset pack stays tiny — Safari tab-kills past ~2–3 rivals + stage GLBs.
+      if (phonePlay) n = Math.min(n, 2);
     } else if (!preview && this.mode === "practice") {
       // Desktop keeps a pack so practice feels like a race. Phones stay light.
       n = phonePlay ? 2 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);

@@ -30,9 +30,8 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=72" />
-    <link rel="modulepreload" href="js/main.js?v=1100" />
-    <!-- No rival.glb preload — phones parse modules + 3 MB GLB together and tab-kill. -->
+    <link rel="stylesheet" href="css/game.css?v=73" />
+    <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
       // Tag phone/tablet before modules so CSS + lite boot arm even if JS later fails.
@@ -170,12 +169,21 @@
       // Phone class before modules load — menus need it even if WebGL is slow.
       (function () {
         try {
+          if (window.__rallyPhoneLite || document.documentElement.classList.contains("is-phone")) {
+            document.addEventListener("DOMContentLoaded", function () {
+              document.body.classList.add("is-mobile");
+            });
+            return;
+          }
           var ua = navigator.userAgent || "";
+          var points = navigator.maxTouchPoints || 0;
           var phone = /iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
           var tablet = /iPad|Android(?!.*Mobile)|Tablet|Silk/i.test(ua);
+          var iosTouchMac = points > 0 && /Macintosh/i.test(ua) && "ontouchend" in document;
           var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 980;
-          if (phone || tablet || coarse) {
+          if (phone || tablet || iosTouchMac || coarse) {
             document.documentElement.classList.add("is-phone");
+            window.__rallyPhoneLite = true;
             document.addEventListener("DOMContentLoaded", function () {
               document.body.classList.add("is-mobile");
             });
@@ -584,6 +592,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1100" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1101" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>
