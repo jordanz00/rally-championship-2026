@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=15";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=16";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
 import {
@@ -2705,11 +2705,21 @@ export class RallyGame {
         CHAMPIONSHIP.gridSpacing
     );
     let n = 0;
+    const phonePlay = isPhonePlay();
+    let androidPlay = false;
+    try {
+      androidPlay = phonePlay && /Android/i.test(navigator.userAgent || "");
+    } catch {
+      androidPlay = false;
+    }
     if (!preview && this.mode === "championship") {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
+      // Full 14-car pack melts mid-range phones; keep a readable field.
+      if (phonePlay) n = Math.min(n, androidPlay ? 5 : 7);
     } else if (!preview && this.mode === "practice") {
-      n = Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
+      // Desktop keeps a pack so practice feels like a race. Phones stay light.
+      n = phonePlay ? 3 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
 
     /**
@@ -5177,77 +5187,101 @@ export class RallyGame {
    * @param {number} dt
    */
   /**
-   * Swap the spinning pad for a Saturn-style stage tour after IBL.
-   * Builds real championship tracks (Desert → Forest → Mountain → Lakeside)
-   * and cuts like a music video across jumps and apexes.
+   * Desktop: Saturn-style stage tour after IBL (deferred so first paint stays live).
+   * Phone / tablet: orbit showroom only — Track.create on title OOMs Safari & Android.
    */
   _startAttractReel() {
     if (this._attractReel || this._attractBooting) return;
     if (this.state !== "title" && this.state !== "menu") return;
+
+    // Fast phone title: keep the lacquered pad car. No full-stage build.
+    if (isPhonePlay()) {
+      const tag = document.querySelector(".sr-attract-tag");
+      if (tag) tag.textContent = "ATTRACT · SHOWROOM LIVE";
+      paintAttractFx(document.getElementById("attract-fx"), null, false);
+      return;
+    }
+
     this._attractBooting = true;
     void prepareRivalLods().catch(() => {});
     const reduced =
       typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const reel = new AttractReel({
-      phone: isPhonePlay(),
-      reducedMotion: reduced,
-      armVeg: () => armVegBudget(this._qualityTierId || raceStartTier()),
-      onStage: (id) => {
-        try {
-          this._applyLighting(id);
-        } catch (err) {
-          console.warn("[attract] lighting", err);
-        }
-        const tag = document.querySelector(".sr-attract-tag");
-        if (tag) {
-          const name = id ? String(id).toUpperCase() : "RALLY";
-          tag.textContent = `ATTRACT · ${name}`;
-        }
-      },
-    });
-    void reel
-      .mount(this.scene)
-      .then(() => {
+
+    const boot = () => {
+      if (this._attractReel || (this.state !== "title" && this.state !== "menu")) {
         this._attractBooting = false;
-        if (this.state !== "title" && this.state !== "menu") {
-          reel.dispose(this.scene);
-          return;
-        }
-        const meshes = [];
-        const ids = isPhonePlay() ? ["celica", "delta"] : ["celica", "delta", "stratos", "celica"];
-        for (let i = 0; i < ids.length; i++) {
+        return;
+      }
+      const reel = new AttractReel({
+        phone: false,
+        reducedMotion: reduced,
+        armVeg: () => armVegBudget(this._qualityTierId || raceStartTier()),
+        onStage: (id) => {
           try {
-            meshes.push(
-              i === 0 ? createAttractLead() : createRivalCar(aiTintForIndex(i), i, ids[i], true)
-            );
-          } catch {
+            this._applyLighting(id);
+          } catch (err) {
+            console.warn("[attract] lighting", err);
+          }
+          const tag = document.querySelector(".sr-attract-tag");
+          if (tag) {
+            const name = id ? String(id).toUpperCase() : "RALLY";
+            tag.textContent = `ATTRACT · ${name}`;
+          }
+        },
+      });
+      void reel
+        .mount(this.scene)
+        .then(() => {
+          this._attractBooting = false;
+          if (this.state !== "title" && this.state !== "menu") {
+            reel.dispose(this.scene);
+            return;
+          }
+          const meshes = [];
+          const ids = ["celica", "delta", "stratos", "celica"];
+          for (let i = 0; i < ids.length; i++) {
             try {
-              meshes.push(createTitleCar(ids[i]));
+              meshes.push(
+                i === 0 ? createAttractLead() : createRivalCar(aiTintForIndex(i), i, ids[i], true)
+              );
             } catch {
-              /* garage still parsing */
+              try {
+                meshes.push(createTitleCar(ids[i]));
+              } catch {
+                /* garage still parsing */
+              }
             }
           }
-        }
-        if (!meshes.length && this.playerMesh) meshes.push(this.playerMesh);
-        reel.bindCars(meshes);
-        this._attractReel = reel;
-        this._attractFx = document.getElementById("attract-fx");
-        paintAttractFx(
-          this._attractFx,
-          { fade: 1, flash: 0, label: "DESERT", kind: "heli", stage: reel.stageId || "desert" },
-          true
-        );
-        if (this._titleWorld) this._titleWorld.visible = false;
-        if (this.playerMesh && meshes.indexOf(this.playerMesh) < 0) this.playerMesh.visible = false;
-        const crt = document.getElementById("crt");
-        if (crt) crt.classList.add("attract-live");
-        const tag = document.querySelector(".sr-attract-tag");
-        if (tag) tag.textContent = `ATTRACT · ${(reel.stageId || "desert").toUpperCase()}`;
-      })
-      .catch((err) => {
-        this._attractBooting = false;
-        console.warn("[attract] reel failed", err);
-      });
+          if (!meshes.length && this.playerMesh) meshes.push(this.playerMesh);
+          reel.bindCars(meshes);
+          this._attractReel = reel;
+          this._attractFx = document.getElementById("attract-fx");
+          paintAttractFx(
+            this._attractFx,
+            { fade: 1, flash: 0, label: "DESERT", kind: "heli", stage: reel.stageId || "desert" },
+            true
+          );
+          if (this._titleWorld) this._titleWorld.visible = false;
+          if (this.playerMesh && meshes.indexOf(this.playerMesh) < 0) this.playerMesh.visible = false;
+          const crt = document.getElementById("crt");
+          if (crt) crt.classList.add("attract-live");
+          const tag = document.querySelector(".sr-attract-tag");
+          if (tag) tag.textContent = `ATTRACT · ${(reel.stageId || "desert").toUpperCase()}`;
+        })
+        .catch((err) => {
+          this._attractBooting = false;
+          console.warn("[attract] reel failed", err);
+          const tag = document.querySelector(".sr-attract-tag");
+          if (tag) tag.textContent = "ATTRACT · SHOWROOM LIVE";
+        });
+    };
+
+    // Let the showroom paint once before Terrain/Track.create steals the thread.
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(boot, { timeout: 1600 });
+    } else {
+      setTimeout(boot, 500);
+    }
   }
 
   /** Tear down the title reel before a stage load. */

@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Phone / Android boot stays light (2026-10-22)
+
+**Player moment:** Open on iPhone or Android. Title paints fast. PRESS START works. Race loads without a tab kill.
+
+**Cause:** Attract called `Track.create` on splash (full Desert). Championship still spawned 14 AI. Practice forced 10+ rivals.
+
+**Shipped:** Phones keep the showroom attract (no stage build on title). Desktop defers the Saturn tour. Phone pack capped (5 Android / 7 iOS). Practice pack = 3 on phones.
+
+**Proof:** `node tools/qa-mobile-boot.mjs` · `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=1084` · `game.js?v=1084` · `attract-reel.js?v=16`
+
 ## Attract is Saturn TV on real stages (2026-10-22)
 
 **Player moment:** Title. Hard cuts. Desert Safari jump, Forest crest, Mountain hairpin, Lakeside shore — real tracks, not the junk ribbon. Pack flies. Jump goes slow-mo.

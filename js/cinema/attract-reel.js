@@ -11,13 +11,27 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { COURSES } from "../tracks/courses.js?v=98";
-import { Track } from "../tracks/track.js?v=435";
 import {
   attractChassisY,
   attractChassisYCleared,
   attractDeckLift,
 } from "./attract-plant.js?v=2";
+
+/** @type {typeof import("../tracks/track.js").Track|null} */
+let TrackCtor = null;
+/** @type {Record<string, object>|null} */
+let CoursesMap = null;
+
+/** Lazy-load Track + COURSES so phone title never pulls the stage builder. */
+async function loadStageApi() {
+  if (TrackCtor && CoursesMap) return;
+  const [trackMod, courseMod] = await Promise.all([
+    import("../tracks/track.js?v=435"),
+    import("../tracks/courses.js?v=98"),
+  ]);
+  TrackCtor = trackMod.Track;
+  CoursesMap = courseMod.COURSES;
+}
 
 /** Music-video holds — short, punchy (Saturn attract energy). */
 const SHOT_HOLD = {
@@ -73,7 +87,7 @@ const STAGE_TITLE = {
 
 /**
  * Highlight beats along a built track — jumps first, then apexes.
- * @param {Track} track
+ * @param {{points?:object[], length?:number, id?:string, name?:string}} track
  * @returns {{dist:number, kind:string, label:string, shot:string}[]}
  */
 function buildBeats(track) {
@@ -402,7 +416,7 @@ export class AttractReel {
    * @param {{
    *   phone?: boolean,
    *   reducedMotion?: boolean,
-   *   onStage?: (id: string, track: Track) => void,
+   *   onStage?: (id: string, track: object) => void,
    *   armVeg?: () => void,
    * }} [opts]
    */
@@ -472,12 +486,13 @@ export class AttractReel {
    * @param {THREE.Scene} [scene]
    */
   async _showStage(courseId, scene) {
-    const def = COURSES[courseId];
-    if (!def) throw new Error(`[attract] missing course ${courseId}`);
+    await loadStageApi();
+    const def = CoursesMap && CoursesMap[courseId];
+    if (!def || !TrackCtor) throw new Error(`[attract] missing course ${courseId}`);
     const gen = ++this._gen;
     this._building = courseId;
     if (this.armVeg) this.armVeg();
-    const track = await Track.create(def, () => {});
+    const track = await TrackCtor.create(def, () => {});
     if (gen !== this._gen) {
       try {
         track.dispose();

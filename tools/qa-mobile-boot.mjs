@@ -134,6 +134,21 @@ check(
     /GFX\.preferLock30 = true/.test(game),
   "mid-range Android must not keep cinema pixel / shadow budgets"
 );
+check(
+  "phones skip full-stage attract on title",
+  /Track\.create on title OOMs/.test(game) && /SHOWROOM LIVE/.test(game),
+  "Safari / Android must not Track.create during splash"
+);
+check(
+  "phones cap championship pack size",
+  /phonePlay\) n = Math\.min\(n, androidPlay \? 5 : 7\)/.test(game),
+  "14 AI cars melt mid-range GPUs"
+);
+check(
+  "phones keep a light practice pack",
+  /phonePlay \? 3 : Math\.max\(10/.test(game),
+  "practice must not force 10+ rivals on phones"
+);
 
 const mainV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
@@ -142,8 +157,8 @@ const sdkV = Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) |
 const policyV = Number((sdk.match(/tsr-policy\.js\?v=(\d+)/) || [])[1] || 0);
 const mobileV = Number((sdk.match(/mobile-present\.js\?v=(\d+)/) || [])[1] || 0);
 
-check("boot cache-bust main.js", mainV >= 1010, `index boots main.js?v=${mainV} (>=1010)`);
-check("boot cache-bust game.js", gameV >= 1010 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check("boot cache-bust main.js", mainV >= 1084, `index boots main.js?v=${mainV} (>=1084)`);
+check("boot cache-bust game.js", gameV >= 1084 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
 check("boot cache-bust css", cssV >= 60, `index loads game.css?v=${cssV} (>=60)`);
 check("gfx policy cache-bust", policyV >= 982 && mobileV >= 982 && sdkV >= 989, `policy ${policyV} / mobile ${mobileV} / sdk ${sdkV}`);
 
