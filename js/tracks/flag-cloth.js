@@ -457,14 +457,26 @@ function stageWord(scenery) {
   return "STAGE";
 }
 
+function bannerWord(label) {
+  if (label === "FINISH") return "FINISH";
+  if (!label || label === "START") return "START";
+  const raw = String(label)
+    .toUpperCase()
+    .replace(/[^A-Z ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 12);
+  return raw || "START";
+}
+
 /**
  * Printed rally vinyl — original championship wording, not a licensed lockup.
- * @param {string} label START | FINISH
+ * @param {string} label START | FINISH | stage mark
  * @param {string} scenery
  * @returns {THREE.CanvasTexture}
  */
 function bannerTexture(label, scenery) {
-  const word = label === "FINISH" ? "FINISH" : "START";
+  const word = bannerWord(label);
   const key = `${word}|${scenery || "forest"}`;
   const hit = BANNER_TEX.get(key);
   if (hit) return hit;
@@ -475,7 +487,8 @@ function bannerTexture(label, scenery) {
   c.height = h;
   const g = c.getContext("2d");
   const finish = word === "FINISH";
-  g.fillStyle = finish ? "#141618" : "#7a1014";
+  const mark = word !== "START" && !finish;
+  g.fillStyle = finish ? "#141618" : mark ? "#102033" : "#7a1014";
   g.fillRect(0, 0, w, h);
   const cell = 32;
   const wing = 220;
@@ -492,6 +505,10 @@ function bannerTexture(label, scenery) {
     field.addColorStop(0, "#2a2e32");
     field.addColorStop(0.5, "#16181c");
     field.addColorStop(1, "#0c0d10");
+  } else if (mark) {
+    field.addColorStop(0, "#1c4a62");
+    field.addColorStop(0.45, "#123044");
+    field.addColorStop(1, "#0c1c28");
   } else {
     field.addColorStop(0, "#c41822");
     field.addColorStop(0.45, "#8a1016");
@@ -512,7 +529,8 @@ function bannerTexture(label, scenery) {
   g.font = "600 28px sans-serif";
   g.fillText(stageWord(scenery), w * 0.5, 98);
   g.fillStyle = "#f7f3ea";
-  g.font = "800 168px sans-serif";
+  const big = word.length > 9 ? 92 : word.length > 6 ? 120 : 168;
+  g.font = `800 ${big}px sans-serif`;
   g.fillText(word, w * 0.5, 230);
   finishCloth(g, w, h);
   const tex = new THREE.CanvasTexture(c);
@@ -530,7 +548,7 @@ function bannerTexture(label, scenery) {
 }
 
 function bannerMaterial(label, scenery) {
-  const word = label === "FINISH" ? "FINISH" : "START";
+  const word = bannerWord(label);
   const key = `${word}|${scenery || "forest"}`;
   let m = BANNER_MAT.get(key);
   if (m) return m;
@@ -846,7 +864,7 @@ export function createClothFlag(opts) {
  * @returns {ClothFlag}
  */
 export function createGantryBanner(opts) {
-  const label = opts.label === "FINISH" ? "FINISH" : "START";
+  const label = bannerWord(opts.label);
   const scenery = opts.scenery || "forest";
   const left = opts.left;
   const right = opts.right;

@@ -45,7 +45,7 @@ check("land paint 384 + aniso 16", /land-albedo-v7/.test(track) && /384 \* scale
 check("hero mesh radius 64 m", /Math\.min\(64/.test(game));
 check("nature shadows to 68 m", /Math\.max\(STREAM\.natureShadowFar \?\? 48, 68\)/.test(track));
 check("prop kit aniso 16", /mat\.map\.anisotropy = 16/.test(kit));
-check("pbr-stream v=5", /pbr-stream\.js\?v=5/.test(game) && /pbr-stream\.js\?v=5/.test(forest));
+check("pbr-stream v=7+", /pbr-stream\.js\?v=7/.test(game) && /pbr-stream\.js\?v=7/.test(forest));
 check(
   "cache-bust chain",
   cacheOk && Number(gameV) >= 959 && Number(mainV) >= 959,

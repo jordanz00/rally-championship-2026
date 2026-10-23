@@ -57,12 +57,13 @@ check(
     !/this\._scheduleTrackPreload\(next\);\s*this\._beginRace\(next\)/.test(game)
 );
 check(
-  "loading screen fades through a short curtain (not a hard cut)",
-  /return showScreen\("screen-loading", \{ outMs:/.test(hud) && !/showScreen\("screen-loading", \{ instant: true \}\)/.test(hud)
+  "loading screen covers the canvas without a black curtain",
+  /return showScreen\("screen-loading", \{ instant: true \}\)/.test(hud)
 );
 check(
-  "load→HUD waits for the progress bar, then soft-reveals",
-  /waitLoadingBarSettled/.test(game) && /showScreen\("screen-hud", \{ outMs:/.test(game)
+  "load→HUD waits for the progress bar, then reveals the drawn grid",
+  /waitLoadingBarSettled/.test(game) &&
+    /showScreen\("screen-hud", \{ instant: true \}\)/.test(game)
 );
 check(
   "_beginRace paints loading, then yields, then boots SFX / race",

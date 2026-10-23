@@ -1,5 +1,5 @@
 /**
- * Ground PBR stream — 1k albedo first, 2k + normals while you drive.
+ * Ground PBR stream — desktop boots the 2k set. Phones stay on 1k.
  *
  * WHO THIS IS FOR: desert-pbr, forest-pbr, forest-tunnel.
  * WHAT IT DOES: stage build waits only on the 1k color map. Normals,
@@ -16,6 +16,7 @@ const ASSET_V = "2";
 const BOOT_MS = 900;
 const DETAIL_MS = 4000;
 const HI_MS = 24000;
+const HI_BOOT_MS = 8000;
 
 /** @type {WeakMap<THREE.Texture, Set<THREE.Texture>>} */
 const FAMILY = new WeakMap();
@@ -176,7 +177,7 @@ export function stubTex(srgb, css) {
   tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   tex.needsUpdate = true;
   remember(tex, tex);
   return tex;
@@ -223,7 +224,7 @@ export function loadTex(loader, url, srgb, timeoutMs) {
 }
 
 /**
- * Wait on 1k albedo only. Stream 1k nor/rough then 2k in the background.
+ * Desktop waits on the 2k albedo. Phones take 1k. Detail streams after.
  * @param {THREE.TextureLoader} loader
  * @param {{base:string, stem:string, tileMeters:number, tint?:string}} spec
  */
@@ -233,17 +234,32 @@ export async function bootPbrSet(loader, spec) {
   const normalMap = stubTex(false, "#8080ff");
   const roughnessMap = stubTex(false, "#b8b8b8");
 
-  const boot = await loadTex(loader, `${base}/${stem}_diff_1k.jpg`, true, BOOT_MS);
-  if (boot) applyImage(map, boot.image, 8);
-  if (wantHiMaps()) {
-    enqueueHi(async () => {
-      const d2 = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_MS);
-      if (d2) applyImage(map, d2.image, 16);
-    });
-  }
-
+  await bootColor(loader, base, stem, map);
   void streamDetail(loader, base, stem, map, normalMap, roughnessMap);
   return { map, normalMap, roughnessMap, aoMap: null, tileMeters };
+}
+
+/**
+ * @param {THREE.TextureLoader} loader
+ * @param {string} base
+ * @param {string} stem
+ * @param {THREE.Texture} map
+ */
+async function bootColor(loader, base, stem, map) {
+  if (wantHiMaps()) {
+    const hi = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_BOOT_MS);
+    if (hi) {
+      applyImage(map, hi.image, 16);
+      return;
+    }
+  }
+  const lo = await loadTex(loader, `${base}/${stem}_diff_1k.jpg`, true, BOOT_MS);
+  if (lo) applyImage(map, lo.image, 16);
+  if (!wantHiMaps()) return;
+  enqueueHi(async () => {
+    const d2 = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_MS);
+    if (d2) applyImage(map, d2.image, 16);
+  });
 }
 
 /**
@@ -255,21 +271,16 @@ export async function bootPbrSet(loader, spec) {
  * @param {THREE.Texture} roughnessMap
  */
 async function streamDetail(loader, base, stem, map, normalMap, roughnessMap) {
-  const [nor, rough] = await Promise.all([
-    loadTex(loader, `${base}/${stem}_nor_gl_1k.jpg`, false, DETAIL_MS),
-    loadTex(loader, `${base}/${stem}_rough_1k.jpg`, false, DETAIL_MS),
+  void map;
+  const hi = wantHiMaps();
+  let [nor, rough] = await Promise.all([
+    loadTex(loader, `${base}/${stem}_nor_gl_${hi ? "2k" : "1k"}.jpg`, false, hi ? HI_MS : DETAIL_MS),
+    loadTex(loader, `${base}/${stem}_rough_${hi ? "2k" : "1k"}.jpg`, false, hi ? HI_MS : DETAIL_MS),
   ]);
+  if (hi && !nor) nor = await loadTex(loader, `${base}/${stem}_nor_gl_1k.jpg`, false, DETAIL_MS);
+  if (hi && !rough) rough = await loadTex(loader, `${base}/${stem}_rough_1k.jpg`, false, DETAIL_MS);
   if (nor) applyImage(normalMap, nor.image, 16);
   if (rough) applyImage(roughnessMap, rough.image, 16);
-  if (!wantHiMaps()) return;
-  enqueueHi(async () => {
-    const n2 = await loadTex(loader, `${base}/${stem}_nor_gl_2k.jpg`, false, HI_MS);
-    if (n2) applyImage(normalMap, n2.image, 16);
-  });
-  enqueueHi(async () => {
-    const r2 = await loadTex(loader, `${base}/${stem}_rough_2k.jpg`, false, HI_MS);
-    if (r2) applyImage(roughnessMap, r2.image, 16);
-  });
 }
 
 /**
@@ -281,13 +292,19 @@ export async function bootTunnelSet(loader, base) {
   const map = stubTex(true, "#6a655c");
   const normalMap = stubTex(false, "#8080ff");
   const armMap = stubTex(false, "#a8a090");
-  const boot = await loadTex(loader, `${base}/tunnel_rock_diff_1k.jpg`, true, BOOT_MS);
-  if (boot) applyImage(map, boot.image, 8);
-  if (wantHiMaps()) {
-    enqueueHi(async () => {
-      const d2 = await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_MS);
-      if (d2) applyImage(map, d2.image, 16);
-    });
+  const boot = wantHiMaps()
+    ? await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_BOOT_MS)
+    : null;
+  if (boot) applyImage(map, boot.image, 16);
+  else {
+    const lo = await loadTex(loader, `${base}/tunnel_rock_diff_1k.jpg`, true, BOOT_MS);
+    if (lo) applyImage(map, lo.image, 16);
+    if (wantHiMaps()) {
+      enqueueHi(async () => {
+        const d2 = await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_MS);
+        if (d2) applyImage(map, d2.image, 16);
+      });
+    }
   }
   void streamTunnel(loader, base, map, normalMap, armMap);
   return { map, normalMap, armMap };
@@ -301,19 +318,14 @@ export async function bootTunnelSet(loader, base) {
  * @param {THREE.Texture} armMap
  */
 async function streamTunnel(loader, base, map, normalMap, armMap) {
-  const [nor, arm] = await Promise.all([
-    loadTex(loader, `${base}/tunnel_rock_nor_gl_1k.jpg`, false, DETAIL_MS),
-    loadTex(loader, `${base}/tunnel_rock_arm_1k.jpg`, false, DETAIL_MS),
+  void map;
+  const hi = wantHiMaps();
+  let [nor, arm] = await Promise.all([
+    loadTex(loader, `${base}/tunnel_rock_nor_gl_${hi ? "2k" : "1k"}.jpg`, false, hi ? HI_MS : DETAIL_MS),
+    loadTex(loader, `${base}/tunnel_rock_arm_${hi ? "2k" : "1k"}.jpg`, false, hi ? HI_MS : DETAIL_MS),
   ]);
+  if (hi && !nor) nor = await loadTex(loader, `${base}/tunnel_rock_nor_gl_1k.jpg`, false, DETAIL_MS);
+  if (hi && !arm) arm = await loadTex(loader, `${base}/tunnel_rock_arm_1k.jpg`, false, DETAIL_MS);
   if (nor) applyImage(normalMap, nor.image, 16);
   if (arm) applyImage(armMap, arm.image, 16);
-  if (!wantHiMaps()) return;
-  enqueueHi(async () => {
-    const n2 = await loadTex(loader, `${base}/tunnel_rock_nor_gl_2k.jpg`, false, HI_MS);
-    if (n2) applyImage(normalMap, n2.image, 16);
-  });
-  enqueueHi(async () => {
-    const a2 = await loadTex(loader, `${base}/tunnel_rock_arm_2k.jpg`, false, HI_MS);
-    if (a2) applyImage(armMap, a2.image, 16);
-  });
 }

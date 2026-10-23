@@ -58,12 +58,12 @@ applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
 
 // Seamless takeoff → kiss → roll-out. config.js stays pinned at ?v=241.
 JUMP.springFraction = 0.09;
-JUMP.landBounceImpact = 7.6;
 JUMP.landReairMin = 1.2;
 JUMP.landSettleMin = 0.2;
 // Heavy touchdown. A ~3 t hit damps out; it does not float or pogo.
-JUMP.landCompressZeta = 1.45;
-JUMP.landCompressWn = 38;
+JUMP.landCompressZeta = 1.9;
+JUMP.landCompressWn = 26;
+JUMP.landBounceImpact = 12;
 JUMP.landCompressMax = 0.15;
 JUMP.landSettleDamp = 10.5;
 JUMP.landSettleMax = 0.22;
@@ -1928,7 +1928,7 @@ export class Vehicle {
       const reairMin = JUMP.landReairMin != null ? JUMP.landReairMin : 0.85;
       // Soft rebound only on severe mismatch — most energy is already in the spring.
       if (bounce > reairMin && impact > bounceNeed && this._landLock <= 0) {
-        this.velY = Math.min(bounce * 0.35, 0.55);
+        this.velY = Math.min(bounce * 0.12, 0.2);
         this.onGround = false;
         this._airTime = 0.04;
         this._landLock = 0.08;
@@ -3206,7 +3206,7 @@ export class Vehicle {
     const seed = clamp(impact * gain + upset * 0.02, 0.028, maxC);
     this._landCompress = Math.max(this._landCompress || 0, seed);
     // Dive into the bump stops on the first frames. Rebound is overdamped.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.08);
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * 0.035);
     this._landSquash = clamp(
       Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.28),
       0.01,
@@ -3246,7 +3246,7 @@ export class Vehicle {
     let x = this._landCompress || 0;
     let v = this._landCompressVel || 0;
     // A slide or brake after touchdown must not get a second hop from rebound.
-    if (this._wantPlantedDeck() && v > 0) v *= 0.15;
+    if (v < 0) v *= 0.2;
     const acc = -wn * wn * x - 2 * zeta * wn * v;
     v += acc * dt;
     x += v * dt;
@@ -4114,9 +4114,9 @@ export class Vehicle {
       this._suspRoll = clamp(this._suspRoll + this._suspRollRate * dt, -rollMax, rollMax);
     }
     // Drifts stay leaned, not rocking. Extra roll damp kills the bounce read.
-    if (ground && this._keepDeckPlanted()) {
-      this._suspRollRate *= Math.exp(-10 * dt);
-      this._suspPitchRate *= Math.exp(-2.4 * dt);
+    if (ground) {
+      this._suspPitchRate *= Math.exp(-7 * dt);
+      this._suspRollRate *= Math.exp(-7 * dt);
     }
     // Throttle squat is one sit, not a hop. Yaw / slide stay on the tires.
     if (ground && this._wantPlantedDeck()) {
@@ -4341,7 +4341,7 @@ export class Vehicle {
     const step = target - this._feltMu;
     // Progressive surface change — lose grip slower than you gain it so
     // tarmac→dirt reads under the tires, not as a grip teleport.
-    const tau = step < 0 ? 0.34 : 0.24;
+    const tau = step < 0 ? 0.14 : 0.18;
     this._feltMu += step * (1 - Math.exp(-dt / tau));
     if (Math.abs(step) > 0.05) {
       this._surfShock = clamp(this._surfShock + Math.abs(step) * 0.22, 0, 0.28);
@@ -4366,11 +4366,11 @@ export class Vehicle {
     mix.dust = (rf.dust + rr.dust) * 0.5;
     mix.speedScale = (rf.speedScale + rr.speedScale) * 0.5;
     mix.driftEase = (rf.driftEase + rr.driftEase) * 0.5;
-    this._feltSlide += (mix.muSlide - this._feltSlide) * (1 - Math.exp(-dt / 0.24));
-    this._feltBump += (mix.bump - this._feltBump) * (1 - Math.exp(-dt / 0.2));
-    this._feltEase += (mix.driftEase - this._feltEase) * (1 - Math.exp(-dt / 0.24));
-    this._feltHold += (mix.slideHold - this._feltHold) * (1 - Math.exp(-dt / 0.24));
-    this._feltSnap += (mix.gripSnap - this._feltSnap) * (1 - Math.exp(-dt / 0.2));
+    this._feltSlide += (mix.muSlide - this._feltSlide) * (1 - Math.exp(-dt / 0.12));
+    this._feltBump += (mix.bump - this._feltBump) * (1 - Math.exp(-dt / 0.1));
+    this._feltEase += (mix.driftEase - this._feltEase) * (1 - Math.exp(-dt / 0.12));
+    this._feltHold += (mix.slideHold - this._feltHold) * (1 - Math.exp(-dt / 0.12));
+    this._feltSnap += (mix.gripSnap - this._feltSnap) * (1 - Math.exp(-dt / 0.1));
     // Front-vs-rear mismatch is the staggered drift, not a slap every frame.
     const splitShock = Math.abs(this._axleSplit);
     if (splitShock > 0.08) {
@@ -4731,9 +4731,15 @@ export class Vehicle {
       }
     }
     let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
-    // Player pull is 40% softer than the old tenth-off cut (0.9 × 0.6).
-    // Applied on the accel the hull actually gets. Braking and the pack stay.
-    if (!this.ai && this.throttle > 0.2 && axTire > 0) axTire *= 0.54;
+    // Player pull is 40% softer than the old tenth-off cut (0.9 × 0.6)
+    // once the first corner is behind you. A committed launch to that
+    // corner keeps full pull so the lights-out boost is not cancelled.
+    if (!this.ai && this.throttle > 0.2 && axTire > 0) {
+      const slideKeep = clamp(Math.abs(this._alphaR || 0) / 0.35, 0, 1);
+      const commit = this.progress < 260 && this.throttle > 0.45 ? 1 : 0;
+      const pull = lerp(0.54, 0.78, slideKeep);
+      axTire *= lerp(pull, 1, commit);
+    }
     this._axDrive += (axTire - this._axDrive) * (1 - Math.exp(-AX_DRIVE_RATE * dt));
     vx += this._axDrive * dt;
     // Lights-out / respawn: throttle means GO forward. Gravity, leftover
@@ -4800,7 +4806,9 @@ export class Vehicle {
       rWant *= 1 - clamp(frontLight, 0, 0.55) * 0.26;
     }
 
-    const hbKick = HANDLING.handbrakeYawKick != null ? HANDLING.handbrakeYawKick : 3.15;
+    const hbKick =
+      (HANDLING.handbrakeYawKick != null ? HANDLING.handbrakeYawKick : 3.15) *
+      lerp(0.72, 1.4, clamp((ease - 0.9) / 0.35, 0, 1));
     if (hb > hbEnter && Math.abs(vx) > 3.2) {
       const steerDir = Math.abs(st) > 0.025 ? Math.sign(st) : sign(r) || sign(vy) || 0;
       if (steerDir !== 0) {
@@ -4840,7 +4848,7 @@ export class Vehicle {
     // one dial covers all seven surfaces.
     if (Math.abs(st) > 0.04 && Math.abs(vx) > 4.5) {
       const bias = (ease - 1) * HANDLING.throttleSlide * this.throttle;
-      rWant *= 1 + clamp(bias, -0.22, 0.85);
+      rWant *= 1 + clamp(bias, -0.32, 1.2);
     }
     if (hbSlide && this.throttle > 0.1 && Math.abs(vx) > 4) {
       // Power oversteer while e-brake is held — the fun part of a rally drift.

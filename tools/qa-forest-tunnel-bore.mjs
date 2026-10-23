@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * qa-forest-tunnel-bore.mjs — Stage 2 bore is wide; lamps hang from the crown.
+ * qa-forest-tunnel-bore.mjs — Stage 2 bore is wide; lamps sit on the crown.
  *
  * RUN: node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-forest-tunnel-bore.mjs
  */
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { COURSES } from "../js/tracks/courses.js";
 import {
   FOREST_BORE_INSET,
-  FOREST_TUNNEL_HANG_H,
+  FOREST_TUNNEL_CEILING_GAP,
   forestTunnelCeilingPose,
 } from "../js/tracks/forest-tunnel.js";
 
@@ -59,13 +59,15 @@ const minW = Math.min(...tun.map((p) => p.width || 0));
 check("tunnel road ≥ 28 m", minW >= 28, `min=${minW}`);
 
 const p = { x: 0, y: 4, z: 0, nx: 1, nz: 0, heading: 0 };
-const pose = forestTunnelCeilingPose(p, 4 + 28, FOREST_TUNNEL_HANG_H);
+const pose = forestTunnelCeilingPose(p, 4 + 28);
 check(
-  "pendant hangs on the centerline",
-  Math.abs(pose.x) < 0.01 && Math.abs(pose.z) < 0.01 && Math.abs(pose.y - (4 + FOREST_TUNNEL_HANG_H)) < 0.05,
+  "lamp sits on the centerline crown",
+  Math.abs(pose.x) < 0.01 &&
+    Math.abs(pose.z) < 0.01 &&
+    Math.abs(pose.y - (pose.ceilY - FOREST_TUNNEL_CEILING_GAP)) < 0.02,
   `x=${pose.x.toFixed(3)} y=${pose.y.toFixed(3)}`
 );
-check("conduit reaches the crown", pose.rod > 20, `rod=${pose.rod.toFixed(2)}`);
+check("no hanging conduit", pose.rod < 0.25, `rod=${pose.rod.toFixed(2)}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "wide Forest bore, ceiling lamps"}`);
 process.exit(fail ? 1 : 0);

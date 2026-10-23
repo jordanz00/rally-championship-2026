@@ -14,7 +14,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { armProjectedMaps } from "../gfx/pbr.js?v=58";
-import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=6";
+import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=7";
 
 const TEX_BASE = "assets/env/forest";
 /** Poly Haven boulder_01 tile size (metres) — unique UVs, not one stretch. */
@@ -38,22 +38,24 @@ export async function prepareForestTunnelPbr() {
   rockSet = await bootTunnelSet(loader, TEX_BASE);
 }
 
-/** Metres above paint to the sodium globe. Chase cam reads this as overhead. */
+/** Kept so older callers compile. Placement ignores it — lamps bolt to the crown. */
 export const FOREST_TUNNEL_HANG_H = 5.85;
+/** Globe center sits this far under the rock. No drop rod. */
+export const FOREST_TUNNEL_CEILING_GAP = 0.28;
 
 /**
- * Centerline ceiling pendant. Origin is the glowing globe over the lane.
- * +Y of the fixture is the conduit into the rock crown — never a side float.
+ * Centerline ceiling lamp. Origin is the globe, flush under the crown.
  * @param {{x:number,y:number,z:number,nx?:number,nz?:number,heading?:number}} frame
  * @param {number} ceilY world-Y of the horseshoe crown
- * @param {number} [hangH]
+ * @param {number} [hangH] ignored — fixtures do not hang
  * @returns {{x:number,y:number,z:number,ceilY:number,rod:number,nx:number,nz:number,fx:number,fz:number}}
  */
 export function forestTunnelCeilingPose(frame, ceilY, hangH = FOREST_TUNNEL_HANG_H) {
+  void hangH;
   const deck = frame.y || 0;
-  const crown = Number.isFinite(ceilY) ? ceilY : deck + hangH + 8;
-  const y = Math.min(deck + hangH, crown - 1.55);
-  const rod = Math.max(1.35, crown - y + 0.48);
+  const crown = Number.isFinite(ceilY) ? ceilY : deck + 12;
+  const y = crown - FOREST_TUNNEL_CEILING_GAP;
+  const rod = 0.1;
   return {
     x: frame.x,
     y,
@@ -92,7 +94,7 @@ export function createForestTunnelPendantHousingGeometry() {
   return geo || new THREE.CylinderGeometry(0.12, 0.5, 0.22, 10);
 }
 
-/** Unit conduit — scale Y to the drop from globe to crown. */
+/** Short neck. Scale Y stays under 0.2 — the lamp is on the ceiling. */
 export function createForestTunnelPendantConduitGeometry() {
   return new THREE.CylinderGeometry(0.042, 0.042, 1, 6);
 }

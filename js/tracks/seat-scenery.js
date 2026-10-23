@@ -11,6 +11,7 @@
 import * as THREE from "../../vendor/three.module.js";
 
 const EMBED = 0.06;
+const FLOAT_EPS = 0.004;
 const BURY_SKIP = -4.8;
 const _mat = new THREE.Matrix4();
 const _pos = new THREE.Vector3();
@@ -151,21 +152,41 @@ export function worldFootY(box, mat) {
 }
 
 /**
+ * Drop so every bottom corner meets the land under that corner.
+ * Already-buried feet stay put. Overhead furniture never calls this.
+ * @param {THREE.Box3} box local bounds
+ * @param {THREE.Matrix4} mat world matrix
+ * @param {(x:number, z:number) => number} landAt
+ * @returns {number|null} world dy, or null to skip
+ */
+export function footFloatDy(box, mat, landAt) {
+  let maxGap = -Infinity;
+  const y0 = box.min.y;
+  const xs = [box.min.x, box.max.x];
+  const zs = [box.min.z, box.max.z];
+  for (let xi = 0; xi < 2; xi++) {
+    for (let zi = 0; zi < 2; zi++) {
+      _corner.set(xs[xi], y0, zs[zi]);
+      _corner.applyMatrix4(mat);
+      const land = landAt(_corner.x, _corner.z);
+      if (!Number.isFinite(land)) continue;
+      const gap = _corner.y - land;
+      if (gap > maxGap) maxGap = gap;
+    }
+  }
+  if (maxGap === -Infinity || maxGap < BURY_SKIP) return null;
+  if (maxGap <= FLOAT_EPS) return null;
+  return -(maxGap + EMBED);
+}
+
+/**
  * @param {THREE.Box3} box
  * @param {THREE.Matrix4} mat
- * @param {number} land
- * @returns {number|null} dy to apply, or null to skip
+ * @param {(x:number, z:number) => number} landAt
+ * @returns {number|null}
  */
-function snapDy(box, mat, land) {
-  const spanY = box.max.y - box.min.y;
-  if (spanY < 0.08) return null;
-  const foot = worldFootY(box, mat);
-  if (!Number.isFinite(foot) || !Number.isFinite(land)) return null;
-  const gap = foot - land;
-  if (gap < BURY_SKIP) return null;
-  const dy = land - foot - EMBED;
-  if (Math.abs(dy) < 0.018) return null;
-  return dy;
+function snapDy(box, mat, landAt) {
+  return footFloatDy(box, mat, landAt);
 }
 
 /**
@@ -209,8 +230,8 @@ export function seatTrackScenery(track) {
         const o = i * 16;
         _mat.fromArray(arr, o);
         _mat.decompose(_pos, _quat, _scl);
-        const land = sampleLandMeshY(lands, _pos.x, _pos.z, fallbackY(_pos.x, _pos.z));
-        const dy = snapDy(box, _mat, land);
+        const landAt = (x, z) => sampleLandMeshY(lands, x, z, fallbackY(x, z));
+        const dy = snapDy(box, _mat, landAt);
         if (dy == null) continue;
         _pos.y += dy;
         _mat.compose(_pos, _quat, _scl);
@@ -244,10 +265,8 @@ export function seatTrackScenery(track) {
     if (!box) return;
     scanned += 1;
     obj.updateWorldMatrix(true, false);
-    const wx = obj.matrixWorld.elements[12];
-    const wz = obj.matrixWorld.elements[14];
-    const land = sampleLandMeshY(lands, wx, wz, fallbackY(wx, wz));
-    const dy = snapDy(box, obj.matrixWorld, land);
+    const landAt = (x, z) => sampleLandMeshY(lands, x, z, fallbackY(x, z));
+    const dy = snapDy(box, obj.matrixWorld, landAt);
     if (dy == null) return;
     obj.position.y += dy;
     obj.updateMatrix();

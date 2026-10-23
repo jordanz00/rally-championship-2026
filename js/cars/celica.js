@@ -22,8 +22,8 @@ import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=58";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=13";
-import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=4";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=19";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyPlayerBoxLivery, applyLacquerDetail } from "./rival-livery.js?v=6";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -426,6 +426,7 @@ export function createTitleCar(carId = "celica") {
   clone.userData.carId = chassis;
   clone.userData.titleLod = true;
   clone.userData.titleHero = !rivalTemplates[chassis] && !!templates[chassis];
+  if (clone.userData.titleHero) applyPlayerBoxLivery(clone, isRivalBodyMaterial);
   // Pad never bakes a sun atlas — casting shadows here still costs draw setup.
   enableCarShadows(clone);
   clone.traverse((o) => {
@@ -445,6 +446,7 @@ export function createTitleCar(carId = "celica") {
  * @param {THREE.Object3D} root
  */
 function dressPlayerCarRace(root) {
+  applyPlayerBoxLivery(root, isRivalBodyMaterial);
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const list = [].concat(obj.material || []);
@@ -6945,10 +6947,10 @@ function makeLiveryTexture(green, red, yellow) {
   ctx.fillStyle = "#d0121a";
   ctx.font = "bold 28px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("CASTROL", 128, 100);
+  ctx.fillText("OPEN STAGE", 128, 100);
   ctx.fillStyle = "#111";
   ctx.font = "bold 14px Arial";
-  ctx.fillText("TOYOTA TEAM EUROPE", 128, 72);
+  ctx.fillText("RALLY CO", 128, 72);
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;

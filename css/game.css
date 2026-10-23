@@ -843,6 +843,20 @@ button.ghost {
   animation: flash 1.1s ease-out;
 }
 
+#hud-flash.show.is-count {
+  top: 22%;
+  font-size: 140px;
+  letter-spacing: 0.04em;
+  animation: flashCount 0.95s ease-out;
+}
+
+#hud-flash.show.is-pass {
+  top: 20%;
+  font-size: 96px;
+  letter-spacing: 0.18em;
+  animation: flashGo 1.15s ease-out;
+}
+
 #hud-flash.show.is-go {
   top: 18%;
   font-size: 72px;
@@ -975,6 +989,25 @@ button.ghost {
  * relies on the animation ending to clear it — so this swaps the scaling
  * keyframes for a plain opacity fade rather than removing the animation.
  */
+@keyframes flashCount {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.4);
+  }
+  14% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  72% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+}
+
 @keyframes flashStill {
   0% {
     opacity: 1;
@@ -987,6 +1020,16 @@ button.ghost {
 @media (prefers-reduced-motion: reduce) {
   #hud-flash.show {
     animation: flashStill 1.1s linear;
+    transform: translateX(-50%);
+  }
+  #hud-flash.show.is-count {
+    animation: flashStill 0.95s linear;
+    font-size: 96px;
+    transform: translateX(-50%);
+  }
+  #hud-flash.show.is-pass {
+    animation: flashStill 1.15s linear;
+    font-size: 72px;
     transform: translateX(-50%);
   }
   #hud-flash.show.is-go {
@@ -1053,6 +1096,26 @@ button.ghost {
 #hud-speed[data-fast="1"] {
   color: #f4f0e0;
   text-shadow: 0 3px 0 #000;
+}
+
+#hud-pos {
+  display: block;
+  font-size: 48px;
+  line-height: 0.85;
+  letter-spacing: 0.02em;
+  color: var(--paper);
+}
+
+#hud-gap {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  color: var(--yellow);
+}
+
+#hud-gap[hidden] {
+  display: none;
 }
 
 #hud-pos[data-place="1"] {
@@ -1477,6 +1540,10 @@ body.is-mobile .hud-distance {
 body.is-mobile .hud-top {
   padding-top: env(safe-area-inset-top);
   font-size: 13px;
+}
+
+body.is-mobile #hud-pos {
+  font-size: 32px;
 }
 
 body.is-mobile #hud-speed {

@@ -1,15 +1,15 @@
 /**
- * Desert photoreal PBR — Poly Haven 1k boot, 2k stream.
+ * Desert photoreal PBR — desktop boots the 2k set. Phones stay on 1k.
  *
  * WHO THIS IS FOR: Track.buildAsync on the Desert stage.
  * WHAT IT DOES: tiled albedo + normal + roughness for the driving ribbon
  *   and land plane. World-XZ projection still lives in pbr.js.
- * HOW IT CONNECTS: track.js awaits prepareDesertPbr() before _buildMesh
- *   (1k color only). Normals / 2k swap in on the shared texture Source.
+ * HOW IT CONNECTS: track.js awaits prepareDesertPbr() before _buildMesh.
+ *   Desktop color is 2k. Normals swap in on the shared texture source.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=6";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=7";
 
 const BASE = "assets/env/desert";
 

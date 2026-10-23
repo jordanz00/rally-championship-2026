@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=203";
+import { Vehicle } from "./physics/vehicle.js?v=206";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=98";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=246";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=254";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=430";
-import { holdGpuUploads, releaseGpuUploads } from "./tracks/pbr-stream.js?v=6";
+import { Track } from "./tracks/track.js?v=435";
+import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=7";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=243";
+import { Opponent } from "./ai.js?v=249";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -27,7 +27,7 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=48";
+} from "./ui/hud.js?v=52";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
@@ -123,6 +123,10 @@ easeFirstDrive();
  */
 function raceTunnelLighting(courseId) {
   const TC = tunnelLightingFor(courseId);
+  const heads = {
+    headEmissive: Math.round((TC.headEmissive != null ? TC.headEmissive : 34) * 0.6),
+    headBeam: Math.round((TC.headBeam != null ? TC.headBeam : 1280) * 0.6),
+  };
   if (courseId === "forest") {
     return Object.assign({}, TC, {
       ambientFloor: 0.46,
@@ -137,18 +141,17 @@ function raceTunnelLighting(courseId) {
       fogNear: 22,
       fogFar: 230,
       exposureBoost: 1.0,
-      // Config Forest beams were a white-out (1850). Keep the tunnel boost;
-      // drop candela ~30% so the pendants and the rock still read.
-      headEmissive: 34,
-      headBeam: 1295,
+      // Race seat was 1295 / emissive 34. Another 40% off. Config stays 1850.
+      headEmissive: 20,
+      headBeam: 777,
     });
   }
   // Outdoor ACES + returning sun already light the mouth. Do not pump
   // exposure in the bore or the exit flashes white (Desert noon / Mountain rain).
   if (courseId === "desert" || courseId === "mountain" || courseId === "lakeside") {
-    return Object.assign({}, TC, { exposureBoost: 1.0 });
+    return Object.assign({}, TC, heads, { exposureBoost: 1.0 });
   }
-  return TC;
+  return Object.assign({}, TC, heads);
 }
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
@@ -1272,6 +1275,14 @@ export class RallyGame {
           "assets/env/desert/gravel_diff_1k.jpg?v=2",
           "assets/env/desert/tarmac_diff_1k.jpg?v=2",
         ];
+    if (wantHiMaps()) {
+      urls.push(
+        "assets/env/desert/sand_diff_2k.jpg?v=2",
+        "assets/env/desert/dirt_diff_2k.jpg?v=2",
+        "assets/env/desert/gravel_diff_2k.jpg?v=2",
+        "assets/env/desert/tarmac_diff_2k.jpg?v=2"
+      );
+    }
     if (all) {
       if (this._bytesPrefetchedAll) return;
       this._bytesPrefetchedAll = true;
@@ -2014,8 +2025,7 @@ export class RallyGame {
       this._beginRace(this.courseId);
     } else if (id === "resume") {
       this.state = "race";
-      // Short fade back into the live race — pause should feel reversible, not snappy.
-      showScreen("screen-hud", { outMs: 160, inMs: 260 });
+      showScreen("screen-hud", { instant: true });
     } else if (id === "next") {
       const next = this._pendingNextCourse || this.champOrder[this.stageIndex + 1];
       if (next) {
@@ -3136,7 +3146,7 @@ export class RallyGame {
     setLoadingProgress(1, "Ready");
     // Leftover stream-shader links belong here — never on 3-2-1 skipped presents.
     await this._drainStreamCompileUnderOverlay(800);
-    // Let the bar ease to 100% before the curtain so the handoff reads finished.
+    // Let the bar ease to 100% before the HUD so the handoff reads finished.
     await waitLoadingBarSettled(900);
     if (loadGen !== this._loadGen) return;
     // Second guard against a latched QA override: no hold may survive into a
@@ -3178,9 +3188,9 @@ export class RallyGame {
     this._countShown = "";
     this.audio.restoreRaceLoops();
     this.audio.setCar(this.carId);
-    // Soft reveal onto the already-settled race present (no lighting snap —
-    // settle ran under the load overlay).
-    await showScreen("screen-hud", { outMs: 300, inMs: 480, holdMs: 50 });
+    // Race frames are already on the canvas under the load plate. Swap the
+    // HUD on top — a black curtain was a full-screen flash at every stage.
+    await showScreen("screen-hud", { instant: true });
     if (loadGen !== this._loadGen) return;
     // Extra presents with the HUD live (still held) so AO/bloom RTs and the
     // first on-screen composite match settle — then unlock 3-2-1.
@@ -3795,7 +3805,7 @@ export class RallyGame {
       this.audio.setState(s);
       if (this.input.pause) {
         this.state = "race";
-        showScreen("screen-hud");
+        showScreen("screen-hud", { instant: true });
       }
       return;
     }
@@ -3878,6 +3888,7 @@ export class RallyGame {
       h.rpm = a.rpm;
       h.redline = this.player.spec.redline;
       h.position = this._racePosition();
+      h.gapM = this._gapToAhead();
       h.timeLeft = this.timeLeft;
       h.lapTime = 0;
       h.surface = getSurface(this.player.surfaceId).label;
@@ -4021,6 +4032,7 @@ export class RallyGame {
     }
 
     const pos = this._racePosition();
+    const gapM = this._gapToAhead();
     this._pulsePlaceChange(pos);
     // Calls must land before the corner is committed, so look ahead by TIME,
     // not by a fixed distance. A flat 42 m is only ~1.2 s of warning at speed.
@@ -4127,6 +4139,7 @@ export class RallyGame {
     h.rpm = this.player.roadRpm();
     h.redline = this.player.spec.redline;
     h.position = pos;
+    h.gapM = gapM;
     h.timeLeft = this.timeLeft;
     h.lapTime = this.raceTime;
     h.surface = surf.label;
@@ -4194,6 +4207,21 @@ export class RallyGame {
   }
 
   /**
+   * Metres to the next car up the road. Null when the player is leading.
+   * @returns {number|null}
+   */
+  _gapToAhead() {
+    const field = this.opponents;
+    if (!field || !field.length || !this.player) return null;
+    let ahead = Infinity;
+    for (let i = 0; i < field.length; i++) {
+      const d = field[i].vehicle.progress - this.player.progress;
+      if (d > 0.3 && d < ahead) ahead = d;
+    }
+    return ahead < 800 ? ahead : null;
+  }
+
+  /**
    * Pack battles were silent — ordinal ticked with no player moment.
    * Gains flash + chirp; drops only punch the place glyph (no nag banner).
    * @param {number} pos
@@ -4205,7 +4233,8 @@ export class RallyGame {
       this._lastRacePos = pos;
       return;
     }
-    const arm = fb.placeArmSec != null ? fb.placeArmSec : 2.4;
+    const early = this.player && this.player.progress < 420;
+    const arm = early ? 0.4 : fb.placeArmSec != null ? fb.placeArmSec : 2.4;
     if (this.raceTime < arm) {
       this._lastRacePos = pos;
       return;
@@ -4220,7 +4249,7 @@ export class RallyGame {
     if (this.hud && this.hud.punchPlace) this.hud.punchPlace(pos, gained ? "gain" : "drop");
     if (!gained) return;
     if (fb.flashGains !== false && this.hud) {
-      this.hud.flashMessage(`${placeOrdinal(pos).toUpperCase()}!`);
+      this.hud.flashMessage(early ? "PASS" : `${placeOrdinal(pos).toUpperCase()}!`);
     }
     if (fb.gainChirp !== false && this.audio && this.audio.placeGain) {
       this.audio.placeGain(pos);
@@ -7419,6 +7448,19 @@ export class RallyGame {
   _syncTsrBadge(useTsr, useMobile) {
     const el = document.getElementById("tsr-badge");
     if (!el) return;
+    // Lab sticker. Players race. `?gfxbadge=1` is the only time it belongs on screen.
+    if (this._showGfxBadge == null) {
+      try {
+        const q = new URLSearchParams(globalThis.location?.search || "");
+        this._showGfxBadge = q.get("gfxbadge") === "1";
+      } catch {
+        this._showGfxBadge = false;
+      }
+    }
+    if (!this._showGfxBadge) {
+      el.hidden = true;
+      return;
+    }
     if (useTsr && this.tsr) {
       const mode = String(this.tsr.mode || "quality").toUpperCase();
       const refine = this.recon && this.recon.enabled ? " · REFINE" : "";

@@ -47,7 +47,7 @@ check(
   "authored sun seat line is untouched",
   /if \(this\.sun\) this\.sun\.intensity \*= 1 - 0\.22 \* open;/.test(game)
 );
-check("Forest tunnel headBeam stays 1295", /headBeam: 1295/.test(game));
+check("Forest tunnel headBeam is 777", /headBeam: 777/.test(game));
 check("config Forest beam is still the hot authored value", /headBeam: 1850/.test(cfg));
 check("ACES filmic path stays", /ACESFilmicToneMapping/.test(rig));
 check("Forest woodland fog hex stays", /0x8f937a/.test(rig));

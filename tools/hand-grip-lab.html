@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>hand grip lab</title>
+  <style>html,body,canvas{margin:0;width:100%;height:100%;background:#111;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "../vendor/three.module.js";
+import { attachPovDriverArms } from "../js/cars/pov-driver.js?v=19";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1c20);
+const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.02, 20);
+camera.position.set(0.02, 0.16, -0.38);
+camera.lookAt(0, 0.02, 0.05);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xfff2e0, 1.4);
+key.position.set(-0.4, 0.8, -1);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xc8d4ff, 0.45);
+fill.position.set(0.6, 0.2, 0.4);
+scene.add(fill);
+
+const root = new THREE.Group();
+const spin = new THREE.Group();
+spin.name = "steer-spin";
+const leather = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.72, metalness: 0.04 });
+const rim = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.016, 20, 64), leather);
+rim.name = "lab-rim";
+spin.add(rim);
+const hub = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.045, 0.045, 0.02, 20),
+  new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 })
+);
+hub.rotation.x = Math.PI / 2;
+spin.add(hub);
+root.add(spin);
+const cab = new THREE.Group();
+cab.name = "cockpit";
+root.add(cab);
+root.userData.steerSpin = spin;
+root.userData.cockpit = cab;
+root.userData.povRig = { eyeX: 0.0, eyeY: 0.28, eyeZ: -0.35 };
+root.userData._cockpitOn = true;
+scene.add(root);
+
+attachPovDriverArms(root, {
+  markSteerPovLayer(n) { n.traverse((o) => { if (o.layers) o.layers.set(0); }); },
+  POV_HUD_LAYER: 0,
+});
+
+const _v = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+
+function boneLocal(name, mount) {
+  const o = mount.getObjectByName(name);
+  if (!o) return null;
+  o.getWorldPosition(_v);
+  mount.worldToLocal(_v);
+  return { x: +_v.x.toFixed(3), y: +_v.y.toFixed(3), z: +_v.z.toFixed(3) };
+}
+
+window.__gripReport = () => {
+  const hands = ["hand-L", "hand-R"].map((name) => {
+    const mount = spin.getObjectByName(name);
+    if (!mount) return { name, missing: true };
+    const tag = name.endsWith("L") ? "L" : "R";
+    const keys = [
+      "wrist",
+      `Wrist_${tag}`,
+      `Palm_${tag}`,
+      `Thumb_Tip_${tag}`,
+      `Index_Tip_${tag}`,
+      `Middle_Tip_${tag}`,
+      `Ring_Tip_${tag}`,
+      `Little_Tip_${tag}`,
+      `Index_Proximal_${tag}`,
+    ];
+    const bones = {};
+    for (const k of keys) bones[k] = boneLocal(k, mount);
+    let tris = 0;
+    mount.traverse((o) => {
+      if (o.isMesh && o.geometry) {
+        const g = o.geometry;
+        tris += g.index ? g.index.count / 3 : (g.attributes.position ? g.attributes.position.count / 3 : 0);
+      }
+    });
+    return { name, tris: tris | 0, bones, gripBone: mount.userData.gripBone || "" };
+  });
+  return { hands, ready: hands.every((h) => h.tris > 100) };
+};
+
+window.__cam = camera;
+window.__spin = spin;
+window.__look = new THREE.Vector3(0, 0.02, 0.05);
+
+function frame() {
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

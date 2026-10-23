@@ -23,7 +23,7 @@ import {
   foliageMaterial,
   treeCardKind,
 } from "./trees.js?v=45";
-import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=5";
+import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=6";
 import {
   upgradeWorld,
   water as waterPbr,
@@ -62,7 +62,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=61";
+} from "./forest-pbr.js?v=62";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -70,7 +70,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=61";
+} from "./desert-pbr.js?v=62";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -85,10 +85,10 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=22";
+} from "./forest-tunnel.js?v=24";
 import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=13";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=14";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -7193,6 +7193,8 @@ export class Track {
   _addDesertTumbleweeds(rng) {
     const geo = tumbleweedGeometry();
     if (!geo) return;
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    const ballR = geo.boundingSphere && geo.boundingSphere.radius > 0.05 ? geo.boundingSphere.radius : 0.52;
     const mat = tumbleweedMaterial();
     const items = [];
     const samples = [];
@@ -7216,7 +7218,7 @@ export class Track {
       if (this._inUnderpassCorridor(x, z)) continue;
       const gy = this._visualLandY(x, z);
       const s = 0.72 + rng() * 0.48;
-      const radius = 0.52 * s;
+      const radius = ballR * s;
       items.push({
         x,
         y: gy + radius * 0.92,
@@ -9435,7 +9437,7 @@ export class Track {
           );
         }
       }
-      // Overhead sodiums hang from the crown — never side-wall floaters.
+      // Sodiums bolt to the crown. No drop rod. Never side-wall floaters.
       if (i > start + 2 && i < end - 2) {
         const along = p.dist != null ? p.dist : i * 6;
         if (along - lastLampDist >= 9.2) {
@@ -9496,10 +9498,10 @@ export class Track {
         dummy.matrix.setPosition(L.x, L.y, L.z);
         housing.setMatrixAt(k, dummy.matrix);
         globes.setMatrixAt(k, dummy.matrix);
-        const drop = Math.max(1.2, L.ceilY - (L.y + 0.45));
+        const stub = Math.min(0.16, Math.max(0.06, L.rod || 0.1));
         dummy.matrix.makeBasis(along, up, outward);
-        dummy.matrix.scale(new THREE.Vector3(1, drop, 1));
-        dummy.matrix.setPosition(L.x, L.y + 0.45 + drop * 0.5, L.z);
+        dummy.matrix.scale(new THREE.Vector3(1, stub, 1));
+        dummy.matrix.setPosition(L.x, L.ceilY - stub * 0.5, L.z);
         conduits.setMatrixAt(k, dummy.matrix);
         dummy.matrix.makeBasis(along, up, outward);
         dummy.matrix.setPosition(L.x, L.ceilY, L.z);
@@ -10844,6 +10846,7 @@ export class Track {
     this.finishDist = finish.dist;
     this._addGantry(start, "START");
     this._addGantry(finish, "FINISH");
+    this._addCourseMark();
     this._plantClothFlags(start, "START");
     this._plantClothFlags(finish, "FINISH");
   }
@@ -11036,6 +11039,40 @@ export class Track {
   }
 
   /**
+   * One gate at the end of the opening straight, where the road first turns.
+   * That is the thing the chase camera can still read.
+   */
+  _addCourseMark() {
+    const scenery = (this._def && this._def.scenery) || "";
+    const names = {
+      desert: "DUNE GATE",
+      forest: "TIMBER CUT",
+      mountain: "HIGH PASS",
+      lakeside: "SHORE LINE",
+    };
+    const label = names[scenery];
+    if (!label || !(this.length > 40)) return;
+    const lo = scenery === "desert" ? 100 : 150;
+    const hi = Math.min(this.length * 0.36, scenery === "desert" ? 260 : 640);
+    let bestD = Math.min(hi, lo + 36);
+    for (let d = lo; d <= hi; d += 8) {
+      const a = this.sample(Math.max(8, d - 20));
+      const b = this.sample(Math.min(this.length - 8, d));
+      if (!a || !b || a.tunnel || b.tunnel || a.jump || b.jump) continue;
+      let dh = b.heading - a.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      if (Math.abs(dh) > 0.12) {
+        bestD = d;
+        break;
+      }
+    }
+    const p = this.sample(bestD);
+    if (!p || p.tunnel) return;
+    this._addGantry(p, label);
+  }
+
+  /**
    * Planted steel gantry + taut Verlet vinyl at START and FINISH, plus a
    * painted checker stripe on the deck. Poles sit on visual land — no floating
    * Kenney arch, no paper-thin PlaneGeometry card.
@@ -11060,7 +11097,7 @@ export class Track {
       left: { x: leftX, y: leftY, z: leftZ },
       right: { x: rightX, y: rightY, z: rightZ },
       roadY: p.y,
-      seed: label === "FINISH" ? 220 : 110,
+      seed: label === "FINISH" ? 220 : label === "START" ? 110 : 330,
     });
     this.group.add(banner.group);
     this._clothFlags.push(banner);
@@ -13188,7 +13225,7 @@ function landAlbedoMap(scenery, span) {
     if (photo) return photo;
   }
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
-  const scale = VISUAL.textureScale || 1;
+  const scale = (VISUAL.textureScale || 1) * 2;
   const tier = VISUAL.tier || 1;
   const base = paintedTexture(
     `land-albedo-v7-t${tier}-${kind}`,
@@ -13954,7 +13991,7 @@ function landNormalMap(scenery, span) {
   }
   if (!VISUAL.realisticArcade) return null;
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
-  const scale = VISUAL.textureScale || 1;
+  const scale = (VISUAL.textureScale || 1) * 2;
   const tier = VISUAL.tier || 1;
   const hit = LAND_NORM.get(`v5|${tier}|${kind}|${scale}`);
   if (hit) {
@@ -14066,7 +14103,7 @@ function roadNormalFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = VISUAL.textureScale || 1;
+  const texScale = (VISUAL.textureScale || 1) * 2;
   const w = 128 * texScale;
   const h = 256 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSurface(key, ww, hh, data), w, h);
@@ -14084,7 +14121,7 @@ function roadTextureFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = VISUAL.textureScale || 1;
+  const texScale = (VISUAL.textureScale || 1) * 2;
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -14139,7 +14176,7 @@ function skirtTextureFor(scenery) {
   const cacheKey = `skirt|v8|t${tier}|${kind}`;
   const hit = SKIRT_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
+  const texScale = (VISUAL.textureScale || 1) * 2;
   const w = 128 * texScale;
   const h = 128 * texScale;
   const c = document.createElement("canvas");
@@ -14176,7 +14213,7 @@ function skirtNormalFor(scenery) {
   const cacheKey = `skirtN|v6|t${tier}|${kind}`;
   const hit = SKIRT_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.max(1, ((VISUAL.textureScale || 1) * 0.75) | 0);
+  const texScale = (VISUAL.textureScale || 1) * 2;
   const w = 128 * texScale;
   const h = 128 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSkirtGrain(kind, ww, hh, data), w, h);
@@ -14200,7 +14237,7 @@ function roadAoFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
-  const texScale = VISUAL.textureScale || 1;
+  const texScale = (VISUAL.textureScale || 1) * 2;
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -14243,9 +14280,9 @@ function roadRoughFor(id) {
   const cacheKey = `rough|v6|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.max(1, (VISUAL.textureScale || 1) * 0.5);
-  const w = Math.max(64, (128 * texScale) | 0);
-  const h = Math.max(128, (256 * texScale) | 0);
+  const texScale = (VISUAL.textureScale || 1) * 2;
+  const w = Math.max(64, Math.round(128 * texScale));
+  const h = Math.max(128, Math.round(256 * texScale));
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;

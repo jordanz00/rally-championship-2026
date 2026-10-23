@@ -8,6 +8,7 @@ import {
   sampleLandMeshY,
   isGroundProp,
   worldFootY,
+  footFloatDy,
 } from "../js/tracks/seat-scenery.js";
 
 let failed = 0;
@@ -70,13 +71,29 @@ const midLod = {
 };
 check("mid lod skipped", !isGroundProp(midLod));
 check(
-  "unnamed env is not auto nature",
-  !isGroundProp({ userData: { envProp: true }, geometry: { userData: {} } })
+  "unnamed env prop is seated",
+  isGroundProp({ userData: { envProp: true }, geometry: { userData: {} } })
 );
 
 const box = new THREE.Box3(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 2, 1));
 const mat = new THREE.Matrix4().makeTranslation(0, 3, 0);
 check("foot follows translate", Math.abs(worldFootY(box, mat) - 3) < 1e-6);
+
+const flat = () => 0;
+const hover = new THREE.Matrix4().makeTranslation(0, 5, 0);
+const drop = footFloatDy(box, hover, flat);
+check("hovering prop drops onto the dirt", drop != null && drop < -4.9 && drop > -5.2, drop);
+
+const planted = new THREE.Matrix4();
+check("planted prop stays", footFloatDy(box, planted, flat) == null);
+
+const slope = new THREE.Matrix4().makeTranslation(0, 2, 0);
+const slopeDrop = footFloatDy(box, slope, (x) => x);
+check(
+  "downhill corner is not left in the air",
+  slopeDrop != null && slopeDrop < -2.5,
+  slopeDrop
+);
 
 if (failed) {
   console.error(`Seat scenery QA failed: ${failed}`);

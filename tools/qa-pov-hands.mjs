@@ -76,10 +76,15 @@ check("game imports celica.js?v=240+", Number((game.match(/celica\.js\?v=(\d+)/)
 check("boot cache is 1057+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check("index boots main.js?v=1057+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check(
-  "grip keeps the exported fist and seats it on the tube",
-  /function poseGrip/.test(driver) &&
+  "grip faces the driver and keeps the exported curl",
+  /function seatGrip/.test(driver) &&
+    /rig\.quaternion\.identity\(\)/.test(driver) &&
     !/bone\.rotation\.set\(0, 0, 0\)/.test(driver) &&
-    /arm\.quaternion/.test(driver)
+    !/setFromAxisAngle\(new THREE\.Vector3\(0, 1, 0\), Math\.PI\)/.test(driver)
+);
+check(
+  "grip seats mesh verts onto the tube",
+  /fromBufferAttribute/.test(driver) && /rMin/.test(driver) && /tuckThumb/.test(driver) && /target - fit \* rMin/.test(driver)
 );
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "rigged hands grip the rim"}`);

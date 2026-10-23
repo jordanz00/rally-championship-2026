@@ -1,16 +1,16 @@
 /**
- * Forest photogrammetry PBR — Poly Haven 1k boot, 2k stream.
+ * Forest photogrammetry PBR — desktop boots the 2k set. Phones stay on 1k.
  *
  * WHO THIS IS FOR: Track.buildAsync on the Forest stage only.
  * WHAT IT DOES: tiled albedo + normal + roughness for the driving ribbon
  *   and land plane. Tile scale is tighter than the authored ~2 m so the
  *   chase camera reads grain instead of a stretched sheet.
- * HOW IT CONNECTS: track.js awaits prepareForestPbr() before _buildMesh
- *   (1k color only). Normals / 2k swap in on the shared texture Source.
+ * HOW IT CONNECTS: track.js awaits prepareForestPbr() before _buildMesh.
+ *   Desktop color is 2k. Normals swap in on the shared texture source.
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=6";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=7";
 
 const BASE = "assets/env/forest";
 

@@ -1,5 +1,73 @@
 # QA report — quality-control pass
 
+## POV hands close on the leather (2026-10-22)
+
+**Player moment:** Cockpit. Palm and fingers meet the rim. Thumbs sit on the near face. Not a floating claw.
+
+**Cause:** Tip bones stick past the flesh. Seating on bone crooks left the mesh ~5 cm off the leather.
+
+**Shipped:** Seat each grip from sampled mesh verts in the curl plane. Closest flesh lands on the tube; extra pull so the rim sits in the finger crook. Light thumb tuck. No 180° yaw.
+
+**Boot:** `main.js?v=1081` · `celica.js?v=254` · `pov-driver.js?v=19`
+
+## POV fingers wrap the rim (2026-10-13)
+
+**Player moment:** Cockpit. Knuckles face the driver. Fingers close on the far side of the leather. Thumbs rest on the near face. A turn still carries the hands.
+
+**Cause:** The rig was yawed 180° around the tube, so the palms faced the seat and the fingertips missed the wheel.
+
+**Shipped:** Seat the exported grip without that yaw. Knuckles stay toward the driver. Fingertips stay on the far side of the leather. The skin is not bent again.
+
+**Boot:** `main.js?v=1078` · `celica.js?v=251` · `pov-driver.js?v=16`
+
+## Tail number, place, straight gate (2026-10-06)
+
+**Player moment:** Chase view shows number 1 and RALLY CO on the tail. Position is the big number, with metres to the car ahead. The stage gate stands where the opening straight turns, in the sightline.
+
+**Boot:** `main.js?v=1076` · `celica.js?v=249` · `rival-livery.js?v=6` · `track.js?v=435` · `hud.js?v=52` · `game.css?v=70`
+
+## First-corner pass, stage gate, box livery (2026-10-06)
+
+**Player moment:** Full throttle to the first corner catches the car ahead. The banner says PASS. Each stage has one gate you can read at speed (Dune Gate, Timber Cut, High Pass, Shore Line). The hero wears number 1, Rally Co / Open Stage. The baked sponsor art is gone.
+
+**Boot:** `main.js?v=1073` · `vehicle.js?v=206` · `ai.js?v=247` · `celica.js?v=248` · `rival-livery.js?v=5` · `track.js?v=434` · `flag-cloth.js?v=14` · `hud.js?v=51` · `game.css?v=69`
+
+## Start lights, no lab sticker (2026-10-06)
+
+**Player moment:** 3-2-1 sits in the middle of the view, big enough to read. GO still punches. The TSR line is gone unless `?gfxbadge=1`. Pause returns to the race without a black dip.
+
+**Boot:** `main.js?v=1072` · `hud.js?v=50` · `game.css?v=68`
+
+## No black flash at stage start (2026-10-06)
+
+**Player moment:** Starting a stage. The load plate covers the view, then the grid is already drawn. The screen does not dip to black.
+
+**Boot:** `main.js?v=1071` · `hud.js?v=49`
+
+## POV hands on the wheel (2026-10-06)
+
+**Player moment:** Cockpit. Both hands wrap the rim. Thumbs sit on the leather. Fingers are not an open claw.
+
+**Boot:** `main.js?v=1070` · `pov-driver.js?v=14`
+
+## Grounded scenery (2026-10-06)
+
+**Player moment:** Trees, rocks, and props sit in the dirt. A downhill corner no longer hangs in the air.
+
+**Boot:** `main.js?v=1069` · `seat-scenery.js?v=6` · `track.js?v=433`
+
+## Sharper textures (2026-10-06)
+
+**Player moment:** Road and land. Desktop loads the 2k ground photos. Painted maps are twice as large. Phones stay on 1k.
+
+**Boot:** `main.js?v=1068` · `pbr-stream.js?v=7` · `track.js?v=432`
+
+## Forest ceiling lamps + dimmer headlights (2026-10-06)
+
+**Player moment:** Stage 2 tunnel. Sodiums sit on the rock crown. Headlights are 40% dimmer.
+
+**Boot:** `main.js?v=1067` · `track.js?v=431` · `forest-tunnel.js?v=23`
+
 ## POV grip (2026-10-06)
 
 **Player moment:** Cockpit. Smaller hands. Fingers wrap the rim. Thumbs sit on it. Arms follow the turn.

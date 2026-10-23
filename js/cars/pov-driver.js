@@ -4,6 +4,7 @@
  * WHO THIS IS FOR: cockpit / POV camera only (layer 1 overlay).
  * WHAT IT DOES: loads a CC0 skinned hand (MakeHuman mesh, 26-bone rig),
  *   already posed in a grip, and seats each one on the rim at 9 and 3.
+ *   Knuckles face the driver. Fingers close on the far side of the tube.
  *   Hands ride steer-spin so a turn rotates the grip with the wheel.
  *   Two-bone sleeves hang from the wrist empties.
  * HOW IT CONNECTS: celica.js attachPovDriverArms → cockpit-anim IK each frame.
@@ -27,6 +28,7 @@ let SKIN_MAP = null;
 let SKIN_BUMP = null;
 
 const _v = new THREE.Vector3();
+const _corner = new THREE.Vector3();
 
 /** 9/3 plus a few degrees toward 10/2 — planted, thumbs on the crown. */
 const CLOCK_9_3 = 0.14;
@@ -279,7 +281,8 @@ function makeMount(side, rimR, tubeR) {
   mount.userData.clock = clock;
   mount.position.set(Math.cos(clock) * rimR, Math.sin(clock) * rimR, 0);
   mount.rotation.z = clock;
-  mount.scale.setScalar(0.72);
+  // Fit comes from seatGrip once the GLB tip radius is known.
+  mount.scale.setScalar(1);
   const wrist = new THREE.Object3D();
   wrist.name = "wrist-placeholder";
   wrist.position.set(0.01, -0.02, -tubeR - 0.05);
@@ -295,9 +298,12 @@ function makeMount(side, rimR, tubeR) {
  * Finger bones stay in the baked grip. Names like Index_Proximal_L are the rig.
  * @param {THREE.Object3D} mount
  * @param {THREE.Object3D} rig
+ * @param {number} tubeR
  */
-function seatRig(mount, rig) {
+function seatRig(mount, rig, tubeR) {
   rig.name = mount.name === "hand-L" ? "rig-L" : "rig-R";
+  const side = mount.name === "hand-L" ? 1 : -1;
+  seatGrip(rig, side, tubeR, mount.scale.x);
   rig.traverse((o) => {
     if (!o.isMesh) return;
     o.material = SKIN_MAT;
@@ -310,56 +316,104 @@ function seatRig(mount, rig) {
   const wrist = rig.getObjectByName("wrist");
   if (wrist) mount.userData.wrist = wrist;
   mount.userData.tris = countTris(mount);
-  const proximal = rig.getObjectByName(mount.name === "hand-L" ? "Index_Proximal_L" : "Index_Proximal_R");
+  const proximal = rig.getObjectByName(side > 0 ? "Index_Proximal_L" : "Index_Proximal_R");
   mount.userData.gripBone = proximal ? proximal.name : "";
-  poseGrip(rig, mount.name === "hand-L" ? 1 : -1);
-  relaxGrip(rig, mount.name === "hand-L" ? 1 : -1);
 }
 
 /**
- * Park the closed grip on the tube. Finger bones stay as exported — zeroing
- * them opens the fist. The armature node is yawed 90°, so that yaw is undone,
- * the wrist is turned back toward the seat, and the right hand is rolled so
- * its thumb still points at 12 after the mount tangent flips.
+ * Park the baked grip on the rim tube.
+ *
+ * Tip bones stick out past the flesh — seating on them floats the mesh off the
+ * leather. Use the skinned mesh AABB in the curl plane (XZ, tube along +Y).
+ * Keep the export curl; a half-turn around Y puts palms at the seat.
+ *
  * @param {THREE.Object3D} rig
  * @param {number} side +1 left / −1 right
+ * @param {number} tubeR tube radius in steer-spin space
+ * @param {number} _handScale unused (mount stays at 1; fit is on the rig)
  */
-function poseGrip(rig, side) {
-  const arm = rig.getObjectByName("Armature");
-  if (!arm) return;
-  const seat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-  if (side < 0) {
-    seat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
-  }
-  rig.quaternion.copy(seat).multiply(arm.quaternion.clone().invert());
-  rig.position.copy(arm.position).applyQuaternion(rig.quaternion).negate();
-}
+function seatGrip(rig, side, tubeR, _handScale) {
+  // Knuckles / palm toward the driver (−Z). Fingers curl over the tube.
+  rig.quaternion.identity();
+  rig.position.set(0, 0, 0);
+  rig.scale.setScalar(1);
+  rig.updateMatrixWorld(true);
 
-/**
- * Open the baked fist into a wheel wrap. Fingers curl less. Thumb lies on the rim.
- * @param {THREE.Object3D} rig
- * @param {number} side +1 left / −1 right
- */
-function relaxGrip(rig, side) {
-  const tag = side > 0 ? "L" : "R";
-  const ease = { Proximal: -0.28, Intermediate: -0.48, Distal: -0.16 };
-  for (const finger of ["Index", "Middle", "Ring", "Little"]) {
-    for (const part of Object.keys(ease)) {
-      const bone = rig.getObjectByName(`${finger}_${part}_${tag}`);
-      if (bone) bone.rotateZ(ease[part]);
+  let mesh = null;
+  rig.traverse((o) => {
+    if (o.isSkinnedMesh && !mesh) mesh = o;
+  });
+  if (!mesh || !mesh.geometry) return;
+
+  const pos = mesh.geometry.attributes.position;
+  if (!pos) return;
+  // Sample real verts — AABB corners sit inside the C and fake contact.
+  const step = Math.max(1, (pos.count / 800) | 0);
+  let cx = 0;
+  let cy = 0;
+  let cz = 0;
+  let n = 0;
+  let rMin = Infinity;
+  let nearX = 0;
+  let nearZ = 0;
+  for (let i = 0; i < pos.count; i += step) {
+    _corner.fromBufferAttribute(pos, i);
+    mesh.localToWorld(_corner);
+    rig.worldToLocal(_corner);
+    cx += _corner.x;
+    cy += _corner.y;
+    cz += _corner.z;
+    n += 1;
+    const r = Math.hypot(_corner.x, _corner.z);
+    if (r < rMin) {
+      rMin = r;
+      nearX = _corner.x;
+      nearZ = _corner.z;
     }
   }
+  if (n < 8 || !(rMin < Infinity) || rMin < 1e-4) return;
+  cx /= n;
+  cy /= n;
+  cz /= n;
+
+  // Flesh meets the leather. Press slightly into the tube so pads read closed.
+  const target = tubeR * 0.82;
+  const fit = THREE.MathUtils.clamp(target / rMin, 0.32, 0.85);
+  const radial = Math.hypot(nearX, nearZ) || Math.hypot(cx, cz) || 1;
+  const dirX = nearX / radial;
+  const dirZ = nearZ / radial;
+  // Closest flesh lands on the tube; Y centered on the palm mass.
+  rig.scale.setScalar(fit);
+  rig.position.set(dirX * (target - fit * rMin), -cy * fit, dirZ * (target - fit * rMin));
+  // Pull the C onto the tube so the rim sits in the finger crook, not beside it.
+  rig.position.x -= dirX * tubeR * 0.55;
+  rig.position.z -= dirZ * tubeR * 0.55;
+  tuckThumb(rig, side);
+  rig.updateMatrixWorld(true);
+}
+
+/**
+ * Lay the thumb on the near rim face, tip toward the hub — closed 9/3 grip.
+ * Tiny local bends only; big curls tear the baked weights.
+ * @param {THREE.Object3D} rig
+ * @param {number} side
+ */
+function tuckThumb(rig, side) {
+  const tag = side > 0 ? "L" : "R";
   const meta = rig.getObjectByName(`Thumb_Metacarpal_${tag}`);
   const prox = rig.getObjectByName(`Thumb_Proximal_${tag}`);
   const dist = rig.getObjectByName(`Thumb_Distal_${tag}`);
+  if (!meta) return;
   if (side > 0) {
-    if (meta) meta.rotateZ(0.42);
-    if (prox) prox.rotateZ(-0.22);
-    if (dist) dist.rotateZ(-0.18);
+    meta.rotateY(-0.35);
+    meta.rotateZ(0.28);
+    if (prox) prox.rotateZ(-0.18);
+    if (dist) dist.rotateZ(-0.12);
   } else {
-    if (meta) meta.rotateY(0.32);
-    if (prox) prox.rotateZ(0.5);
-    if (dist) dist.rotateZ(0.28);
+    meta.rotateY(0.35);
+    meta.rotateZ(-0.28);
+    if (prox) prox.rotateZ(0.18);
+    if (dist) dist.rotateZ(0.12);
   }
 }
 
@@ -510,8 +564,8 @@ export function attachPovDriverArms(root, hooks) {
   loadHandGltfs()
     .then(([left, right]) => {
       if (root.userData.povDriver !== driver) return;
-      seatRig(handL, cloneRig(left.scene));
-      seatRig(handR, cloneRig(right.scene));
+      seatRig(handL, cloneRig(left.scene), tubeR);
+      seatRig(handR, cloneRig(right.scene), tubeR);
       driver.wristL = handL.userData.wrist;
       driver.wristR = handR.userData.wrist;
       driver.trisL = handL.userData.tris;

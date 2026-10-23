@@ -7,7 +7,7 @@
  *   roughness, object-space panel blocks, and readable door numbers.
  *   Sponsor copy is invented — no licensed works marks.
  * HOW IT CONNECTS: createRivalCar → getRivalPaintMaterial + attach marks.
- *   Player hero (createPlayerCar / dressPlayerCarRace) never imports this.
+ *   Player hero uses applyPlayerBoxLivery (number 1, original copy).
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -606,6 +606,24 @@ function hoodTexture(livery) {
   });
 }
 
+function tailTexture(livery) {
+  return canvasMark(`tail|${livery.id}|${livery.number}`, 1024, 384, (g, w, h) => {
+    g.fillStyle = hexCss(livery.plate);
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = hexCss(livery.secondary);
+    g.fillRect(0, 0, w, h * 0.1);
+    g.fillRect(0, h - h * 0.1, w, h * 0.1);
+    g.fillStyle = hexCss(livery.ink);
+    g.font = `bold ${Math.round(h * 0.58)}px Impact, Arial Black, sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(livery.number, w * 0.5, h * 0.4);
+    g.font = `bold ${Math.round(h * 0.18)}px Arial, sans-serif`;
+    g.fillText(livery.team, w * 0.5, h * 0.78);
+    drawDirt(g, w, h, livery.wear);
+  });
+}
+
 function roofTexture(livery) {
   return canvasMark(`roof|${livery.id}|${livery.number}`, 1024, 384, (g, w, h) => {
     g.fillStyle = hexCss(livery.plate);
@@ -647,6 +665,53 @@ function getDecalGeo() {
  * @param {THREE.Object3D} root
  * @param {{id:string, number:string, plate:number, ink:number, team:string, sponsor:string, wear:number, secondary:number, accent:number}} livery
  */
+/**
+ * Box livery for the player hero. One original works look.
+ * Replaces the GLB albedo so baked sponsor art does not ship.
+ */
+export const PLAYER_BOX = {
+  id: "box-stage",
+  name: "Box Stage",
+  body: 0x14283a,
+  secondary: 0xe2b43a,
+  accent: 0xf4efe4,
+  plate: 0x10161c,
+  ink: 0xf4efe4,
+  team: "RALLY CO",
+  sponsor: "OPEN STAGE",
+  number: "1",
+  wear: 0.12,
+  style: 0,
+  roughness: 0.2,
+  metalness: 0.12,
+};
+
+/**
+ * Paint the player hero in PLAYER_BOX and hang number 1 vinyl.
+ * @param {THREE.Object3D} root
+ * @param {(mat:THREE.Material, mesh:THREE.Mesh)=>boolean} isBody
+ */
+export function applyPlayerBoxLivery(root, isBody) {
+  if (!root || root.userData.playerBox) return PLAYER_BOX;
+  const painted = getRivalPaintMaterial(PLAYER_BOX);
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    const mats = [].concat(obj.material);
+    let hit = false;
+    const next = mats.map((m) => {
+      if (!m || (m.userData && (m.userData.rivalDecal || m.userData.kind === "decal"))) return m;
+      if (!isBody(m, obj)) return m;
+      hit = true;
+      return painted;
+    });
+    if (hit) obj.material = next.length === 1 ? next[0] : next;
+  });
+  attachRivalLiveryMarks(root, PLAYER_BOX);
+  root.userData.playerBox = true;
+  root.userData.rivalLivery = PLAYER_BOX.id;
+  return PLAYER_BOX;
+}
+
 /**
  * Paint a cloned rival / attract mesh. Player cars never call this.
  * @param {THREE.Object3D} root
@@ -704,7 +769,15 @@ export function attachRivalLiveryMarks(root, livery) {
   roof.rotation.x = -Math.PI / 2;
   roof.scale.set(0.36, 0.14, 1);
 
-  const marks = [right, left, hood, roof];
+  // Chase cam lives on the tail. Hood numbers never enter that frame.
+  root.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(root);
+  const tail = new THREE.Mesh(geo, vinylMaterial(tailTexture(livery)));
+  tail.position.set(0, fit.doorY * 0.92, bounds.min.z - 0.025);
+  tail.rotation.y = Math.PI;
+  tail.scale.set(0.86, 0.3, 1);
+
+  const marks = [right, left, hood, roof, tail];
   for (let i = 0; i < marks.length; i++) {
     const m = marks[i];
     m.name = `rival-mark-${i}`;

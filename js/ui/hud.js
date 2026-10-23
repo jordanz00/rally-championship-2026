@@ -18,6 +18,7 @@ export class Hud {
     this.gear = document.getElementById("hud-gear");
     this.rpmFill = document.getElementById("hud-rpm-fill");
     this.pos = document.getElementById("hud-pos");
+    this.gap = document.getElementById("hud-gap");
     this.time = document.getElementById("hud-time");
     this.best = document.getElementById("hud-best");
     this.surface = document.getElementById("hud-surface");
@@ -115,6 +116,20 @@ export class Hud {
       this._pos = s.position;
       this.pos.textContent = ordinal(s.position);
       this.pos.dataset.place = s.position <= 3 ? String(s.position) : "pack";
+    }
+    if (this.gap) {
+      const gapM = s.gapM;
+      if (gapM != null && gapM > 0 && gapM < 180) {
+        const gapTxt = `${Math.max(1, Math.round(gapM))} m`;
+        if (this._gapTxt !== gapTxt) {
+          this._gapTxt = gapTxt;
+          this.gap.textContent = gapTxt;
+        }
+        this.gap.hidden = false;
+      } else if (!this.gap.hidden) {
+        this.gap.hidden = true;
+        this._gapTxt = "";
+      }
     }
     const timeTxt = formatTime(s.timeLeft);
     if (this._timeTxt !== timeTxt) {
@@ -220,6 +235,8 @@ export class Hud {
   flashMessage(text) {
     if (!this.flash) return;
     this.flash.textContent = text;
+    this.flash.classList.toggle("is-count", text === "3" || text === "2" || text === "1");
+    this.flash.classList.toggle("is-pass", text === "PASS");
     this.flash.classList.toggle("is-go", text === "GO!");
     this.flash.classList.toggle("is-miss", text === "NEAR MISS");
     this.flash.classList.toggle("is-sick", text === "SICK");
@@ -845,6 +862,6 @@ export function showLoadingScreen(opts = {}) {
   }
   paintLoadBar(0, loadUi.status);
   armLoadBar();
-  // Soft curtain into loading — short enough that cold builds still feel snappy.
-  return showScreen("screen-loading", { outMs: 240, inMs: 360, holdMs: 40 });
+  // Cover the canvas with the load plate. A black curtain here was a full-screen flash.
+  return showScreen("screen-loading", { instant: true });
 }

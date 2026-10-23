@@ -22,10 +22,10 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
-import { Vehicle } from "./physics/vehicle.js?v=203";
+import { Vehicle } from "./physics/vehicle.js?v=206";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=246";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=251";
 
 const G = 9.81;
 
@@ -396,6 +396,13 @@ export class Opponent {
       // rather than a slower driver. Skill belongs in `pace`, reflex, mistakes
       // and slide recovery — full throttle down a straight is free for everyone.
       throttle = clamp(0.72 + -overspeed * 0.12, 0, 1);
+    }
+
+    // First corner is a pass, not a parade. The leader keeps full pull.
+    // Everyone else lifts on the run out of the start town so a committed
+    // player can take the car directly ahead before the gate.
+    if (this.index !== 0 && v.progress >= 82 && v.progress < 260) {
+      throttle = Math.min(throttle, 0.62);
     }
 
     // Trail-braking: carry a little brake past the turn-in so the nose bites.
