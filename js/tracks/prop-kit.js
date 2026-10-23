@@ -524,8 +524,37 @@ export function propNatureMaterial(kind) {
  * @param {string} [scenery]
  * @returns {readonly string[]}
  */
+function phonePropLite() {
+  try {
+    if (typeof window !== "undefined" && window.__rallyPhoneLite) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/** Tiny kit for iPhone/Android — crowd + animals + grandstands were the stage OOM. */
+const PHONE_DESERT = Object.freeze([
+  "rock_smallA",
+  "plant_bushRound",
+  "cactus_short",
+  "barrier_red",
+  "construction_cone",
+]);
+const PHONE_FOREST = Object.freeze([
+  "rock_smallA",
+  "plant_bushRound",
+  "plant_bushFern",
+  "log_large",
+  "barrier_red",
+]);
+
 export function kindsForScenery(scenery) {
   const s = scenery || "desert";
+  if (phonePropLite()) {
+    if (s === "forest" || s === "mountain" || s === "lakeside") return PHONE_FOREST;
+    return PHONE_DESERT;
+  }
   // Mountain: start/finish grandstand audiences only (no mid-stage gallery).
   if (s === "mountain") return CROWD_ALL.concat(MOUNTAIN_NATURE, TRACKSIDE_KINDS);
   if (s === "forest") return CROWD_ALL.concat(FOREST_NATURE, FOREST_HERO_KINDS, TRACKSIDE_KINDS);
@@ -635,17 +664,21 @@ function ensureKind(kind) {
  */
 function loadSceneryKit(scenery) {
   const key = scenery || "desert";
-  if (sceneryLoads[key]) return sceneryLoads[key];
-  sceneryLoads[key] = (async () => {
-    await loadNatureTextures();
+  // Phones must not share a desktop kit promise — first desktop warm would
+  // leave crowd GLBs cached and the next phone race still OOMs.
+  const cacheKey = phonePropLite() ? `phone:${key}` : key;
+  if (sceneryLoads[cacheKey]) return sceneryLoads[cacheKey];
+  sceneryLoads[cacheKey] = (async () => {
+    if (!phonePropLite()) await loadNatureTextures();
     const kinds = kindsForScenery(key);
     // Yield between batches so PRESS START / CDP stay live while parsing bipeds.
-    const BATCH = 3;
+    const BATCH = phonePropLite() ? 1 : 3;
     for (let i = 0; i < kinds.length; i += BATCH) {
       await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, phonePropLite() ? 16 : 0));
     }
-    if (key === "forest" || key === "mountain") {
+    // Never pull forest hero / pack trees on phones — 8×8 MB jetsam.
+    if (!phonePropLite() && (key === "forest" || key === "mountain")) {
       if (!forestHeroPromise) forestHeroPromise = loadForestHeroTrees(getKitLoader(), KIT_ASSET_V);
       await forestHeroPromise;
       if (!forestPackPromise) forestPackPromise = loadForestTreePack(getKitLoader(), KIT_ASSET_V);
@@ -653,7 +686,7 @@ function loadSceneryKit(scenery) {
     }
     ready = true;
   })();
-  return sceneryLoads[key];
+  return sceneryLoads[cacheKey];
 }
 
 /**

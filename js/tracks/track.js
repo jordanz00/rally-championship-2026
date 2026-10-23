@@ -53,7 +53,7 @@ function terrainTileSegs() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=55";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=56";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -86,7 +86,7 @@ import {
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
 } from "./forest-tunnel.js?v=24";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=45";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=46";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=15";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
@@ -398,14 +398,21 @@ export class Track {
     this._addStageGates();
     await tick();
     await tick();
-    if (VISUAL.tracksideSignage && (VISUAL.tier || 0) >= 5) {
+    if (
+      !(typeof window !== "undefined" && window.__rallyPhoneLite) &&
+      VISUAL.tracksideSignage &&
+      (VISUAL.tier || 0) >= 5
+    ) {
       this._addTracksideSignage(def);
     }
     this._scrubRoadwayColliders();
     this._scrubRoadwayVisuals();
     this._seatAllScenery();
-    upgradeWorld(this.group);
-    upgradeWorldMaterials(this.group);
+    // Phones: skip PBR upgrade rewalk — peak RAM after plant.
+    if (!(typeof window !== "undefined" && window.__rallyPhoneLite)) {
+      upgradeWorld(this.group);
+      upgradeWorldMaterials(this.group);
+    }
     armCameraFade(this.group);
     this._initWheelDeform();
     this._tunnelVolumes = buildTunnelVolumes(this.points);
@@ -417,6 +424,12 @@ export class Track {
 
   /** Solid rut mesh parented to the stage — stamps accumulate through the race. */
   _initWheelDeform() {
+    // Phones: rut field + mesh alloc after Desert props was another Safari kill.
+    try {
+      if (typeof window !== "undefined" && window.__rallyPhoneLite) return;
+    } catch {
+      /* ignore */
+    }
     if (!this.wheelDeform) this.wheelDeform = new WheelDeformField();
     if (!this.wheelRuts) this.wheelRuts = new WheelRutMesh(this.group, this.wheelDeform);
   }
@@ -441,8 +454,10 @@ export class Track {
     this._scrubRoadwayColliders();
     this._scrubRoadwayVisuals();
     this._seatAllScenery();
-    upgradeWorld(this.group);
-    upgradeWorldMaterials(this.group);
+    if (!(typeof window !== "undefined" && window.__rallyPhoneLite)) {
+      upgradeWorld(this.group);
+      upgradeWorldMaterials(this.group);
+    }
     armCameraFade(this.group);
     this._initWheelDeform();
   }

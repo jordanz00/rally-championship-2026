@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Mobile hard-lite — iPhone 13 / Android no jetsam (2026-10-23)
+
+**Player moment:** Open on iPhone 13 Safari or Android Chrome. Splash → START → Championship → Desert → countdown. Tab stays alive.
+
+**Cause (still crashing after defer):** Desert `preparePropKit` pulled crowd + animals + trackside GLBs; POV hand GLBs (7 MB); rival pack; tire/spark buffers; PBR upgrade rewalk; mirror RT — peak RAM after Track.create.
+
+**Shipped:** Phone prop kit ≤5 kinds (no crowd) · solo pack · soft car fallback · no POV hands/cockpit · no weather/dust/tires/sparks/mirror · veg 0.28 · terrain segs 12 · skip PBR upgrade on phone · boot `1105`.
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-iphone13-smoke.mjs` · `PASSES=5 node tools/qa-phone-stable.mjs`
+
+**Boot:** `main.js?v=1107` · `celica.js?v=261` · `prop-kit.js?v=56` · `track.js?v=440`
+
 ## iPhone 13 — defer engine until PRESS START (2026-10-23)
 
 **Player moment:** Open Pages on iPhone 13 Safari. Splash paints. No instant tab kill. Tap PRESS START → SELECT MODE (HTML). Championship → Desert loads.

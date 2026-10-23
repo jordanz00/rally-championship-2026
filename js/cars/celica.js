@@ -410,6 +410,37 @@ export function createCelica(tint = {}) {
  * @param {{body?:number, stripe?:number, accent?:number}} [tint]
  * @returns {THREE.Group}
  */
+/**
+ * Tiny chase-cam shell when rival LOD fails on phones — never throw / abort stage.
+ * @param {string} id
+ * @returns {THREE.Group}
+ */
+function softPhoneCar(id) {
+  const root = new THREE.Group();
+  root.name = `soft-${id}`;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.85, 1.05, 4.15),
+    new THREE.MeshStandardMaterial({ color: 0xc4121a, roughness: 0.62, metalness: 0.12 })
+  );
+  body.position.y = 0.55;
+  body.castShadow = false;
+  body.receiveShadow = false;
+  root.add(body);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(1.55, 0.55, 1.8),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.4, metalness: 0.2 })
+  );
+  cabin.position.set(0, 1.05, -0.15);
+  cabin.castShadow = false;
+  root.add(cabin);
+  root.userData.wheels = [];
+  root.userData.body = root;
+  root.userData.carId = id;
+  root.userData.phoneLod = true;
+  root.userData.softCar = true;
+  return root;
+}
+
 function cloneCar(id, tint = {}) {
   const requested = GARAGE[id] ? id : "celica";
   // Phone race: rival LOD (~3 MB) is enough. Requiring the 7 MB hero after
@@ -418,6 +449,7 @@ function cloneCar(id, tint = {}) {
   const lod = rivalTemplates[requested] || rivalTemplates.celica;
   const src = hero || lod;
   if (!src) {
+    if (garagePhoneLite()) return softPhoneCar(requested);
     requireCarModel(requested, "player car");
   }
   const clone = (src || templates[requested]).clone(true);
@@ -446,7 +478,7 @@ export function createPlayerCar(carId = "celica") {
   if (root.userData.phoneLod) hideHeavyInterior(root);
   // Visual Pass V2 — player-only clearcoat. Dirt binds after applyEnvMap so
   // lacquer env intensity matches race IBL (see game.js _bindPlayerCarDirt).
-  dressPlayerCarRace(root);
+  if (!root.userData.softCar) dressPlayerCarRace(root);
   const glow = new THREE.PointLight(0xff2a14, 0, 6.2, 2);
   // Deliberately left visible with zero intensity. three.js skips invisible
   // lights when it builds the light list, so toggling `visible` changes
@@ -458,13 +490,16 @@ export function createPlayerCar(carId = "celica") {
   root.add(glow);
   root.userData.brakeGlow = glow;
   attachHeadBeams(root);
-  attachCockpit(root);
-  tagWindshield(root);
-  tagInterior(root);
-  tagPovShell(root);
-  attachPovWeatherGlass(root);
-  buildPovHideCache(root);
-  if (!root.userData.povRig) root.userData.povRig = buildPovRig(root);
+  // Phones: chase cam only. Cockpit + 7 MB hand GLBs jetsam Safari after Desert.
+  if (!garagePhoneLite()) {
+    attachCockpit(root);
+    tagWindshield(root);
+    tagInterior(root);
+    tagPovShell(root);
+    attachPovWeatherGlass(root);
+    buildPovHideCache(root);
+    if (!root.userData.povRig) root.userData.povRig = buildPovRig(root);
+  }
   setCockpitView(root, false);
   return root;
 }
@@ -6319,6 +6354,7 @@ function attachCockpit(root) {
  * @param {THREE.Object3D} root
  */
 function attachPovDriverArms(root) {
+  if (garagePhoneLite()) return;
   attachPovDriverHQ(root, { markSteerPovLayer, POV_HUD_LAYER });
 }
 

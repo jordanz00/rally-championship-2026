@@ -141,12 +141,12 @@ check(
 );
 check(
   "phones cap championship pack size",
-  /phonePlay\) n = Math\.min\(n, 1\)/.test(game),
+  /if \(phonePlay\) n = 0/.test(game),
   "14 AI cars melt mid-range GPUs"
 );
 check(
   "phones keep a light practice pack",
-  /phonePlay \? 1 : Math\.max\(10/.test(game),
+  /phonePlay \? 0 : Math\.max\(10/.test(game),
   "practice must not force 10+ rivals on phones"
 );
 
@@ -178,10 +178,16 @@ check(
 check("no rival.glb preload", !/preload[^>]+rival\.glb/.test(index), "preload races module parse");
 check("__rallyPhoneLite before modules", /__rallyPhoneLite = true/.test(index));
 check(
-  "phones cap pack ≤1",
-  /phonePlay\) n = Math\.min\(n, 1\)/.test(game) && /phonePlay \? 1 :/.test(game),
-  "handset pack must stay tiny"
+  "phones cap pack solo",
+  /if \(phonePlay\) n = 0/.test(game) && /phonePlay \? 0 :/.test(game),
+  "handset pack must stay solo"
 );
+check(
+  "phone prop kit no crowd",
+  /PHONE_DESERT/.test(read("js/tracks/prop-kit.js")) && /phonePropLite/.test(read("js/tracks/prop-kit.js")),
+  "crowd GLBs kill Safari on Desert"
+);
+check("boot ≥1107", mainV >= 1107 && gameV === mainV, `main=${mainV} game=${gameV}`);
 check("no modulepreload", !/rel="modulepreload"/.test(index), "iPhone first paint");
 check("no phone title HDR", /No HDR \/ PMREM on iPhone/.test(game));
 check(
@@ -194,7 +200,7 @@ check(
   /__rallyPhoneDefer/.test(main) && /__rallyBootEngine/.test(index),
   "Safari must not parse track/celica on splash"
 );
-check("boot cache-bust main ≥1104", mainV >= 1104, `main.js?v=${mainV}`);
+check("boot cache-bust main ≥1107", mainV >= 1107, `main.js?v=${mainV}`);
 check(
   "Android fill caps tight",
   /android \? 560000/.test(game) && /android \? 0\.65/.test(game),

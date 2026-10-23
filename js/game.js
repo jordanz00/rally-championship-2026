@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=260";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=261";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=439";
+import { Track } from "./tracks/track.js?v=440";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
-import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=255";
+import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=56";
+import { Opponent } from "./ai.js?v=256";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=19";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=20";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=6";
 import {
@@ -300,6 +300,13 @@ function armVegBudget(tierId) {
   // past ~360–720 m; skip-present compile warms the next slice. Do not drop
   // below 2 — lakeside fog is 720 m and still needs one extra ahead.
   if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
+  // iPhone 13 / Android: min tier still planted too much. Halve again.
+  if (typeof isPhonePlay === "function" && isPhonePlay()) {
+    STREAM._activeLodNear = Math.min(STREAM._activeLodNear || 75, 48);
+    STREAM._activeVegScale = Math.min(STREAM._activeVegScale || 0.5, 0.28);
+    STREAM.terrainTileSegs = 12;
+    STREAM.terrainTileSegsCinema = 12;
+  }
 }
 
 /**
@@ -314,14 +321,18 @@ function armStreamBudget() {
   } catch {
     android = false;
   }
-  // iPhone first-stage boot: keep the streamed world tiny until after GO.
+  // iPhone 13 / mid Android: tiny stream bubble — scenery beyond fog is free RAM.
   STREAM.prefetchChunks = phone ? 1 : 2;
-  STREAM.lookaheadSeconds = phone ? 1.4 : 2.6;
-  STREAM.settleLookaheadMeters = android ? 280 : phone ? 300 : 620;
-  STREAM.countdownLoadRadius = android ? 280 : phone ? 300 : 560;
-  STREAM.loadRadius = android ? 360 : phone ? 400 : 720;
-  STREAM.unloadRadius = android ? 440 : phone ? 480 : 800;
-  STREAM.minLoadRadius = phone ? 160 : 260;
+  STREAM.lookaheadSeconds = phone ? 1.0 : 2.6;
+  STREAM.settleLookaheadMeters = android ? 180 : phone ? 200 : 620;
+  STREAM.countdownLoadRadius = android ? 180 : phone ? 200 : 560;
+  STREAM.loadRadius = android ? 240 : phone ? 260 : 720;
+  STREAM.unloadRadius = android ? 320 : phone ? 340 : 800;
+  STREAM.minLoadRadius = phone ? 120 : 260;
+  if (phone) {
+    STREAM.terrainTileSegs = 12;
+    STREAM.terrainTileSegsCinema = 12;
+  }
   try {
     if (typeof window !== "undefined") {
       window.__rallyHiMaps = !phone && raceStartTier() === "high";
@@ -844,7 +855,8 @@ export class RallyGame {
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, 16 / 9, 0.18, 1400);
     this._armPresentLayers(this.camera);
     this.scene.add(this.camera);
-    this.weather = new StageWeather(this.scene);
+    // Phones: rain system allocates particle buffers — skip entirely.
+    this.weather = isPhonePlay() ? null : new StageWeather(this.scene);
     this._onResize = this._onResize.bind(this);
     window.addEventListener("resize", this._onResize);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", this._onResize);
@@ -1310,27 +1322,10 @@ export class RallyGame {
    * @param {boolean} [all]
    */
   _prefetchStageBytes(all = false) {
-    // Phones: music only. HDR + multi-map prefetch during menu was a silent OOM.
+    // Phones: no prefetch. Even one desert.mp3 + decode raced Track.create.
     if (isPhonePlay()) {
-      const music = all
-        ? [
-            "assets/music/desert.mp3?v=4",
-            "assets/music/forest.mp3?v=4",
-            "assets/music/mountain.mp3?v=4",
-            "assets/music/lakeside.mp3?v=4",
-          ]
-        : ["assets/music/desert.mp3?v=4"];
-      if (this._bytesPrefetched && !all) return;
-      if (all) {
-        if (this._bytesPrefetchedAll) return;
-        this._bytesPrefetchedAll = true;
-        this._bytesPrefetched = true;
-      } else {
-        this._bytesPrefetched = true;
-      }
-      for (const url of music) {
-        fetch(url, { mode: "cors", credentials: "same-origin" }).catch(() => {});
-      }
+      this._bytesPrefetched = true;
+      this._bytesPrefetchedAll = true;
       return;
     }
     const urls = all
@@ -1380,14 +1375,13 @@ export class RallyGame {
   _warmRaceSystems() {
     if (!this.scene) return;
     try {
-      // Phones skip the dust plume — cinema grit was a brown wall.
-      // Player tire ruts stay on; they are a few decals, not a particle storm.
-      if (!isPhonePlay()) {
-        if (!this.dust) this.dust = new Dust(this.scene);
-      }
+      // Phones: zero particle / decal systems. Dust + tire marks + sparks
+      // allocated GPU buffers that jetsam'd Safari after Desert build.
+      if (isPhonePlay()) return;
+      if (!this.dust) this.dust = new Dust(this.scene);
       if (!this.tireMarks) this.tireMarks = new TireMarks(this.scene);
       if (!this.sparks) this.sparks = new ImpactSparks(this.scene);
-      if (!this.boostWake && !isPhonePlay()) this.boostWake = new BoostWake(this.scene);
+      if (!this.boostWake) this.boostWake = new BoostWake(this.scene);
     } catch (err) {
       console.warn("[warm] race systems", err);
     }
@@ -2796,10 +2790,12 @@ export class RallyGame {
     // Phones: ONE rival LOD only. Hero + three-chassis warm after Desert was
     // the Safari kill on first-stage boot.
     const phoneLoad = isPhonePlay();
+    // Phones: warm player LOD only AFTER track is live, and never the pack.
+    // Soft box shell is OK if rival.glb fails — stage must still start.
     const carWarm = !preview
       ? phoneLoad
         ? preparePhoneRaceCars(this.carId).catch((err) => {
-            console.warn("[load] phone car warm", err);
+            console.warn("[load] phone car warm — soft shell", err);
           })
         : Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
             console.warn("[load] car warm", err);
@@ -2845,12 +2841,11 @@ export class RallyGame {
     if (!preview && this.mode === "championship") {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
-      // Full 14-car pack melts mid-range phones; keep a readable field.
-      // One shared rival LOD + Desert mesh — two AI shells still OOM Safari.
-      if (phonePlay) n = Math.min(n, 1);
+      // Phones: solo. Rival LOD + Desert props still jetsam'd iPhone 13.
+      if (phonePlay) n = 0;
     } else if (!preview && this.mode === "practice") {
-      // Desktop keeps a pack so practice feels like a race. Phones stay light.
-      n = phonePlay ? 1 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
+      // Desktop keeps a pack so practice feels like a race. Phones stay solo.
+      n = phonePlay ? 0 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
     if (!preview && n > 0 && !isRivalGarageReady()) n = 0;
 
@@ -3286,6 +3281,14 @@ export class RallyGame {
       );
       return;
     }
+    // Phones: chase cam only — never POV (hands / mirror / cockpit).
+    if (isPhonePlay()) {
+      const views = CAMERA.views || [];
+      let mid = views.findIndex((v) => v && v.id === "medium");
+      if (mid < 0) mid = Math.min(1, Math.max(0, views.length - 1));
+      this.camMode = mid;
+      this._cockpitLive = false;
+    }
     try {
       this._warmRaceSystems();
       const L0 = LIGHTING[courseId] || LIGHTING.desert;
@@ -3313,7 +3316,7 @@ export class RallyGame {
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
     // Leftover stream-shader links belong here — never on 3-2-1 skipped presents.
-    await this._drainStreamCompileUnderOverlay(800);
+    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 60 : 800);
     // Let the bar ease to 100% before the HUD so the handoff reads finished.
     await waitLoadingBarSettled(900);
     if (loadGen !== this._loadGen) return;
@@ -6817,6 +6820,8 @@ export class RallyGame {
    * switch — only recreate when missing, zero-sized, or after context loss.
    */
   _ensureMirrorRT() {
+    // Phones: no rearview RT — second framebuffer after Desert was OOM.
+    if (isPhonePlay()) return null;
     const { w, h } = this._mirrorSize();
     const lens = this._mirrorLens();
     const rt = this._mirrorRT;

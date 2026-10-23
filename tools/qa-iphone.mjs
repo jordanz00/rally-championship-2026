@@ -42,11 +42,13 @@ check("defer title GLB", /_titleCarWarm = isPhonePlay\(\) \? null/.test(game));
 check("no phone title HDR/PMREM", /No HDR \/ PMREM on iPhone/.test(game));
 check("no phone title shadow atlas", /Phones: never allocate a 1024/.test(game));
 check("skip bakeSkyEnv on phone", /Phones never bake PMREM/.test(game));
-check("handset pack ≤1", /phonePlay\) n = Math\.min\(n, 1\)/.test(game));
+check("handset pack solo", /if \(phonePlay\) n = 0/.test(game));
 check("preparePhoneRaceCars first stage", /preparePhoneRaceCars\(this\.carId\)/.test(game));
 check("skip menu LOD warm on phone", /Phones: do NOT parse three GLBs/.test(game));
 check("phone HTML menus only", /HTML menus only until race/.test(game) || /no WebGL until championship/.test(game));
 check("phone defer game.js import", /__rallyPhoneDefer/.test(main) && /__rallyPhoneDefer/.test(index));
+check("phone tiny prop kit", /PHONE_DESERT/.test(read("js/tracks/prop-kit.js")));
+check("phone soft car fallback", /softPhoneCar/.test(read("js/cars/celica.js")));
 check("safe GL prefers phone", /__rallyPhoneLite/.test(factory));
 check("webkit AudioContext", /webkitAudioContext/.test(read("js/audio/engine.js")));
 check("visualViewport resize", /visualViewport/.test(game));
@@ -54,7 +56,7 @@ check("phone no end-of-load shadow atlas", /Phones stay shadow-off until settle/
 
 const mainV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
-check("boot ≥1104", mainV >= 1104 && gameV === mainV, `main=${mainV} game=${gameV}`);
+check("boot ≥1107", mainV >= 1107 && gameV === mainV, `main=${mainV} game=${gameV}`);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " failed" : "iPhone Safari path armed"}`);
 process.exit(fail ? 1 : 0);
