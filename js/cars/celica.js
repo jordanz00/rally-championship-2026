@@ -215,6 +215,11 @@ export async function prepareRivalLods(onEach) {
   await Promise.all(
     GARAGE_CAR_IDS.map(async (id) => {
       await tryRivalGltf(id);
+      // Hero shell is a valid pack body when the decimated LOD is missing /
+      // blocked (Pages 404, stale SW). Empty garage must not kill Desert.
+      if (!rivalTemplates[id] && !templates[id]) {
+        await tryLocalGltf(id);
+      }
       if (onEach) {
         try {
           onEach(id);
@@ -224,6 +229,27 @@ export async function prepareRivalLods(onEach) {
       }
     })
   );
+}
+
+/**
+ * True when at least one chassis can clone for the AI pack.
+ * @returns {boolean}
+ */
+export function isRivalGarageReady() {
+  return GARAGE_CAR_IDS.some((id) => rivalTemplates[id] || templates[id]);
+}
+
+/**
+ * Block until the pack has a mesh, or give up after one more warm pass.
+ * @returns {Promise<boolean>}
+ */
+export async function ensureRivalGarageReady() {
+  if (isRivalGarageReady()) return true;
+  await prepareRivalLods();
+  if (isRivalGarageReady()) return true;
+  // Last resort — any hero already warm from title / player pick.
+  await Promise.all(GARAGE_CAR_IDS.map((id) => tryLocalGltf(id)));
+  return isRivalGarageReady();
 }
 
 /**
@@ -1451,6 +1477,8 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShe
         "[garage] no GLB loaded for the AI pack — load celica.glb and/or delta integrale.glb"
       );
     }
+    // Caller must gate on ensureRivalGarageReady(); throwing here used to
+    // abort the whole Desert build after a silent carWarm catch.
     throw new Error("[garage] no GLB loaded for AI rivals");
   }
   const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);

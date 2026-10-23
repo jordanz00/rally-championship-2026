@@ -85,6 +85,14 @@ check(
   !!(gameCelicaV && aiCelicaV && gameCelicaV === aiCelicaV),
   `game=${gameCelicaV || "missing"} ai=${aiCelicaV || "missing"}`
 );
+check(
+  "ensureRivalGarageReady",
+  /export async function ensureRivalGarageReady/.test(celica) &&
+    /ensureRivalGarageReady/.test(game),
+  "race load gates pack"
+);
+const gameAiV = (game.match(/ai\.js\?v=(\d+)/) || [])[1] || "";
+check("ai.js cache-bust", Number(gameAiV) >= 251, `game imports ai.js?v=${gameAiV || "missing"}`);
 const gameVehV = (game.match(/vehicle\.js\?v=(\d+)/) || [])[1] || "";
 const aiVehV = (ai.match(/vehicle\.js\?v=(\d+)/) || [])[1] || "";
 check(

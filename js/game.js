@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=208";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=256";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=257";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=439";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=7";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=250";
+import { Opponent } from "./ai.js?v=251";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -1050,7 +1050,13 @@ export class RallyGame {
     }
     this._markShowroomLive();
     this._titleShowroomRevealed = true;
-    this._startAttractReel();
+    // Splash stays showroom turntable — stage reel waits for SELECT MODE.
+    if (this.state === "menu") this._startAttractReel();
+    else {
+      const tag = document.querySelector(".sr-attract-tag");
+      if (tag) tag.textContent = "ATTRACT · SHOWROOM LIVE";
+      paintAttractFx(document.getElementById("attract-fx"), null, false);
+    }
   }
 
   /**
@@ -1994,6 +2000,8 @@ export class RallyGame {
       console.warn(err);
     }
     this._markShowroomLive();
+    // SELECT MODE may boot the stage tour; splash kept the turntable car.
+    this._startAttractReel();
     // SELECT MODE is the presentation hub — championship is one clear choice.
     showScreen("screen-menu");
     const first = document.querySelector("#screen-menu .ui-card, #screen-menu [data-menu]");
@@ -2733,6 +2741,14 @@ export class RallyGame {
     if (!preview) {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
       await carWarm;
+      // Force one garage graph — stale ai.js?v= can leave createRivalCar empty.
+      const packOk = await ensureRivalGarageReady().catch((err) => {
+        console.warn("[load] rival garage", err);
+        return isRivalGarageReady();
+      });
+      if (!packOk) {
+        console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
+      }
       this._promotePlayerCar();
       if (this.weather && !this.weather.active && this.playerMesh) {
         this.weather.dryCar(this.playerMesh);
@@ -2764,6 +2780,7 @@ export class RallyGame {
       // Desktop keeps a pack so practice feels like a race. Phones stay light.
       n = phonePlay ? 3 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
+    if (!preview && n > 0 && !isRivalGarageReady()) n = 0;
 
     /**
      * Sprint 26 exclusive grid: player owns their championship slot; AI fill
@@ -5390,25 +5407,14 @@ export class RallyGame {
     const p = this.player;
     const step = dt > 0 && dt < 0.1 ? dt : 0.016;
     this._titleCamT = (this._titleCamT || 0) + step;
-    const t = this._titleCamT * 0.18;
-    const d = this._titleSunDir;
-    const ux = d ? d.x : 0.62;
-    const uz = d ? d.z : 0.46;
-    const sl = Math.hypot(ux, uz) || 1;
-    const sx = ux / sl;
-    const sz = uz / sl;
-    // Slow orbital drift — camera stays in the front hemisphere.
-    const drift = Math.sin(t) * 0.42;
-    const c = Math.cos(drift);
-    const s = Math.sin(drift);
-    // Front-of-car ring: start facing the sun so lacquer reads, then yaw-orbit.
-    const ox = sx * c - sz * s;
-    const oz = sz * c + sx * s;
-    // Nose points at the lens (forward = sin/cos yaw).
-    p.yaw = Math.atan2(ox, oz);
+    const t = this._titleCamT;
+    // Showroom turntable: car spins; camera stays on a front ¾ seat.
+    // (Do not yaw-lock the nose to the lens — that read as a frozen front.)
+    const spin = t * 0.32;
+    p.yaw = spin;
     p.pitch = 0;
-    p.roll = Math.sin(t * 0.55) * 0.008;
-    p.steer = Math.sin(t * 0.7) * 0.05;
+    p.roll = Math.sin(t * 0.55) * 0.006;
+    p.steer = Math.sin(t * 0.9) * 0.04;
     this._syncPlayerMesh();
     setHeadlights(this.playerMesh, false);
     this._syncContactBlobs(1);
@@ -5418,10 +5424,17 @@ export class RallyGame {
       this.camera.updateProjectionMatrix();
     }
     this.camera.up.set(0, 1, 0);
-    const dist = 7.2 + Math.sin(t * 0.45) * 0.12;
+    const d = this._titleSunDir;
+    const ux = d ? d.x : 0.62;
+    const uz = d ? d.z : 0.46;
+    const sl = Math.hypot(ux, uz) || 1;
+    // Fixed showroom lens — slight bob only, front-biased toward the sun.
+    const ox = ux / sl;
+    const oz = uz / sl;
+    const dist = 7.4 + Math.sin(t * 0.22) * 0.1;
     this.camera.position.set(
       p.position.x + ox * dist,
-      p.position.y + 1.85 + Math.sin(t * 0.35) * 0.04,
+      p.position.y + 1.9 + Math.sin(t * 0.28) * 0.05,
       p.position.z + oz * dist
     );
     this.camera.lookAt(p.position.x, p.position.y + 0.55, p.position.z);

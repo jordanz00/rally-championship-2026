@@ -1,5 +1,27 @@
 # QA report — quality-control pass
 
+## Desert AI garage (split module) (2026-10-23)
+
+**Player moment:** Start Desert. Pack loads. Stage builds. No “Course desert failed / no GLB loaded for AI rivals”.
+
+**Cause:** `ai.js?v=250` stayed cached while its body switched to `celica.js?v=256`. Chrome kept the old graph (`celica?v=254`). Race warm filled garage A; `Opponent` cloned from empty garage B.
+
+**Shipped:** `ai.js?v=251` + `celica.js?v=257` aligned in game↔ai. `ensureRivalGarageReady` (hero fallback if LOD miss). Solo grid if still empty — never abort the stage.
+
+**Proof:** `node tools/qa-garage-cars.mjs`
+
+**Boot:** `main.js?v=1096` · `game.js?v=1096` · `ai.js?v=251` · `celica.js?v=257`
+
+## Splash showroom turntable (2026-10-23)
+
+**Player moment:** PRESS START splash. Car spins on a turntable; camera stays on a front ¾ seat. Not nose-locked to the lens.
+
+**Shipped:** `_titleCam` yaw = continuous spin. Stage attract reel waits until SELECT MODE.
+
+**Proof:** `node tools/qa-attract-reel.mjs`
+
+**Boot:** `main.js?v=1096`
+
 ## Consistent 60 Hz present (2026-10-23)
 
 **Player moment:** Race stays at 60. Soft scale + earlier TSR shed protect the frame. Desktop never locks to 30.

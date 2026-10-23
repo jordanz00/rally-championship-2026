@@ -44,19 +44,19 @@ check("soft crossfade FADE_OUT/IN", /FADE_OUT = 0\.55/.test(reel) && /FADE_IN = 
 check("no hard snap on every cut", /Always ease/.test(reel) && /this\._follow\(dt\)/.test(reel));
 check("continuous drive beat clock", /_beatInterval/.test(reel) && /_beatClock/.test(reel));
 check("jump soft timeScale", /_timeScale/.test(reel) && /jumpSlow/.test(reel));
-check("game starts reel after IBL", /_startAttractReel/.test(game) && /_revealTitleShowroom/.test(game));
+check("splash keeps showroom; reel on menu", /Splash stays showroom turntable/.test(game) && /_leaveTitle/.test(game) && /_startAttractReel\(\)/.test(game));
 check("phones skip Track.create attract", /isPhonePlay\(\)/.test(game) && /SHOWROOM LIVE/.test(game) && /Track\.create on title OOMs/.test(game));
 check("desktop defers attract boot", /requestIdleCallback/.test(game) || /setTimeout\(boot/.test(game));
 check("game stops reel before race", /_stopAttractReel\(\)/.test(game));
 check("game applies stage lighting on tour", /onStage:/.test(game) && /_applyLighting\(id\)/.test(game));
-check("title showroom faces camera", /Math\.atan2\(ox, oz\)/.test(game) && /lookAt\(p\.position\.x/.test(game));
+check("title showroom turntable spin", /Showroom turntable/.test(game) && /p\.yaw = spin/.test(game) && !/Math\.atan2\(ox, oz\)/.test(game));
 check("game imports attract-reel", Number((game.match(/attract-reel\.js\?v=(\d+)/) || [])[1]) >= 19);
 check("attract-fx overlay in index", /id="attract-fx"/.test(index) && /attract-letterbox/.test(index));
 check("letterbox + flash CSS", /attract-letterbox/.test(css) && /attract-live/.test(css));
 check("reduced-motion safe", /prefers-reduced-motion/.test(css) && /is-calm/.test(css) && /this\.reduced/.test(reel));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 1092 && Number(mainV) >= 1092,
+  cacheOk && Number(gameV) >= 1096 && Number(mainV) >= 1096,
   `main=${mainV} game=${gameV}`
 );
 check("no white cut flash", /flash: 0/.test(reel) && /this\.flash = 0/.test(reel));
