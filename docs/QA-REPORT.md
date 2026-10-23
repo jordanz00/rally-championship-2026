@@ -10,7 +10,7 @@
 
 **Proof:** `node tools/qa-rival-livery.mjs` · `node tools/qa-garage-cars.mjs`
 
-**Boot:** `main.js?v=1109` · `celica.js?v=262` · `rival-livery.js?v=8` · `ai.js?v=256`
+**Boot:** `main.js?v=1109` · `celica.js?v=262` · `rival-livery.js?v=8` · `ai.js?v=257`
 
 ## Mobile hard-lite — iPhone 13 / Android no jetsam (2026-10-23)
 
