@@ -51,7 +51,8 @@ check("no rival.glb preload", !/preload[^>]+rival\.glb/.test(index), "preload ki
 check("__rallyPhoneLite early tag", /__rallyPhoneLite/.test(index) && /is-phone/.test(index));
 check("isPhonePlay trusts lite flag", /__rallyPhoneLite === true/.test(touch));
 check("phones defer title GLB", /_titleCarWarm = isPhonePlay\(\) \? null/.test(game));
-check("phones skip idle prop kit", /Phones: PRESS START already starts WebGL/.test(game));
+check("phones HTML menus only", /HTML menus only until race/.test(game) || /no WebGL until championship/.test(game));
+check("phone defer game.js", /__rallyPhoneDefer/.test(main) && /bootEngine/.test(main));
 check("phone pack ≤1", /phonePlay\) n = Math\.min\(n, 1\)/.test(game));
 check("practice pack ≤1 on phone", /phonePlay \? 1 :/.test(game));
 check("preparePhoneRaceCars", /preparePhoneRaceCars/.test(game) && /preparePhoneRaceCars/.test(celica));
@@ -69,7 +70,7 @@ check("phones block WebGPU remap", /__rallyPhoneLite\) return/.test(index));
 
 const mainV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
-check("boot ≥1103", mainV >= 1103 && gameV === mainV, `main=${mainV} game=${gameV}`);
+check("boot ≥1104", mainV >= 1104 && gameV === mainV, `main=${mainV} game=${gameV}`);
 
 const gCel = (game.match(/celica\.js\?v=(\d+)/) || [])[1];
 const aCel = (ai.match(/celica\.js\?v=(\d+)/) || [])[1];

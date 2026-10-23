@@ -186,9 +186,15 @@ check("no modulepreload", !/rel="modulepreload"/.test(index), "iPhone first pain
 check("no phone title HDR", /No HDR \/ PMREM on iPhone/.test(game));
 check(
   "phones skip menu prop-kit warm",
-  /Phones: PRESS START already starts WebGL/.test(game),
+  /HTML menus only until race/.test(game) || /no WebGL until championship/.test(game),
   "no desert kit parse on SELECT MODE"
 );
+check(
+  "phones defer game.js until START",
+  /__rallyPhoneDefer/.test(main) && /__rallyBootEngine/.test(index),
+  "Safari must not parse track/celica on splash"
+);
+check("boot cache-bust main ≥1104", mainV >= 1104, `main.js?v=${mainV}`);
 check(
   "Android fill caps tight",
   /android \? 560000/.test(game) && /android \? 0\.65/.test(game),

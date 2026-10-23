@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## iPhone 13 — defer engine until PRESS START (2026-10-23)
+
+**Player moment:** Open Pages on iPhone 13 Safari. Splash paints. No instant tab kill. Tap PRESS START → SELECT MODE (HTML). Championship → Desert loads.
+
+**Cause:** `main.js` statically imported `game.js` → three + track + celica (~2.5 MB+) on first paint. Safari jetsam on 4 GB. PRESS START then stacked WebGL + title GLB.
+
+**Shipped:** `__rallyPhoneDefer` — dynamic `import(game.js)` on PRESS START only · phones never WebGL/title pad until race · iOS pixel cap 480k / 0.55 DPR · `qa-iphone13-smoke.mjs`.
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-iphone13-smoke.mjs` · `node tools/qa-iphone.mjs`
+
+**Boot:** `main.js?v=1104`
+
 ## iOS first-stage boot — no Safari kill (2026-10-23)
 
 **Player moment:** PRESS START → pick car → Desert loads → countdown. Tab stays alive.

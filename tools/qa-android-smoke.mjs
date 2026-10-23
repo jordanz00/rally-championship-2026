@@ -88,14 +88,8 @@ async function main() {
     await armAndroid(cdp);
     await goto(cdp, `${server.origin}/index.html`);
 
-    await waitFor(cdp, `return window.game ? 1 : null;`, {
-      timeout: 20000,
-      label: "window.game",
-    });
-    ok("engine constructed", "window.game");
-
-    // Phones defer WebGL until PRESS START — waiting for renderer on the
-    // splash times out by design (Android tab-kill guard).
+    // Phones defer game.js parse until PRESS START (Safari / Adreno jetsam).
+    await sleep(800);
     const pre = await evaluate(cdp, `
       const g = window.game;
       const body = document.body;
@@ -106,6 +100,7 @@ async function main() {
       return {
         hasGame: !!g,
         hasRenderer: !!(g && g.renderer),
+        deferred: !!window.__rallyPhoneDefer,
         isMobile: body.classList.contains("is-mobile"),
         isPhoneHtml: document.documentElement.classList.contains("is-phone"),
         isTitle: crt && crt.classList.contains("is-title"),
@@ -114,7 +109,6 @@ async function main() {
         bodyBg: bg,
         crtBg,
         ua: navigator.userAgent,
-        phonePlay: !!(g && g.touch && g.touch.enabled),
       };
     `);
 
@@ -129,8 +123,14 @@ async function main() {
     if (!pre.isMobile && !pre.isPhoneHtml) bad("is-mobile / is-phone class", "missing");
     else ok("phone chrome class", pre.isMobile ? "body.is-mobile" : "html.is-phone");
 
-    if (pre.hasRenderer) bad("WebGL deferred until START", "renderer already up on splash");
-    else ok("WebGL deferred until START", "splash stays HTML-only");
+    if (!pre.deferred) bad("engine deferred on splash", "__rallyPhoneDefer missing");
+    else ok("engine deferred on splash");
+
+    if (pre.hasGame) bad("no RallyGame on splash", "game.js parsed too early");
+    else ok("no RallyGame on splash");
+
+    if (pre.hasRenderer) bad("WebGL deferred until race", "renderer already up on splash");
+    else ok("WebGL deferred until race", "splash stays HTML-only");
 
     if (pre.isTitle) ok("title CRT class", "crt.is-title");
     else bad("title CRT class", "missing is-title on splash");
@@ -155,6 +155,12 @@ async function main() {
     ok("title screenshot", path.relative(ROOT, titlePath));
 
     await clickResilient(cdp, "#btn-start", "PRESS START");
+    await waitFor(cdp, `return window.game ? 1 : null;`, {
+      timeout: 45000,
+      label: "window.game after START",
+    });
+    ok("engine after START");
+
     await waitFor(
       cdp,
       `return (function(){
@@ -167,22 +173,89 @@ async function main() {
     );
     ok("left title after START");
 
-    await waitFor(cdp, `return window.game && window.game.renderer ? 1 : null;`, {
-      timeout: 35000,
-      label: "game.renderer after START",
-    });
-    ok("WebGL renderer after START");
-
     const after = await evaluate(cdp, `
       const g = window.game;
       const active = document.querySelector(".screen.active");
       const err = document.getElementById("boot-error");
-      const canvas = document.querySelector("#game-view canvas");
-      const caps = window.__rallyRenderCaps || null;
       return {
         screen: active ? active.id : "(none)",
         bootErrorVisible: !!(err && !err.hidden && (err.textContent || "").trim()),
         bootErrorText: err && !err.hidden ? String(err.textContent || "").slice(0, 240) : "",
+        hasGame: !!g,
+        hasRenderer: !!(g && g.renderer),
+        gfxFailed: !!(g && g._gfxFailed),
+        phonePlay: !!(g && g.touch && g.touch.enabled),
+      };
+    `);
+
+    if (after.bootErrorVisible) bad("PRESS START stayed clean", after.bootErrorText);
+    else ok("PRESS START stayed clean");
+
+    if (after.hasRenderer) bad("menus stay HTML", "WebGL should wait for race start");
+    else ok("menus stay HTML", "WebGL waits for Desert");
+
+    // Kick Desert so WebGL + Track.create actually run under Android budget.
+    const started = await evaluate(
+      cdp,
+      `
+      return (async function () {
+        const g = window.game;
+        if (!g || typeof g._startRace !== "function") return { ok: false, why: "no _startRace" };
+        try {
+          g.mode = "championship";
+          g.courseId = "desert";
+          g.carId = "celica";
+          g.stageIndex = 0;
+          g._startRace("desert");
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, why: String(e && e.stack ? e.stack : e) };
+        }
+      })();
+    `
+    );
+    if (!started || !started.ok) bad("kick Desert", started ? started.why : "null");
+    else ok("kick Desert");
+
+    let raceOk = false;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 90000) {
+      const live = await evaluate(
+        cdp,
+        `
+        const g = window.game;
+        const err = document.getElementById("boot-error");
+        return {
+          state: g ? g.state : null,
+          hasRenderer: !!(g && g.renderer),
+          bootError: !!(err && !err.hidden && (err.textContent || "").trim()),
+          bootText: err && !err.hidden ? String(err.textContent || "").slice(0, 200) : "",
+          canvasW: (document.querySelector("#game-view canvas") || {}).width || 0,
+        };
+      `
+      );
+      if (live.bootError) {
+        bad("Desert load clean", live.bootText);
+        break;
+      }
+      if (live.state === "countdown" || live.state === "race") {
+        raceOk = true;
+        if (live.hasRenderer) ok("WebGL for race", `${live.canvasW}px wide · ${live.state}`);
+        else bad("WebGL for race", "no renderer at countdown");
+        break;
+      }
+      await sleep(500);
+    }
+    if (!raceOk) bad("reached countdown/race", "timeout");
+
+    const race = await evaluate(
+      cdp,
+      `
+      const g = window.game;
+      const canvas = document.querySelector("#game-view canvas");
+      const caps = window.__rallyRenderCaps || null;
+      return {
+        gfxFailed: !!(g && g._gfxFailed),
         hasRenderer: !!(g && g.renderer),
         canvasOk: !!(canvas && canvas.width > 8 && canvas.height > 8),
         canvasW: canvas ? canvas.width : 0,
@@ -191,44 +264,39 @@ async function main() {
         capsLowPower: !!(caps && caps.lowPower),
         capsLock30: !!(caps && caps.preferLock30),
         api: caps && caps.api,
-        gfxFailed: !!(g && g._gfxFailed),
+        state: g ? g.state : null,
       };
-    `);
+    `
+    );
 
-    if (after.bootErrorVisible) bad("PRESS START stayed clean", after.bootErrorText);
-    else ok("PRESS START stayed clean");
-
-    if (after.gfxFailed) bad("no gfx fatal", "game._gfxFailed");
+    if (race.gfxFailed) bad("no gfx fatal", "game._gfxFailed");
     else ok("no gfx fatal");
 
-    if (!after.hasRenderer) bad("renderer after START", "lost");
-    else ok("renderer after START", after.api || "ok");
+    if (!race.hasRenderer) bad("renderer for race", "lost");
+    else ok("renderer for race", race.api || "ok");
 
-    if (!after.canvasOk) bad("canvas painted", `size ${after.canvasW}x${after.canvasH}`);
-    else ok("canvas painted", `${after.canvasW}x${after.canvasH}`);
+    if (!race.canvasOk) bad("canvas painted", `size ${race.canvasW}x${race.canvasH}`);
+    else ok("canvas painted", `${race.canvasW}x${race.canvasH}`);
 
-    if (after.capsLock30 || after.capsLowPower || (after.dprScale != null && after.dprScale <= 0.78)) {
+    if (race.capsLock30 || race.capsLowPower || (race.dprScale != null && race.dprScale <= 0.78)) {
       ok(
         "phone GPU budget",
-        `dprScale=${after.dprScale} lowPower=${after.capsLowPower} lock30=${after.capsLock30}`
+        `dprScale=${race.dprScale} lowPower=${race.capsLowPower} lock30=${race.capsLock30}`
       );
     } else {
       bad(
         "phone GPU budget",
         JSON.stringify({
-          dprScale: after.dprScale,
-          caps: { lowPower: after.capsLowPower, lock30: after.capsLock30 },
+          dprScale: race.dprScale,
+          caps: { lowPower: race.capsLowPower, lock30: race.capsLock30 },
         })
       );
     }
 
-    if (after.screen && after.screen !== "screen-title") ok("menu screen live", after.screen);
-    else bad("menu screen live", `still ${after.screen}`);
-
     const shot2 = await screenshot(cdp);
-    const menuPath = path.join(outDir, "android-smoke-after-start.jpg");
+    const menuPath = path.join(outDir, "android-smoke-desert.jpg");
     fs.writeFileSync(menuPath, Buffer.from(shot2, "base64"));
-    ok("post-START screenshot", path.relative(ROOT, menuPath));
+    ok("desert screenshot", path.relative(ROOT, menuPath));
   } catch (err) {
     bad("smoke aborted", String(err && err.stack ? err.stack : err));
   } finally {

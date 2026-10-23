@@ -3,23 +3,63 @@
  *
  * WHO THIS IS FOR: anyone opening index.html via a local server.
  * WHAT IT DOES: boots the 60 Hz Saturn-style rally game.
+ * Phones: do NOT parse game.js (track/celica/three) until PRESS START —
+ * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-import { RallyGame } from "./game.js?v=1103";
+const GAME_MODULE = "./game.js?v=1104";
+
+function phoneLite() {
+  try {
+    if (window.__rallyPhoneLite === true) return true;
+    if (document.documentElement.classList.contains("is-phone")) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * Load RallyGame once. Safe to call from PRESS START or desktop boot.
+ * @returns {Promise<object>}
+ */
+export async function bootEngine() {
+  if (window.game) return window.game;
+  if (window.__rallyBooting) return window.__rallyBooting;
+  window.__rallyBooting = (async () => {
+    const mod = await import(GAME_MODULE);
+    if (!window.game) {
+      window.game = new mod.RallyGame();
+    }
+    return window.game;
+  })();
+  try {
+    return await window.__rallyBooting;
+  } finally {
+    window.__rallyBooting = null;
+  }
+}
 
 function boot() {
   if (window.game) return;
-  try {
-    window.game = new RallyGame();
-  } catch (err) {
+  // iPhone / Android: HTML splash only. Importing game.js here parsed
+  // three + track + celica (~2.5 MB+) and Safari jetsam'd before PRESS START.
+  if (phoneLite() && !window.__rallyLeftTitle) {
+    window.__rallyPhoneDefer = true;
+    window.__rallyBootEngine = bootEngine;
+    return;
+  }
+  bootEngine().catch((err) => {
     console.error(err);
     const el = document.getElementById("boot-error");
     if (el) {
       el.hidden = false;
       el.textContent = String(err && err.stack ? err.stack : err);
     }
-  }
+  });
 }
+
+window.__rallyBootEngine = bootEngine;
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", boot);

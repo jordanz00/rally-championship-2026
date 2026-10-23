@@ -658,7 +658,9 @@ export class RallyGame {
       if (this.state === "title" || this.state === "menu") this._setupTitleStage();
     };
     const phone = isPhonePlay();
-    if (!phone || window.__rallyLeftTitle) {
+    // Phones: HTML menus only until race. WebGL + title pad on PRESS START
+    // still jetsam'd Safari on iPhone 13 (4 GB). Race path calls _bootGfx.
+    if (!phone) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         bootGfx().catch((err) => {
           this._gfxFailed = true;
@@ -666,8 +668,8 @@ export class RallyGame {
           this._fatal("Graphics failed to start.", err);
         });
       }));
+      this._startBackgroundWarm();
     }
-    if (!phone) this._startBackgroundWarm();
   }
 
   /**
@@ -715,14 +717,16 @@ export class RallyGame {
     // lockRaceQuality keeps cinema look; phones must actually shrink pixels.
     if (isPhonePlay()) {
       const android = /Android/i.test(navigator.userAgent || "");
+      // iPhone 13 = 4 GB; Safari ~1.2 GB tab. Keep pixels under half a meg.
+      const ios = /iPhone|iPod|iPad/i.test(navigator.userAgent || "") ||
+        (!!window.__rallyPhoneLite && !android);
       GFX.preferLock30 = true;
-      // Tighter than prior pass — fill-rate OOM was still killing mid-race tabs.
-      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.65 : 0.9);
-      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 560000 : 900000);
-      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 420000 : 640000);
-      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 256 : 512);
-      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 192 : 384);
-      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 256 : 512);
+      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.65 : ios ? 0.55 : 0.75);
+      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 560000 : ios ? 480000 : 720000);
+      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 420000 : ios ? 360000 : 560000);
+      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 256 : 256);
+      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 192 : 256);
+      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 256 : 256);
       // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
       if ((STREAM.prefetchChunks | 0) > 1) STREAM.prefetchChunks = 1;
       armStreamBudget();
@@ -2010,16 +2014,24 @@ export class RallyGame {
 
   _leaveTitle() {
     window.__rallyLeftTitle = true;
-    if (this.state !== "title") return;
-    this.state = "menu";
-    // Phone splash deferred the rival parse — start it with PRESS START.
-    if (isPhonePlay() && !this._titleCarWarm) {
-      this._titleCarWarm = prepareTitleCar(this.carId);
+    if (this.state !== "title") {
+      // Deferred phone boot may construct already in "menu".
+      if (this.state === "menu") showScreen("screen-menu");
+      return;
     }
-    if (!this.renderer && !this._gfxBooting) {
-      void this._bootGfx().then((ok) => {
-        if (ok && (this.state === "menu" || this.state === "title")) this._setupTitleStage();
-      });
+    this.state = "menu";
+    const phone = isPhonePlay();
+    // Phones: no title GLB, no WebGL, no asphalt pad. HTML SELECT MODE only.
+    // iPhone 13 Safari died when PRESS START stacked WebGL + rival LOD + pad.
+    if (!phone) {
+      if (!this._titleCarWarm) this._titleCarWarm = prepareTitleCar(this.carId);
+      if (!this.renderer && !this._gfxBooting) {
+        void this._bootGfx().then((ok) => {
+          if (ok && (this.state === "menu" || this.state === "title")) this._setupTitleStage();
+        });
+      }
+      this._markShowroomLive();
+      this._startAttractReel();
     }
     try {
       this.audio.unlock();
@@ -2027,10 +2039,6 @@ export class RallyGame {
     } catch (err) {
       console.warn(err);
     }
-    this._markShowroomLive();
-    // SELECT MODE may boot the stage tour; splash kept the turntable car.
-    // Phones stay on the pad — never Track.create here.
-    this._startAttractReel();
     // SELECT MODE is the presentation hub — championship is one clear choice.
     showScreen("screen-menu");
     const first = document.querySelector("#screen-menu .ui-card, #screen-menu [data-menu]");
@@ -2056,17 +2064,16 @@ export class RallyGame {
       }, ms);
     };
     const phone = isPhonePlay();
-    later(80, () => {
-      if (!this.renderer) void this._bootGfx();
-    });
-    // Phones: PRESS START already starts WebGL + title car. Extra warm here
-    // (prop kit / hero clones / HDR) was the mid-menu tab kill on Adreno + Safari.
+    // Phones: HTML menus only — no WebGL until championship Desert load.
     if (phone) {
       later(2200, () => {
         if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
       });
       return;
     }
+    later(80, () => {
+      if (!this.renderer) void this._bootGfx();
+    });
     // Rival LODs already kicked from _showCars — do not start a second parse.
     // Hero mesh clones for car select — deferred off the PRESS START click.
     later(120, () => this._warmCarMeshes());
