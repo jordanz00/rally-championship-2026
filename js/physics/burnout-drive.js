@@ -11,14 +11,18 @@
  * @param {object} [A] ARCADE_ASSIST
  */
 export function applyBurnoutDriveTuning(H, A) {
-  if (!H || H._burnoutDriveV6) return;
+  if (!H || H._burnoutDriveV7) return;
   H._burnoutDrive = true;
   H._burnoutDriveV2 = true;
   H._burnoutDriveV3 = true;
   H._burnoutDriveV4 = true;
   H._burnoutDriveV5 = true;
   H._burnoutDriveV6 = true;
+  H._burnoutDriveV7 = true;
   H.easySlide = true;
+  // Pendulum L↔R: keep attitude through center; catch only when letting off.
+  if (H.driftSwingSteerMul == null || H.driftSwingSteerMul < 1.55) H.driftSwingSteerMul = 1.62;
+  if (H.driftSwingVyKeep == null || H.driftSwingVyKeep < 0.82) H.driftSwingVyKeep = 0.88;
   // AM3 lesson: tarmac still stops and needs more steer; mud slides first.
   if (H.easySlideTarmacSteer == null || H.easySlideTarmacSteer < 0.048) H.easySlideTarmacSteer = 0.048;
   if (H.easySlideTarmacThrottle == null || H.easySlideTarmacThrottle < 0.07) H.easySlideTarmacThrottle = 0.07;
@@ -52,6 +56,9 @@ export function applyBurnoutDriveTuning(H, A) {
 }
 
 export const BURNOUT_STEER_SNAP = 1.58;
+
+/** Extra rack speed when swinging lock→lock mid-slide (centerline must not sticky). */
+export const DRIFT_SWING_STEER = 1.72;
 
 /**
  * @param {number} heat 0–1

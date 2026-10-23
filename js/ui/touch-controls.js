@@ -30,9 +30,22 @@ export function isPhonePlay() {
   const phone = /iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
   const tablet = /iPad|Android(?!.*Mobile)|Tablet|Silk/i.test(ua);
   const points = typeof navigator !== "undefined" ? navigator.maxTouchPoints || 0 : 0;
-  // iPadOS 13+ desktop UA still reports touch points; treat wide touch as tablet play.
+  // iPadOS 13+ / iPhone "Request Desktop Website" → Macintosh UA. Still a phone GPU.
+  // Missing this ran the desktop attract (Track.create) and Safari tab-killed on launch.
+  const iosTouchMac =
+    points > 0 &&
+    /Macintosh/i.test(ua) &&
+    typeof document !== "undefined" &&
+    "ontouchend" in document;
   const iPadOs = points > 1 && /Macintosh/i.test(ua);
-  return !!(coarse || phone || iPadOs || (tablet && points > 0) || (points > 1 && window.innerWidth < 980));
+  return !!(
+    coarse ||
+    phone ||
+    iPadOs ||
+    iosTouchMac ||
+    (tablet && points > 0) ||
+    (points > 1 && window.innerWidth < 980)
+  );
 }
 
 function clamp(v, lo, hi) {

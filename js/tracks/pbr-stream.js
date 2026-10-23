@@ -85,7 +85,17 @@ export function wantHiMaps() {
     if (typeof window !== "undefined" && window.__rallyHiMaps === false) return false;
     if (typeof window !== "undefined" && window.__rallyRenderCaps?.lowPower) return false;
     const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-    if (/Android|iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return false;
+    if (/Android|iPhone|iPod|iPad|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return false;
+    // iPhone/iPad "Request Desktop Website" — still a phone GPU.
+    const points = typeof navigator !== "undefined" ? navigator.maxTouchPoints || 0 : 0;
+    if (
+      points > 0 &&
+      /Macintosh/i.test(ua) &&
+      typeof document !== "undefined" &&
+      "ontouchend" in document
+    ) {
+      return false;
+    }
     const mem = typeof navigator !== "undefined" ? navigator.deviceMemory : 0;
     if (mem && mem <= 4) return false;
   } catch {

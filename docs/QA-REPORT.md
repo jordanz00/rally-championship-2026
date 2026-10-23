@@ -1,5 +1,29 @@
 # QA report — quality-control pass
 
+## iOS launch — no Safari tab kill (2026-10-23)
+
+**Player moment:** Open on iPhone Safari. HTML PRESS START paints. Tap works. No instant crash.
+
+**Cause:** (1) “Request Desktop Website” / iPadOS Macintosh UA skipped `isPhonePlay` → desktop attract `Track.create` OOMs. (2) Rival GLB parse in the constructor raced first paint. (3) Empty LOD → hero GLB pack fill (3× ~7 MB) on phones.
+
+**Shipped:** `iosTouchMac` phone detect · defer `prepareTitleCar` until PRESS START on phones · `garagePhoneLite` skips hero pack fill · hi-maps refuse touch Mac.
+
+**Proof:** `node tools/qa-mobile-boot.mjs`
+
+**Boot:** `main.js?v=1098` · `touch-controls.js?v=5` · `celica.js?v=258` · `pbr-stream.js?v=8`
+
+## Seamless L↔R drift swing (2026-10-23)
+
+**Player moment:** Full left lock in a slide → yank full right. Attitude carries through center. New side locks without the slide dying on the centerline.
+
+**Cause:** Unwind used slow `selfAlign` through zero. Counter + `recoveryAssist` treated the pass as a catch and bled `vy` dead before the opposite lock could build.
+
+**Shipped:** `slideSwing` snap rack · `swingThrough` (stick leads slide side) skips recovery · `slideMom` keeps power-slide tools alive near zero · yaw/lateral flip toward commanded lock.
+
+**Proof:** `node tools/qa-drift-swing.mjs`
+
+**Boot:** `main.js?v=1097` · `vehicle.js?v=209` · `burnout-drive.js?v=7` · `ai.js?v=252`
+
 ## Desert AI garage (split module) (2026-10-23)
 
 **Player moment:** Start Desert. Pack loads. Stage builds. No “Course desert failed / no GLB loaded for AI rivals”.

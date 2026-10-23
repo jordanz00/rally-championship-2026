@@ -157,8 +157,24 @@ const sdkV = Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) |
 const policyV = Number((sdk.match(/tsr-policy\.js\?v=(\d+)/) || [])[1] || 0);
 const mobileV = Number((sdk.match(/mobile-present\.js\?v=(\d+)/) || [])[1] || 0);
 
-check("boot cache-bust main.js", mainV >= 1090, `index boots main.js?v=${mainV} (>=1090)`);
-check("boot cache-bust game.js", gameV >= 1090 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check("boot cache-bust main.js", mainV >= 1098, `index boots main.js?v=${mainV} (>=1098)`);
+check("boot cache-bust game.js", gameV >= 1098 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check(
+  "iOS desktop-UA still phone",
+  /iosTouchMac/.test(touch) && /ontouchend/.test(touch),
+  "Request Desktop Website must not run Track.create attract"
+);
+check(
+  "phones defer title GLB",
+  /HTML splash first/.test(game) && /_titleCarWarm = isPhonePlay\(\) \? null/.test(game),
+  "no rival parse in constructor on phones"
+);
+check(
+  "phone garage skips hero pack fill",
+  /garagePhoneLite/.test(read("js/cars/celica.js")) &&
+    /!phone && !rivalTemplates/.test(read("js/cars/celica.js")),
+  "no 7MB hero fallback on iPhone"
+);
 check("boot cache-bust css", cssV >= 71, `index loads game.css?v=${cssV} (>=71)`);
 check("gfx policy cache-bust", policyV >= 982 && mobileV >= 982 && sdkV >= 989, `policy ${policyV} / mobile ${mobileV} / sdk ${sdkV}`);
 

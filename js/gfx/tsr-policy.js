@@ -11,7 +11,7 @@
  * POWER BI MAPPING: none
  */
 
-import { isPhonePlay } from "../ui/touch-controls.js?v=4";
+import { isPhonePlay } from "../ui/touch-controls.js?v=5";
 
 /**
  * @param {string} [search]

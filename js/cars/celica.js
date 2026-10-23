@@ -211,13 +211,36 @@ export async function prepareHeroCar(id) {
  * does not compete with the selected driver's cockpit mesh.
  * @returns {Promise<void>}
  */
+/** Phone / iOS desktop-UA — never pull 7 MB heroes as pack fill (Safari OOM). */
+function garagePhoneLite() {
+  try {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    if (/iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;
+    if (/iPad|Android(?!.*Mobile)|Tablet|Silk/i.test(ua)) return true;
+    const points = navigator.maxTouchPoints || 0;
+    if (
+      points > 0 &&
+      /Macintosh/i.test(ua) &&
+      typeof document !== "undefined" &&
+      "ontouchend" in document
+    ) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 export async function prepareRivalLods(onEach) {
+  const phone = garagePhoneLite();
   await Promise.all(
     GARAGE_CAR_IDS.map(async (id) => {
       await tryRivalGltf(id);
       // Hero shell is a valid pack body when the decimated LOD is missing /
-      // blocked (Pages 404, stale SW). Empty garage must not kill Desert.
-      if (!rivalTemplates[id] && !templates[id]) {
+      // blocked (Pages 404, stale SW). Never on phones — three heroes ≈ tab kill.
+      if (!phone && !rivalTemplates[id] && !templates[id]) {
         await tryLocalGltf(id);
       }
       if (onEach) {
@@ -248,6 +271,8 @@ export async function ensureRivalGarageReady() {
   await prepareRivalLods();
   if (isRivalGarageReady()) return true;
   // Last resort — any hero already warm from title / player pick.
+  // Phones: never start three 7 MB hero parses from an empty LOD miss.
+  if (garagePhoneLite()) return isRivalGarageReady();
   await Promise.all(GARAGE_CAR_IDS.map((id) => tryLocalGltf(id)));
   return isRivalGarageReady();
 }

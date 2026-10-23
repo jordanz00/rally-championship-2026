@@ -56,7 +56,7 @@ check("letterbox + flash CSS", /attract-letterbox/.test(css) && /attract-live/.t
 check("reduced-motion safe", /prefers-reduced-motion/.test(css) && /is-calm/.test(css) && /this\.reduced/.test(reel));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 1096 && Number(mainV) >= 1096,
+  cacheOk && Number(gameV) >= 1098 && Number(mainV) >= 1098,
   `main=${mainV} game=${gameV}`
 );
 check("no white cut flash", /flash: 0/.test(reel) && /this\.flash = 0/.test(reel));

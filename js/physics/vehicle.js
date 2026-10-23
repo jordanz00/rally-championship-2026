@@ -52,7 +52,9 @@ import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } 
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
 import { JumpModel } from "./jump.js?v=40";
-import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=6";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=7";
+/** Fallback if an older burnout-drive cache lacks the named export. */
+const DRIFT_SWING_STEER = 1.72;
 
 applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
 
@@ -543,6 +545,8 @@ export class Vehicle {
     }
 
     this.steer = 0;
+    /** Raw stick (−1..1). Used so mid-slide L↔R can lead the lagged rack. */
+    this._steerIn = 0;
     this.throttle = 0;
     this.brake = 0;
     this.handbrake = 0;
@@ -1133,6 +1137,7 @@ export class Vehicle {
     this.brake = clamp(Number(input.brake) || 0, 0, 1);
     this.handbrake = clamp(Number(input.handbrake) || 0, 0, 1);
     const steerIn = clamp(Number(input.steer) || 0, -1, 1);
+    this._steerIn = steerIn;
 
     this._shiftGearbox(input, steerIn);
 
@@ -1187,12 +1192,23 @@ export class Vehicle {
     // Weighted rack — hairpins stay quick. Speed still adds mass, but the
     // wheel has to reach lock in time to throw a sweeper. Self-align is
     // lighter so you can hold a slide instead of fighting the return.
+    // Mid-slide lock→lock: never crawl through center (selfAlign killed L↔R).
     const speed01 = clamp(Math.abs(vx) / 48, 0, 1);
     const selfAlign = (s.steerReturn || 88) + Math.abs(vx) * 0.26;
+    const slideSwing =
+      Math.abs(vy) > 1.35 &&
+      Math.abs(steerIn) > 0.22 &&
+      (this.steer * steerTarget < 0 ||
+        (Math.abs(this.steer) > 0.04 && Math.sign(steerIn) !== Math.sign(this.steer)));
+    const snapRack =
+      (s.steerSpeed || 96) *
+      lerp(1.62, 0.82, speed01 * speed01) *
+      BURNOUT_STEER_SNAP *
+      (slideSwing
+        ? (HANDLING.driftSwingSteerMul != null ? HANDLING.driftSwingSteerMul : DRIFT_SWING_STEER)
+        : 1);
     const rack =
-      Math.abs(steerTarget) > Math.abs(this.steer)
-        ? (s.steerSpeed || 96) * lerp(1.62, 0.82, speed01 * speed01) * BURNOUT_STEER_SNAP
-        : selfAlign;
+      slideSwing || Math.abs(steerTarget) > Math.abs(this.steer) ? snapRack : selfAlign;
     this.steer += (steerTarget - this.steer) * (1 - Math.exp(-rack * dt));
     if (Math.abs(steerIn) < 0.04 && Math.abs(this.steer) < 0.012) this.steer = 0;
 
@@ -4481,12 +4497,20 @@ export class Vehicle {
     // Easy slide stays on. Tarmac still needs more steer / speed than mud
     // (AM3: brake on tarmac stops you; brake on mud starts the slide).
     const tarmacEasy = HANDLING.easySlide && !loose;
+    const steerCmd = this._steerIn != null ? this._steerIn : sign(st);
+    // Momentum hang: keep power-slide tools alive while |vy| carries through
+    // center — otherwise L→R lock dies the instant st crosses zero.
+    const slideMom = Math.abs(vy) > 1.25 || this._rearSlide;
     const slideIntent =
-      (loose || HANDLING.easySlide) &&
-      hb < hbEnter + 0.04 &&
-      this.throttle > (tarmacEasy ? HANDLING.easySlideTarmacThrottle || 0.07 : 0.035) &&
-      Math.abs(st) > (tarmacEasy ? HANDLING.easySlideTarmacSteer || 0.048 : 0.022) &&
-      Math.abs(vx) > (tarmacEasy ? HANDLING.easySlideTarmacSpeed || 4.8 : 2.8);
+      ((loose || HANDLING.easySlide) &&
+        hb < hbEnter + 0.04 &&
+        this.throttle > (tarmacEasy ? HANDLING.easySlideTarmacThrottle || 0.07 : 0.035) &&
+        Math.abs(st) > (tarmacEasy ? HANDLING.easySlideTarmacSteer || 0.048 : 0.022) &&
+        Math.abs(vx) > (tarmacEasy ? HANDLING.easySlideTarmacSpeed || 4.8 : 2.8)) ||
+      (slideMom &&
+        this.throttle > 0.04 &&
+        Math.abs(vx) > 3.2 &&
+        (Math.abs(st) > 0.008 || Math.abs(steerCmd) > 0.18));
 
     // AM3 headline: brake on tarmac and you stop; brake on mud and you begin a
     // power slide. brakeYaw decides which of those two the pedal does here.
@@ -4918,9 +4942,26 @@ export class Vehicle {
     // authority boost scaled by the surface's gripSnap. That is why an expert
     // can hold a big angle on gravel and why a novice can still catch the car
     // with a flick on tarmac.
+    // Pendulum: stick already aiming the OTHER side = swing-through, not a catch.
     const slideDir = Math.abs(vy) > 0.6 ? sign(vy) : 0;
+    const swingThrough =
+      slideDir !== 0 &&
+      Math.abs(vy) > 1.35 &&
+      Math.abs(steerCmd) > 0.28 &&
+      Math.sign(steerCmd) !== slideDir;
     const counter =
-      slideDir !== 0 && Math.sign(st) === slideDir ? Math.min(1, Math.abs(st) / 0.2) : 0;
+      !swingThrough && slideDir !== 0 && Math.sign(st) === slideDir
+        ? Math.min(1, Math.abs(st) / 0.2)
+        : 0;
+    if (swingThrough && Math.abs(vx) > 3.5) {
+      // Rack lags behind the stick — aim yaw at the commanded lock so the
+      // pendulum keeps rotating instead of parking at centerline.
+      rWant +=
+        Math.sign(steerCmd) *
+        Math.abs(steerCmd) *
+        (1.05 + Math.abs(vx) * 0.034) *
+        (0.55 + this.throttle * 0.55);
+    }
     const slipAmt = clamp(Math.abs(vy) / Math.max(2.2, latG * 0.22), 0, 1);
     // Subtle yaw assist toward steering intent while building grip (not a spin motor).
     const yawAsst = ARCADE_ASSIST.yawAssist != null ? ARCADE_ASSIST.yawAssist : 0;
@@ -4986,12 +5027,25 @@ export class Vehicle {
     // exaggerated without needing the handbrake every corner.
     const pitch = HANDLING.powerSlidePitch != null ? HANDLING.powerSlidePitch : 1.35;
     if (slideIntent && Math.abs(vy) < 10.5) {
-      vy += Math.sign(st) * this.throttle * pitch * (0.88 + Math.abs(vx) * 0.042) * dt;
+      const pitchDir = swingThrough
+        ? Math.sign(steerCmd) || Math.sign(st) || 1
+        : Math.sign(st) || sign(vy) || 1;
+      vy += pitchDir * this.throttle * pitch * (0.88 + Math.abs(vx) * 0.042) * dt;
     }
     if (!hbSlide && powerSlide && Math.abs(vx) > 4) {
-      const steerDir = Math.sign(st) || sign(vy) || 0;
+      const steerDir = swingThrough
+        ? Math.sign(steerCmd) || Math.sign(st) || 0
+        : Math.sign(st) || sign(vy) || 0;
       if (steerDir !== 0) {
         vy += steerDir * this.throttle * pitch * (0.48 + Math.abs(vx) * 0.03) * dt;
+      }
+    }
+    // Swing-through shove: flip lateral toward the new lock before center kills it.
+    if (swingThrough && this.throttle > 0.06 && Math.abs(vx) > 3.5) {
+      const flip = Math.sign(steerCmd);
+      const keep = HANDLING.driftSwingVyKeep != null ? HANDLING.driftSwingVyKeep : 0.88;
+      if (flip !== 0 && Math.sign(vy) !== flip) {
+        vy += flip * (1.15 + Math.abs(vx) * 0.04) * this.throttle * (0.55 + keep * 0.45) * dt;
       }
     }
     vy += bumpField(dist * 1.6, lat) * rough * Math.abs(vx) * 0.06 * dt;
@@ -5001,7 +5055,9 @@ export class Vehicle {
     // input; gripSnap is how fast an ACTIVE correction gets it back. Tarmac
     // self-centres and answers instantly; mud carries and makes you wait.
     const holdRate =
-      (LAT_BLEED / (ease * Math.max(0.45, surface.slideHold || 1))) * (1 + counter * snap * 1.15);
+      (LAT_BLEED / (ease * Math.max(0.45, surface.slideHold || 1))) *
+      (1 + counter * snap * 1.15) *
+      (swingThrough ? 0.42 : 1);
     let bleedMul = 1;
     if (powerSlide) {
       bleedMul = hbSlide
@@ -5018,6 +5074,7 @@ export class Vehicle {
         const hang = HANDLING.outrunHang != null ? HANDLING.outrunHang : 0;
         if (hang > 0) bleedMul *= Math.max(0.04, 1 - hang);
       }
+      if (swingThrough) bleedMul *= 0.22;
     }
     const hold = Math.exp(-holdRate * bleedMul * dt);
     let dvyCap = maxDvy;
@@ -5025,9 +5082,16 @@ export class Vehicle {
     if (Math.abs(vy) <= dvyCap) vy *= hold;
     else vy -= Math.sign(vy) * dvyCap;
     // Recovery assist — "I saved that" when opposite-lock + still in the window.
+    // Skip on swing-through so unwinding L→R is not treated as a catch-and-kill.
     const recAsst = ARCADE_ASSIST.recoveryAssist != null ? ARCADE_ASSIST.recoveryAssist : 0;
     const recCap = ARCADE_ASSIST.recoverableSlide != null ? ARCADE_ASSIST.recoverableSlide : 9.5;
-    if (recAsst > 0.05 && counter > 0.16 && Math.abs(vy) < recCap && Math.abs(vx) > 4) {
+    if (
+      !swingThrough &&
+      recAsst > 0.05 &&
+      counter > 0.16 &&
+      Math.abs(vy) < recCap &&
+      Math.abs(vx) > 4
+    ) {
       vy *= Math.exp(-recAsst * counter * (0.72 + snap * 0.28) * dt);
     }
     vx += vy * r * dt;

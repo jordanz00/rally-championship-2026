@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=208";
+import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=257";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=258";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=439";
-import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=7";
+import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=251";
+import { Opponent } from "./ai.js?v=253";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -158,7 +158,7 @@ import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=19";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
-import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=4";
+import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=5";
 import {
   applyStageLights,
   applyDaylightLook,
@@ -448,7 +448,9 @@ export class RallyGame {
     this.carId = "celica";
     this.stratosUnlocked = true;
     this.lakesideUnlocked = false;
-    this._titleCarWarm = prepareTitleCar(this.carId);
+    // Phones: HTML splash first. Parsing the rival GLB in the constructor
+    // raced the first paint and tab-killed Safari / Android on launch.
+    this._titleCarWarm = isPhonePlay() ? null : prepareTitleCar(this.carId);
     try {
       // Legacy key still unlocks Lakeside; Stratos is starter content now.
       if (localStorage.getItem("rally-stratos") === "1") {
@@ -1988,6 +1990,10 @@ export class RallyGame {
     window.__rallyLeftTitle = true;
     if (this.state !== "title") return;
     this.state = "menu";
+    // Phone splash deferred the rival parse — start it with PRESS START.
+    if (isPhonePlay() && !this._titleCarWarm) {
+      this._titleCarWarm = prepareTitleCar(this.carId);
+    }
     if (!this.renderer && !this._gfxBooting) {
       void this._bootGfx().then((ok) => {
         if (ok && (this.state === "menu" || this.state === "title")) this._setupTitleStage();
@@ -2001,6 +2007,7 @@ export class RallyGame {
     }
     this._markShowroomLive();
     // SELECT MODE may boot the stage tour; splash kept the turntable car.
+    // Phones stay on the pad — never Track.create here.
     this._startAttractReel();
     // SELECT MODE is the presentation hub — championship is one clear choice.
     showScreen("screen-menu");
