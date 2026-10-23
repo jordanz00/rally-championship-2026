@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## Desert rivals load again (2026-10-22)
+
+**Player moment:** Start Desert. The pack appears. Stage builds.
+
+**Cause:** `game.js` imported `celica.js?v=254` while `ai.js` still used `?v=251`. Two garage singletons — LOD warm filled one; `createRivalCar` read the empty other.
+
+**Shipped:** Align `ai.js` to `celica.js?v=254`. Boot `main.js?v=1082`.
+
+**Boot:** `main.js?v=1082` · `game.js?v=1082` · `ai.js?v=250` · `celica.js?v=254`
+
 ## POV hands close on the leather (2026-10-22)
 
 **Player moment:** Cockpit. Palm and fingers meet the rim. Thumbs sit on the near face. Not a floating claw.
