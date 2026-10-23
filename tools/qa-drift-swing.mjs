@@ -48,7 +48,7 @@ check(
 );
 const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];
 check("boot chain", gameV && new RegExp(`main\\.js\\?v=${gameV}`).test(index), `v=${gameV}`);
-check("boot 1098+", Number(gameV) >= 1098);
+check("boot 1100+", Number(gameV) >= 1100);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " failed" : "seamless L↔R drift armed"}`);
 process.exit(fail ? 1 : 0);

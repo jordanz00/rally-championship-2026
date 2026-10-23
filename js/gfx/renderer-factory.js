@@ -68,8 +68,18 @@ function isNativeWebGPU(renderer) {
  */
 function preferSafeGl() {
   try {
+    if (typeof window !== "undefined" && window.__rallyPhoneLite) return true;
     const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-    if (/Android|iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return true;
+    if (/Android|iPhone|iPod|iPad|Mobile|webOS|BlackBerry|IEMobile/i.test(ua)) return true;
+    const points = typeof navigator !== "undefined" ? navigator.maxTouchPoints || 0 : 0;
+    if (
+      points > 0 &&
+      /Macintosh/i.test(ua) &&
+      typeof document !== "undefined" &&
+      "ontouchend" in document
+    ) {
+      return true;
+    }
     if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
       return true;
     }

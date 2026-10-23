@@ -128,9 +128,9 @@ check(
 
 check(
   "Android fill-rate caps tightened",
-  /android \? 720000/.test(game) &&
-    /android \? 0\.75/.test(game) &&
-    /android \? 384/.test(game) &&
+  /android \? 560000/.test(game) &&
+    /android \? 0\.65/.test(game) &&
+    /android \? 256/.test(game) &&
     /GFX\.preferLock30 = true/.test(game),
   "mid-range Android must not keep cinema pixel / shadow budgets"
 );
@@ -141,12 +141,12 @@ check(
 );
 check(
   "phones cap championship pack size",
-  /phonePlay\) n = Math\.min\(n, androidPlay \? 5 : 7\)/.test(game),
+  /phonePlay\) n = Math\.min\(n, androidPlay \? 3 : 4\)/.test(game),
   "14 AI cars melt mid-range GPUs"
 );
 check(
   "phones keep a light practice pack",
-  /phonePlay \? 3 : Math\.max\(10/.test(game),
+  /phonePlay \? 2 : Math\.max\(10/.test(game),
   "practice must not force 10+ rivals on phones"
 );
 
@@ -157,8 +157,8 @@ const sdkV = Number((game.match(/browser-reconstruct-sdk\/index\.js\?v=(\d+)/) |
 const policyV = Number((sdk.match(/tsr-policy\.js\?v=(\d+)/) || [])[1] || 0);
 const mobileV = Number((sdk.match(/mobile-present\.js\?v=(\d+)/) || [])[1] || 0);
 
-check("boot cache-bust main.js", mainV >= 1098, `index boots main.js?v=${mainV} (>=1098)`);
-check("boot cache-bust game.js", gameV >= 1098 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
+check("boot cache-bust main.js", mainV >= 1100, `index boots main.js?v=${mainV} (>=1100)`);
+check("boot cache-bust game.js", gameV >= 1100 && gameV === mainV, `main imports game.js?v=${gameV} (match main ${mainV})`);
 check(
   "iOS desktop-UA still phone",
   /iosTouchMac/.test(touch) && /ontouchend/.test(touch),
@@ -174,6 +174,23 @@ check(
   /garagePhoneLite/.test(read("js/cars/celica.js")) &&
     /!phone && !rivalTemplates/.test(read("js/cars/celica.js")),
   "no 7MB hero fallback on iPhone"
+);
+check("no rival.glb preload", !/preload[^>]+rival\.glb/.test(index), "preload races module parse");
+check("__rallyPhoneLite before modules", /__rallyPhoneLite = true/.test(index));
+check(
+  "phones cap pack 3/4",
+  /androidPlay \? 3 : 4/.test(game) && /phonePlay \? 2 :/.test(game),
+  "handset pack must stay tiny"
+);
+check(
+  "phones skip menu prop-kit warm",
+  /Phones: PRESS START already starts WebGL/.test(game),
+  "no desert kit parse on SELECT MODE"
+);
+check(
+  "Android fill caps tight",
+  /android \? 560000/.test(game) && /android \? 0\.65/.test(game),
+  "Adreno fill-rate budget"
 );
 check("boot cache-bust css", cssV >= 71, `index loads game.css?v=${cssV} (>=71)`);
 check("gfx policy cache-bust", policyV >= 982 && mobileV >= 982 && sdkV >= 989, `policy ${policyV} / mobile ${mobileV} / sdk ${sdkV}`);

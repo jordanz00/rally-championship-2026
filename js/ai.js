@@ -22,10 +22,11 @@
  * is never simplified; the pack is what gets trimmed to hold the frame budget.
  */
 
+import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=258";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=259";
 
 const G = 9.81;
 
@@ -226,7 +227,15 @@ export class Opponent {
     this.vehicle = new Vehicle(CARS[this.chassisId] || CARS.celica, { lowDetail: true });
     this.vehicle.ai = true;
     this.vehicle.spawn(track, startDist, this.lane);
-    this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId);
+    // Empty garage must not abort the whole stage build on phones.
+    try {
+      this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId);
+    } catch (err) {
+      console.warn("[ai] rival mesh missing — placeholder", err);
+      this.mesh = new THREE.Group();
+      this.mesh.name = "rival-placeholder";
+      this._meshMissing = true;
+    }
     this.mesh.scale.setScalar(1);
     this._steer = 0;
     /** Persistent Vehicle.step payload — mutated each tick, never allocated. */

@@ -18,6 +18,8 @@ const STORE_SIGN = "rally-tilt-sign";
  */
 export function isPhonePlay() {
   if (typeof window === "undefined") return false;
+  // Inline index.html already tagged — trust it (covers desktop-UA iPhone).
+  if (window.__rallyPhoneLite === true) return true;
   try {
     const q = new URLSearchParams(window.location.search);
     if (q.get("touch") === "1") return true;
@@ -38,7 +40,7 @@ export function isPhonePlay() {
     typeof document !== "undefined" &&
     "ontouchend" in document;
   const iPadOs = points > 1 && /Macintosh/i.test(ua);
-  return !!(
+  const lite = !!(
     coarse ||
     phone ||
     iPadOs ||
@@ -46,6 +48,15 @@ export function isPhonePlay() {
     (tablet && points > 0) ||
     (points > 1 && window.innerWidth < 980)
   );
+  if (lite) {
+    try {
+      window.__rallyPhoneLite = true;
+      if (typeof document !== "undefined") document.documentElement.classList.add("is-phone");
+    } catch {
+      /* ignore */
+    }
+  }
+  return lite;
 }
 
 function clamp(v, lo, hi) {

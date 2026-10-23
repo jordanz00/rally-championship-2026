@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Phone crash hard-stop (iOS + Android) (2026-10-23)
+
+**Player moment:** Open on iPhone Safari or Android Chrome. PRESS START. Select mode. Race loads. Tab stays alive.
+
+**Cause stack:** desktop-UA missed phone lite · rival.glb preload + module parse · constructor GLB · menu prop-kit/HDR warm · 5–7 AI cars · hero GLB pack fill · Opponent throw aborted Desert.
+
+**Shipped:** `__rallyPhoneLite` before modules · no GLB preload · defer title car · skip phone menu warm · pack 3 Android / 4 iOS / practice 2 · Opponent placeholder · grid try/catch · tighter Android pixels (560k / 0.65 DPR) · safe GL on touch Mac · no WebGPU remap on phones.
+
+**Proof:** `PASSES=20 node tools/qa-phone-stable.mjs` (100 script runs) · `node tools/qa-mobile-boot.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1100` · `game.css?v=72` · `touch-controls.js?v=6` · `celica.js?v=259` · `ai.js?v=255` · `renderer-factory.js?v=8`
+
 ## iOS launch — no Safari tab kill (2026-10-23)
 
 **Player moment:** Open on iPhone Safari. HTML PRESS START paints. Tap works. No instant crash.

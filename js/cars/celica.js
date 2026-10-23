@@ -214,6 +214,7 @@ export async function prepareHeroCar(id) {
 /** Phone / iOS desktop-UA — never pull 7 MB heroes as pack fill (Safari OOM). */
 function garagePhoneLite() {
   try {
+    if (typeof window !== "undefined" && window.__rallyPhoneLite) return true;
     if (typeof navigator === "undefined") return false;
     const ua = navigator.userAgent || "";
     if (/iPhone|iPod|Android.+Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;

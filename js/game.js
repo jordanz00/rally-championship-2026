@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=258";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=259";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=439";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=55";
-import { Opponent } from "./ai.js?v=253";
+import { Opponent } from "./ai.js?v=255";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -49,7 +49,7 @@ import {
   wantsMobilePresent,
 } from "./gfx/browser-reconstruct-sdk/index.js?v=1036";
 import { createPerfTier } from "./gfx/perf-tier.js?v=56";
-import { createGameRenderer } from "./gfx/renderer-factory.js?v=7";
+import { createGameRenderer } from "./gfx/renderer-factory.js?v=8";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=6";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
@@ -158,7 +158,7 @@ import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=19";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
-import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=5";
+import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=6";
 import {
   applyStageLights,
   applyDaylightLook,
@@ -724,14 +724,15 @@ export class RallyGame {
     if (isPhonePlay()) {
       const android = /Android/i.test(navigator.userAgent || "");
       GFX.preferLock30 = true;
-      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.75 : 1.0);
-      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 720000 : 1100000);
-      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 520000 : 800000);
-      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 384 : 640);
-      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 256 : 512);
-      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 384 : 768);
+      // Tighter than prior pass — fill-rate OOM was still killing mid-race tabs.
+      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.65 : 0.9);
+      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 560000 : 900000);
+      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 420000 : 640000);
+      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 256 : 512);
+      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 192 : 384);
+      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 256 : 512);
       // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
-      if ((STREAM.prefetchChunks | 0) > 2) STREAM.prefetchChunks = 2;
+      if ((STREAM.prefetchChunks | 0) > 1) STREAM.prefetchChunks = 1;
       armStreamBudget();
     } else {
       // Desktop presents at 60. Do not trade the frame for a 30 Hz lock,
@@ -1307,6 +1308,29 @@ export class RallyGame {
    * @param {boolean} [all]
    */
   _prefetchStageBytes(all = false) {
+    // Phones: music only. HDR + multi-map prefetch during menu was a silent OOM.
+    if (isPhonePlay()) {
+      const music = all
+        ? [
+            "assets/music/desert.mp3?v=4",
+            "assets/music/forest.mp3?v=4",
+            "assets/music/mountain.mp3?v=4",
+            "assets/music/lakeside.mp3?v=4",
+          ]
+        : ["assets/music/desert.mp3?v=4"];
+      if (this._bytesPrefetched && !all) return;
+      if (all) {
+        if (this._bytesPrefetchedAll) return;
+        this._bytesPrefetchedAll = true;
+        this._bytesPrefetched = true;
+      } else {
+        this._bytesPrefetched = true;
+      }
+      for (const url of music) {
+        fetch(url, { mode: "cors", credentials: "same-origin" }).catch(() => {});
+      }
+      return;
+    }
     const urls = all
       ? [
           "assets/music/desert.mp3?v=4",
@@ -2033,9 +2057,18 @@ export class RallyGame {
         fn();
       }, ms);
     };
+    const phone = isPhonePlay();
     later(80, () => {
       if (!this.renderer) void this._bootGfx();
     });
+    // Phones: PRESS START already starts WebGL + title car. Extra warm here
+    // (prop kit / hero clones / HDR) was the mid-menu tab kill on Adreno + Safari.
+    if (phone) {
+      later(2200, () => {
+        if (this.audio && this.audio.cd && this.audio.cd.warmIdle) this.audio.cd.warmIdle();
+      });
+      return;
+    }
     // Rival LODs already kicked from _showCars — do not start a second parse.
     // Hero mesh clones for car select — deferred off the PRESS START click.
     later(120, () => this._warmCarMeshes());
@@ -2782,10 +2815,11 @@ export class RallyGame {
       const byCourse = CHAMPIONSHIP.opponentsByCourse;
       n = (byCourse && byCourse[courseId]) || CHAMPIONSHIP.opponents;
       // Full 14-car pack melts mid-range phones; keep a readable field.
-      if (phonePlay) n = Math.min(n, androidPlay ? 5 : 7);
+      // Android / weak iOS: 3 rivals. Stronger iPhone: 4. Never 7+ on a handset.
+      if (phonePlay) n = Math.min(n, androidPlay ? 3 : 4);
     } else if (!preview && this.mode === "practice") {
       // Desktop keeps a pack so practice feels like a race. Phones stay light.
-      n = phonePlay ? 3 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
+      n = phonePlay ? 2 : Math.max(10, CHAMPIONSHIP.practiceOpponents || 0);
     }
     if (!preview && n > 0 && !isRivalGarageReady()) n = 0;
 
@@ -2814,16 +2848,25 @@ export class RallyGame {
           if (this.mobilePresent) this.mobilePresent.reset();
         } else {
           const gridPlace = slot + 1;
-          const ai = new Opponent(this.track, aiIndex, dist, {
-            fieldSize: n,
-            courseId,
-            champPlace: place,
-            lane: this._gridLane(gridPlace),
-          });
-          this.opponents.push(ai);
-          enableLocalLightReceiver(ai.mesh);
-          this.scene.add(ai.mesh);
-          aiIndex += 1;
+          try {
+            const ai = new Opponent(this.track, aiIndex, dist, {
+              fieldSize: n,
+              courseId,
+              champPlace: place,
+              lane: this._gridLane(gridPlace),
+            });
+            if (ai._meshMissing) {
+              aiIndex += 1;
+              continue;
+            }
+            this.opponents.push(ai);
+            enableLocalLightReceiver(ai.mesh);
+            this.scene.add(ai.mesh);
+            aiIndex += 1;
+          } catch (err) {
+            console.warn("[grid] rival skip", err);
+            aiIndex += 1;
+          }
         }
       }
       report(0.98, "Grid ready…");
@@ -2833,14 +2876,19 @@ export class RallyGame {
       if (this.mobilePresent) this.mobilePresent.reset();
       for (let i = 0; i < n; i++) {
         const dist = 16 + i * spacing;
-        const ai = new Opponent(this.track, i, dist, {
-          fieldSize: n,
-          courseId,
-          champPlace: this.champPlace || CHAMPIONSHIP.startPosition,
-        });
-        this.opponents.push(ai);
-        enableLocalLightReceiver(ai.mesh);
-        this.scene.add(ai.mesh);
+        try {
+          const ai = new Opponent(this.track, i, dist, {
+            fieldSize: n,
+            courseId,
+            champPlace: this.champPlace || CHAMPIONSHIP.startPosition,
+          });
+          if (ai._meshMissing) continue;
+          this.opponents.push(ai);
+          enableLocalLightReceiver(ai.mesh);
+          this.scene.add(ai.mesh);
+        } catch (err) {
+          console.warn("[grid] rival skip", err);
+        }
       }
       if (n > 0) report(0.98, "Grid ready…");
     }
