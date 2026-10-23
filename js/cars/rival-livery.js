@@ -742,42 +742,85 @@ export function dressRivalCar(root, tint, variant, isBody) {
   return livery;
 }
 
+/**
+ * Local AABB fit so door / hood / roof plates sit on this chassis, not a
+ * one-size Celica guess (Delta / Stratos / soft shells were floating).
+ * @param {THREE.Object3D} root
+ * @param {string} chassis
+ */
+function measureRivalFit(root, chassis) {
+  const base = FIT[chassis] || FIT.celica;
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  if (!Number.isFinite(box.min.x) || box.isEmpty()) return { ...base, tailZ: -2.05 };
+  // Template roots sit near identity — world ≈ local for pack clones at dress time.
+  const min = box.min;
+  const max = box.max;
+  const sizeX = Math.max(0.01, max.x - min.x);
+  const sizeY = Math.max(0.01, max.y - min.y);
+  const sizeZ = Math.max(0.01, max.z - min.z);
+  const halfW = Math.max(0.72, sizeX * 0.48);
+  const doorY = min.y + sizeY * 0.38;
+  const doorZ = min.z + sizeZ * 0.48;
+  const hoodY = min.y + sizeY * 0.48;
+  const hoodZ = min.z + sizeZ * 0.78;
+  const roofY = min.y + sizeY * 0.78;
+  const roofZ = min.z + sizeZ * 0.52;
+  const tailZ = min.z - 0.02;
+  return {
+    halfW: (base.halfW + halfW) * 0.5,
+    doorY: (base.doorY + doorY) * 0.5,
+    doorZ: (base.doorZ + doorZ) * 0.5,
+    hoodY: (base.hoodY + hoodY) * 0.5,
+    hoodZ: (base.hoodZ + hoodZ) * 0.5,
+    roofY: (base.roofY + roofY) * 0.5,
+    roofZ: (base.roofZ + roofZ) * 0.5,
+    tailZ,
+    doorW: Math.min(0.48, sizeZ * 0.12),
+    doorH: Math.min(0.34, sizeY * 0.22),
+    hoodW: Math.min(0.92, sizeX * 0.72),
+    hoodH: Math.min(0.3, sizeZ * 0.08),
+    roofW: Math.min(0.42, sizeX * 0.32),
+    roofH: Math.min(0.16, sizeZ * 0.05),
+    tailW: Math.min(0.95, sizeX * 0.78),
+    tailH: Math.min(0.32, sizeY * 0.2),
+  };
+}
+
 export function attachRivalLiveryMarks(root, livery) {
   if (!root || root.userData.rivalMarks) return;
   const chassis = root.userData.carId || "celica";
-  const fit = FIT[chassis] || FIT.celica;
+  const fit = measureRivalFit(root, chassis);
   const geo = getDecalGeo();
   const doorMat = vinylMaterial(doorTexture(livery));
   const hoodMat = vinylMaterial(hoodTexture(livery));
   const roofMat = vinylMaterial(roofTexture(livery));
 
   const right = new THREE.Mesh(geo, doorMat);
-  right.position.set(fit.halfW + 0.012, fit.doorY, fit.doorZ);
+  right.position.set(fit.halfW + 0.01, fit.doorY, fit.doorZ);
   right.rotation.y = Math.PI / 2;
-  right.scale.set(0.4, 0.28, 1);
+  right.scale.set(fit.doorW || 0.4, fit.doorH || 0.28, 1);
 
   const left = new THREE.Mesh(geo, doorMat);
-  left.position.set(-(fit.halfW + 0.012), fit.doorY, fit.doorZ);
+  left.position.set(-(fit.halfW + 0.01), fit.doorY, fit.doorZ);
   left.rotation.y = -Math.PI / 2;
-  left.scale.set(0.4, 0.28, 1);
+  left.scale.set(fit.doorW || 0.4, fit.doorH || 0.28, 1);
 
   const hood = new THREE.Mesh(geo, hoodMat);
-  hood.position.set(0, fit.hoodY + 0.01, fit.hoodZ);
+  hood.position.set(0, fit.hoodY + 0.012, fit.hoodZ);
   hood.rotation.x = -Math.PI / 2;
-  hood.scale.set(0.78, 0.26, 1);
+  hood.scale.set(fit.hoodW || 0.78, fit.hoodH || 0.26, 1);
 
   const roof = new THREE.Mesh(geo, roofMat);
-  roof.position.set(0, fit.roofY + 0.01, fit.roofZ);
+  roof.position.set(0, fit.roofY + 0.012, fit.roofZ);
   roof.rotation.x = -Math.PI / 2;
-  roof.scale.set(0.36, 0.14, 1);
+  roof.scale.set(fit.roofW || 0.36, fit.roofH || 0.14, 1);
 
-  // Chase cam lives on the tail. Hood numbers never enter that frame.
-  root.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(root);
+  // Chase cam lives on the tail — big readable number plate.
   const tail = new THREE.Mesh(geo, vinylMaterial(tailTexture(livery)));
-  tail.position.set(0, fit.doorY * 0.92, bounds.min.z - 0.025);
+  tail.position.set(0, fit.doorY * 0.95, fit.tailZ != null ? fit.tailZ : -2.05);
   tail.rotation.y = Math.PI;
-  tail.scale.set(0.86, 0.3, 1);
+  tail.scale.set(fit.tailW || 0.86, fit.tailH || 0.3, 1);
 
   const marks = [right, left, hood, roof, tail];
   for (let i = 0; i < marks.length; i++) {

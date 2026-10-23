@@ -23,7 +23,7 @@ import { COLORS, TUNNEL, CARS } from "../config.js?v=241";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=60";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=19";
-import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=7";
+import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=8";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -418,22 +418,50 @@ export function createCelica(tint = {}) {
 function softPhoneCar(id) {
   const root = new THREE.Group();
   root.name = `soft-${id}`;
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.85, 1.05, 4.15),
-    new THREE.MeshStandardMaterial({ color: 0xc4121a, roughness: 0.62, metalness: 0.12 })
-  );
-  body.position.y = 0.55;
+  const paint = new THREE.MeshStandardMaterial({
+    color: 0xc4121a,
+    roughness: 0.28,
+    metalness: 0.14,
+  });
+  paint.userData.kind = "paint";
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 3.95), paint);
+  body.name = "soft-body";
+  body.position.y = 0.52;
   body.castShadow = false;
   body.receiveShadow = false;
   root.add(body);
-  const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(1.55, 0.55, 1.8),
-    new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.4, metalness: 0.2 })
-  );
-  cabin.position.set(0, 1.05, -0.15);
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x152028,
+    roughness: 0.08,
+    metalness: 0.2,
+    transparent: true,
+    opacity: 0.55,
+  });
+  glassMat.userData.kind = "glass";
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.48, 1.65), glassMat);
+  cabin.name = "soft-cabin";
+  cabin.position.set(0, 1.02, -0.2);
   cabin.castShadow = false;
   root.add(cabin);
-  root.userData.wheels = [];
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.92, metalness: 0.05 });
+  rubber.userData.kind = "rubber";
+  const wheels = [];
+  const hubs = [
+    [-0.78, 0.32, 1.18],
+    [0.78, 0.32, 1.18],
+    [-0.78, 0.32, -1.22],
+    [0.78, 0.32, -1.22],
+  ];
+  for (let i = 0; i < hubs.length; i++) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 12), rubber);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(hubs[i][0], hubs[i][1], hubs[i][2]);
+    w.name = `soft-wheel-${i}`;
+    w.castShadow = false;
+    root.add(w);
+    wheels.push(w);
+  }
+  root.userData.wheels = wheels;
   root.userData.body = root;
   root.userData.carId = id;
   root.userData.phoneLod = true;
@@ -1542,19 +1570,15 @@ function buildSmoothWindowPane(src, root, carMid) {
 
 /**
  * Generic rally coupe for the AI pack. Shared geometry, unique paint.
- * Not a licensed silhouette — reads as a car rather than Saturn boxes.
+ * Race pack prefers the rival LOD (decimated + merged). Hero shell is
+ * attract / showcase only — 14×7 MB heroes look wrong and melt the frame.
  */
-export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShell = true) {
+export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShell = false) {
   const chassis = chassisId || rivalChassisForIndex(variant);
-  const hi = heroShell ? templates[chassis] || templates.celica : null;
-  const template =
-    hi ||
-    rivalTemplates[chassis] ||
-    templates[chassis] ||
-    rivalTemplates.celica ||
-    templates.celica ||
-    rivalTemplates.delta ||
-    templates.delta;
+  // Prefer LOD for the pack. Fall back to hero only when LOD missing.
+  const lod = rivalTemplates[chassis] || rivalTemplates.celica || rivalTemplates.delta;
+  const hi = templates[chassis] || templates.celica || templates.delta;
+  const template = heroShell ? hi || lod : lod || hi;
   if (!template) {
     if (!warnedMissing.has("rival")) {
       warnedMissing.add("rival");
@@ -1562,16 +1586,96 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShe
         "[garage] no GLB loaded for the AI pack — load celica.glb and/or delta integrale.glb"
       );
     }
-    // Caller must gate on ensureRivalGarageReady(); throwing here used to
-    // abort the whole Desert build after a silent carWarm catch.
-    throw new Error("[garage] no GLB loaded for AI rivals");
+    // Soft coupe — never abort the stage with an empty Group.
+    const soft = softPhoneCar(chassis);
+    const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
+    dressRivalCar(soft, livery, variant, isRivalBodyMaterial);
+    soft.userData.carId = chassis;
+    soft.userData.softCar = true;
+    return soft;
   }
   const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
   const root = enableCarShadows(cloneRival(template, livery, variant));
-  if (hi) hideHeavyInterior(root);
+  dressRivalRaceShell(root);
   root.userData.carId = chassis;
-  root.userData.heroShell = !!hi;
+  root.userData.heroShell = !!(heroShell && hi && template === hi);
   return root;
+}
+
+/**
+ * Race-ready rival: sealed cabin, smooth glass, no showroom clutter.
+ * Title pad has its own dress; the pack must not ship shattered LOD panes.
+ * @param {THREE.Object3D} root
+ */
+function dressRivalRaceShell(root) {
+  if (!root || root.userData.rivalRaceDressed) return;
+  hideShowroomCabinMeshes(root);
+  hideHeavyInterior(root);
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    const name = `${obj.name || ""} ${(obj.parent && obj.parent.name) || ""}`.toLowerCase();
+    if (
+      /\bint_window|\bint_door|interior_glass|int_accelerator|int_brake|int_clutch|int_dials|int_gearstick|int_handbrake/.test(
+        name
+      )
+    ) {
+      obj.visible = false;
+      obj.userData.interior = true;
+      obj.userData.interiorKeepHidden = true;
+      return;
+    }
+    const mats = [].concat(obj.material);
+    const nAll = `${name} ${mats.map((m) => (m && m.name) || "").join(" ")}`.toLowerCase();
+    const lamp = /light|lamp|lens|head|tail|brake|signal/.test(nAll);
+    if (isCabinWindowMaterial(nAll, lamp, mats[0])) {
+      const glass = applyRaceWindowMaterial(mats[0]);
+      glass.side = THREE.DoubleSide;
+      obj.material = glass;
+      obj.userData.windshield = /windshield|windscreen|x0_window_f\b/.test(nAll);
+    }
+  });
+  rebuildRivalRaceWindows(root);
+  root.userData.rivalRaceDressed = true;
+}
+
+/**
+ * Same aperture rebuild as the title pad, with race glass (not showroom mirror).
+ * @param {THREE.Object3D} root
+ */
+function rebuildRivalRaceWindows(root) {
+  root.updateMatrixWorld(true);
+  const glass = applyRaceWindowMaterial(null);
+  glass.side = THREE.DoubleSide;
+  const hull = new THREE.Box3().setFromObject(root);
+  const carMid = hull.getCenter(new THREE.Vector3());
+  const doomed = [];
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry || obj.userData.titleWindowPane || obj.userData.rivalWindowPane) {
+      return;
+    }
+    if (!isTitleExteriorWindowMesh(obj)) return;
+    if (!isTitleSideWindowMesh(obj, root)) {
+      obj.material = glass;
+      return;
+    }
+    const pane = buildSmoothWindowPane(obj, root, carMid);
+    if (!pane) {
+      obj.material = glass;
+      return;
+    }
+    pane.material = glass;
+    pane.name = `rival-pane-${obj.name || "glass"}`;
+    pane.userData.rivalWindowPane = true;
+    pane.userData.windshield = true;
+    doomed.push(obj);
+    root.add(pane);
+  });
+  for (let i = 0; i < doomed.length; i++) {
+    const obj = doomed[i];
+    obj.visible = false;
+    obj.userData.interior = true;
+    obj.userData.interiorKeepHidden = true;
+  }
 }
 
 /** Attract lead. Hero mesh. Race rally paint. No rival livery. */

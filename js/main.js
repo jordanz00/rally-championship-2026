@@ -7,7 +7,7 @@
  * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-const GAME_MODULE = "./game.js?v=1107";
+const GAME_MODULE = "./game.js?v=1109";
 
 function phoneLite() {
   try {

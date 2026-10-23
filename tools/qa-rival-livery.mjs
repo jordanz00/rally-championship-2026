@@ -93,7 +93,14 @@ check("player not rival-dressed", !/createPlayerCar[\s\S]{0,500}dressRivalCar/.t
 check("title car not rival-dressed", !/createTitleCar[\s\S]{0,400}dressRivalCar/.test(celica), "pad hero stays");
 check("player keeps GLB paint (no box wipe)", !/function dressPlayerCarRace[\s\S]*?applyPlayerBoxLivery/.test(celica), "toyota albedo");
 
-check("AI uses tint+index", /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId\)/.test(ai), "race pack");
+check(
+  "AI uses tint+index+LOD",
+  /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId,\s*false\)/.test(ai),
+  "race pack must prefer rival LOD"
+);
+check("dressRivalRaceShell", /function dressRivalRaceShell/.test(celica) && /rebuildRivalRaceWindows/.test(celica), "glass+cabin");
+check("pack gets IBL", /_applyPackCarEnv/.test(game), "rivals not flat plastic");
+check("measured livery marks", /measureRivalFit/.test(livery), "plates fit chassis");
 check("attract uses same factory", /createRivalCar\(/.test(game) && /aiTintForIndex\(i\)/.test(game), "attract liveries");
 check("replay uses live pack", /_startBroadcastReplay/.test(game) && /this\.opponents/.test(game), "shared meshes");
 

@@ -26,7 +26,7 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { AI, CARS } from "./config.js?v=241";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=261";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=262";
 
 const G = 9.81;
 
@@ -227,14 +227,21 @@ export class Opponent {
     this.vehicle = new Vehicle(CARS[this.chassisId] || CARS.celica, { lowDetail: true });
     this.vehicle.ai = true;
     this.vehicle.spawn(track, startDist, this.lane);
-    // Empty garage must not abort the whole stage build on phones.
+    // Race pack uses rival LOD (heroShell false). Soft coupe if GLB missing —
+    // still a visible car; only an empty Group is skipped by the grid.
     try {
-      this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId);
+      this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, false);
+      this._meshMissing = !this.mesh || this.mesh.name === "rival-placeholder";
     } catch (err) {
-      console.warn("[ai] rival mesh missing — placeholder", err);
-      this.mesh = new THREE.Group();
-      this.mesh.name = "rival-placeholder";
-      this._meshMissing = true;
+      console.warn("[ai] rival mesh missing — soft coupe", err);
+      try {
+        this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, false);
+        this._meshMissing = !this.mesh;
+      } catch {
+        this.mesh = new THREE.Group();
+        this.mesh.name = "rival-placeholder";
+        this._meshMissing = true;
+      }
     }
     this.mesh.scale.setScalar(1);
     this._steer = 0;

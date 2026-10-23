@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## NPC pack looks professional (2026-10-23)
+
+**Player moment:** Start championship. Every rival is a sealed coupe with lacquer, glass, door numbers that sit on the body, and sky IBL — not flat plastic or shattered LOD panes.
+
+**Cause:** Race pack preferred hero shells, skipped window rebuild, floated one-size vinyl on Delta/Stratos, and never applied env maps to opponents.
+
+**Shipped:** Rival LOD default · `dressRivalRaceShell` (cabin seal + race glass panes) · measured mark FIT · `_applyPackCarEnv` · soft coupe fallback · attract pack same LOD path.
+
+**Proof:** `node tools/qa-rival-livery.mjs` · `node tools/qa-garage-cars.mjs`
+
+**Boot:** `main.js?v=1109` · `celica.js?v=262` · `rival-livery.js?v=8` · `ai.js?v=256`
+
 ## Mobile hard-lite — iPhone 13 / Android no jetsam (2026-10-23)
 
 **Player moment:** Open on iPhone 13 Safari or Android Chrome. Splash → START → Championship → Desert → countdown. Tab stays alive.

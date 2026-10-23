@@ -73,7 +73,11 @@ check(
 );
 check("rivalChassisForIndex", /export function rivalChassisForIndex/.test(celica), "rival picker");
 check("AI chassis per rival", /rivalChassisForIndex/.test(ai), "ai import");
-check("rival mesh chassis", /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId\)/.test(ai), "mesh");
+check(
+  "rival mesh chassis",
+  /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId,\s*false\)/.test(ai),
+  "LOD pack mesh"
+);
 check("subtle car bump", /hitCar > 0\.2/.test(game), "lower bump threshold");
 check("carBump subtle", /gain: 0\.07 \+ amt \* 0\.12/.test(audio), "quieter bump sfx");
 // ES modules treat ?v= as part of the URL — mismatched celica versions create

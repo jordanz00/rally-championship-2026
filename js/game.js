@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=209";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=261";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=262";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=440";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
 import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=56";
-import { Opponent } from "./ai.js?v=256";
+import { Opponent } from "./ai.js?v=257";
 import { RallyAudio } from "./audio/engine.js?v=81";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -2922,6 +2922,8 @@ export class RallyGame {
     this.playerMesh.visible = true;
     this._plantStartGrid();
     if (this.playerMesh) resetCarDirt(this.playerMesh, 0.05);
+    // Pack lacquer needs the stage IBL — bake may have finished before grid spawn.
+    this._applyPackCarEnv();
 
     report(0.99, "Final checks…");
     if (!fromCache) await tick();
@@ -5413,7 +5415,7 @@ export class RallyGame {
           for (let i = 0; i < ids.length; i++) {
             try {
               meshes.push(
-                i === 0 ? createAttractLead() : createRivalCar(aiTintForIndex(i), i, ids[i], true)
+                i === 0 ? createAttractLead() : createRivalCar(aiTintForIndex(i), i, ids[i], false)
               );
             } catch {
               try {
@@ -6741,6 +6743,7 @@ export class RallyGame {
           });
         }
       }
+      this._applyPackCarEnv(cached);
       this._applyWorldEnv(cached, L.worldEnv ?? VISUAL.worldEnvIntensity);
       return;
     }
@@ -6772,7 +6775,28 @@ export class RallyGame {
         });
       }
     }
+    this._applyPackCarEnv(this._skyEnv);
     this._applyWorldEnv(this._skyEnv, L.worldEnv ?? VISUAL.worldEnvIntensity);
+  }
+
+  /**
+   * Lacquer + glass on every rival. Player was the only car getting IBL —
+   * the pack read as flat plastic next to the hero.
+   * @param {THREE.Texture|null} [env]
+   */
+  _applyPackCarEnv(env) {
+    const map = env || this.scene.environment || this._skyEnv;
+    if (!map || !this.opponents || !this.opponents.length) return;
+    const tint = (VISUAL.carEnvIntensity ?? 0.52) * 1.08;
+    for (let i = 0; i < this.opponents.length; i++) {
+      const mesh = this.opponents[i] && this.opponents[i].mesh;
+      if (!mesh || mesh.userData.softCar) continue;
+      try {
+        applyEnvMap(mesh, map, tint);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /**
