@@ -1,5 +1,113 @@
 # QA report — quality-control pass
 
+## Toyota hero shell — 2× midpoint subdiv (2026-10-24)
+
+**Player moment:** Title + chase Celica — body panels read smoother; less CAD faceting on hood / doors / bumpers.
+
+**Shipped:** `retopoPlayerShell` runs **two** midpoint passes (budget 72k tris, 22 meshes) · wider panel band · slightly stronger outward bulge · `celica.js?v=265`.
+
+**Proof:** `node tools/qa-player-toyota-paint.mjs`
+
+**Boot:** `main.js?v=1133` · `celica.js?v=265` · `game.js?v=1133` · `ai.js?v=261`
+
+## Retro menu — championship only · Toyota only (2026-10-24)
+
+**Player moment:** PUSH START → MAIN MENU (Championship / Controls) → YOUR CAR (Celica only) → Desert grid. No Time Attack, Practice, Delta, or Stratos on the player path.
+
+**Shipped:** Slim arcade panels (yellow border, scanlines, blink prompt) · HTML mode/car prune · `_pickCar` locks `celica` · timeattack/practice remap to championship.
+
+**Proof:** `node tools/qa-menu-championship.mjs`
+
+**Boot:** `main.js?v=1131` · `game.js?v=1131` · `css/game.css?v=74`
+
+## On-road env never clips the car (2026-10-24)
+
+**Player moment:** Championship chase on paint — dunes / rocks / scrub stay under or past the verge. No land through asphalt under the Celica.
+
+**Shipped:** Paint corridor hard floor in `_landSurfaceY` + fast land (banks cannot lift through deck) · `ROAD_COLLIDER_CLEAR` 3.8→4.6 · `ROAD_PAINT_FOOT` 1.1 · desert hero verge gate · deferred dress re-scrub after seat.
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1130` · `track.js?v=455` · `attract-reel.js?v=25` · `game.js?v=1130`
+
+## Player Toyota shell retopo — normals / texture / smooth (2026-10-24)
+
+**Player moment:** Title + chase. Celica body reads smoother, livery maps stay sharp, nose/hood no black flipped faces.
+
+**Shipped:** Offline `gt4.glb` weld+dedup (47.8k→45.5k tris) · runtime `retopoPlayerShell` (inward/mixed winding, mergeVertices, selective midpoint subdiv on body panels, smooth normals) · texture UV0 pin + ClampToEdge + white tint · title + race paths.
+
+**Proof:** `node tools/qa-player-toyota-paint.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1129` · `celica.js?v=264` · `game.js?v=1129` · `ai.js?v=260` · `gt4.glb?v=2`
+
+## Desert Stage 1 env overhaul — Namaqualand heroes (2026-10-24)
+
+**Player moment:** Stage 1 Desert chase belt — real Namaqualand boulders / quiver trees / scrub instead of tiled Kenney densify. Sand land tiles larger + multi-frequency grit so the floor does not wallpaper.
+
+**Shipped:** 12 Poly Haven CC0 `desert_hero_*.glb` · `_plantDesertProp` close-belt heroes, Kenney far-only · desert PBR tiles 32/9.2/16/11 m · photo normals on fast land · biome grit blend · ATTRIBUTION + registry rows.
+
+**Proof:** `node tools/qa-desert-heroes.mjs` · `node tools/qa-env-detail.mjs`
+
+**Boot:** `main.js?v=1128` · `track.js?v=454` · `prop-kit.js?v=60` · `desert-pbr.js?v=66` · `attract-reel.js?v=24` · `crowd.js?v=49` · `game.js?v=1128`
+
+## Player accel −50% · pack +15% (2026-10-24)
+
+**Player moment:** GO / straights — Celica pulls at half the prior punch. Rivals dig harder (~prior pace +15%) so the pack stays a fight.
+
+**Shipped:** `CHASSIS.peakPowerKw` 168→84 · Stratos 178→89 · `AI.peakPowerMul` 2.3 on rival Vehicle specs (keeps old 168×1.15 / new player template).
+
+**Proof:** `node tools/qa-sprint19-speed.mjs` · `node tools/qa-sprint28-launch.mjs`
+
+**Boot:** `main.js?v=1127` · `config.js?v=243` · `ai.js?v=259`
+
+## Stage load −50% again (2026-10-24)
+
+**Player moment:** Car confirm → loading plate → Ready. Wall time ~half the prior cut. Horizon / safari / verge / spectators fill in right after Ready (fog already covers GO).
+
+**Cause:** Critical path still built full biome horizon, safari, landmarks, verge, spectators, land-vert scrub, and PBR upgrade before the bar hit 100%.
+
+**Shipped:** `finishDeferredDressing()` after crowd/kit warm · thin rock ring only on create · land pad 240–260 · tiles 6@512 / fast segs≤4 · plantStep 4/8 · yield 96–140 ms · skip land scrub + upgradeWorld on load · settle 60/40 · animals off Desert critical kit · shorter stream settle radii.
+
+**Proof:** `node tools/qa-fast-load.mjs` · `node tools/qa-sprint95-load.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1126` · `track.js?v=453` · `prop-kit.js?v=58` · `game.js?v=1126`
+
+## Environment loads on desktop again (2026-10-24)
+
+**Player moment:** Championship Desert/Forest — horizon, safari/landmarks, verge scrub, spectators, biome-tinted land. Not a blank skirt around the ribbon.
+
+**Cause:** `armVegBudget` pinned desktop `terrainTileSegs=8`. Scenery extras were gated on `segs > 14`, so the fast-load path stripped the stage. Over-wide land scrub + whole-tile `_landSurfaceY` also washed banks into an under-deck trench.
+
+**Shipped:** `envExtrasEnabled()` (phone/min-veg only) · restore backdrop biome + safari/landmarks/verge/spectators on desktop · per-vertex trench clamp · scrub refuse back to paint corridor · biome vertex tint on fast land.
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1125` · `track.js?v=452` · `game.js?v=1125` · `attract-reel.js?v=22`
+
+## Land no longer punches through mid-road (2026-10-24)
+
+**Player moment:** Championship chase — asphalt stays a floor. No dunes / bank / rock mesh through the painted lane under the Celica.
+
+**Cause:** Fast land (`_fastLandBuild`) forced `sampleN=1` on 256 m tiles and reused the tile-centre `over`/`roadY`. Corners on paint kept raw biome height. Segment search also shrank to ±12/±2, so hairpins owned the wrong ribbon.
+
+**Shipped:** Ribbon tiles use 3×3 nearest-road (`onTrench` expands by half-diagonal) · trench verts call `_landSurfaceY` · full ±28/±5 segment ring · scrub refuse pad = max(CLEAR, VERGE+2.4, landCell).
+
+**Proof:** `node tools/qa-env-clip.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1124` · `track.js?v=451` · `game.js?v=1124`
+
+## Player Toyota nose — black polygons / race retopo (2026-10-24)
+
+**Player moment:** Championship / Time Attack chase cam. Celica front bumper + hood intakes read as painted mesh, not black missing triangles.
+
+**Cause:** Race `upgradeRacePaint` treated Sketchfab `Grills` (alphaMode BLEND) as cabin glass → dark FrontSide panes on `FRONT_BUMPER_SUB*` / `MOTORHOOD_SUB*`. Title path already fixed this; race path did not. FrontSide also culled concave intake faces.
+
+**Shipped:** `retopoPlayerNose` (own geo, winding fix, recompute normals, DoubleSide) · grill trim → `applyTitleGrillMaterial` · cabin glass name-gated · body clearcoat DoubleSide · no bare-transparent→glass.
+
+**Proof:** `node tools/qa-player-toyota-paint.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1123` · `celica.js?v=263` · `game.js?v=1123` · `ai.js?v=258` · `vehicle.js?v=210` singleton
+
 ## Result music holds through next-stage load (2026-10-24)
 
 **Player moment:** Finish → NEXT → loading plate. Same result bed keeps playing. Stage disc starts at 3-2-1.

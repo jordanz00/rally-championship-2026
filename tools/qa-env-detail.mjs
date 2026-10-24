@@ -38,7 +38,7 @@ check("2k albedo queues at boot", /_diff_2k\.jpg/.test(stream) && /enqueueHi/.te
 check("2k apply uses aniso 16", /applyImage\(map, d2\.image, 16\)/.test(stream));
 check("phones still skip 2k", /Android\|iPhone\|iPod\|Mobile/.test(stream));
 check("forest tiles tighter than 2 m", /TILE_DIRT_M = 1\.45/.test(forest) && /TILE_FLOOR_M = 1\.5/.test(forest));
-check("desert tiles tighter", /TILE_SAND_M = 5\.6/.test(desert) && /TILE_DIRT_M = 1\.55/.test(desert));
+check("desert tiles large (anti-wallpaper)", /TILE_SAND_M = 32/.test(desert) && /TILE_DIRT_M = 9\.2/.test(desert));
 check("tunnel tile 1.45 m", /TILE_M = 1\.45/.test(tunnel));
 check("cinema land segs without ?perf=high", /VISUAL\.tier \|\| 0\) >= 8/.test(track));
 check("land paint 384 + aniso 16", /land-albedo-v7/.test(track) && /384 \* scale/.test(track));

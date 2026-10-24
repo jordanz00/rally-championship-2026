@@ -18,8 +18,8 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
-import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=242";
+import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=243";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=60";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=19";
@@ -32,7 +32,7 @@ const GARAGE = {
   celica: {
     id: "celica",
     urls: [
-      "assets/celica/gt4.glb",
+      "assets/celica/gt4.glb?v=2",
       "assets/celica/scene.glb",
       "assets/celica/toyota-celica-gt4-rally.glb",
       "assets/celica/scene.gltf",
@@ -583,6 +583,7 @@ export function createTitleCar(carId = "celica") {
  * @param {THREE.Object3D} root
  */
 function dressPlayerCarRace(root) {
+  retopoPlayerShell(root);
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const list = [].concat(obj.material || []);
@@ -594,7 +595,266 @@ function dressPlayerCarRace(root) {
 }
 
 /**
- * Keep authored 2k body maps crisp at chase distance.
+ * Exterior shell retopo for the player Toyota: fix flipped / mixed winding,
+ * weld duplicate verts, two midpoint smooth passes on body panels (less
+ * visible polys), rebuild normals, DoubleSide so concave intakes never cull black.
+ * @param {THREE.Object3D} root
+ */
+function retopoPlayerShell(root) {
+  root.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(root);
+  bounds.getCenter(_inwardCenter);
+  /** @type {{obj:THREE.Mesh, tris:number, area:number}[]} */
+  const subdivCandidates = [];
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return;
+    const parentName = obj.parent && obj.parent.name ? obj.parent.name : "";
+    const n = `${obj.name || ""} ${parentName}`.toLowerCase();
+    const matNames = [].concat(obj.material || [])
+      .map((m) => (m && m.name) || "")
+      .join(" ")
+      .toLowerCase();
+    const nAll = `${n} ${matNames}`;
+    if (!isExteriorBodyShell(nAll)) return;
+    if (!obj.geometry.userData._raceShellOwned) {
+      obj.geometry = obj.geometry.clone();
+      obj.geometry.userData._raceShellOwned = true;
+    }
+    const grillish = /grill|grille|intake|vent/.test(nAll);
+    const skipTriFlip = /window|windshield|windscreen|glazing/.test(nAll) || grillish;
+    if (!skipTriFlip) {
+      retopoShellWinding(obj, _inwardCenter, grillish);
+    }
+    // Weld coincident verts — denser index buffer, cleaner smooth normals.
+    try {
+      obj.geometry = mergeVertices(obj.geometry, 1e-4);
+      obj.geometry.userData._raceShellOwned = true;
+    } catch (_) {
+      /* keep unwelded clone */
+    }
+    if (obj.geometry.attributes && obj.geometry.attributes.position) {
+      const tris = geometryTriCount(obj.geometry);
+      // Wider band — denser panels still get a pass so the chase cam sees less CAD faceting.
+      if (isSmoothBodyPanel(nAll) && tris >= 40 && tris <= 2800) {
+        const area = meshWorldArea(obj);
+        if (area > 0.045) subdivCandidates.push({ obj, tris, area });
+      }
+      obj.geometry.computeVertexNormals();
+      obj.geometry.computeBoundingSphere();
+    }
+    const list = [].concat(obj.material || []);
+    for (let i = 0; i < list.length; i++) {
+      const mat = list[i];
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      mat.flatShading = false;
+      mat.needsUpdate = true;
+    }
+  });
+  subdivCandidates.sort((a, b) => b.area - a.area);
+  // Two midpoint passes on the largest body shells — ~4× density on hero panels.
+  const SUBDIV_PASSES = 2;
+  const SUBDIV_MESH_CAP = 22;
+  const SUBDIV_TRI_BUDGET = 72000;
+  let added = 0;
+  for (let pass = 0; pass < SUBDIV_PASSES; pass++) {
+    let touched = 0;
+    for (let i = 0; i < subdivCandidates.length && touched < SUBDIV_MESH_CAP; i++) {
+      const entry = subdivCandidates[i];
+      const { obj } = entry;
+      if (!obj.geometry) continue;
+      const tris = geometryTriCount(obj.geometry);
+      if (tris < 40 || tris > 4500) continue;
+      if (added + tris * 3 > SUBDIV_TRI_BUDGET) break;
+      const next = subdivideBodyOnce(obj.geometry);
+      if (!next || next === obj.geometry) continue;
+      obj.geometry = next;
+      obj.geometry.userData._raceShellOwned = true;
+      obj.geometry.userData._shellSubdiv = (obj.geometry.userData._shellSubdiv || 0) + 1;
+      obj.geometry.computeVertexNormals();
+      obj.geometry.computeBoundingSphere();
+      entry.tris = geometryTriCount(obj.geometry);
+      added += tris * 3;
+      touched += 1;
+    }
+  }
+}
+
+/**
+ * Bumper / hood / door / roof / body shells — not wheels, glass, lamps, cabin.
+ * @param {string} nAll
+ * @returns {boolean}
+ */
+function isExteriorBodyShell(nAll) {
+  if (/wheel|tyre|tire|rim|hub|disc|caliper/.test(nAll)) return false;
+  if (/light|lamp|lens|head|tail|brake.?light|signal|indicator/.test(nAll)) return false;
+  if (/cabin|cockpit|seat|dash|interior|carpet|pedal|gauge|needle|steer/.test(nAll)) return false;
+  if (/window|windshield|windscreen|glazing|glass/.test(nAll) && !/grill|grille/.test(nAll)) return false;
+  return (
+    /bumper|motorhood|hood|bonnet|door|roof|body|fender|wing|quarter|boot|trunk|spoiler|side.?skirt|sill|mirror|grill|grille|x0_bumper|x0_under|car_body|paint|shiny_painted|lacquer/.test(
+      nAll
+    ) || isTitleGrillTrim(nAll)
+  );
+}
+
+/**
+ * Large painted panels that benefit from one midpoint smooth pass.
+ * @param {string} nAll
+ * @returns {boolean}
+ */
+function isSmoothBodyPanel(nAll) {
+  if (/grill|grille|intake|vent|sub\d|object_\d/.test(nAll) && !/bumper|hood|door|roof|body|fender/.test(nAll)) {
+    return false;
+  }
+  return /bumper|motorhood|hood|bonnet|door|roof|body|fender|wing|quarter|boot|trunk|spoiler|side.?skirt/.test(
+    nAll
+  );
+}
+
+/**
+ * @param {THREE.BufferGeometry} geo
+ * @returns {number}
+ */
+function geometryTriCount(geo) {
+  if (!geo || !geo.attributes || !geo.attributes.position) return 0;
+  if (geo.index) return (geo.index.count / 3) | 0;
+  return (geo.attributes.position.count / 3) | 0;
+}
+
+/**
+ * Approximate world-space surface area for subdiv priority.
+ * @param {THREE.Mesh} obj
+ * @returns {number}
+ */
+function meshWorldArea(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const s = box.getSize(_inwardOut);
+  return s.x * s.y + s.y * s.z + s.z * s.x;
+}
+
+/**
+ * Un-flip inward shells; reverse mixed winding triangles on outer skin.
+ * @param {THREE.Mesh} obj
+ * @param {THREE.Vector3} center
+ * @param {boolean} grillish
+ */
+function retopoShellWinding(obj, center, grillish) {
+  const frac = meshInwardFraction(obj, center);
+  if (frac == null) return;
+  if (frac >= 0.68) {
+    flipInwardMesh(obj);
+    return;
+  }
+  // Mixed winding on body panels (not concave grill cups) — flip inward faces only.
+  if (!grillish && frac >= 0.28 && frac < 0.68) {
+    reverseInwardOuterTriangles(obj, center);
+  }
+}
+
+/**
+ * One midpoint subdivision — denser silhouette, lerped UVs stay on the Toyota map.
+ * @param {THREE.BufferGeometry} geo
+ * @returns {THREE.BufferGeometry|null}
+ */
+function subdivideBodyOnce(geo) {
+  if (!geo || !geo.attributes || !geo.attributes.position) return null;
+  const src = geo.index ? geo.toNonIndexed() : geo;
+  const pos = src.attributes.position;
+  const uv = src.attributes.uv;
+  const nor = src.attributes.normal;
+  const tris = (pos.count / 3) | 0;
+  if (tris < 4 || tris > 4500) {
+    if (src !== geo) src.dispose();
+    return null;
+  }
+  const outCount = tris * 12;
+  const pOut = new Float32Array(outCount * 3);
+  const uOut = uv ? new Float32Array(outCount * 2) : null;
+  const nOut = nor ? new Float32Array(outCount * 3) : null;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const bc = new THREE.Vector3();
+  const ca = new THREE.Vector3();
+  const fn = new THREE.Vector3();
+  const pushV = (v, uvA, uvB, nA, nB, dest) => {
+    pOut[dest * 3] = v.x;
+    pOut[dest * 3 + 1] = v.y;
+    pOut[dest * 3 + 2] = v.z;
+    if (uOut && uvA && uvB) {
+      uOut[dest * 2] = (uvA.x + uvB.x) * 0.5;
+      uOut[dest * 2 + 1] = (uvA.y + uvB.y) * 0.5;
+    } else if (uOut && uvA) {
+      uOut[dest * 2] = uvA.x;
+      uOut[dest * 2 + 1] = uvA.y;
+    }
+    if (nOut && nA && nB) {
+      const nx = nA.x + nB.x;
+      const ny = nA.y + nB.y;
+      const nz = nA.z + nB.z;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nOut[dest * 3] = nx / len;
+      nOut[dest * 3 + 1] = ny / len;
+      nOut[dest * 3 + 2] = nz / len;
+    } else if (nOut && nA) {
+      nOut[dest * 3] = nA.x;
+      nOut[dest * 3 + 1] = nA.y;
+      nOut[dest * 3 + 2] = nA.z;
+    }
+  };
+  const uvAt = (i) => (uv ? { x: uv.getX(i), y: uv.getY(i) } : null);
+  const nAt = (i) => (nor ? { x: nor.getX(i), y: nor.getY(i), z: nor.getZ(i) } : null);
+  let w = 0;
+  for (let t = 0; t < tris; t++) {
+    const i0 = t * 3;
+    const i1 = i0 + 1;
+    const i2 = i0 + 2;
+    a.fromBufferAttribute(pos, i0);
+    b.fromBufferAttribute(pos, i1);
+    c.fromBufferAttribute(pos, i2);
+    ab.copy(a).add(b).multiplyScalar(0.5);
+    bc.copy(b).add(c).multiplyScalar(0.5);
+    ca.copy(c).add(a).multiplyScalar(0.5);
+    // Tiny outward bulge along face normal — softens CAD flats without breaking UVs.
+    _triN.subVectors(b, a);
+    _inwardOut.subVectors(c, a);
+    fn.copy(_triN).cross(_inwardOut);
+    if (fn.lengthSq() > 1e-12) {
+      fn.normalize().multiplyScalar(0.0018);
+      ab.add(fn);
+      bc.add(fn);
+      ca.add(fn);
+    }
+    const ua = uvAt(i0);
+    const ub = uvAt(i1);
+    const uc = uvAt(i2);
+    const na = nAt(i0);
+    const nb = nAt(i1);
+    const nc = nAt(i2);
+    const uab = ua && ub ? { x: (ua.x + ub.x) * 0.5, y: (ua.y + ub.y) * 0.5 } : ua;
+    const ubc = ub && uc ? { x: (ub.x + uc.x) * 0.5, y: (ub.y + uc.y) * 0.5 } : ub;
+    const uca = uc && ua ? { x: (uc.x + ua.x) * 0.5, y: (uc.y + ua.y) * 0.5 } : uc;
+    const emit = (v0, v1, v2, u0, u1, u2, n0, n1, n2) => {
+      pushV(v0, u0, u0, n0, n0, w++);
+      pushV(v1, u1, u1, n1, n1, w++);
+      pushV(v2, u2, u2, n2, n2, w++);
+    };
+    emit(a, ab, ca, ua, uab, uca, na, na, na);
+    emit(ab, b, bc, uab, ub, ubc, nb, nb, nb);
+    emit(ca, bc, c, uca, ubc, uc, nc, nc, nc);
+    emit(ab, bc, ca, uab, ubc, uca, na, nb, nc);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(pOut, 3));
+  if (uOut) out.setAttribute("uv", new THREE.BufferAttribute(uOut, 2));
+  if (nOut) out.setAttribute("normal", new THREE.BufferAttribute(nOut, 3));
+  if (src !== geo) src.dispose();
+  return out;
+}
+
+/**
+ * Keep authored 2k body maps crisp at chase distance — pin UV0, white tint, aniso.
  * @param {THREE.Object3D} root
  */
 function sharpenHeroTextures(root) {
@@ -613,11 +873,23 @@ function sharpenHeroTextures(root) {
         if (slots[s] === "map" || slots[s] === "emissiveMap") {
           tex.colorSpace = THREE.SRGBColorSpace;
         }
-        tex.generateMipmaps = true;
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.anisotropy = Math.max(tex.anisotropy || 1, 16);
-        tex.needsUpdate = true;
+        // glTF TEXCOORD_0 — force channel 0 so merged shell geo never misses UV1.
+        if (tex.channel != null && tex.channel !== 0) {
+          mat[slots[s]] = tex.clone();
+          mat[slots[s]].channel = 0;
+          mat[slots[s]].needsUpdate = true;
+          seen.add(mat[slots[s]]);
+        }
+        const live = mat[slots[s]];
+        live.flipY = false;
+        // Atlas livery — clamp edges so weld/subdiv UV mids never bleed the sheet.
+        live.wrapS = THREE.ClampToEdgeWrapping;
+        live.wrapT = THREE.ClampToEdgeWrapping;
+        live.generateMipmaps = true;
+        live.minFilter = THREE.LinearMipmapLinearFilter;
+        live.magFilter = THREE.LinearFilter;
+        live.anisotropy = Math.max(live.anisotropy || 1, 16);
+        live.needsUpdate = true;
       }
       // Authored albedo must stay white-tint so the Toyota livery reads true.
       if (mat.map && mat.color && mat.userData && mat.userData.kind === "paint") {
@@ -625,6 +897,14 @@ function sharpenHeroTextures(root) {
       } else if (mat.map && mat.color && /paint|car_body|shiny_painted|mattext/i.test(mat.name || "")) {
         mat.color.setHex(0xffffff);
       }
+      // OpenGL-style normal maps from Sketchfab — keep positive scale after shell retopo.
+      if (mat.normalMap && mat.normalScale) {
+        mat.normalScale.set(
+          Math.abs(mat.normalScale.x) || 1,
+          Math.abs(mat.normalScale.y) || 1
+        );
+      }
+      mat.flatShading = false;
     }
   });
 }
@@ -638,11 +918,17 @@ function upgradeRacePaint(src, obj) {
   if (!src) return src;
   const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();
   const lamp = /light|lamp|lens|head|tail|brake|signal/.test(n);
+  // Sketchfab `Grills` is alphaMode BLEND on bumper/hood intakes. Treating any
+  // transparent mat as cabin glass painted the nose 0x152028 — black polygons.
+  if (isTitleGrillTrim(n)) {
+    return applyTitleGrillMaterial(src);
+  }
   const isGlass =
-    !lamp &&
-    (src.userData.kind === "glass" ||
-      !!(src.transparent && (src.opacity == null || src.opacity < 0.9)) ||
-      /glass|window|windshield|windscreen|glazing/.test(n));
+    isCabinWindowMaterial(n, lamp, src) ||
+    (!lamp &&
+      !/grill|grille|bumper|hood|bonnet|tyre|tire|rubber/.test(n) &&
+      (/glass|window|windshield|windscreen|glazing/.test(n) ||
+        (src.userData.kind === "glass" && /window|glass|glazing/.test(n))));
   if (isGlass) {
     return applyRaceWindowMaterial(src);
   }
@@ -663,7 +949,7 @@ function upgradeRacePaint(src, obj) {
     !isPaintName &&
     !isRubber &&
     (src.userData.kind === "chrome" ||
-      (/chrome|steel|alum|rim|metal|mirror|grille|exhaust/.test(n) && (src.metalness || 0) > 0.55) ||
+      (/chrome|steel|alum|rim|metal|mirror|exhaust/.test(n) && (src.metalness || 0) > 0.55) ||
       (!isInterior && (src.metalness || 0) > 0.72 && !/plastic|carbon|matte|matt|rubber|tyre|tire/.test(n)));
   if (isChrome) {
     src.userData.kind = "chrome";
@@ -676,6 +962,9 @@ function upgradeRacePaint(src, obj) {
     hardenTireRubber(src);
     return src;
   }
+  const noseShell =
+    /front_bumper|front.?bumper|motorhood|hood|bonnet|grill/.test(n) ||
+    /front_bumper|motorhood/i.test(obj.name || "");
   const wantClearcoat =
     !src.transparent &&
     src.isMeshStandardMaterial &&
@@ -719,7 +1008,8 @@ function upgradeRacePaint(src, obj) {
     phys.clearcoatRoughness = 0.032;
     phys.clearcoatEnvMapIntensity = 2.35;
     phys.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 1.35);
-    phys.side = src.side != null ? src.side : THREE.FrontSide;
+    // DoubleSide on body + nose — FrontSide punched black holes in concave intakes.
+    phys.side = noseShell || isPaintName ? THREE.DoubleSide : src.side != null ? src.side : THREE.DoubleSide;
     phys.userData.kind = "paint";
     phys.userData.lockEnv = false;
     phys.needsUpdate = true;
@@ -734,11 +1024,14 @@ function upgradeRacePaint(src, obj) {
     );
     src.envMapIntensity = Math.max(src.envMapIntensity != null ? src.envMapIntensity : 0.4, 1.25);
     if (src.roughness != null) src.roughness = Math.min(src.roughness, 0.34);
+    src.side = THREE.DoubleSide;
     src.userData.kind = src.userData.kind || "paint";
     if (!src.normalMap && (isPaintName || src.userData.kind === "paint")) applyLacquerDetail(src);
     src.needsUpdate = true;
   } else if (!src.transparent && (isPaintName || src.metalness == null || src.metalness < 0.55)) {
     src.userData.kind = src.userData.kind || "paint";
+    src.side = THREE.DoubleSide;
+    src.needsUpdate = true;
   }
   return src;
 }
@@ -1079,9 +1372,8 @@ function flipInwardMesh(obj) {
  */
 function dressTitleCarShowroom(root) {
   hideShowroomCabinMeshes(root);
+  retopoPlayerShell(root);
   root.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(root);
-  bounds.getCenter(_inwardCenter);
   root.traverse((obj) => {
     const name = `${obj.name || ""} ${obj.parent && obj.parent.name ? obj.parent.name : ""}`.toLowerCase();
     // Celica GLB inner panes (`int_window_fl/fr`) sit on the same aperture as
@@ -1115,13 +1407,6 @@ function dressTitleCarShowroom(root) {
       return;
     }
     const list = [].concat(obj.material || []);
-    const nAll = `${name} ${list.map((m) => (m && m.name) || "").join(" ")}`.toLowerCase();
-    const lamp = /light|lamp|lens|head|tail|brake|signal/.test(nAll);
-    const wheel = /wheel|tyre|tire|rim|hub/.test(nAll);
-    const skipWinding = /window|windshield|windscreen|glazing|grill/.test(nAll) && !lamp;
-    if (!wheel && !lamp && !skipWinding && obj.geometry) {
-      fixTitleShowroomWinding(obj, _inwardCenter);
-    }
     const next = list.map((src) => {
       if (!src) return src;
       const n = `${src.name || ""} ${obj.name || ""}`.toLowerCase();

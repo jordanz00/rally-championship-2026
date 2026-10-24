@@ -17,7 +17,7 @@
  * (speed × grade × technique × lateral × surface), proven by qa-jump-physics-fun.
  */
 
-import { JUMP } from "../config.js?v=242";
+import { JUMP } from "../config.js?v=243";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));

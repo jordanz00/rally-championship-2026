@@ -3,7 +3,7 @@
  * Wide tarmac, jumps, one slideable hairpin, a cobble rush. Built to go fast.
  */
 
-import { COLORS } from "../../config.js?v=242";
+import { COLORS } from "../../config.js?v=243";
 
 const W = 15.6;
 

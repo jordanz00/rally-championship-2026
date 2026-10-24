@@ -32,7 +32,8 @@ export class Hud {
     this.surfaceRow = document.getElementById("hud-surface-row");
     this.pauseDistance = document.getElementById("pause-distance");
     this._debugHud = isDebugHud();
-    if (this.fps) this.fps.hidden = !this._debugHud;
+    // Tiny corner FPS stays on for everyone; DIST / SURFACE stay debug-only.
+    if (this.fps) this.fps.hidden = false;
     if (this.distanceWrap) this.distanceWrap.hidden = !this._debugHud;
     if (this.surfaceRow) this.surfaceRow.hidden = !this._debugHud;
     this.rush = document.getElementById("hud-rush");
@@ -166,9 +167,9 @@ export class Hud {
       const sub = this._courseSub ? ` · ${this._courseSub}` : "";
       this.course.textContent = `${s.courseName || ""}${sub}`;
     }
-    if (this._debugHud && this.fps && this._fps !== s.fps) {
+    if (this.fps && this._fps !== s.fps) {
       this._fps = s.fps;
-      this.fps.textContent = `${s.fps} FPS`;
+      this.fps.textContent = String(s.fps | 0);
     }
     if (this.pace && this._pace !== (s.pace || "")) {
       this._pace = s.pace || "";
@@ -637,7 +638,7 @@ function clamp(v, a, b) {
 }
 
 /**
- * FPS / DIST / SURFACE / GRIP / SLIDE stay off during a real race.
+ * Corner FPS stays on (tiny). DIST / SURFACE / GRIP / SLIDE stay debug-only.
  * Enable with `?debug=1`, `?dev=1`, or localStorage `rally-debug=1`.
  */
 function isDebugHud() {

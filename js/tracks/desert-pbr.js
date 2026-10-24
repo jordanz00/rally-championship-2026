@@ -13,11 +13,11 @@ import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=9";
 
 const BASE = "assets/env/desert";
 
-/** Larger tiles = fewer wallpaper repeats; projection adds the fine grain. */
-const TILE_SAND_M = 11.5;
-const TILE_DIRT_M = 3.2;
-const TILE_GRAVEL_M = 7.6;
-const TILE_TARMAC_M = 5.4;
+/** Larger tiles = fewer wallpaper repeats; world-XZ blotch + grit finish the blend. */
+const TILE_SAND_M = 32;
+const TILE_DIRT_M = 9.2;
+const TILE_GRAVEL_M = 16;
+const TILE_TARMAC_M = 11;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */
@@ -45,7 +45,7 @@ export function cloneDesertMap(tex, rx, ry) {
  * @returns {number}
  */
 export function desertLandRepeat(span, tileMeters = TILE_SAND_M) {
-  return Math.max(3.5, span / Math.max(0.5, tileMeters));
+  return Math.max(2.8, span / Math.max(0.5, tileMeters));
 }
 
 /**

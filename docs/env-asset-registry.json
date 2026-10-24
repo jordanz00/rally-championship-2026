@@ -292,6 +292,99 @@
       "requiredVariants": "do not plant in Forest 0–25 m once hero rocks cover the belt",
       "reason": "Densified Kenney / pack rocks. 30,720 tris on rock_largeA with no normal map. Polygon count is not quality. Forbidden as Forest hero.",
       "license": "Kenney CC0 / Sketchfab pack"
+    },
+    {
+      "id": "DESERT_HERO_ROCKS",
+      "category": "Desert rocks",
+      "runtimeKinds": [
+        "desert_hero_boulder_a",
+        "desert_hero_boulder_b",
+        "desert_hero_boulder_c",
+        "desert_hero_boulder_d",
+        "desert_hero_boulder_e",
+        "desert_hero_rocks",
+        "desert_hero_stones",
+        "desert_hero_sand_rocks"
+      ],
+      "files": [
+        "assets/props/desert_hero_boulder_a.glb",
+        "assets/props/desert_hero_boulder_b.glb",
+        "assets/props/desert_hero_boulder_c.glb",
+        "assets/props/desert_hero_boulder_d.glb",
+        "assets/props/desert_hero_boulder_e.glb",
+        "assets/props/desert_hero_rocks.glb",
+        "assets/props/desert_hero_stones.glb",
+        "assets/props/desert_hero_sand_rocks.glb"
+      ],
+      "heroDistanceM": 28,
+      "layer": "mid",
+      "silhouette": "PASS",
+      "material": "PASS",
+      "groundContact": "PASS",
+      "textureRepetition": "PASS",
+      "scale": "PASS",
+      "lod": "PARTIAL",
+      "visualTarget": "PASS",
+      "verdict": "PASS",
+      "status": "HAVE",
+      "requiredVariants": "8 Namaqualand / sand rock scans for Desert Stage 1 chase belt",
+      "reason": "Poly Haven CC0 1k PBR Namaqualand boulders/rocks/stones + sand_rocks_small. Packed ~28k tris with albedo+normal+ARM. Kenney densify relegated to far/fallback only.",
+      "license": "Poly Haven CC0 — namaqualand_boulder_02..06, namaqualand_rocks_01, namaqualand_stones_01, sand_rocks_small_01"
+    },
+    {
+      "id": "DESERT_HERO_PLANTS",
+      "category": "Desert vegetation",
+      "runtimeKinds": [
+        "desert_hero_quiver_a",
+        "desert_hero_quiver_b",
+        "desert_hero_scrub",
+        "desert_hero_othonna"
+      ],
+      "files": [
+        "assets/props/desert_hero_quiver_a.glb",
+        "assets/props/desert_hero_quiver_b.glb",
+        "assets/props/desert_hero_scrub.glb",
+        "assets/props/desert_hero_othonna.glb"
+      ],
+      "heroDistanceM": 28,
+      "layer": "mid",
+      "silhouette": "PASS",
+      "material": "PASS",
+      "groundContact": "PASS",
+      "textureRepetition": "PASS",
+      "scale": "PASS",
+      "lod": "PARTIAL",
+      "visualTarget": "PASS",
+      "verdict": "PASS",
+      "status": "HAVE",
+      "requiredVariants": "2 quiver trees + scrub + othonna for Desert Stage 1",
+      "reason": "Poly Haven CC0 Namaqualand flora. Close belt prefers these over Kenney cactus/bush densify.",
+      "license": "Poly Haven CC0 — quiver_tree_01/02, wild_rooibos_bush, othonna_cerarioides"
+    },
+    {
+      "id": "DESERT_GROUND",
+      "category": "Desert ground cover",
+      "runtimeKinds": [],
+      "files": [
+        "assets/env/desert/sand_diff_1k.jpg",
+        "assets/env/desert/dirt_diff_1k.jpg",
+        "assets/env/desert/gravel_diff_1k.jpg",
+        "assets/env/desert/tarmac_diff_1k.jpg"
+      ],
+      "heroDistanceM": 12,
+      "layer": "micro",
+      "silhouette": "PARTIAL",
+      "material": "PARTIAL",
+      "groundContact": "PASS",
+      "textureRepetition": "PARTIAL",
+      "scale": "PASS",
+      "lod": "PARTIAL",
+      "visualTarget": "PARTIAL",
+      "verdict": "PARTIAL",
+      "status": "HAVE",
+      "requiredVariants": "large-tile sand/dirt/gravel/tarmac + world-XZ blotch",
+      "reason": "Desert PBR tiles at 32/9.2/16/11 m with world-XZ projection + multi-frequency grit. Not Nanite; wallpaper risk reduced vs sub-6 m tiles.",
+      "license": "Poly Haven CC0 / project desert env set"
     }
   ]
 }

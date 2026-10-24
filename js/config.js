@@ -1553,9 +1553,9 @@ const CHASSIS = {
   /**
    * Sprint 28 — Group A launch. peakPowerKw scales the torque map in vehicle.js.
    * Dead-stop pull uses launchBoost + a fatter low-RPM curve + shorter 1st.
-   * 2026-10-24: halved vs Sprint 28 (335→168) — accel felt too hot for dirt.
+   * 2026-10-24: 335→168→84 — player accel dialed down twice for dirt pace.
    */
-  peakPowerKw: 168,
+  peakPowerKw: 84,
   redline: 7600,
   idleRpm: 950,
   /**
@@ -1633,8 +1633,8 @@ export const CARS = {
     driveInertia: 0.92,
     /** Sprint 28: stays the fastest car (~265), still surface-limited. */
     maxSpeedKmh: 268,
-    /** Halved with chassis punch (355→178). */
-    peakPowerKw: 178,
+    /** With chassis punch (355→178→89). */
+    peakPowerKw: 89,
     driftMul: 1.38,
     /** Starter car — unlocked with Celica / Delta from SELECT CAR. */
     locked: false,
@@ -1913,6 +1913,11 @@ export const CHAMPIONSHIP = {
  * must never punt the player off the road.
  */
 export const AI = {
+  /**
+   * Rival engine scale vs shared CARS.*.peakPowerKw (player template).
+   * Player is at 84 kW; pack keeps the prior 168 kW punch × 1.15 → mul 2.3.
+   */
+  peakPowerMul: 2.3,
   /**
    * Pack is deliberately a beat slower than a committed player so handbrake
    * slides and exits feel like passing moves, not a same-pace train.

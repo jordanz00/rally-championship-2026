@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * qa-fast-load.mjs — prove the 80% load cut path is wired.
+ * qa-fast-load.mjs — prove the stage-load cut path is wired.
  *
  * RUN: node tools/qa-fast-load.mjs
  */
@@ -40,8 +40,10 @@ check(
     !/await loadTex\(loader, `\$\{base\}\/\$\{stem\}_diff_2k\.jpg`, true, HI_BOOT_MS\)/.test(pbr)
 );
 check(
-  "Desert kit skips crowd on critical path",
-  /return DESERT_NATURE\.concat\(FAST_TRACKSIDE\)/.test(kit) && /export function warmCrowdKit/.test(kit)
+  "Desert kit skips animals on critical path",
+  /DESERT_ANIMALS/.test(kit) &&
+    /return DESERT_NATURE\.concat\(FAST_TRACKSIDE\)/.test(kit) &&
+    !/animal-zebra/.test(kit.match(/const DESERT_NATURE = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "")
 );
 check("kit parses in wide parallel batches", /const BATCH = phonePropLite\(\) \? 5 : 10/.test(kit));
 check(
@@ -50,38 +52,39 @@ check(
     /await this\._addGroundAsync/.test(track) &&
     /await kitP/.test(track)
 );
-check("terrain/plant yield budget 48ms", /createWorkYielder\(48\)/.test(track));
-check("desert plantStep 4", /plantStep = def\.scenery === "forest" \? 2 : 4/.test(track));
+check("terrain/plant yield budget ≥96ms", /createWorkYielder\(96\)/.test(track) || /createWorkYielder\(140\)/.test(track));
+check("desert plantStep 8", /plantStep = def\.scenery === "forest" \? 4 : 8/.test(track));
 check(
   "settle drains are short",
-  /waitLoadingBarSettled\(80\)/.test(game) &&
-    /_drainStreamCompileUnderOverlay\(isPhonePlay\(\) \? 40 : 120\)/.test(game)
+  /waitLoadingBarSettled\(40\)/.test(game) &&
+    /_drainStreamCompileUnderOverlay\(isPhonePlay\(\) \? 30 : 60\)/.test(game)
 );
-check("crowd warms after Ready", /warmCrowdKit\(\)/.test(game) && /warmFullTracksideKit\(\)/.test(game));
+check(
+  "deferred dressing after Ready",
+  /finishDeferredDressing/.test(track) &&
+    /finishDeferredDressing/.test(game) &&
+    /warmCrowdKit\(\)/.test(game)
+);
 check(
   "championship warms Desert kit on car select",
   /preparePropKit\(scenery\)/.test(game) && !/_scheduleTrackPreload\(warmId/.test(game)
 );
 check("load bar snaps at Ready", /Math\.exp\(-18 \* dt\)/.test(hud) && /timeoutMs = 120/.test(hud));
 check(
-  "desktop fast terrain tiles",
-  /terrainTileSegs = Math\.min\(STREAM\.terrainTileSegs \|\| 24, 8\)/.test(game) &&
-    /terrainTileSize = Math\.max\(STREAM\.terrainTileSize \|\| 256, 384\)/.test(game)
+  "desktop fast terrain tiles 6@512",
+  /terrainTileSegs = Math\.min\(STREAM\.terrainTileSegs \|\| 24, 6\)/.test(game) &&
+    /terrainTileSize = Math\.max\(STREAM\.terrainTileSize \|\| 256, 512\)/.test(game)
 );
-check("land pad tightened", /scenery === "desert"\) return 380/.test(track));
+check("land pad tightened ≤260", /scenery === "desert"\) return 240/.test(track));
 check(
   "land tile uses nearest-road grid",
-  /One nearest-road sample per tile/.test(track) && /_fastLandBuild/.test(track)
+  /_fastLandBuild/.test(track) && /sampleN = onTrench \? 3 : 1/.test(track)
 );
-check("fast land segment window", /this\._fastLandBuild \? 12 : 28/.test(track));
-check(
-  "fast load skips heavy desert gallery",
-  /Fast land: skip safari/.test(track) && /terrainTileSegs \|\| 24\) > 14/.test(track)
-);
-check("fast land caps segs at 6", /useSegs = this\._fastLandBuild \? Math\.min\(segs, 6\)/.test(track));
+check("fast land caps segs at 4", /useSegs = this\._fastLandBuild \? Math\.min\(segs, 4\)/.test(track));
 check("fast skirt skips groundHeight", /fastSkirt = \(STREAM\.terrainTileSegs \|\| 24\) <= 14/.test(track));
-check("cache-bust chain", cacheOk && Number(gameV) >= 1120, `main=${mainV} game=${gameV}`);
-check("index main.js?v=1120+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1119);
+check("load skips land-vert scrub", /_scrubRoadwayVisuals\(\{ skipLand: true \}\)/.test(track));
+check("cache-bust chain", cacheOk && Number(gameV) >= 1126, `main=${mainV} game=${gameV}`);
+check("index main.js?v=1126+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1126);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "fast-load gates green"}`);
 process.exit(fail ? 1 : 0);

@@ -21,6 +21,14 @@ Trackside HD (Poly Haven CC0 — POLYHAVEN-LICENSE.txt):
     rock_moss_set_02 → forest_hero_moss_set_b.glb
     dead_tree_trunk → forest_hero_log.glb
     fern_02 → forest_hero_fern.glb
+  Desert Stage 1 close/medium (Namaqualand CC0):
+    namaqualand_boulder_02..06 → desert_hero_boulder_a..e.glb
+    namaqualand_rocks_01 → desert_hero_rocks.glb
+    namaqualand_stones_01 → desert_hero_stones.glb
+    sand_rocks_small_01 → desert_hero_sand_rocks.glb
+    quiver_tree_01/02 → desert_hero_quiver_a/b.glb
+    wild_rooibos_bush → desert_hero_scrub.glb
+    othonna_cerarioides → desert_hero_othonna.glb
 Source under assets/props/hd-src/polyhaven/.
 
 Remaining gallery / gates (Kenney CC0, densified):

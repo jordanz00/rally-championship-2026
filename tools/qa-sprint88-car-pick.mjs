@@ -53,8 +53,9 @@ check(
 );
 check(
   "championship car pick starts one race, not a parallel preload",
-  /if \(this\.mode === "championship"\) \{[\s\S]*?this\._beginRace\(next\);\s*return;/.test(game) &&
-    !/this\._scheduleTrackPreload\(next\);\s*this\._beginRace\(next\)/.test(game)
+  /_pickCar\(id\) \{[\s\S]*?this\._beginRace\(next\);/.test(game) &&
+    !/this\._scheduleTrackPreload\(next\);\s*this\._beginRace\(next\)/.test(game) &&
+    /const pick = "celica"/.test(game)
 );
 check(
   "loading screen covers the canvas without a black curtain",

@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=262";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=265";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=450";
+import { Track } from "./tracks/track.js?v=455";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
-import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=57";
-import { Opponent } from "./ai.js?v=257";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=60";
+import { Opponent } from "./ai.js?v=261";
 import { RallyAudio } from "./audio/engine.js?v=82";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -27,7 +27,7 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=54";
+} from "./ui/hud.js?v=55";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
@@ -75,7 +75,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=242";
+} from "./config.js?v=243";
 
 /**
  * First-drive ease. The slide is still the tool. A miss on Desert comes back,
@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=20";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=25";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=6";
 import {
@@ -307,10 +307,10 @@ function armVegBudget(tierId) {
     STREAM.terrainTileSegs = 12;
     STREAM.terrainTileSegsCinema = 12;
   } else {
-    // All desktop tiers — 8 segs @ 384 m ≈ 9× fewer verts than 24@256.
-    STREAM.terrainTileSegs = Math.min(STREAM.terrainTileSegs || 24, 8);
-    STREAM.terrainTileSegsCinema = Math.min(STREAM.terrainTileSegsCinema || 28, 10);
-    STREAM.terrainTileSize = Math.max(STREAM.terrainTileSize || 256, 384);
+    // Desktop: 6 segs @ 512 m — ~half the tiles of 8@384, still readable banks.
+    STREAM.terrainTileSegs = Math.min(STREAM.terrainTileSegs || 24, 6);
+    STREAM.terrainTileSegsCinema = Math.min(STREAM.terrainTileSegsCinema || 28, 8);
+    STREAM.terrainTileSize = Math.max(STREAM.terrainTileSize || 256, 512);
   }
 }
 
@@ -328,12 +328,12 @@ function armStreamBudget() {
   }
   // iPhone 13 / mid Android: tiny stream bubble — scenery beyond fog is free RAM.
   STREAM.prefetchChunks = phone ? 1 : 2;
-  STREAM.lookaheadSeconds = phone ? 1.0 : 2.6;
-  STREAM.settleLookaheadMeters = android ? 180 : phone ? 200 : 620;
-  STREAM.countdownLoadRadius = android ? 180 : phone ? 200 : 560;
-  STREAM.loadRadius = android ? 240 : phone ? 260 : 720;
-  STREAM.unloadRadius = android ? 320 : phone ? 340 : 800;
-  STREAM.minLoadRadius = phone ? 120 : 260;
+  STREAM.lookaheadSeconds = phone ? 1.0 : 2.2;
+  STREAM.settleLookaheadMeters = android ? 160 : phone ? 180 : 320;
+  STREAM.countdownLoadRadius = android ? 160 : phone ? 180 : 300;
+  STREAM.loadRadius = android ? 220 : phone ? 240 : 560;
+  STREAM.unloadRadius = android ? 300 : phone ? 320 : 700;
+  STREAM.minLoadRadius = phone ? 120 : 220;
   if (phone) {
     STREAM.terrainTileSegs = 12;
     STREAM.terrainTileSegsCinema = 12;
@@ -2038,9 +2038,11 @@ export class RallyGame {
     } catch (err) {
       console.warn(err);
     }
-    // SELECT MODE is the presentation hub — championship is one clear choice.
+    // Championship-only arcade menu — no practice / time attack hub.
+    this.mode = "championship";
+    this.carId = "celica";
     showScreen("screen-menu");
-    const first = document.querySelector("#screen-menu .ui-card, #screen-menu [data-menu]");
+    const first = document.querySelector("#screen-menu [data-menu='championship'], #screen-menu .ui-card");
     if (first && typeof first.focus === "function") {
       try {
         first.focus({ preventScroll: true });
@@ -2090,17 +2092,14 @@ export class RallyGame {
   _onMenu(id) {
     this.audio.unlock();
     this.codriver.warm(this.audio);
+    // Time Attack / Practice removed from the player path — always championship.
+    if (id === "timeattack" || id === "practice") id = "championship";
     if (id === "championship") {
       this.mode = "championship";
+      this.carId = "celica";
       this.stageIndex = 0;
       this.champOrder = COURSE_ORDER.slice();
       this.champPlace = CHAMPIONSHIP.startPosition;
-      this._showCars();
-    } else if (id === "timeattack") {
-      this.mode = "timeattack";
-      this._showCars();
-    } else if (id === "practice") {
-      this.mode = "practice";
       this._showCars();
     } else if (id === "controls") {
       showScreen("screen-controls", { outMs: 220, inMs: 360 });
@@ -2149,67 +2148,62 @@ export class RallyGame {
           : "desert";
       preparePropKit(scenery).catch((err) => console.warn("[warm] prop kit", err));
       if (scenery === "desert") {
-        import("./tracks/desert-pbr.js?v=65")
+        import("./tracks/desert-pbr.js?v=66")
           .then((m) => m.prepareDesertPbr && m.prepareDesertPbr())
           .catch(() => {});
       }
     }
     this._syncCarSelectButtons();
     const modeLabel = document.getElementById("cars-mode-label");
-    if (modeLabel) {
-      const names = {
-        championship: "Championship",
-        timeattack: "Time Attack",
-        practice: "Practice",
-      };
-      modeLabel.textContent = names[this.mode] || "Select car";
-    }
+    if (modeLabel) modeLabel.textContent = "Championship";
     const hint = document.getElementById("cars-hint");
     if (hint) {
-      hint.textContent =
-        this.mode === "championship"
-          ? "Championship · Desert first. Confirm a car to start the season."
-          : "Hover a car to preview it on the pad. Confirm to lock it in.";
+      hint.textContent = "Toyota Celica GT-Four · Desert first. Confirm to start the season.";
     }
-    const titles = {
-      celica: "CELICA GT-FOUR",
-      delta: "DELTA HF",
-      stratos: "STRATOS HF",
-    };
-    for (const [id, label] of Object.entries(titles)) {
-      const btn = document.querySelector(`[data-car='${id}']`);
-      if (!btn) continue;
-      const ready = this._carSelectable(id);
+    const btn = document.querySelector("[data-car='celica']");
+    if (btn) {
+      const ready = this._carSelectable("celica");
       btn.disabled = !ready;
       btn.classList.toggle("is-loading", !ready);
       const titleEl = btn.querySelector(".ui-card-title");
+      const label = "CELICA GT-FOUR";
       if (titleEl) titleEl.textContent = ready ? label : `${label} · LOADING`;
       else btn.textContent = ready ? label : `${label}  ·  LOADING…`;
     }
     showScreen("screen-cars", { outMs: 240, inMs: 380 });
+    if (btn && typeof btn.focus === "function") {
+      try {
+        btn.focus({ preventScroll: true });
+      } catch {
+        btn.focus();
+      }
+    }
   }
 
   _pickCar(id) {
-    if (!this._carSelectable(id)) {
+    // Player path is Toyota-only — ignore Delta / Stratos even if a stale node fires.
+    void id;
+    const pick = "celica";
+    if (!this._carSelectable(pick)) {
       if (this.hud) this.hud.flashMessage("MODEL NOT LOADED");
       return;
     }
-    this.carId = id;
-    this.player = new Vehicle(CARS[id]);
-    this.audio.setCar(id);
+    this.mode = "championship";
+    this.carId = pick;
+    this.player = new Vehicle(CARS[pick]);
+    this.audio.setCar(pick);
 
     // Championship starts the race from this click. Do not also
     // `_scheduleTrackPreload` here — that used to start a second Track.create
     // on the same turn and freeze the tab. `_beginRace` joins any idle warm
     // or builds once.
-    if (this.mode === "championship") {
-      const next = this.champOrder[this.stageIndex] || this.champOrder[0];
-      this._beginRace(next);
-      return;
+    if (!this.champOrder || !this.champOrder.length) {
+      this.champOrder = COURSE_ORDER.slice();
+      this.stageIndex = 0;
+      this.champPlace = CHAMPIONSHIP.startPosition;
     }
-
-    this._refreshCourseLock();
-    showScreen("screen-courses", { outMs: 240, inMs: 380 });
+    const next = this.champOrder[this.stageIndex] || this.champOrder[0];
+    this._beginRace(next);
   }
 
   _refreshCourseLock() {
@@ -3335,14 +3329,23 @@ export class RallyGame {
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
     // One short compile pass only — second 800 ms drain was pure wall-clock waste.
-    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 40 : 120);
+    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 30 : 60);
     // Snap the bar; old 900 ms ease added a full second after the stage was ready.
-    await waitLoadingBarSettled(80);
+    await waitLoadingBarSettled(40);
     if (loadGen !== this._loadGen) return;
-    // Crowd + leftover trackside parse after the grid is lit — not on the load bar.
+    // Crowd + horizon/safari/verge after Ready — not on the load bar.
     if (!isPhonePlay()) {
-      void warmCrowdKit().catch((err) => console.warn("[warm] crowd", err));
-      void warmFullTracksideKit().catch((err) => console.warn("[warm] trackside", err));
+      void (async () => {
+        try {
+          await Promise.all([warmCrowdKit(), warmFullTracksideKit()]);
+          if (loadGen !== this._loadGen) return;
+          if (this.track && typeof this.track.finishDeferredDressing === "function") {
+            this.track.finishDeferredDressing();
+          }
+        } catch (err) {
+          console.warn("[warm] deferred dressing", err);
+        }
+      })();
     }
     // Second guard against a latched QA override: no hold may survive into a
     // race the player just started. QA tools arm _qaDrive after the grid is

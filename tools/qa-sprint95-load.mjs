@@ -53,7 +53,10 @@ check(
 );
 check(
   "terrain / plants yield on a time budget",
-  /function createWorkYielder/.test(track) && /createWorkYielder\(48\)/.test(track)
+  /function createWorkYielder/.test(track) &&
+    (/createWorkYielder\(48\)/.test(track) ||
+      /createWorkYielder\(96\)/.test(track) ||
+      /createWorkYielder\(140\)/.test(track))
 );
 check("yield budget does not await a no-op", /const wait = yieldWork\(\);\s*if \(wait\) await wait/.test(track));
 check("prepareRivalLods skips 7 MB heroes", /export async function prepareRivalLods/.test(celica));

@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=242";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=243";
 import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
@@ -51,9 +51,25 @@ function terrainTileSegs() {
   }
   return STREAM.terrainTileSegs;
 }
+
+/**
+ * Rich stage dressing (safari, verge, spectators, hero landmarks, full horizon).
+ * Coarse land segs (≤14) stay for load speed — do NOT gate extras on segs.
+ * Phones / min veg keep the slim kit.
+ */
+function envExtrasEnabled() {
+  try {
+    if (typeof window !== "undefined" && window.__rallyPhoneLite) return false;
+  } catch {
+    /* ignore */
+  }
+  if (STREAM.envExtras === false) return false;
+  if ((STREAM._activeVegScale || 1) < 0.34) return false;
+  return true;
+}
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=57";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=60";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -70,7 +86,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=65";
+} from "./desert-pbr.js?v=66";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -86,7 +102,7 @@ import {
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
 } from "./forest-tunnel.js?v=25";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=47";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=49";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=15";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
@@ -169,10 +185,12 @@ const STREAM_FAR = 1200;
 const ROAD_VERGE = 8.2;
 /**
  * Collision-safe corridor past the painted edge (m). Car half-width (~0.95) +
- * nose/tail slack so no env solid can sit where the chassis drives.
- * Visual props may still dress the verge; physics spheres must clear THIS.
+ * nose/tail / mirror slack so no env solid can sit where the chassis drives.
+ * Visual props may still dress the outer verge; physics spheres must clear THIS.
  */
-const ROAD_COLLIDER_CLEAR = 3.8;
+const ROAD_COLLIDER_CLEAR = 4.6;
+/** Footprint refuse vs painted asphalt — car half-width + kerb slack (m). */
+const ROAD_PAINT_FOOT = 1.1;
 /** Extra clearance for tall forest pack trees (canopy radius at scale). */
 const FOREST_TREE_CLEAR = 8.6;
 
@@ -404,20 +422,65 @@ export class Track {
       this._addTracksideSignage(def);
     }
     this._scrubRoadwayColliders();
-    this._scrubRoadwayVisuals();
+    // Skip land-vert scrub on the load bar — deferred dressing + paint props only.
+    this._scrubRoadwayVisuals({ skipLand: true });
     this._seatAllScenery();
-    // Phones: skip PBR upgrade rewalk — peak RAM after plant.
-    if (!phoneLite) {
-      upgradeWorld(this.group);
-      upgradeWorldMaterials(this.group);
-    }
+    // PBR upgrade + world validation run after Ready (finishDeferredDressing).
     armCameraFade(this.group);
     this._initWheelDeform();
     this._tunnelVolumes = buildTunnelVolumes(this.points);
-    runWorldGeometryValidation(this, { scenery: def.scenery });
+    this._deferredDressingPending = envExtrasEnabled() && !phoneLite;
 
     report(1, "Course ready");
     await tick();
+  }
+
+  /**
+   * Horizon / safari / verge / spectators / PBR upgrade — after the load bar.
+   * Keeps GO readable while cutting ~half the Track.create wall time.
+   */
+  finishDeferredDressing() {
+    if (!this._deferredDressingPending || this._deferredDressingDone) return;
+    this._deferredDressingDone = true;
+    this._deferredDressingPending = false;
+    const def = this._def;
+    if (!def || !envExtrasEnabled()) return;
+    const rng = mulberry((def.seed || 7) ^ 0x2d4e);
+    const b = this._trackBounds();
+    this._addBackdropBiome(def, b);
+    if (def.scenery === "desert") {
+      this._addSafariHerd(rng);
+      this._addDesertDriftLandmarks();
+      this._addDesertTumbleweeds(rng);
+      this._addDesertRoadsideGallery(rng);
+      this._addDesertHorizonAcacia(rng);
+    }
+    if (VISUAL.heroLandmarks && (VISUAL.tier || 0) >= 4) {
+      this._addHeroLandmarks(def, rng);
+    }
+    if ((VISUAL.tier || 0) >= 7) {
+      this._addRealisticVergeDetail(def, rng);
+    }
+    this._addSpectators(rng, def);
+    this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals({ skipLand: false });
+    this._seatAllScenery();
+    // Seat can settle props — scrub corridor again so nothing rides onto paint.
+    this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals({ skipLand: true });
+    try {
+      if (!(typeof window !== "undefined" && window.__rallyPhoneLite)) {
+        upgradeWorld(this.group);
+        upgradeWorldMaterials(this.group);
+      }
+    } catch (err) {
+      console.warn("[dress] upgradeWorld", err);
+    }
+    try {
+      runWorldGeometryValidation(this, { scenery: def.scenery });
+    } catch (err) {
+      console.warn("[dress] world validate", err);
+    }
   }
 
   /** Solid rut mesh parented to the stage — stamps accumulate through the race. */
@@ -1481,27 +1544,23 @@ export class Track {
     const pad = 980;
     const span = Math.max(b.spanX + pad * 2, b.spanZ + pad * 2, 1800);
     await this._addLandPlaneAsync(def, b, span, onRowProgress);
-    // Fast land (≤14 segs): skip multi-ring horizon — fog hides it at GO and
-    // each pose re-ran nearest-road. One light rock ring keeps silhouette.
-    if ((STREAM.terrainTileSegs || 24) <= 14) {
-      const scenery = def.scenery || "forest";
-      if (scenery === "desert") {
-        this._addBackdropRockRings(
-          b,
-          0xa38254,
-          [{ r: b.maxR + 420, n: 28, sMin: 14, sMax: 26, y: 0.14 }],
-          "desert"
-        );
-      } else if (scenery === "forest" || scenery === "mountain" || scenery === "lakeside") {
-        this._addBackdropRockRings(
-          b,
-          scenery === "mountain" ? 0x6a6258 : 0x5a6c58,
-          [{ r: b.maxR + 400, n: 24, sMin: 12, sMax: 22, y: 0.14 }],
-          scenery
-        );
-      }
-    } else {
-      this._addBackdropBiome(def, b);
+    // Critical path: thin silhouette ring only. Full biome horizon is
+    // finishDeferredDressing() after Ready — fog covers GO either way.
+    const scenery = def.scenery || "forest";
+    if (scenery === "desert") {
+      this._addBackdropRockRings(
+        b,
+        0xa38254,
+        [{ r: b.maxR + 420, n: 18, sMin: 12, sMax: 22, y: 0.14 }],
+        "desert"
+      );
+    } else if (scenery === "forest" || scenery === "mountain" || scenery === "lakeside") {
+      this._addBackdropRockRings(
+        b,
+        scenery === "mountain" ? 0x6a6258 : 0x5a6c58,
+        [{ r: b.maxR + 400, n: 16, sMin: 10, sMax: 18, y: 0.14 }],
+        scenery
+      );
     }
   }
 
@@ -1554,11 +1613,11 @@ export class Track {
    * @returns {number}
    */
   _landPad(scenery) {
-    // Tight pad — old 760–820 m doubled tile count for little on-camera gain.
-    if (scenery === "forest" || scenery === "mountain") return 420;
-    if (scenery === "desert") return 380;
-    if (scenery === "lakeside") return 360;
-    return STREAM.terrainTileSize * 0.5;
+    // Fog hides past ~360–720 m — pad only what the first km can see.
+    if (scenery === "forest" || scenery === "mountain") return 260;
+    if (scenery === "desert") return 240;
+    if (scenery === "lakeside") return 240;
+    return STREAM.terrainTileSize * 0.45;
   }
 
   /**
@@ -1589,22 +1648,27 @@ export class Track {
     const desert = scenery === "desert";
     const bedDrop =
       scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : desert ? 0.95 : 0.55;
-    let h = this._groundHeight(x, z, scenery, near);
-    const bank = this._jumpBankTargetY(x, z, bedDrop);
-    if (bank != null) return Math.max(h, bank);
-    const fly = this._flyoverBankTargetY(x, z, bedDrop);
-    if (fly != null) return Math.max(h, fly);
-    {
-      const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
-      if (over < ROAD_VERGE + 2.4) h = Math.min(h, near.roadY - bedDrop);
-    }
+    const over0 = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
+    // Underpass / mouth floors win first — then paint corridor is a hard floor
+    // so jump banks / dunes never lift land through the driven lane.
     if (desert && this._inUnderpassCorridor(x, z)) {
       const floor = this._underpassFloorY(x, z);
-      h = floor != null ? floor : near.roadY - 0.14;
-    } else if (this._inTunnelMouthCorridor(x, z)) {
+      return floor != null ? floor : near.roadY - 0.14;
+    }
+    if (this._inTunnelMouthCorridor(x, z)) {
       const mouth = this._tunnelMouthFloorY(x, z);
-      h = mouth != null ? mouth : near.roadY - bedDrop;
-    } else if (desert && this._inTunnelCutAt(x, z)) {
+      return mouth != null ? mouth : near.roadY - bedDrop;
+    }
+    if (over0 < ROAD_COLLIDER_CLEAR + 0.45) {
+      return near.roadY - bedDrop;
+    }
+    let h = this._groundHeight(x, z, scenery, near);
+    const bank = this._jumpBankTargetY(x, z, bedDrop);
+    if (bank != null) h = Math.max(h, bank);
+    const fly = this._flyoverBankTargetY(x, z, bedDrop);
+    if (fly != null) h = Math.max(h, fly);
+    if (over0 < ROAD_VERGE + 2.4) h = Math.min(h, near.roadY - bedDrop);
+    if (desert && this._inTunnelCutAt(x, z)) {
       // Authored tunnel ridge stays. Flattening it left the portal floating.
     } else if (this._inLandmarkFlat(near.along, near.dist, near.roadW)) {
       h = Math.min(h, near.roadY - bedDrop);
@@ -1781,8 +1845,8 @@ export class Track {
 
     const rows = [];
     for (let tz = z0; tz < maxZ; tz += tileSize) rows.push(tz);
-    // 100 ms work slices — tighter budgets + headless rAF made load *slower*.
-    const yieldWork = createWorkYielder(100);
+    // Wide slices — fewer awaits = lower wall clock; bar still paints.
+    const yieldWork = createWorkYielder(140);
     let tilesDone = 0;
     const tileTotal = Math.max(1, rows.length * Math.max(1, Math.ceil((maxX - x0) / tileSize)));
     this._fastLandBuild = true;
@@ -1818,19 +1882,22 @@ export class Track {
    * @param {number} floorHex
    */
   _addLandTile(def, scenery, desert, b, cx, cz, tileSize, segs, floorHex) {
-    const useSegs = this._fastLandBuild ? Math.min(segs, 6) : segs;
+    const useSegs = this._fastLandBuild ? Math.min(segs, 4) : segs;
     const geo = new THREE.PlaneGeometry(tileSize, tileSize, useSegs, useSegs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = [];
     const c = new THREE.Color();
 
-    // One nearest-road sample per tile during fast build — was ~90% of Desert load.
+    // Far tiles: 1 centre sample. Ribbon tiles: 3×3 grid so paint verts get a
+    // real over/roadY. Fast build used to force sampleN=1 on 256 m tiles —
+    // corners sat on asphalt while the centre was off-road → dunes through deck.
     const nearC = this._nearestRoad(cx, cz);
-    const trenchPad = (nearC.roadW || 14) * 0.5 + Math.max(36, (this._landCell || 24) * 2.2);
-    const onTrench = nearC.dist < trenchPad;
-    const sampleN = this._fastLandBuild ? 1 : onTrench ? 3 : 1;
     const half = tileSize * 0.5;
+    const halfDiag = half * Math.SQRT2;
+    const trenchPad = (nearC.roadW || 14) * 0.5 + Math.max(36, (this._landCell || 24) * 2.2);
+    const onTrench = nearC.dist < trenchPad + halfDiag;
+    const sampleN = onTrench ? 3 : 1;
     const step = sampleN > 1 ? tileSize / (sampleN - 1) : 0;
     /** @type {ReturnType<Track["_nearestRoad"]>[]} */
     const nearGrid = sampleN > 1 ? new Array(sampleN * sampleN) : null;
@@ -1845,9 +1912,7 @@ export class Track {
       }
     }
     const invTile = sampleN > 1 ? (sampleN - 1) / tileSize : 0;
-    const flatR = ((floorHex >> 16) & 255) / 255;
-    const flatG = ((floorHex >> 8) & 255) / 255;
-    const flatB = (floorHex & 255) / 255;
+    void floorHex;
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + cx;
@@ -1869,14 +1934,25 @@ export class Track {
       }
       let h;
       if (this._fastLandBuild) {
-        // Biome + trench clamp only — skip jump/flyover corridor probes.
-        h = this._groundHeightRaw(x, z, scenery, near);
+        // Per-vertex over only — whole-tile onTrench + _landSurfaceY washed
+        // every bank on 384 m tiles into a flat under-deck trench.
         const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
-        if (over < trenchPad) {
-          const bedDrop = desert ? 0.95 : scenery === "mountain" ? 0.28 : 0.55;
+        const bedDrop = desert ? 0.95 : scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : 0.55;
+        // On-road / car corridor — hard floor only (no dune / bank lift).
+        if (over < ROAD_COLLIDER_CLEAR + 0.45) {
+          h = near.roadY - bedDrop;
+        } else if (over < ROAD_VERGE + 2.4 || near.dist < this._trenchWidth(near.roadW)) {
+          h = this._groundHeightRaw(x, z, scenery, near);
           h = Math.min(h, near.roadY - bedDrop);
+        } else if (over < trenchPad * 0.45) {
+          h = this._groundHeightRaw(x, z, scenery, near);
+          const bed = near.roadY - bedDrop;
+          h = Math.min(h, bed + Math.max(0, over) * 0.02);
+        } else {
+          h = this._groundHeightRaw(x, z, scenery, near);
         }
-        colors.push(flatR, flatG, flatB);
+        this._biomeTint(c, scenery, h, near.roadY, x, z, near);
+        colors.push(c.r, c.g, c.b);
       } else {
         h = this._landSurfaceY(x, z, scenery, near);
         this._biomeTint(c, scenery, h, near.roadY, x, z, near);
@@ -1890,12 +1966,14 @@ export class Track {
     }
     geo.computeVertexNormals();
     const landMap = landAlbedoMap(scenery, tileSize);
-    const landNorm = this._fastLandBuild ? null : landNormalMap(scenery, tileSize);
-    const landRough = this._fastLandBuild ? null : landRoughnessMap(scenery, tileSize);
-    const landAo = this._fastLandBuild ? null : landAoMap(scenery, tileSize);
+    // Desert keeps photo normals/rough/AO even on fast land — Kenney-free fidelity.
+    const skipDetail = this._fastLandBuild && !desert;
+    const landNorm = skipDetail ? null : landNormalMap(scenery, tileSize);
+    const landRough = skipDetail ? null : landRoughnessMap(scenery, tileSize);
+    const landAo = skipDetail ? null : landAoMap(scenery, tileSize);
     // Visual Pass V4 — per-scenery normal punch (sand ripples pop; forest softer).
     const landNs =
-      desert ? 1.85 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
+      desert ? 2.35 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
     const land = new THREE.Mesh(
       geo,
       worldTerrainMaterial({
@@ -1940,9 +2018,10 @@ export class Track {
     const pts = this.points;
     if (pts.length < 2) return;
     const hit = this._nearestPointIndex(x, z);
-    // Land-plane build: tighter window — full ±28/±5 was ~10× slower for load.
-    const win = this._fastLandBuild ? 12 : 28;
-    const cellR = this._fastLandBuild ? 2 : 5;
+    // Always see the opposite hairpin arm. Shrinking this for fast land left
+    // mid-lane verts owned by the wrong ribbon → dunes through the deck.
+    const win = 28;
+    const cellR = 5;
     const i0 = Math.max(0, hit.i - win);
     const i1 = Math.min(pts.length - 2, hit.i + win);
     for (let i = i0; i <= i1; i++) visit(i);
@@ -2604,8 +2683,12 @@ export class Track {
       } else {
         c.setRGB(dune.r, dune.g, dune.b);
       }
-      const grit = Math.abs(Math.sin(x * 0.055 + z * 0.049));
-      if (grit > 0.82) c.multiplyScalar(0.9);
+      // Multi-frequency grit breaks sand tiling — soft masks, no hard sheet edges.
+      const g1 = Math.abs(Math.sin(x * 0.055 + z * 0.049));
+      const g2 = Math.abs(Math.sin(x * 0.019 - z * 0.027 + 1.7));
+      const g3 = Math.abs(Math.sin(x * 0.11 + z * 0.093));
+      const grit = g1 * 0.45 + g2 * 0.35 + g3 * 0.2;
+      if (grit > 0.72) c.multiplyScalar(0.88 + (1 - grit) * 0.12);
       if (lift > 0.28) {
         const crestLift = Math.min(1, (lift - 0.28) / 0.45);
         c.r = Math.min(1, c.r * (1 + crestLift * 0.08));
@@ -2623,6 +2706,12 @@ export class Track {
         }
         const stone = Math.abs(Math.sin(x * 0.11 + z * 0.097));
         if (stone > 0.93) c.multiplyScalar(0.86);
+        const wash = Math.abs(Math.sin(x * 0.007 + z * 0.009));
+        if (wash > 0.88) {
+          c.r = Math.min(1, c.r * 1.04);
+          c.g = Math.min(1, c.g * 1.02);
+          c.b = Math.min(1, c.b * 0.97);
+        }
       }
       return;
     }
@@ -3949,9 +4038,9 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(48);
+    const yieldWork = createWorkYielder(96);
     // Coarser plant step — denser bags still fill from vegScale; fewer loop iterations.
-    const plantStep = def.scenery === "forest" ? 2 : 4;
+    const plantStep = def.scenery === "forest" ? 4 : 8;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
     this._markSightlines(def);
@@ -3999,6 +4088,14 @@ export class Track {
     }
     forestRockBags.rock_smallA = [];
     forestRockBags.rock_largeA = [];
+    /** Namaqualand heroes for Desert close/medium belt. */
+    const desertHeroBags = Object.create(null);
+    for (let di = 0; di < DESERT_HERO_ROCK_KINDS.length; di++) {
+      desertHeroBags[DESERT_HERO_ROCK_KINDS[di]] = [];
+    }
+    for (let dpi = 0; dpi < DESERT_HERO_PLANT_KINDS.length; dpi++) {
+      desertHeroBags[DESERT_HERO_PLANT_KINDS[dpi]] = [];
+    }
     /** Corsican maquis — mixed pack species for Stage 3 (not a single clone). */
     const MAQUIS_KINDS = ["cedar", "fir", "oak", "pine", "cedar", "fir"];
     /** Rust, gold, and a little green holdout — northern-European autumn. */
@@ -4046,84 +4143,27 @@ export class Track {
         if (!this._mayPlant(p.dist, side, off, plantH)) continue;
 
         if (def.scenery === "desert") {
-          const pick = rng();
-          const cactusShort = useGlb && !!propGeometry("cactus_short");
-          if (pick < 0.34) {
-            if (!this._driveClear(px, pz, 1.4)) continue;
-            cacti.push({
-              c: chunk,
-              x: px,
-              y: glbCactus ? py : py + 1.55,
-              z: pz,
-              s: 0.85 + rng() * 0.85,
-              ry: rng() * 6,
-            });
-            this._bumpNearRoad(px, pz, 0.9);
-          } else if (pick < 0.48 && cactusShort) {
-            if (!this._driveClear(px, pz, 1.0)) continue;
-            cactiShort.push({
-              c: chunk,
-              x: px,
-              y: py,
-              z: pz,
-              s: 0.65 + rng() * 0.55,
-              ry: rng() * 6,
-            });
-            this._bumpNearRoad(px, pz, 0.65);
-          } else if (pick < 0.74) {
-            const s = 0.9 + rng() * 1.8;
-            if (!this._driveClear(px, pz, Math.max(1.6, s * 0.75))) continue;
-            const half = p.width * 0.5;
-            if (off - s * 0.7 < half + ROAD_VERGE + 1.2) continue;
-            const rockS = glbRock ? s * 0.5 : s;
-            rocks.push({
-              c: chunk,
-              x: px,
-              y: glbRock ? py : py + 0.35,
-              z: pz,
-              sx: rockS * (0.84 + rng() * 0.32),
-              sy: rockS * (0.68 + rng() * 0.28),
-              sz: rockS * (0.86 + rng() * 0.3),
-              // A few degrees of tilt so the stone rests. A full tumble plants it on a point.
-              rx: glbRock ? (rng() - 0.5) * 0.3 : rng() * 0.35,
-              ry: rng() * Math.PI * 2,
-              rz: glbRock ? (rng() - 0.5) * 0.24 : rng() * 0.28,
-            });
-            this._bumpNearRoad(px, pz, Math.max(0.85, s * 0.62));
-          } else if (pick < 0.88) {
-            if (!this._driveClear(px, pz, 1.2)) continue;
-            bushes.push({
-              c: chunk,
-              x: px,
-              y: glbBush ? py : py + 0.45,
-              z: pz,
-              ...(glbBush
-                ? { s: 0.9 + rng() * 0.5, ry: rng() * 6 }
-                : { sx: 0.8 + rng(), sy: 0.6 + rng(), sz: 0.8 + rng() }),
-            });
-            this._bumpNearRoad(px, pz, 0.7);
-          } else {
-            // Tall sandstone instead of palms / lollipop cacti — Desert only
-            // plants saguaros, rocks, and scrub.
-            const s = 1.4 + rng() * 2.2;
-            if (!this._driveClear(px, pz, Math.max(1.8, s * 0.7))) continue;
-            const half = p.width * 0.5;
-            if (off - s * 0.65 < half + ROAD_VERGE + 1.2) continue;
-            const spireS = s * 0.85;
-            desertSpires.push({
-              c: chunk,
-              x: px,
-              y: py,
-              z: pz,
-              sx: spireS * (0.9 + rng() * 0.2),
-              sy: spireS * (0.92 + rng() * 0.16),
-              sz: spireS * (0.9 + rng() * 0.2),
-              rx: (rng() - 0.5) * 0.1,
-              ry: rng() * Math.PI * 2,
-              rz: (rng() - 0.5) * 0.1,
-            });
-            this._bumpNearRoad(px, pz, Math.max(0.9, s * 0.55));
-          }
+          this._plantDesertProp(
+            {
+              chunk,
+              px,
+              py,
+              pz,
+              off,
+              roadHalf: p.width * 0.5,
+              rng,
+              bags: desertHeroBags,
+              rocks,
+              cacti,
+              cactiShort,
+              bushes,
+              desertSpires,
+              glbCactus,
+              glbRock,
+              glbBush,
+              cactusShortReady: useGlb && !!propGeometry("cactus_short"),
+            }
+          );
         } else if (def.scenery === "mountain") {
           const gy = this._visualLandY(px, pz);
           if (!this._ribbonClear(px, pz, 2.6)) continue;
@@ -4430,6 +4470,17 @@ export class Track {
       /* no primitive trunks either when kit is armed */
     }
     this._addInstances(shadowGeometry(), shadowMaterial(), treeShadows, { receiveShadow: false });
+    // Desert Namaqualand heroes first — Kenney densify is far/fallback only.
+    const desertKinds = Object.keys(desertHeroBags);
+    for (let di = 0; di < desertKinds.length; di++) {
+      const kind = desertKinds[di];
+      const bag = desertHeroBags[kind];
+      if (!bag || !bag.length) continue;
+      stripDrive(bag, kind.includes("quiver") ? 3.4 : 3.0);
+      if (!bag.length || !propGeometry(kind)) continue;
+      this._addHdNature(kind, bag, { castShadow: true, scrubShadow: true });
+      this._bumpPoses(bag, kind.includes("quiver") ? 0.7 : kind.includes("scrub") || kind.includes("othonna") ? 0.55 : 0.85);
+    }
     if (glbRock && rockGeo) {
       this._addInstances(rockGeo, propNatureMaterial("rock_largeA"), rocks, { castShadow: true });
       this._bumpPoses(rocks, 0.52);
@@ -4506,14 +4557,7 @@ export class Track {
     if (def.scenery === "desert") {
       this._addDesertStartTown(rng);
       this._addDriftSweepBerms("desert");
-      // Fast land: skip safari/tumbleweed/gallery passes — each re-probed the ribbon.
-      if ((STREAM.terrainTileSegs || 24) > 14) {
-        this._addSafariHerd(rng);
-        this._addDesertDriftLandmarks();
-        this._addDesertTumbleweeds(rng);
-        this._addDesertRoadsideGallery(rng);
-        this._addDesertHorizonAcacia(rng);
-      }
+      // Safari / gallery / tumbleweed → finishDeferredDressing after Ready.
     }
     if (def.scenery === "mountain") {
       this._addVillage(rng);
@@ -4531,16 +4575,9 @@ export class Track {
     if (def.scenery === "lakeside") {
       this._addLake();
     }
-    if ((STREAM.terrainTileSegs || 24) > 14 && VISUAL.heroLandmarks && (VISUAL.tier || 0) >= 4) {
-      this._addHeroLandmarks(def, rng);
-    }
-    // Tier 7 — roadside scrub / understory / scree / reeds (Environment Art).
-    if ((STREAM.terrainTileSegs || 24) > 14 && (VISUAL.tier || 0) >= 7) {
-      this._addRealisticVergeDetail(def, rng);
-    }
-    if ((STREAM.terrainTileSegs || 24) > 14) this._addSpectators(rng, def);
+    // Hero landmarks / verge / spectators → finishDeferredDressing after Ready.
     this._scrubRoadwayColliders();
-    this._scrubRoadwayVisuals();
+    this._scrubRoadwayVisuals({ skipLand: true });
     this._seatAllScenery();
     if (onProgress) onProgress(1);
   }
@@ -4977,8 +5014,10 @@ export class Track {
    * Remove or tuck visual env geometry that still invades the drive corridor.
    * Collider scrub alone left meshes on the paint — the car drove through sand
    * banks and bush canopies with no matching solid.
+   * @param {{skipLand?: boolean}} [opts] skipLand skips expensive land-vert walk
    */
-  _scrubRoadwayVisuals() {
+  _scrubRoadwayVisuals(opts) {
+    const skipLand = !!(opts && opts.skipLand);
     const world = new THREE.Vector3();
     const inv = new THREE.Matrix4();
     const doomed = [];
@@ -4987,6 +5026,7 @@ export class Track {
       const attr = obj.geometry.attributes.position;
       if (!attr) return;
       if (obj.userData.envLand) {
+        if (skipLand) return;
         obj.updateMatrixWorld(true);
         inv.copy(obj.matrixWorld).invert();
         let changed = false;
@@ -4995,9 +5035,10 @@ export class Track {
           world.applyMatrix4(obj.matrixWorld);
           const road = this._nearestRoad(world.x, world.z);
           const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-          if (over >= ROAD_COLLIDER_CLEAR + 0.2) continue;
-          const floor = road.roadY - ROAD_DECK - 0.14;
-          if (world.y <= floor + 0.04) continue;
+          // Drive corridor (paint + car footprint) — keep land under the deck.
+          if (over >= ROAD_COLLIDER_CLEAR + 0.45) continue;
+          const floor = road.roadY - ROAD_DECK - 0.18;
+          if (world.y <= floor + 0.02) continue;
           world.y = floor;
           world.applyMatrix4(inv);
           attr.setXYZ(i, world.x, world.y, world.z);
@@ -5343,6 +5384,155 @@ export class Track {
    */
   _forestGround(x, z) {
     return this._visualLandY(x, z);
+  }
+
+  /**
+   * Desert Stage 1 plant — Namaqualand heroes in the chase belt; Kenney only far.
+   * @param {object} ctx
+   */
+  _plantDesertProp(ctx) {
+    const {
+      chunk,
+      px,
+      py,
+      pz,
+      off,
+      roadHalf,
+      rng,
+      bags,
+      rocks,
+      cacti,
+      cactiShort,
+      bushes,
+      desertSpires,
+      glbCactus,
+      glbRock,
+      glbBush,
+      cactusShortReady,
+    } = ctx;
+    const heroRocks = [];
+    for (let i = 0; i < DESERT_HERO_ROCK_KINDS.length; i++) {
+      const k = DESERT_HERO_ROCK_KINDS[i];
+      if (propGeometry(k)) heroRocks.push(k);
+    }
+    const heroPlants = [];
+    for (let i = 0; i < DESERT_HERO_PLANT_KINDS.length; i++) {
+      const k = DESERT_HERO_PLANT_KINDS[i];
+      if (propGeometry(k)) heroPlants.push(k);
+    }
+    const closeBelt = off < roadHalf + 32;
+    const pick = rng();
+    if (closeBelt && heroRocks.length && pick < 0.48) {
+      const kind = heroRocks[(rng() * heroRocks.length) | 0];
+      const sand = kind.includes("sand_rocks") || kind.includes("stones");
+      const s = sand ? 0.55 + rng() * 0.75 : 0.72 + rng() * 1.15;
+      const foot = Math.max(1.6, s * (sand ? 1.15 : 0.9));
+      if (!this._driveClear(px, pz, foot)) return;
+      if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
+      if (!bags[kind]) bags[kind] = [];
+      bags[kind].push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        s,
+        ry: rng() * Math.PI * 2,
+        rx: (rng() - 0.5) * 0.12,
+        rz: (rng() - 0.5) * 0.1,
+      });
+      this._bumpNearRoad(px, pz, Math.max(0.85, s * 0.6));
+      return;
+    }
+    if (closeBelt && heroPlants.length && pick < 0.72) {
+      const kind = heroPlants[(rng() * heroPlants.length) | 0];
+      const quiver = kind.includes("quiver");
+      const s = quiver ? 0.85 + rng() * 0.55 : 0.7 + rng() * 0.65;
+      const foot = quiver ? Math.max(2.4, s * 1.15) : Math.max(1.5, s * 0.95);
+      if (!this._driveClear(px, pz, foot)) return;
+      if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
+      if (!bags[kind]) bags[kind] = [];
+      bags[kind].push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        s,
+        ry: rng() * Math.PI * 2,
+      });
+      this._bumpNearRoad(px, pz, quiver ? 1.0 : 0.7);
+      return;
+    }
+    // Far / no-hero fallback — Kenney densify stays off the medium hero belt.
+    if (pick < 0.28 && glbCactus) {
+      if (!this._driveClear(px, pz, 1.4)) return;
+      cacti.push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        s: 0.85 + rng() * 0.85,
+        ry: rng() * 6,
+      });
+      this._bumpNearRoad(px, pz, 0.9);
+    } else if (pick < 0.4 && cactusShortReady) {
+      if (!this._driveClear(px, pz, 1.0)) return;
+      cactiShort.push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        s: 0.65 + rng() * 0.55,
+        ry: rng() * 6,
+      });
+      this._bumpNearRoad(px, pz, 0.65);
+    } else if (pick < 0.7) {
+      const s = 0.9 + rng() * 1.8;
+      if (!this._driveClear(px, pz, Math.max(1.6, s * 0.75))) return;
+      if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.2) return;
+      const rockS = glbRock ? s * 0.5 : s;
+      rocks.push({
+        c: chunk,
+        x: px,
+        y: glbRock ? py : py + 0.35,
+        z: pz,
+        sx: rockS * (0.84 + rng() * 0.32),
+        sy: rockS * (0.68 + rng() * 0.28),
+        sz: rockS * (0.86 + rng() * 0.3),
+        rx: glbRock ? (rng() - 0.5) * 0.3 : rng() * 0.35,
+        ry: rng() * Math.PI * 2,
+        rz: glbRock ? (rng() - 0.5) * 0.24 : rng() * 0.28,
+      });
+      this._bumpNearRoad(px, pz, Math.max(0.85, s * 0.62));
+    } else if (pick < 0.88 && glbBush) {
+      if (!this._driveClear(px, pz, 1.2)) return;
+      bushes.push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        s: 0.9 + rng() * 0.5,
+        ry: rng() * 6,
+      });
+      this._bumpNearRoad(px, pz, 0.7);
+    } else {
+      const s = 1.4 + rng() * 2.2;
+      if (!this._driveClear(px, pz, Math.max(1.8, s * 0.7))) return;
+      if (off - s * 0.65 < roadHalf + ROAD_VERGE + 1.2) return;
+      const spireS = s * 0.85;
+      desertSpires.push({
+        c: chunk,
+        x: px,
+        y: py,
+        z: pz,
+        sx: spireS * (0.9 + rng() * 0.2),
+        sy: spireS * (0.92 + rng() * 0.16),
+        sz: spireS * (0.9 + rng() * 0.2),
+        rx: (rng() - 0.5) * 0.1,
+        ry: rng() * Math.PI * 2,
+        rz: (rng() - 0.5) * 0.1,
+      });
+      this._bumpNearRoad(px, pz, Math.max(0.9, s * 0.55));
+    }
   }
 
   /**
@@ -8241,8 +8431,8 @@ export class Track {
     if (this._inTunnelVolumeExclusion(x, z, footprint)) return false;
     const road = this._nearestRoad(x, z);
     const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
-    // Hard floor: nothing whose footprint overlaps painted asphalt.
-    if (over - footprint < 0.4) return false;
+    // Hard floor: footprint must clear asphalt + car half-width (no kerb clips).
+    if (over - footprint < ROAD_PAINT_FOOT) return false;
     return over >= ROAD_VERGE + footprint;
   }
 

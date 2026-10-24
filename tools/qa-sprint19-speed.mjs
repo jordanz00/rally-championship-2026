@@ -34,7 +34,7 @@ const audio = read("js/audio/engine.js");
 const peak = config.match(/peakPowerKw:\s*(\d+)/);
 check(
   "peakPowerKw set",
-  peak && Number(peak[1]) >= 120 && Number(peak[1]) <= 220,
+  peak && Number(peak[1]) >= 70 && Number(peak[1]) <= 120,
   peak ? `got ${peak[1]}` : "missing peakPowerKw"
 );
 

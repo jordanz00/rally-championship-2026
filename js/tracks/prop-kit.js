@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=242";
+import { VISUAL } from "../config.js?v=243";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -99,6 +99,18 @@ export const PROP_KINDS = Object.freeze([
   "forest_hero_moss_set_b",
   "forest_hero_log",
   "forest_hero_fern",
+  "desert_hero_boulder_a",
+  "desert_hero_boulder_b",
+  "desert_hero_boulder_c",
+  "desert_hero_boulder_d",
+  "desert_hero_boulder_e",
+  "desert_hero_rocks",
+  "desert_hero_stones",
+  "desert_hero_sand_rocks",
+  "desert_hero_quiver_a",
+  "desert_hero_quiver_b",
+  "desert_hero_scrub",
+  "desert_hero_othonna",
 ]);
 
 /** Authored trackside / gallery / gate props (Kenney CC0 packs). */
@@ -235,6 +247,31 @@ export const FOREST_HERO_ROCK_KINDS = Object.freeze([
   "forest_hero_moss_set_b",
 ]);
 
+/** Desert close-belt geology — Poly Haven Namaqualand photogrammetry. */
+export const DESERT_HERO_ROCK_KINDS = Object.freeze([
+  "desert_hero_boulder_a",
+  "desert_hero_boulder_b",
+  "desert_hero_boulder_c",
+  "desert_hero_boulder_d",
+  "desert_hero_boulder_e",
+  "desert_hero_rocks",
+  "desert_hero_stones",
+  "desert_hero_sand_rocks",
+]);
+
+/** Desert scrub / quiver trees — hero belt vegetation (not Kenney cactus). */
+export const DESERT_HERO_PLANT_KINDS = Object.freeze([
+  "desert_hero_quiver_a",
+  "desert_hero_quiver_b",
+  "desert_hero_scrub",
+  "desert_hero_othonna",
+]);
+
+export const DESERT_HERO_KINDS = Object.freeze([
+  ...DESERT_HERO_ROCK_KINDS,
+  ...DESERT_HERO_PLANT_KINDS,
+]);
+
 /** @type {Record<string, THREE.Material>} */
 const MAT_CACHE = Object.create(null);
 
@@ -259,7 +296,7 @@ let natureTexPromise = null;
 /** @type {GLTFLoader|null} */
 let kitLoader = null;
 
-const KIT_ASSET_V = "23";
+const KIT_ASSET_V = "25";
 /** @type {Promise<void>|null} */
 let forestHeroPromise = null;
 
@@ -302,17 +339,22 @@ const CROWD_ALL = Object.freeze([
   "character-female-e",
   "character-female-f",
 ]);
+/** Critical-path desert kit — heroes + light Kenney far fallback. Animals deferred. */
 const DESERT_NATURE = Object.freeze([
-  "animal-zebra",
-  "animal-elephant",
-  "animal-gazelle",
+  ...DESERT_HERO_KINDS,
   "cactus_tall",
+  "cactus_short",
   "rock_largeA",
   "rock_largeB",
   "rock_tallA",
   "rock_smallA",
   "plant_bushDetailed",
   "plant_bushLarge",
+]);
+const DESERT_ANIMALS = Object.freeze([
+  "animal-zebra",
+  "animal-elephant",
+  "animal-gazelle",
 ]);
 const FOREST_NATURE = Object.freeze([
   "rock_largeA",
@@ -478,6 +520,7 @@ export function propNatureMaterial(kind) {
   const nature =
     kind.startsWith("tree_") ||
     kind.startsWith("forest_") ||
+    kind.startsWith("desert_hero_") ||
     kind.startsWith("plant_bush") ||
     kind.startsWith("rock_") ||
     kind.startsWith("cactus_") ||
@@ -564,10 +607,7 @@ const FAST_TRACKSIDE = Object.freeze([
   "light_post",
   "road_side_barrier",
   "crate",
-  "grandstand",
-  "grandstand_covered",
   "gantry_overhead",
-  "billboard",
 ]);
 
 /**
@@ -602,7 +642,8 @@ export function warmCrowdKit() {
 export function warmFullTracksideKit() {
   if (phonePropLite()) return Promise.resolve();
   const rest = TRACKSIDE_KINDS.filter((k) => !FAST_TRACKSIDE.includes(k));
-  return Promise.all(rest.map((k) => ensureKind(k))).then(() => {});
+  const animals = DESERT_ANIMALS.filter((k) => !rest.includes(k));
+  return Promise.all(rest.concat(animals).map((k) => ensureKind(k))).then(() => {});
 }
 
 /**
@@ -680,16 +721,26 @@ function ensureKind(kind) {
         }
         CHAR_PARTS[kind] = parts;
         if (CHAR_PARTS[kind]?.body) CACHE[kind] = CHAR_PARTS[kind].body;
-      } else if ((TRACKSIDE_KINDS.includes(kind) || kind.startsWith("forest_hero_")) && !MAT_CACHE[kind]) {
+      } else if (
+        (TRACKSIDE_KINDS.includes(kind) ||
+          kind.startsWith("forest_hero_") ||
+          kind.startsWith("desert_hero_")) &&
+        !MAT_CACHE[kind]
+      ) {
         let srcMat = null;
         root.traverse((obj) => {
           if (srcMat || (!obj.isMesh && !obj.isSkinnedMesh)) return;
           srcMat = obj.material;
         });
         if (srcMat) {
+          const leafCard =
+            kind.includes("fern") ||
+            kind === "desert_hero_scrub" ||
+            kind === "desert_hero_othonna" ||
+            kind.startsWith("desert_hero_quiver");
           MAT_CACHE[kind] = adoptPackMaterial(srcMat, kind, {
-            alphaTest: kind.includes("fern") ? 0.38 : 0,
-            doubleSide: kind.includes("fern"),
+            alphaTest: leafCard ? 0.36 : 0,
+            doubleSide: leafCard,
           });
         }
       }
@@ -1421,6 +1472,22 @@ function adoptPackMaterial(src, kind, opts) {
     mat.metalness = 0.03;
     mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.34 : 0.2;
   }
+  if (kind.startsWith("desert_hero_boulder") || kind === "desert_hero_rocks" || kind === "desert_hero_stones") {
+    const idx = (kind.charCodeAt(kind.length - 1) || 97) - 97;
+    mat.roughness = 0.9 + (idx % 5) * 0.016;
+    mat.metalness = 0.02;
+    mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.3 : 0.18;
+  }
+  if (kind === "desert_hero_sand_rocks") {
+    mat.roughness = 0.94;
+    mat.metalness = 0.01;
+    mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.22 : 0.14;
+  }
+  if (kind.startsWith("desert_hero_quiver") || kind === "desert_hero_scrub" || kind === "desert_hero_othonna") {
+    mat.roughness = 0.86;
+    mat.metalness = 0.01;
+    mat.envMapIntensity = (VISUAL.tier || 0) >= 3 ? 0.26 : 0.15;
+  }
   mat.alphaTest = opts.alphaTest != null ? opts.alphaTest : 0;
   mat.transparent = false;
   mat.depthWrite = true;
@@ -2136,6 +2203,28 @@ function targetHeightForKind(kind, currentHeight) {
     return null;
   }
   if (kind.startsWith("forest_hero_")) return null;
+  // Namaqualand scans keep authored caliper — only clamp extremes.
+  if (kind.startsWith("desert_hero_boulder") || kind === "desert_hero_rocks" || kind === "desert_hero_stones") {
+    if (currentHeight < 0.45) return 1.15;
+    if (currentHeight > 3.8) return 2.4;
+    return null;
+  }
+  if (kind === "desert_hero_sand_rocks") {
+    if (currentHeight < 0.2) return 0.55;
+    if (currentHeight > 1.4) return 0.85;
+    return null;
+  }
+  if (kind.startsWith("desert_hero_quiver")) {
+    if (currentHeight < 2.2) return 4.8;
+    if (currentHeight > 9) return 6.5;
+    return null;
+  }
+  if (kind === "desert_hero_scrub" || kind === "desert_hero_othonna") {
+    if (currentHeight < 0.5) return 1.35;
+    if (currentHeight > 3.2) return 2.1;
+    return null;
+  }
+  if (kind.startsWith("desert_hero_")) return null;
   if (kind.startsWith("rock_")) return SCALE.rock;
   if (kind.startsWith("plant_bush")) return SCALE.bush;
   if (kind === "log_large") return SCALE.log;

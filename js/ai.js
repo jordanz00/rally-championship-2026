@@ -23,10 +23,10 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=209";
+import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { AI, CARS } from "./config.js?v=242";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=262";
+import { AI, CARS } from "./config.js?v=243";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=265";
 
 const G = 9.81;
 
@@ -224,7 +224,13 @@ export class Opponent {
     this.apexStyle = 0.74 + (hashNoise(index + 41, 7) + 1) * 0.28;
 
     this.chassisId = rivalChassisForIndex(index);
-    this.vehicle = new Vehicle(CARS[this.chassisId] || CARS.celica, { lowDetail: true });
+    const base = CARS[this.chassisId] || CARS.celica;
+    const mul = AI.peakPowerMul != null ? AI.peakPowerMul : 1;
+    const specs = {
+      ...base,
+      peakPowerKw: Math.max(40, (base.peakPowerKw || 84) * mul),
+    };
+    this.vehicle = new Vehicle(specs, { lowDetail: true });
     this.vehicle.ai = true;
     this.vehicle.spawn(track, startDist, this.lane);
     // Race pack uses rival LOD (heroShell false). Soft coupe if GLB missing —

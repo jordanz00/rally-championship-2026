@@ -15,7 +15,7 @@
     <meta name="format-detection" content="telephone=no" />
     <meta name="color-scheme" content="dark" />
     <title>Rally Championship 2026</title>
-    <meta name="description" content="Arcade browser rally — Celica, Delta, Stratos, four stages, championship mode, power slides, co-driver calls." />
+    <meta name="description" content="Arcade browser rally championship — Toyota Celica GT-Four, four stages, power slides, co-driver calls." />
     <meta property="og:title" content="Rally Championship 2026" />
     <meta property="og:description" content="Play free in your browser — desert, forest, mountain, and lakeside stages." />
     <meta property="og:type" content="website" />
@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=73" />
+    <link rel="stylesheet" href="css/game.css?v=75" />
     <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
@@ -301,60 +301,40 @@
       <pre id="boot-error" hidden style="position:fixed;z-index:99999;left:12px;right:12px;bottom:12px;background:#200;color:#fcc;padding:12px;font:12px/1.4 monospace;white-space:pre-wrap;"></pre>
 
       <section id="screen-menu" class="screen screen-ui">
-        <div class="ui-panel">
+        <div class="ui-panel ui-panel-arcade">
           <p class="ui-eyebrow">Rally Championship 2026</p>
-          <h2 class="ui-title">SELECT MODE</h2>
-          <p class="ui-lead">Pick how you want to race. The showroom stays live behind you.</p>
+          <h2 class="ui-title">MAIN MENU</h2>
+          <p class="ui-lead">Four stages. One grid. Beat the pack.</p>
           <div class="ui-cards" role="list">
-            <button type="button" class="ui-card" data-menu="championship" role="listitem">
-              <span class="ui-card-kicker">Full season</span>
+            <button type="button" class="ui-card ui-card-hero" data-menu="championship" role="listitem" autofocus>
+              <span class="ui-card-kicker">Enter</span>
               <span class="ui-card-title">CHAMPIONSHIP</span>
-              <span class="ui-card-copy">Four stages · grid start · beat the pack</span>
-            </button>
-            <button type="button" class="ui-card" data-menu="timeattack" role="listitem">
-              <span class="ui-card-kicker">Solo clock</span>
-              <span class="ui-card-title">TIME ATTACK</span>
-              <span class="ui-card-copy">One stage · chase your best time</span>
-            </button>
-            <button type="button" class="ui-card" data-menu="practice" role="listitem">
-              <span class="ui-card-kicker">Free drive</span>
-              <span class="ui-card-title">PRACTICE</span>
-              <span class="ui-card-copy">Any stage · learn lines without pressure</span>
+              <span class="ui-card-copy">Desert → Forest → Mountain → Lakeside</span>
             </button>
             <button type="button" class="ui-card ui-card-quiet" data-menu="controls" role="listitem">
-              <span class="ui-card-kicker">Input</span>
+              <span class="ui-card-kicker">Help</span>
               <span class="ui-card-title">CONTROLS</span>
               <span class="ui-card-copy">Keyboard · gamepad · phone</span>
             </button>
           </div>
+          <p class="ui-coin">PRESS CHAMPIONSHIP TO START</p>
         </div>
       </section>
 
       <section id="screen-cars" class="screen screen-ui">
-        <div class="ui-panel">
+        <div class="ui-panel ui-panel-arcade">
           <p class="ui-eyebrow" id="cars-mode-label">Championship</p>
-          <h2 class="ui-title">SELECT CAR</h2>
-          <p class="ui-lead hint" id="cars-hint">Hover a car to preview it on the pad. Confirm to lock it in.</p>
+          <h2 class="ui-title">YOUR CAR</h2>
+          <p class="ui-lead hint" id="cars-hint">Toyota Celica GT-Four — locked for the season.</p>
           <div class="ui-cards" role="list">
-            <button type="button" class="ui-card" data-car="celica" role="listitem">
-              <span class="ui-card-kicker">The hammer</span>
+            <button type="button" class="ui-card ui-card-hero" data-car="celica" role="listitem" autofocus>
+              <span class="ui-card-kicker">Toyota</span>
               <span class="ui-card-title">CELICA GT-FOUR</span>
-              <span class="ui-card-copy">Plant it. Trust it. Safari car.</span>
-            </button>
-            <button type="button" class="ui-card" data-car="delta" role="listitem">
-              <span class="ui-card-kicker">The knife</span>
-              <span class="ui-card-title">DELTA HF</span>
-              <span class="ui-card-copy">Late brake. Flick. Forest rhythm.</span>
-            </button>
-            <button type="button" class="ui-card" data-car="stratos" role="listitem">
-              <span class="ui-card-kicker">The wild card</span>
-              <span class="ui-card-title">STRATOS HF</span>
-              <span class="ui-card-copy">Hang it. Or bin it.</span>
+              <span class="ui-card-copy">Confirm · grid up · GO</span>
             </button>
           </div>
           <div class="ui-actions">
-            <button type="button" data-menu="modes" class="ghost ui-ghost">← MODES</button>
-            <button type="button" data-menu="back" class="ghost ui-ghost">BACK</button>
+            <button type="button" data-menu="back" class="ghost ui-ghost">← BACK</button>
           </div>
         </div>
       </section>
@@ -398,10 +378,10 @@
       </section>
 
       <section id="screen-controls" class="screen screen-ui">
-        <div class="ui-panel ui-panel-wide">
+        <div class="ui-panel ui-panel-arcade ui-panel-wide">
           <p class="ui-eyebrow">How to drive</p>
           <h2 class="ui-title">CONTROLS</h2>
-          <p class="ui-lead">Arcade rally — readable inputs, physical slides.</p>
+          <p class="ui-lead">Arcade rally — plant it, slide it, finish it.</p>
           <ul class="ui-controls">
             <li><kbd>W</kbd> / <kbd>↑</kbd> <span>Accelerate</span></li>
             <li><kbd>S</kbd> / <kbd>↓</kbd> <span>Brake</span></li>
@@ -478,10 +458,11 @@
           <div class="meta">
             <div id="hud-surface-row" hidden><span class="label">SURFACE</span> <strong id="hud-surface">SAND</strong></div>
             <div><span class="label">STAGE TIME</span> <strong id="hud-best">--'--"--</strong></div>
-            <div id="hud-fps" hidden>60 FPS</div>
           </div>
         </div>
       </section>
+
+      <div id="hud-fps" aria-hidden="true">60</div>
 
       <div id="touch-hud" hidden>
         <p id="touch-tilt-note" class="touch-tilt-note"></p>
@@ -611,6 +592,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1122" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1133" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

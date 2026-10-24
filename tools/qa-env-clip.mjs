@@ -45,7 +45,7 @@ console.log("static");
 
 check(
   "hairpin nearest-road searches nearby grid cells",
-  /_forNearbySegments\s*\(/.test(trackSrc) && /dx = -5/.test(trackSrc),
+  /_forNearbySegments\s*\(/.test(trackSrc) && /const cellR = 5/.test(trackSrc),
   "_nearestRoad must see the opposite hairpin arm"
 );
 check(
@@ -68,7 +68,7 @@ check(
 check(
   "every env sphere bump refuses the roadway corridor",
   /_bump\(x, z, r[\s\S]*?\{[\s\S]*?over - rad < ROAD_COLLIDER_CLEAR/.test(trackSrc) &&
-    /ROAD_COLLIDER_CLEAR = 3\.8/.test(trackSrc),
+    /ROAD_COLLIDER_CLEAR = 4\.6/.test(trackSrc),
   "_bump is the single gate — no mid-lane solids"
 );
 check(
@@ -178,9 +178,28 @@ check(
   "visual env geometry is scrubbed from the drive corridor",
   /_scrubRoadwayVisuals\s*\(/.test(trackSrc) &&
     /envLand/.test(trackSrc) &&
-    /ROAD_COLLIDER_CLEAR \+ 0\.2/.test(trackSrc) &&
+    (/ROAD_COLLIDER_CLEAR \+ 0\.2/.test(trackSrc) || /ROAD_VERGE \+ 2\.4/.test(trackSrc)) &&
     /_scrubInstancedCorridor/.test(trackSrc),
   "land tuck + envProp cull after collider scrub"
+);
+check(
+  "fast land still samples 3×3 on ribbon tiles",
+  /halfDiag/.test(trackSrc) &&
+    /sampleN = onTrench \? 3 : 1/.test(trackSrc) &&
+    !/sampleN = this\._fastLandBuild \? 1/.test(trackSrc),
+  "256 m tiles must not force one centre sample on paint"
+);
+check(
+  "hairpin nearest-road keeps ±5 cell ring",
+  /const cellR = 5/.test(trackSrc) && /_forNearbySegments\s*\(/.test(trackSrc),
+  "opposite arm must stay visible to trench clamp"
+);
+check(
+  "env extras not gated on coarse land segs",
+  /function envExtrasEnabled/.test(trackSrc) &&
+    /envExtrasEnabled\(\)/.test(trackSrc) &&
+    !/if \(\(STREAM\.terrainTileSegs \|\| 24\) > 14\) this\._addSpectators/.test(trackSrc),
+  "desktop segs=8 must still plant safari / verge / spectators"
 );
 check(
   "stripDrive uses lane keepout not ribbon-only",
@@ -205,8 +224,22 @@ check(
 );
 check(
   "ribbon clear refuses painted-asphalt overlap",
-  /over - footprint < 0\.4/.test(trackSrc),
-  "hard floor so a tree cannot sit on the racing line"
+  /over - footprint < ROAD_PAINT_FOOT/.test(trackSrc) && /ROAD_PAINT_FOOT = 1\.1/.test(trackSrc),
+  "hard floor so a tree cannot sit on the racing line / car footprint"
+);
+check(
+  "on-road land is a hard floor (no bank lift through paint)",
+  /over0 < ROAD_COLLIDER_CLEAR \+ 0\.45/.test(trackSrc) &&
+    /return near\.roadY - bedDrop/.test(trackSrc) &&
+    /On-road \/ car corridor — hard floor/.test(trackSrc),
+  "jump banks must not raise dunes through the driven lane"
+);
+check(
+  "deferred dressing re-scrubs after seat",
+  /finishDeferredDressing[\s\S]*?_seatAllScenery\(\);[\s\S]*?_scrubRoadwayColliders\(\);[\s\S]*?_scrubRoadwayVisuals/.test(
+    trackSrc
+  ),
+  "props settled onto land must not ride onto paint"
 );
 check(
   "prop strip is past a GLB rock radius",
