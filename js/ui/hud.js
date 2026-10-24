@@ -779,8 +779,9 @@ function tickLoadBar(ts) {
     }
   }
   if (tgt >= 0.999) {
-    loadUi.shown += (1 - loadUi.shown) * (1 - Math.exp(-5.2 * dt));
-    if (loadUi.shown > 0.997) loadUi.shown = 1;
+    // Snap the last few % — old soft ease held the overlay ~1 s after Ready.
+    loadUi.shown += (1 - loadUi.shown) * (1 - Math.exp(-18 * dt));
+    if (loadUi.shown > 0.98) loadUi.shown = 1;
   }
   paintLoadBar(loadUi.shown, loadUi.status);
   const loading = document.getElementById("screen-loading");
@@ -823,15 +824,17 @@ export function setLoadingProgress(frac, status) {
  * @param {number} [timeoutMs]
  * @returns {Promise<void>}
  */
-export function waitLoadingBarSettled(timeoutMs = 1200) {
+export function waitLoadingBarSettled(timeoutMs = 120) {
   const t0 = performance.now();
   return new Promise((resolve) => {
     const step = () => {
       if (loadUi.target >= 0.999 && loadUi.shown >= 0.995) {
+        paintLoadBar(1, loadUi.status);
         resolve();
         return;
       }
       if (performance.now() - t0 > timeoutMs) {
+        loadUi.shown = 1;
         paintLoadBar(1, loadUi.status);
         resolve();
         return;

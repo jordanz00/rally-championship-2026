@@ -34,8 +34,8 @@ const game = read("js/game.js");
 
 const peak = config.match(/peakPowerKw:\s*(\d+)/);
 check(
-  "peakPowerKw >= 260",
-  peak && Number(peak[1]) >= 260,
+  "peakPowerKw set (accel punch)",
+  peak && Number(peak[1]) >= 120 && Number(peak[1]) <= 220,
   peak ? `got ${peak[1]}` : "missing peakPowerKw"
 );
 

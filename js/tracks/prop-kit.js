@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=241";
+import { VISUAL } from "../config.js?v=242";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -549,17 +549,60 @@ const PHONE_FOREST = Object.freeze([
   "barrier_red",
 ]);
 
+/**
+ * Trackside essentials for a fast first paint — barriers, cones, flags, lights.
+ * Full TRACKSIDE_KINDS still HTTP-prefetch in the background after GO.
+ */
+const FAST_TRACKSIDE = Object.freeze([
+  "barrier_red",
+  "barrier_white",
+  "construction_cone",
+  "construction_barrier",
+  "flag_checkers",
+  "flag_red",
+  "pylon",
+  "light_post",
+  "road_side_barrier",
+  "crate",
+  "grandstand",
+  "grandstand_covered",
+  "gantry_overhead",
+  "billboard",
+]);
+
+/**
+ * Race-critical kit only. Crowd bipeds (12 GLBs) parse after GO via
+ * `warmCrowdKit()` — `_addSpectators` already no-ops until they land.
+ */
 export function kindsForScenery(scenery) {
   const s = scenery || "desert";
   if (phonePropLite()) {
     if (s === "forest" || s === "mountain" || s === "lakeside") return PHONE_FOREST;
     return PHONE_DESERT;
   }
-  // Mountain: start/finish grandstand audiences only (no mid-stage gallery).
-  if (s === "mountain") return CROWD_ALL.concat(MOUNTAIN_NATURE, TRACKSIDE_KINDS);
-  if (s === "forest") return CROWD_ALL.concat(FOREST_NATURE, FOREST_HERO_KINDS, TRACKSIDE_KINDS);
-  if (s === "lakeside") return CROWD_ALL.concat(FOREST_NATURE, TRACKSIDE_KINDS);
-  return CROWD_ALL.concat(DESERT_NATURE, TRACKSIDE_KINDS);
+  if (s === "mountain") return MOUNTAIN_NATURE.concat(FAST_TRACKSIDE);
+  if (s === "forest") return FOREST_NATURE.concat(FOREST_HERO_KINDS, FAST_TRACKSIDE);
+  if (s === "lakeside") return FOREST_NATURE.concat(FAST_TRACKSIDE);
+  return DESERT_NATURE.concat(FAST_TRACKSIDE);
+}
+
+/**
+ * Parse spectator bipeds off the critical race-load path.
+ * @returns {Promise<void>}
+ */
+export function warmCrowdKit() {
+  if (phonePropLite()) return Promise.resolve();
+  return Promise.all(CROWD_ALL.map((k) => ensureKind(k))).then(() => {});
+}
+
+/**
+ * HTTP-cache + parse remaining trackside kinds after countdown starts.
+ * @returns {Promise<void>}
+ */
+export function warmFullTracksideKit() {
+  if (phonePropLite()) return Promise.resolve();
+  const rest = TRACKSIDE_KINDS.filter((k) => !FAST_TRACKSIDE.includes(k));
+  return Promise.all(rest.map((k) => ensureKind(k))).then(() => {});
 }
 
 /**
@@ -671,11 +714,10 @@ function loadSceneryKit(scenery) {
   sceneryLoads[cacheKey] = (async () => {
     if (!phonePropLite()) await loadNatureTextures();
     const kinds = kindsForScenery(key);
-    // Yield between batches so PRESS START / CDP stay live while parsing bipeds.
-    const BATCH = phonePropLite() ? 1 : 3;
+    // Wide parallel parse — old BATCH=1/3 + 16 ms phone stalls inflated load ~3×.
+    const BATCH = phonePropLite() ? 5 : 10;
     for (let i = 0; i < kinds.length; i += BATCH) {
       await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
-      await new Promise((r) => setTimeout(r, phonePropLite() ? 16 : 0));
     }
     // Never pull forest hero / pack trees on phones — 8×8 MB jetsam.
     if (!phonePropLite() && (key === "forest" || key === "mountain")) {

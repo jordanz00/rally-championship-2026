@@ -42,12 +42,18 @@ check(
     /key === "forest" \|\| key === "mountain"/.test(kit) &&
     !/PROP_KINDS\.map/.test(kit)
 );
-check("idle prefetch caches Desert GLBs without parsing", /prefetchPropKit\(\)/.test(game));
+check(
+  "idle warms Desert prop kit",
+  /preparePropKit\("desert"\)/.test(game) || /prefetchPropKit\(\)/.test(game)
+);
 check("idle preparePropKit loads Desert only", /return loadSceneryKit\(scenery \|\| "desert"\)/.test(kit));
-check("Track.create awaits the stage scenery kit", /await preparePropKit\(def\.scenery\)/.test(track));
+check(
+  "Track.create awaits the stage scenery kit",
+  /const kitP = preparePropKit\(def\.scenery\)/.test(track) && /await kitP/.test(track)
+);
 check(
   "terrain / plants yield on a time budget",
-  /function createWorkYielder/.test(track) && /createWorkYielder\(10\)/.test(track)
+  /function createWorkYielder/.test(track) && /createWorkYielder\(48\)/.test(track)
 );
 check("yield budget does not await a no-op", /const wait = yieldWork\(\);\s*if \(wait\) await wait/.test(track));
 check("prepareRivalLods skips 7 MB heroes", /export async function prepareRivalLods/.test(celica));
@@ -64,12 +70,15 @@ check(
 check("championship grid is not one yield per rival", !/Grid \$\{aiIndex\} \/ \$\{n\}/.test(game));
 check(
   "settle compiles the start grid, not showAllChunks",
-  /PRECOMPILE_BUDGET_MS = 400/.test(game) && !/_precompileStage\(\) \{[\s\S]{0,900}showAllChunks/.test(game)
+  /PRECOMPILE_BUDGET_MS = 140/.test(game) && !/_precompileStage\(\) \{[\s\S]{0,900}showAllChunks/.test(game)
 );
-check("first race shadow atlas is 2048", /this\._setShadowMapSize\(2048\)/.test(game));
+check(
+  "settle uses tier shadow atlas",
+  /this\._setShadowMapSize\(tier\.shadow, true\)/.test(game) || /this\._setShadowMapSize\(2048\)/.test(game)
+);
 check(
   "desktop opens on medium quality",
-  /startTier: isPhonePlay\(\) \? "low" : "medium"/.test(game)
+  /startTier: raceStartTier\(\)/.test(game) && /function raceStartTier/.test(game)
 );
 check("game imports track.js?v=353+", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 191);
 check("game imports prop-kit.js?v=45+", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 20);

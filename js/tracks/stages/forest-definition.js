@@ -8,7 +8,7 @@
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=241";
+import { COLORS } from "../../config.js?v=242";
 
 /**
  * Forest ribbon scale vs the Saturn-narrow authoring (11.6–13.2 m).

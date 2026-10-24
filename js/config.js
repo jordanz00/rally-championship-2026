@@ -1553,8 +1553,9 @@ const CHASSIS = {
   /**
    * Sprint 28 — Group A launch. peakPowerKw scales the torque map in vehicle.js.
    * Dead-stop pull uses launchBoost + a fatter low-RPM curve + shorter 1st.
+   * 2026-10-24: halved vs Sprint 28 (335→168) — accel felt too hot for dirt.
    */
-  peakPowerKw: 335,
+  peakPowerKw: 168,
   redline: 7600,
   idleRpm: 950,
   /**
@@ -1632,7 +1633,8 @@ export const CARS = {
     driveInertia: 0.92,
     /** Sprint 28: stays the fastest car (~265), still surface-limited. */
     maxSpeedKmh: 268,
-    peakPowerKw: 355,
+    /** Halved with chassis punch (355→178). */
+    peakPowerKw: 178,
     driftMul: 1.38,
     /** Starter car — unlocked with Celica / Delta from SELECT CAR. */
     locked: false,

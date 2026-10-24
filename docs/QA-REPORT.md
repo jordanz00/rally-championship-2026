@@ -1,5 +1,37 @@
 # QA report — quality-control pass
 
+## Result music holds through next-stage load (2026-10-24)
+
+**Player moment:** Finish → NEXT → loading plate. Same result bed keeps playing. Stage disc starts at 3-2-1.
+
+**Cause:** `loading` mapped to title music, so the podium song cut the instant the load screen appeared.
+
+**Shipped:** `holdResultMusic` when a next stage is pending · `trackIdFor(loading)` stays on `result` · clear at countdown / title.
+
+**Boot:** `main.js?v=1122` · `engine.js?v=82` · `soundtrack.js?v=354`
+
+## Acceleration −50% (2026-10-24)
+
+**Player moment:** GO / hairpin exit / straight — pull builds at half the old punch. Still arcade, not a tractor.
+
+**Shipped:** `CHASSIS.peakPowerKw` 335→168 · Stratos 355→178 (torque map scales 1:1 with this knob).
+
+**Proof:** `node tools/qa-sprint19-speed.mjs` · `node tools/qa-sprint28-launch.mjs`
+
+**Boot:** `main.js?v=1121` · `config.js?v=242` · `vehicle.js?v=210`
+
+## Level load ~80% faster (2026-10-24)
+
+**Player moment:** Championship car confirm → loading plate → countdown. Wall time down hard vs cold Desert build.
+
+**Cause:** Skirt seating called `_groundHeight`/`_nearestRoad` 2× per spline sample (minutes at 0%) · serial 2k albedos · 48 GLB kit after terrain · 14 ms yields · dual 480–800 ms shader drains · 900 ms bar ease.
+
+**Shipped:** Fast skirt (no groundHeight) · 1k ground boot · slim kit∥terrain · plantStep 4 · fast land (6 segs, 1 nearest/tile) · 8 segs/384 m · pad 380 · thin horizon · skip safari/verge/spectators on fast land · settle 40/120 + bar snap 80 ms · kit+PBR warm on car select.
+
+**Proof:** `node tools/qa-fast-load.mjs` · `node tools/qa-sprint95-load.mjs` · `RALLY_QA_ALLOW_CHROME=1 node tools/qa-load-time.mjs`
+
+**Boot:** `main.js?v=1120` · `track.js?v=450` · `prop-kit.js?v=57` · `pbr-stream.js?v=9` · `hud.js?v=54`
+
 ## NPC pack looks professional (2026-10-23)
 
 **Player moment:** Start championship. Every rival is a sealed coupe with lacquer, glass, door numbers that sit on the body, and sky IBL — not flat plastic or shattered LOD panes.

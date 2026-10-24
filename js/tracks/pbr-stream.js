@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=241";
+import { VISUAL } from "../config.js?v=242";
 
 const ASSET_V = "2";
 const BOOT_MS = 900;
@@ -256,13 +256,8 @@ export async function bootPbrSet(loader, spec) {
  * @param {THREE.Texture} map
  */
 async function bootColor(loader, base, stem, map) {
-  if (wantHiMaps()) {
-    const hi = await loadTex(loader, `${base}/${stem}_diff_2k.jpg`, true, HI_BOOT_MS);
-    if (hi) {
-      applyImage(map, hi.image, 16);
-      return;
-    }
-  }
+  // Always boot 1k for stage load — waiting on four 2k albedos was ~80% of
+  // Desert texture wall time. 2k swaps in after GO via the hi queue.
   const lo = await loadTex(loader, `${base}/${stem}_diff_1k.jpg`, true, BOOT_MS);
   if (lo) applyImage(map, lo.image, 16);
   if (!wantHiMaps()) return;

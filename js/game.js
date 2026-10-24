@@ -7,16 +7,16 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=209";
+import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=262";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=440";
-import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=8";
-import { preparePropKit, prefetchForestHeroTrees, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=56";
+import { Track } from "./tracks/track.js?v=450";
+import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=57";
 import { Opponent } from "./ai.js?v=257";
-import { RallyAudio } from "./audio/engine.js?v=81";
+import { RallyAudio } from "./audio/engine.js?v=82";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
 import {
@@ -27,7 +27,7 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=53";
+} from "./ui/hud.js?v=54";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
@@ -75,7 +75,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=241";
+} from "./config.js?v=242";
 
 /**
  * First-drive ease. The slide is still the tool. A miss on Desert comes back,
@@ -306,6 +306,11 @@ function armVegBudget(tierId) {
     STREAM._activeVegScale = Math.min(STREAM._activeVegScale || 0.5, 0.28);
     STREAM.terrainTileSegs = 12;
     STREAM.terrainTileSegsCinema = 12;
+  } else {
+    // All desktop tiers — 8 segs @ 384 m ≈ 9× fewer verts than 24@256.
+    STREAM.terrainTileSegs = Math.min(STREAM.terrainTileSegs || 24, 8);
+    STREAM.terrainTileSegsCinema = Math.min(STREAM.terrainTileSegsCinema || 28, 10);
+    STREAM.terrainTileSize = Math.max(STREAM.terrainTileSize || 256, 384);
   }
 }
 
@@ -2137,6 +2142,17 @@ export class RallyGame {
       prepareRivalLods(() => this._syncCarSelectButtons()).catch((err) =>
         console.warn("[garage] LOD warm failed", err)
       );
+      // Kit + ground photos only — full Track.create here froze SELECT CAR.
+      const scenery =
+        this.mode === "championship"
+          ? (COURSES[(this.champOrder && this.champOrder[0]) || "desert"] || {}).scenery || "desert"
+          : "desert";
+      preparePropKit(scenery).catch((err) => console.warn("[warm] prop kit", err));
+      if (scenery === "desert") {
+        import("./tracks/desert-pbr.js?v=65")
+          .then((m) => m.prepareDesertPbr && m.prepareDesertPbr())
+          .catch(() => {});
+      }
     }
     this._syncCarSelectButtons();
     const modeLabel = document.getElementById("cars-mode-label");
@@ -2212,6 +2228,7 @@ export class RallyGame {
     this._stopBroadcastReplay();
     this._stopAttractReel();
     this.state = "title";
+    if (this.audio && this.audio.holdResultMusic) this.audio.holdResultMusic(false);
     this._pauseGarageWatch();
     showScreen("screen-title");
     if (this.weather) {
@@ -3317,11 +3334,16 @@ export class RallyGame {
     await this._settleRacePresent();
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
-    // Leftover stream-shader links belong here — never on 3-2-1 skipped presents.
-    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 60 : 800);
-    // Let the bar ease to 100% before the HUD so the handoff reads finished.
-    await waitLoadingBarSettled(900);
+    // One short compile pass only — second 800 ms drain was pure wall-clock waste.
+    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 40 : 120);
+    // Snap the bar; old 900 ms ease added a full second after the stage was ready.
+    await waitLoadingBarSettled(80);
     if (loadGen !== this._loadGen) return;
+    // Crowd + leftover trackside parse after the grid is lit — not on the load bar.
+    if (!isPhonePlay()) {
+      void warmCrowdKit().catch((err) => console.warn("[warm] crowd", err));
+      void warmFullTracksideKit().catch((err) => console.warn("[warm] trackside", err));
+    }
     // Second guard against a latched QA override: no hold may survive into a
     // race the player just started. QA tools arm _qaDrive after the grid is
     // live, so this never cancels a legitimate run.
@@ -3359,16 +3381,17 @@ export class RallyGame {
     this.timeLeft = this.mode === "timeattack" ? 999 : CHAMPIONSHIP.stageTime[courseId] || 80;
     this.crossedFinish = false;
     this._countShown = "";
+    // Stage disc takes over at 3-2-1 — result bed only held through the load plate.
+    if (this.audio && this.audio.holdResultMusic) this.audio.holdResultMusic(false);
     this.audio.restoreRaceLoops();
     this.audio.setCar(this.carId);
     // Race frames are already on the canvas under the load plate. Swap the
     // HUD on top — a black curtain was a full-screen flash at every stage.
     await showScreen("screen-hud", { instant: true });
     if (loadGen !== this._loadGen) return;
-    // Extra presents with the HUD live (still held) so AO/bloom RTs and the
-    // first on-screen composite match settle — then unlock 3-2-1.
+    // One frozen present — four frames added ~70 ms for little visual gain.
     this._enforcePresentFreeze();
-    await this._presentFrozenWarms(4);
+    await this._presentFrozenWarms(1);
     if (loadGen !== this._loadGen) return;
     // Re-snapshot after HUD warms — post uniforms can settle one tick late.
     if (this.perfTier) this._armPresentFreeze(this.perfTier.current());
@@ -3481,7 +3504,7 @@ export class RallyGame {
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    await this._drainStreamCompileUnderOverlay(phoneRace ? 120 : 480);
+    await this._drainStreamCompileUnderOverlay(phoneRace ? 40 : 100);
     this._warmPackPhysics();
 
     const present = () => {
@@ -3490,14 +3513,9 @@ export class RallyGame {
       else this.renderer.render(this.scene, this.camera);
     };
     try {
-      // Four warms under the load overlay — enough for atlas + post without
-      // a multi-hundred-ms compile hitch on the first race sample.
+      // One warm under the overlay — four desktop presents burned ~100–200 ms.
       present();
-      if (!phoneRace) {
-        present();
-        present();
-        present();
-      }
+      if (!phoneRace) present();
     } catch (err) {
       console.warn("Race present warm failed", err);
       this.renderer.setRenderTarget(null);
@@ -4977,6 +4995,10 @@ export class RallyGame {
       this.audio.fadeOutRaceLoops(1.4);
     }
     showScreen("screen-result", { outMs: 280, inMs: 420 });
+    // Keep result.mp3 when the player hits NEXT — do not cut to title/stage mid-load.
+    if (this.audio && this.audio.holdResultMusic) {
+      this.audio.holdResultMusic(!!this._pendingNextCourse);
+    }
     // Championship already queued via `_scheduleTrackPreload`. Pump here so
     // the result screen always owns warmup even if a branch only set pending.
     this._pumpPreloadQueue();

@@ -60,11 +60,15 @@ const LOOP_XFADE_SEC = 0.28;
 
 /**
  * Race / countdown / pause use the stage disc. Menus stay on the title bed.
+ * Championship next-stage load keeps the result bed so the podium song does
+ * not cut when the loading plate appears.
  * @param {string} state
  * @param {string} courseId
+ * @param {{holdResult?:boolean}} [opts]
  */
-function trackIdFor(state, courseId) {
+function trackIdFor(state, courseId, opts) {
   if (state === "result") return "result";
+  if (state === "loading" && opts && opts.holdResult) return "result";
   if (state === "countdown" || state === "race" || state === "paused") {
     return DISCS[courseId] ? courseId : "desert";
   }
@@ -193,12 +197,15 @@ export class CdSoundtrack {
   /**
    * @param {string} state
    * @param {string} courseId
+   * @param {{holdResult?:boolean}} [opts]
    */
-  sync(state, courseId) {
+  sync(state, courseId, opts) {
     if (!this.ready) return;
     this._state = state;
-    this.setDrive({ state, throttle: 0, rpm: 0 });
-    this.play(trackIdFor(state, courseId));
+    const holdResult = !!(opts && opts.holdResult);
+    const driveState = state === "loading" && holdResult ? "result" : state;
+    this.setDrive({ state: driveState, throttle: 0, rpm: 0 });
+    this.play(trackIdFor(state, courseId, { holdResult }));
   }
 
   /**

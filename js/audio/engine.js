@@ -10,7 +10,7 @@
  * See assets/sfx/ATTRIBUTION.txt and assets/music/ATTRIBUTION.txt.
  */
 
-import { CdSoundtrack } from "./soundtrack.js?v=353";
+import { CdSoundtrack } from "./soundtrack.js?v=354";
 import { PowertrainVoice } from "./powertrain.js?v=34";
 import { SkidVoice } from "./skid.js?v=10";
 import { loadSample, playHit, playClip } from "./bank.js?v=3";
@@ -100,6 +100,8 @@ export class RallyAudio {
     this.voice = null;
     this.skid = null;
     this._musicKey = "";
+    /** Keep result.mp3 through next-stage loading (championship). */
+    this._holdResultMusic = false;
     this._pendingCar = "celica";
     this._screen = "title";
     this.musicVol = loadVol(VOL_MUSIC_KEY, 1);
@@ -594,6 +596,14 @@ export class RallyAudio {
   }
 
   /**
+   * Arm/disarm result bed across the next-stage load plate.
+   * @param {boolean} on
+   */
+  holdResultMusic(on) {
+    this._holdResultMusic = !!on;
+  }
+
+  /**
    * Saturn mix: CD guitar bed follows screen, ducked in pause / under the engine.
    * @param {string} state
    * @param {string} courseId
@@ -602,10 +612,11 @@ export class RallyAudio {
     if (!this.ready || !this.cd) return;
     this._kickContext();
     this._screen = state;
-    const key = `${state}:${courseId || ""}`;
+    const hold = !!(this._holdResultMusic && state === "loading");
+    const key = `${state}:${courseId || ""}:${hold ? "result" : ""}`;
     if (key !== this._musicKey) {
       this._musicKey = key;
-      this.cd.sync(state, courseId);
+      this.cd.sync(state, courseId, { holdResult: hold });
     }
   }
 

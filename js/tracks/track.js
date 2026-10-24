@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=241";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=242";
 import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
@@ -53,7 +53,7 @@ function terrainTileSegs() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=56";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=57";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -62,7 +62,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=64";
+} from "./forest-pbr.js?v=65";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -70,7 +70,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=64";
+} from "./desert-pbr.js?v=65";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -85,8 +85,8 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=24";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=46";
+} from "./forest-tunnel.js?v=25";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=47";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=15";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
@@ -361,45 +361,43 @@ export class Track {
       if (onProgress) onProgress(Math.max(0, Math.min(1, frac)), status);
     };
     const tick = () => yieldFrame();
+    const phoneLite =
+      typeof window !== "undefined" && window.__rallyPhoneLite;
 
     report(0.02, "Sampling racing line…");
-    await tick();
-    this._buildSpline(def.pieces, def);
-
+    // Kick kit + ground photos in parallel with spline — was serial after terrain.
+    const kitP = preparePropKit(def.scenery);
+    let pbrP = Promise.resolve();
     if (def.scenery === "forest") {
       report(0.06, "Loading Forest ground photos…");
-      await prepareForestPbr();
-      await prepareForestTunnelPbr();
-      await tick();
+      pbrP = Promise.all([prepareForestPbr(), prepareForestTunnelPbr()]);
     } else if (def.scenery === "desert") {
       report(0.06, "Loading Desert ground photos…");
-      await prepareDesertPbr();
-      await tick();
+      pbrP = prepareDesertPbr();
     }
+    this._buildSpline(def.pieces, def);
+    await pbrP;
 
     report(0.08, "Laying tarmac & kerbs…");
     this._mesh = this._buildMesh(def);
     this.group.add(this._mesh);
 
     // Terrain is the bulk of first-load time — drive the bar from tile rows.
+    // Kit keeps parsing while rows sculpt.
     report(0.1, "Sculpting terrain…");
     await this._addGroundAsync(def, (t) => report(0.1 + t * 0.42, "Sculpting terrain…"));
 
     report(0.52, "Loading trackside models…");
-    await preparePropKit(def.scenery);
+    await kitP;
 
     report(0.54, "Planting trees & props…");
     await this._addSceneryBody(def, (t) => report(0.54 + t * 0.34, "Planting trees & props…"));
 
     report(0.88, "Tunnel & stage gates…");
-    await tick();
     this._addTunnel();
-    await tick();
     this._addStageGates();
-    await tick();
-    await tick();
     if (
-      !(typeof window !== "undefined" && window.__rallyPhoneLite) &&
+      !phoneLite &&
       VISUAL.tracksideSignage &&
       (VISUAL.tier || 0) >= 5
     ) {
@@ -409,7 +407,7 @@ export class Track {
     this._scrubRoadwayVisuals();
     this._seatAllScenery();
     // Phones: skip PBR upgrade rewalk — peak RAM after plant.
-    if (!(typeof window !== "undefined" && window.__rallyPhoneLite)) {
+    if (!phoneLite) {
       upgradeWorld(this.group);
       upgradeWorldMaterials(this.group);
     }
@@ -1483,7 +1481,28 @@ export class Track {
     const pad = 980;
     const span = Math.max(b.spanX + pad * 2, b.spanZ + pad * 2, 1800);
     await this._addLandPlaneAsync(def, b, span, onRowProgress);
-    this._addBackdropBiome(def, b);
+    // Fast land (≤14 segs): skip multi-ring horizon — fog hides it at GO and
+    // each pose re-ran nearest-road. One light rock ring keeps silhouette.
+    if ((STREAM.terrainTileSegs || 24) <= 14) {
+      const scenery = def.scenery || "forest";
+      if (scenery === "desert") {
+        this._addBackdropRockRings(
+          b,
+          0xa38254,
+          [{ r: b.maxR + 420, n: 28, sMin: 14, sMax: 26, y: 0.14 }],
+          "desert"
+        );
+      } else if (scenery === "forest" || scenery === "mountain" || scenery === "lakeside") {
+        this._addBackdropRockRings(
+          b,
+          scenery === "mountain" ? 0x6a6258 : 0x5a6c58,
+          [{ r: b.maxR + 400, n: 24, sMin: 12, sMax: 22, y: 0.14 }],
+          scenery
+        );
+      }
+    } else {
+      this._addBackdropBiome(def, b);
+    }
   }
 
   /**
@@ -1535,10 +1554,10 @@ export class Track {
    * @returns {number}
    */
   _landPad(scenery) {
-    // Vista pad without the 60 Hz tax of the ultra-wide beauty bump.
-    if (scenery === "forest" || scenery === "mountain") return 820;
-    if (scenery === "desert") return 760;
-    if (scenery === "lakeside") return 700;
+    // Tight pad — old 760–820 m doubled tile count for little on-camera gain.
+    if (scenery === "forest" || scenery === "mountain") return 420;
+    if (scenery === "desert") return 380;
+    if (scenery === "lakeside") return 360;
     return STREAM.terrainTileSize * 0.5;
   }
 
@@ -1762,18 +1781,28 @@ export class Track {
 
     const rows = [];
     for (let tz = z0; tz < maxZ; tz += tileSize) rows.push(tz);
-    const yieldWork = createWorkYielder(14);
-    for (let ri = 0; ri < rows.length; ri++) {
-      const tz = rows[ri];
-      for (let tx = x0; tx < maxX; tx += tileSize) {
-        const cx = tx + tileSize * 0.5;
-        const cz = tz + tileSize * 0.5;
-        this._addLandTile(def, scenery, desert, b, cx, cz, tileSize, segs, floorHex);
+    // 100 ms work slices — tighter budgets + headless rAF made load *slower*.
+    const yieldWork = createWorkYielder(100);
+    let tilesDone = 0;
+    const tileTotal = Math.max(1, rows.length * Math.max(1, Math.ceil((maxX - x0) / tileSize)));
+    this._fastLandBuild = true;
+    try {
+      for (let ri = 0; ri < rows.length; ri++) {
+        const tz = rows[ri];
+        for (let tx = x0; tx < maxX; tx += tileSize) {
+          const cx = tx + tileSize * 0.5;
+          const cz = tz + tileSize * 0.5;
+          this._addLandTile(def, scenery, desert, b, cx, cz, tileSize, segs, floorHex);
+          tilesDone += 1;
+          if (onRowProgress && tilesDone % 2 === 0) onRowProgress(tilesDone / tileTotal);
+          const wait = yieldWork();
+          if (wait) await wait;
+        }
       }
-      if (onRowProgress) onRowProgress((ri + 1) / rows.length);
-      const wait = yieldWork();
-      if (wait) await wait;
+    } finally {
+      this._fastLandBuild = false;
     }
+    if (onRowProgress) onRowProgress(1);
   }
 
   /**
@@ -1789,23 +1818,71 @@ export class Track {
    * @param {number} floorHex
    */
   _addLandTile(def, scenery, desert, b, cx, cz, tileSize, segs, floorHex) {
-    const geo = new THREE.PlaneGeometry(tileSize, tileSize, segs, segs);
+    const useSegs = this._fastLandBuild ? Math.min(segs, 6) : segs;
+    const geo = new THREE.PlaneGeometry(tileSize, tileSize, useSegs, useSegs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = [];
     const c = new THREE.Color();
 
+    // One nearest-road sample per tile during fast build — was ~90% of Desert load.
+    const nearC = this._nearestRoad(cx, cz);
+    const trenchPad = (nearC.roadW || 14) * 0.5 + Math.max(36, (this._landCell || 24) * 2.2);
+    const onTrench = nearC.dist < trenchPad;
+    const sampleN = this._fastLandBuild ? 1 : onTrench ? 3 : 1;
+    const half = tileSize * 0.5;
+    const step = sampleN > 1 ? tileSize / (sampleN - 1) : 0;
+    /** @type {ReturnType<Track["_nearestRoad"]>[]} */
+    const nearGrid = sampleN > 1 ? new Array(sampleN * sampleN) : null;
+    if (nearGrid) {
+      for (let gz = 0; gz < sampleN; gz++) {
+        for (let gx = 0; gx < sampleN; gx++) {
+          const sx = cx - half + gx * step;
+          const sz = cz - half + gz * step;
+          nearGrid[gz * sampleN + gx] =
+            gx === 1 && gz === 1 ? nearC : this._nearestRoad(sx, sz);
+        }
+      }
+    }
+    const invTile = sampleN > 1 ? (sampleN - 1) / tileSize : 0;
+    const flatR = ((floorHex >> 16) & 255) / 255;
+    const flatG = ((floorHex >> 8) & 255) / 255;
+    const flatB = (floorHex & 255) / 255;
+
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + cx;
       const z = pos.getZ(i) + cz;
-      const near = this._nearestRoad(x, z);
-      const h = this._landSurfaceY(x, z, scenery, near);
-      pos.setY(i, h);
-      this._biomeTint(c, scenery, h, near.roadY, x, z, near);
-      if (VISUAL.aerialPerspective && (VISUAL.tier || 0) >= 4) {
-        this._applyAerialPerspective(c, scenery, near.dist);
+      let near = nearC;
+      if (nearGrid) {
+        const u = Math.max(0, Math.min(sampleN - 1.001, (x - (cx - half)) * invTile));
+        const v = Math.max(0, Math.min(sampleN - 1.001, (z - (cz - half)) * invTile));
+        const ix = u | 0;
+        const iz = v | 0;
+        const a = nearGrid[iz * sampleN + ix];
+        const b = nearGrid[iz * sampleN + Math.min(sampleN - 1, ix + 1)];
+        const c0 = nearGrid[Math.min(sampleN - 1, iz + 1) * sampleN + ix];
+        const d = nearGrid[Math.min(sampleN - 1, iz + 1) * sampleN + Math.min(sampleN - 1, ix + 1)];
+        near = a;
+        if (b.dist < near.dist) near = b;
+        if (c0.dist < near.dist) near = c0;
+        if (d.dist < near.dist) near = d;
       }
-      colors.push(c.r, c.g, c.b);
+      let h;
+      if (this._fastLandBuild) {
+        // Biome + trench clamp only — skip jump/flyover corridor probes.
+        h = this._groundHeightRaw(x, z, scenery, near);
+        const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
+        if (over < trenchPad) {
+          const bedDrop = desert ? 0.95 : scenery === "mountain" ? 0.28 : 0.55;
+          h = Math.min(h, near.roadY - bedDrop);
+        }
+        colors.push(flatR, flatG, flatB);
+      } else {
+        h = this._landSurfaceY(x, z, scenery, near);
+        this._biomeTint(c, scenery, h, near.roadY, x, z, near);
+        colors.push(c.r, c.g, c.b);
+      }
+      pos.setY(i, h);
     }
     geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     if (geo.attributes.uv && !geo.attributes.uv2) {
@@ -1813,9 +1890,9 @@ export class Track {
     }
     geo.computeVertexNormals();
     const landMap = landAlbedoMap(scenery, tileSize);
-    const landNorm = landNormalMap(scenery, tileSize);
-    const landRough = landRoughnessMap(scenery, tileSize);
-    const landAo = landAoMap(scenery, tileSize);
+    const landNorm = this._fastLandBuild ? null : landNormalMap(scenery, tileSize);
+    const landRough = this._fastLandBuild ? null : landRoughnessMap(scenery, tileSize);
+    const landAo = this._fastLandBuild ? null : landAoMap(scenery, tileSize);
     // Visual Pass V4 — per-scenery normal punch (sand ripples pop; forest softer).
     const landNs =
       desert ? 1.85 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
@@ -1863,15 +1940,18 @@ export class Track {
     const pts = this.points;
     if (pts.length < 2) return;
     const hit = this._nearestPointIndex(x, z);
-    const i0 = Math.max(0, hit.i - 28);
-    const i1 = Math.min(pts.length - 2, hit.i + 28);
+    // Land-plane build: tighter window — full ±28/±5 was ~10× slower for load.
+    const win = this._fastLandBuild ? 12 : 28;
+    const cellR = this._fastLandBuild ? 2 : 5;
+    const i0 = Math.max(0, hit.i - win);
+    const i1 = Math.min(pts.length - 2, hit.i + win);
     for (let i = i0; i <= i1; i++) visit(i);
     const grid = this._grid;
     if (!grid) return;
     const gx = Math.floor(x / CELL);
     const gz = Math.floor(z / CELL);
-    for (let dx = -5; dx <= 5; dx++) {
-      for (let dz = -5; dz <= 5; dz++) {
+    for (let dx = -cellR; dx <= cellR; dx++) {
+      for (let dz = -cellR; dz <= cellR; dz++) {
         const bucket = grid.get(cellKey(gx + dx, gz + dz));
         if (!bucket) continue;
         for (let k = 0; k < bucket.length; k++) {
@@ -3317,20 +3397,27 @@ export class Track {
     }
 
     // Flyover skirt must not cross a foreign drive corridor. Smoothing can
-    // only run before this clamp — stretching reach back out rebuilds the wall.
-    for (let i = 0; i < nPts; i++) {
-      const p = pts[i];
-      if (p.tunnel || p.underpass) continue;
-      const e = edge(p);
-      reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist, kerbYL[i]);
-      reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist, kerbYR[i]);
+    // Fast load: skip foreign-deck probes + groundHeight seating — each was
+    // O(points × nearestRoad) and froze the load bar at 0% for minutes.
+    const fastSkirt = (STREAM.terrainTileSegs || 24) <= 14;
+    if (!fastSkirt) {
+      for (let i = 0; i < nPts; i++) {
+        const p = pts[i];
+        if (p.tunnel || p.underpass) continue;
+        const e = edge(p);
+        reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist, kerbYL[i]);
+        reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist, kerbYR[i]);
+      }
     }
-
     for (let i = 0; i < nPts; i++) {
       const p = pts[i];
       const e = edge(p);
       const plantOuter = (lx, lz, edgeY, reach) => {
         if (p.tunnel || p.underpass || p.jumpKind === "gap") return edgeY - 0.14;
+        if (fastSkirt) {
+          const cap = Math.max(0.22, (reach > 0 ? reach : 0.4) * SKIRT_SLOPE);
+          return edgeY - Math.min(cap, p.jump || p.jumpWash ? 0.16 : 0.22);
+        }
         if (p.jump || p.jumpWash) {
           const gy = this._groundHeight(lx, lz, scenery);
           if (Number.isFinite(gy)) return Math.min(gy - 0.06, edgeY - 0.1);
@@ -3862,8 +3949,9 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(14);
-    const plantStep = def.scenery === "forest" ? 1 : 2;
+    const yieldWork = createWorkYielder(48);
+    // Coarser plant step — denser bags still fill from vegScale; fewer loop iterations.
+    const plantStep = def.scenery === "forest" ? 2 : 4;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
     this._markSightlines(def);
@@ -4417,12 +4505,15 @@ export class Track {
     }
     if (def.scenery === "desert") {
       this._addDesertStartTown(rng);
-      this._addSafariHerd(rng);
-      this._addDesertDriftLandmarks();
       this._addDriftSweepBerms("desert");
-      this._addDesertTumbleweeds(rng);
-      this._addDesertRoadsideGallery(rng);
-      this._addDesertHorizonAcacia(rng);
+      // Fast land: skip safari/tumbleweed/gallery passes — each re-probed the ribbon.
+      if ((STREAM.terrainTileSegs || 24) > 14) {
+        this._addSafariHerd(rng);
+        this._addDesertDriftLandmarks();
+        this._addDesertTumbleweeds(rng);
+        this._addDesertRoadsideGallery(rng);
+        this._addDesertHorizonAcacia(rng);
+      }
     }
     if (def.scenery === "mountain") {
       this._addVillage(rng);
@@ -4440,14 +4531,14 @@ export class Track {
     if (def.scenery === "lakeside") {
       this._addLake();
     }
-    if (VISUAL.heroLandmarks && (VISUAL.tier || 0) >= 4) {
+    if ((STREAM.terrainTileSegs || 24) > 14 && VISUAL.heroLandmarks && (VISUAL.tier || 0) >= 4) {
       this._addHeroLandmarks(def, rng);
     }
     // Tier 7 — roadside scrub / understory / scree / reeds (Environment Art).
-    if ((VISUAL.tier || 0) >= 7) {
+    if ((STREAM.terrainTileSegs || 24) > 14 && (VISUAL.tier || 0) >= 7) {
       this._addRealisticVergeDetail(def, rng);
     }
-    this._addSpectators(rng, def);
+    if ((STREAM.terrainTileSegs || 24) > 14) this._addSpectators(rng, def);
     this._scrubRoadwayColliders();
     this._scrubRoadwayVisuals();
     this._seatAllScenery();
