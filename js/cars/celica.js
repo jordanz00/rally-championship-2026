@@ -583,7 +583,11 @@ export function createTitleCar(carId = "celica") {
  * @param {THREE.Object3D} root
  */
 function dressPlayerCarRace(root) {
-  retopoPlayerShell(root);
+  try {
+    retopoPlayerShell(root);
+  } catch (err) {
+    console.warn("[garage] player shell retopo skipped", err);
+  }
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const list = [].concat(obj.material || []);

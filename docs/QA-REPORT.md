@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Desert "failed to build" — null playerMesh (2026-10-24)
+
+**Player moment:** Championship → Celica → Desert loads to grid instead of fatal boot error.
+
+**Cause:** `_loadTrackAsync` set `this.playerMesh.visible = true` with no mesh when garage warm lagged (phone HTML menus / LOD-only) or `onGarageReady` invalidated the pool mid-load. Stack pointed at `game.js:2933`.
+
+**Shipped:** `_ensureCarMesh` accepts LOD / phone soft shell · garage ready never wipes meshes during loading/race · hero vs rival warm settled separately · guarded visible + explicit throw if still missing · retopo wrap so subdiv cannot abort createPlayerCar.
+
+**Proof:** `node tools/qa-desert-heroes.mjs` · `node tools/qa-static-audit.mjs`
+
+**Boot:** `main.js?v=1134` · `game.js?v=1134` · `celica.js?v=266` · `ai.js?v=261`
+
 ## Toyota hero shell — 2× midpoint subdiv (2026-10-24)
 
 **Player moment:** Title + chase Celica — body panels read smoother; less CAD faceting on hood / doors / bumpers.

@@ -10,7 +10,7 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=265";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=266";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=455";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
@@ -967,6 +967,19 @@ export class RallyGame {
     };
     const onGarageReady = () => {
       this._syncCarSelectButtons();
+      // Never wipe the race / load mesh — that left playerMesh null at
+      // `_loadTrackAsync` visible=true and fatal'd Desert as "failed to build".
+      if (
+        this.state === "loading" ||
+        this.state === "countdown" ||
+        this.state === "race" ||
+        this.state === "paused"
+      ) {
+        const elBusy = document.getElementById("celica-status");
+        if (elBusy) elBusy.textContent = garageStatus();
+        this._stopGarageWatchIfComplete();
+        return;
+      }
       for (const cid of Object.keys(this._carMeshPool)) this._invalidateCarMesh(cid);
       const loaded = isGltfCar();
       if (
@@ -981,7 +994,7 @@ export class RallyGame {
       }
       if (this.state === "title" || this.state === "menu") {
         mountTitleCar();
-      } else if (isGltfCar(this.carId)) {
+      } else if (isGltfCar(this.carId) || isTitleCarReady(this.carId)) {
         try {
           this._promotePlayerCar();
         } catch (err) {
@@ -1212,9 +1225,19 @@ export class RallyGame {
    * @returns {import("three").Group}
    */
   _ensureCarMesh(id) {
-    if (!isGltfCar(id)) return null;
+    // Hero OR rival LOD (phone first-stage) — createPlayerCar already falls
+    // back to LOD / softPhoneCar. Blocking on isGltfCar alone left playerMesh
+    // null when championship confirmed before the 7 MB hero finished.
+    if (!isGltfCar(id) && !isTitleCarReady(id) && !isPhonePlay()) return null;
     if (!this._carMeshPool[id]) {
-      const mesh = createPlayerCar(id);
+      let mesh = null;
+      try {
+        mesh = createPlayerCar(id);
+      } catch (err) {
+        console.warn("[car] createPlayerCar", id, err);
+        return null;
+      }
+      if (!mesh) return null;
       mesh.visible = false;
       enableLocalLightReceiver(mesh);
       this._carMeshPool[id] = mesh;
@@ -1265,7 +1288,15 @@ export class RallyGame {
    */
   _promotePlayerCar() {
     // Phone race may only have rival LOD warm — still a real GLB shell.
-    if (!isGltfCar(this.carId) && !isTitleCarReady(this.carId)) return false;
+    // Phones can confirm Celica before any GLB lands (_carSelectable always
+    // true) — still attempt createPlayerCar → softPhoneCar.
+    if (
+      !isGltfCar(this.carId) &&
+      !isTitleCarReady(this.carId) &&
+      !isPhonePlay()
+    ) {
+      return false;
+    }
     if (
       this.playerMesh &&
       !this.playerMesh.userData.titleLod &&
@@ -1274,7 +1305,15 @@ export class RallyGame {
       return true;
     }
     this._swapPlayerCar(this.carId);
-    return !!(this.playerMesh && this.playerMesh.userData.carId === this.carId);
+    // Title LOD is a valid race shell when hero clone failed.
+    if (
+      this.playerMesh &&
+      this.playerMesh.userData.carId === this.carId
+    ) {
+      this.playerMesh.visible = true;
+      return true;
+    }
+    return false;
   }
 
   /** @param {string} id */
@@ -2808,9 +2847,15 @@ export class RallyGame {
         ? preparePhoneRaceCars(this.carId).catch((err) => {
             console.warn("[load] phone car warm — soft shell", err);
           })
-        : Promise.all([prepareHeroCar(this.carId), prepareRivalLods()]).catch((err) => {
-            console.warn("[load] car warm", err);
-          })
+        : // Settled separately — a rival LOD miss must not drop a finished hero.
+          Promise.all([
+            prepareHeroCar(this.carId).catch((err) => {
+              console.warn("[load] hero warm", err);
+            }),
+            prepareRivalLods().catch((err) => {
+              console.warn("[load] rival LOD warm", err);
+            }),
+          ])
       : Promise.resolve();
     await tick();
     this._applyLighting(def.id);
@@ -2828,6 +2873,15 @@ export class RallyGame {
         }
       }
       this._promotePlayerCar();
+      if (!this.playerMesh) {
+        // Championship confirm can beat garage warm (esp. phone HTML menus).
+        this._swapPlayerCar(this.carId);
+      }
+      if (!this.playerMesh) {
+        throw new Error(
+          `Player car "${this.carId}" unavailable after stage load — GLB warm failed`
+        );
+      }
       if (this.weather && !this.weather.active && this.playerMesh) {
         this.weather.dryCar(this.playerMesh);
       }
@@ -2930,7 +2984,7 @@ export class RallyGame {
       if (n > 0) report(0.98, "Grid ready…");
     }
 
-    this.playerMesh.visible = true;
+    if (this.playerMesh) this.playerMesh.visible = true;
     this._plantStartGrid();
     if (this.playerMesh) resetCarDirt(this.playerMesh, 0.05);
     // Pack lacquer needs the stage IBL — bake may have finished before grid spawn.
