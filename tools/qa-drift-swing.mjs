@@ -40,15 +40,17 @@ check(
   "no catch-kill"
 );
 check("steer swing rack", /slideSwing/.test(vehicle) && /DRIFT_SWING_STEER/.test(vehicle), "fast rack");
-check("burnout v7", /_burnoutDriveV7/.test(burnout) && /driftSwingSteerMul/.test(burnout), "tuning");
-check("vehicle cache 209+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 209);
+check("burnout v8", /_burnoutDriveV8/.test(burnout) && /easySlideHardSteer/.test(burnout), "hard-steer drift");
+check("hardSteer initiation", /hardSteer/.test(vehicle) && /turned in too hot/.test(vehicle), "steer-only slide");
+check("tighter turn-in", /maxSteer \* 1\.48/.test(vehicle) && /speedUndersteer = 0\.00072/.test(burnout), "less understeer");
+check("vehicle cache 211+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 211);
 check(
   "Vehicle singleton game↔ai",
   (game.match(/vehicle\.js\?v=(\d+)/) || [])[1] === (ai.match(/vehicle\.js\?v=(\d+)/) || [])[1]
 );
 const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];
 check("boot chain", gameV && new RegExp(`main\\.js\\?v=${gameV}`).test(index), `v=${gameV}`);
-check("boot 1101+", Number(gameV) >= 1101);
+check("boot 1138+", Number(gameV) >= 1138);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " failed" : "seamless L↔R drift armed"}`);
 process.exit(fail ? 1 : 0);

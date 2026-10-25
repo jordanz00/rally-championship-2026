@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## Drift tournament turn-in (2026-10-24)
+
+**Player moment:** Hard steer at speed starts a power slide; corners rotate tighter and hold attitude like a rally / drift entry.
+
+**Shipped:** Burnout drive V8 — `easySlideHardSteer` initiation · lower understeer · snappier rack · more power-slide pitch · hard-steer rear µ dump without needing handbrake.
+
+**Proof:** `node tools/qa-drift-swing.mjs`
+
+**Boot:** `main.js?v=1138` · `vehicle.js?v=211` · `burnout-drive.js?v=8`
+
 ## POV cabin restore — showroom ≠ race mesh (2026-10-24)
 
 **Player moment:** C → POV shows dash, wheel, cabin again (not empty shell).

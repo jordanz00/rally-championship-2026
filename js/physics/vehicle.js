@@ -52,7 +52,7 @@ import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } 
 import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
 import { JumpModel } from "./jump.js?v=40";
-import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=7";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=8";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
 
@@ -1186,15 +1186,16 @@ export class Vehicle {
     let r = this.yawRate;
     this.speed = Math.hypot(vx, vy);
 
-    const falloff = (s.steerFalloff != null ? s.steerFalloff : 0.011) * 0.52;
-    const steerLimit = (s.maxSteer * 1.28) / (1 + Math.abs(vx) * falloff);
+    const falloff = (s.steerFalloff != null ? s.steerFalloff : 0.011) * 0.42;
+    // Tighter lock — wide maxSteer mute made sweepers undriftable.
+    const steerLimit = (s.maxSteer * 1.48) / (1 + Math.abs(vx) * falloff);
     const steerTarget = steerIn * steerLimit;
     // Weighted rack — hairpins stay quick. Speed still adds mass, but the
     // wheel has to reach lock in time to throw a sweeper. Self-align is
     // lighter so you can hold a slide instead of fighting the return.
     // Mid-slide lock→lock: never crawl through center (selfAlign killed L↔R).
     const speed01 = clamp(Math.abs(vx) / 48, 0, 1);
-    const selfAlign = (s.steerReturn || 88) + Math.abs(vx) * 0.26;
+    const selfAlign = (s.steerReturn || 88) + Math.abs(vx) * 0.18;
     const slideSwing =
       Math.abs(vy) > 1.35 &&
       Math.abs(steerIn) > 0.22 &&
@@ -1202,7 +1203,7 @@ export class Vehicle {
         (Math.abs(this.steer) > 0.04 && Math.sign(steerIn) !== Math.sign(this.steer)));
     const snapRack =
       (s.steerSpeed || 96) *
-      lerp(1.62, 0.82, speed01 * speed01) *
+      lerp(1.78, 0.88, speed01 * speed01) *
       BURNOUT_STEER_SNAP *
       (slideSwing
         ? (HANDLING.driftSwingSteerMul != null ? HANDLING.driftSwingSteerMul : DRIFT_SWING_STEER)
@@ -4501,16 +4502,30 @@ export class Vehicle {
     // Momentum hang: keep power-slide tools alive while |vy| carries through
     // center — otherwise L→R lock dies the instant st crosses zero.
     const slideMom = Math.abs(vy) > 1.25 || this._rearSlide;
+    // Tournament initiation: turn too hard at speed → rear walks (no HB needed).
+    const hardSteer =
+      (loose || HANDLING.easySlide) &&
+      hb < hbEnter + 0.04 &&
+      Math.abs(vx) > (HANDLING.easySlideHardSpeed != null ? HANDLING.easySlideHardSpeed : 7.2) &&
+      Math.abs(st) >
+        (loose
+          ? HANDLING.easySlideHardSteerLoose != null
+            ? HANDLING.easySlideHardSteerLoose
+            : 0.062
+          : HANDLING.easySlideHardSteer != null
+            ? HANDLING.easySlideHardSteer
+            : 0.095);
     const slideIntent =
+      hardSteer ||
       ((loose || HANDLING.easySlide) &&
         hb < hbEnter + 0.04 &&
-        this.throttle > (tarmacEasy ? HANDLING.easySlideTarmacThrottle || 0.07 : 0.035) &&
-        Math.abs(st) > (tarmacEasy ? HANDLING.easySlideTarmacSteer || 0.048 : 0.022) &&
-        Math.abs(vx) > (tarmacEasy ? HANDLING.easySlideTarmacSpeed || 4.8 : 2.8)) ||
+        this.throttle > (tarmacEasy ? HANDLING.easySlideTarmacThrottle || 0.028 : 0.02) &&
+        Math.abs(st) > (tarmacEasy ? HANDLING.easySlideTarmacSteer || 0.028 : 0.016) &&
+        Math.abs(vx) > (tarmacEasy ? HANDLING.easySlideTarmacSpeed || 3.6 : 2.2)) ||
       (slideMom &&
-        this.throttle > 0.04 &&
-        Math.abs(vx) > 3.2 &&
-        (Math.abs(st) > 0.008 || Math.abs(steerCmd) > 0.18));
+        this.throttle > 0.03 &&
+        Math.abs(vx) > 3.0 &&
+        (Math.abs(st) > 0.006 || Math.abs(steerCmd) > 0.14));
 
     // AM3 headline: brake on tarmac and you stop; brake on mud and you begin a
     // power slide. brakeYaw decides which of those two the pedal does here.
@@ -4554,7 +4569,11 @@ export class Vehicle {
     if (slideIntent) {
       // Power oversteer: throttle dumps rear grip so the tail walks out.
       // Floor stays catchable — the player caused the slide, they can save it.
-      muR *= lerp(1, 0.42, clamp(Math.abs(st) * this.throttle * 1.65, 0, 1));
+      const steerBite = clamp(Math.abs(st) * 2.4, 0, 1);
+      const gasBite = clamp(this.throttle * 1.55, 0, 1);
+      // Hard steer alone still dumps rear µ — "turned in too hot."
+      const hardBite = hardSteer ? clamp((Math.abs(st) - 0.05) / 0.16, 0.35, 1) : 0;
+      muR *= lerp(1, 0.38, Math.max(steerBite * Math.max(gasBite, 0.22), hardBite * 0.85));
     }
     if (this._shiftKick > 0.08) muR *= lerp(1, 0.5, Math.min(1, this._shiftKick));
     if (shock > 0.05) {
@@ -4821,7 +4840,8 @@ export class Vehicle {
     // driftEase near 1.0 = planted; >1 softens mud for easier power slides.
     latG /= Math.max(0.92, Math.min(1.28, ease));
     if (slideIntent) {
-      latG *= lerp(1, 0.52, clamp(Math.abs(st) * 2.8, 0, 1) * this.throttle);
+      const latBite = clamp(Math.abs(st) * 2.8, 0, 1);
+      latG *= lerp(1, 0.48, latBite * Math.max(this.throttle, hardSteer ? 0.55 : 0.2));
     }
     // Progressive yaw-grip falloff — same envelope as the tire, not a binary clip.
     const peakHoldA = ARCADE_ASSIST.tirePeakHold != null ? ARCADE_ASSIST.tirePeakHold : 1.08;
@@ -4839,13 +4859,18 @@ export class Vehicle {
     latG *= lerp(1, 0.88, frontLight);
 
     const rGrip = latG / Math.max(4.2, Math.abs(vx));
-    let kus = hbSlide ? 0.00035 : HANDLING.speedUndersteer != null ? HANDLING.speedUndersteer : 0.00215;
-    kus *= 0.55;
-    kus *= 1 + frontLight * 1.35;
-    kus *= Math.max(0.35, 1 - rearLight * 0.7);
+    let kus = hbSlide ? 0.00028 : HANDLING.speedUndersteer != null ? HANDLING.speedUndersteer : 0.00215;
+    kus *= 0.42;
+    kus *= 1 + frontLight * 1.15;
+    kus *= Math.max(0.28, 1 - rearLight * 0.78);
     let rWant = (vx * st) / (L * (1 + kus * vx * vx));
     const mush = HANDLING.limitMush != null ? HANDLING.limitMush : 0.42;
-    rWant = softLimit(rWant, rGrip * 1.82, mush);
+    rWant = softLimit(rWant, rGrip * 2.05, mush);
+    // Hard-steer initiation shove — rotate into the drift like a tournament entry.
+    if (hardSteer && Math.abs(vx) > 5) {
+      const entry = clamp((Math.abs(st) - 0.05) / 0.18, 0, 1);
+      rWant += Math.sign(st) * entry * (1.15 + Math.abs(vx) * 0.028) * (0.55 + this.throttle * 0.65);
+    }
     // Weight-transfer yaw: light rear rotates in the steer direction (brake).
     if (Math.abs(st) > 0.03 && Math.abs(vx) > 5) {
       rWant += Math.sign(st) * rearLight * wtMul * 0.48 * (0.38 + Math.abs(vx) * 0.011);
@@ -4965,10 +4990,11 @@ export class Vehicle {
     const slipAmt = clamp(Math.abs(vy) / Math.max(2.2, latG * 0.22), 0, 1);
     // Subtle yaw assist toward steering intent while building grip (not a spin motor).
     const yawAsst = ARCADE_ASSIST.yawAssist != null ? ARCADE_ASSIST.yawAssist : 0;
-    if (yawAsst > 0.01 && Math.abs(st) > 0.04 && Math.abs(vx) > 5 && hb < hbEnter) {
+    const yawBoost = HANDLING.yawAssistBoost != null ? HANDLING.yawAssistBoost : 1;
+    if (yawAsst > 0.01 && Math.abs(st) > 0.035 && Math.abs(vx) > 4.5 && hb < hbEnter) {
       const rDesire = (vx * st) / L;
-      const err = clamp(rDesire - r, -0.42, 0.42);
-      rWant += err * yawAsst * 0.18 * (1 - slipAmt * 0.55);
+      const err = clamp(rDesire - r, -0.55, 0.55);
+      rWant += err * yawAsst * yawBoost * 0.24 * (1 - slipAmt * 0.45);
     }
     // Mass at speed, snappy in hairpins. Countersteer still catches like a switch.
     const speedMass = clamp(Math.abs(vx) / 46, 0, 1);
