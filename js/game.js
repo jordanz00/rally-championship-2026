@@ -13,7 +13,7 @@ import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=100";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=273";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=459";
-import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
+import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=10";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=63";
 import { Opponent } from "./ai.js?v=262";
 import { RallyAudio } from "./audio/engine.js?v=82";
@@ -48,7 +48,7 @@ import {
   wantsHeavyWebTsr,
   wantsMobilePresent,
 } from "./gfx/browser-reconstruct-sdk/index.js?v=1036";
-import { createPerfTier } from "./gfx/perf-tier.js?v=56";
+import { createPerfTier } from "./gfx/perf-tier.js?v=57";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=8";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=6";
@@ -75,7 +75,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=250";
+} from "./config.js?v=251";
 
 /**
  * First-drive ease. The slide is still the tool. A miss on Desert comes back,
@@ -307,10 +307,17 @@ function armVegBudget(tierId) {
     STREAM.terrainTileSegs = 12;
     STREAM.terrainTileSegsCinema = 12;
   } else {
-    // Desktop: 6 segs @ 512 m — ~half the tiles of 8@384, still readable banks.
-    STREAM.terrainTileSegs = Math.min(STREAM.terrainTileSegs || 24, 6);
-    STREAM.terrainTileSegsCinema = Math.min(STREAM.terrainTileSegsCinema || 28, 8);
-    STREAM.terrainTileSize = Math.max(STREAM.terrainTileSize || 256, 512);
+    // Desktop cinema: denser banks on high; medium keeps the fast-load tile cut.
+    const high = id === "high";
+    STREAM.terrainTileSegs = high
+      ? Math.min(STREAM.terrainTileSegs || 24, 12)
+      : Math.min(STREAM.terrainTileSegs || 24, 8);
+    STREAM.terrainTileSegsCinema = high
+      ? Math.min(STREAM.terrainTileSegsCinema || 28, 16)
+      : Math.min(STREAM.terrainTileSegsCinema || 28, 10);
+    STREAM.terrainTileSize = high
+      ? Math.max(STREAM.terrainTileSize || 256, 384)
+      : Math.max(STREAM.terrainTileSize || 256, 448);
   }
 }
 
@@ -326,21 +333,24 @@ function armStreamBudget() {
   } catch {
     android = false;
   }
-  // iPhone 13 / mid Android: tiny stream bubble — scenery beyond fog is free RAM.
-  STREAM.prefetchChunks = phone ? 1 : 2;
-  STREAM.lookaheadSeconds = phone ? 1.0 : 2.2;
-  STREAM.settleLookaheadMeters = android ? 160 : phone ? 180 : 320;
-  STREAM.countdownLoadRadius = android ? 160 : phone ? 180 : 300;
-  STREAM.loadRadius = android ? 220 : phone ? 240 : 560;
-  STREAM.unloadRadius = android ? 300 : phone ? 320 : 700;
-  STREAM.minLoadRadius = phone ? 120 : 220;
+  // Phones: tiny stream bubble. Desktop cinema: long forward ribbon so the
+  // verge does not pop in soft / empty past the fog edge.
+  const high = !phone && raceStartTier() === "high";
+  STREAM.prefetchChunks = phone ? 1 : high ? 3 : 2;
+  STREAM.lookaheadSeconds = phone ? 1.0 : high ? 3.2 : 2.4;
+  STREAM.settleLookaheadMeters = android ? 160 : phone ? 180 : high ? 720 : 480;
+  STREAM.countdownLoadRadius = android ? 160 : phone ? 180 : high ? 820 : 520;
+  STREAM.loadRadius = android ? 220 : phone ? 240 : high ? 900 : 640;
+  STREAM.unloadRadius = android ? 300 : phone ? 320 : high ? 980 : 780;
+  STREAM.minLoadRadius = phone ? 120 : high ? 280 : 220;
   if (phone) {
     STREAM.terrainTileSegs = 12;
     STREAM.terrainTileSegsCinema = 12;
   }
   try {
     if (typeof window !== "undefined") {
-      window.__rallyHiMaps = !phone && raceStartTier() === "high";
+      // 2k ground maps on desktop medium+ — soft 1k was reading as "low res".
+      window.__rallyHiMaps = !phone && raceStartTier() !== "min" && raceStartTier() !== "low";
     }
   } catch {
     /* ignore */
@@ -390,11 +400,14 @@ function raceStartTier() {
   // M-series MacBooks: Safari omits deviceMemory, so treat unknown as high.
   if (macDesktop) {
     const mem = navigator.deviceMemory;
-    if (mem == null || mem >= 8) return "high";
+    if (mem == null || mem >= 4) return "high";
     return "medium";
   }
   const mem = navigator.deviceMemory;
-  if (mem >= 8 && (navigator.hardwareConcurrency || 4) >= 8) return "high";
+  const cores = navigator.hardwareConcurrency || 4;
+  // Prefer cinema high on any discrete-ish desktop (4+ cores, 4+ GB).
+  if ((mem == null || mem >= 4) && cores >= 4) return "high";
+  if (mem >= 8 && cores >= 8) return "high";
   return "medium";
 }
 
@@ -3544,9 +3557,9 @@ export class RallyGame {
     // Title pad leaves a soft DPR floor and cheap sky/post. Reset before warm
     // draws so the first HUD frame already matches race (no snap at "1"/GO).
     this._perfDprScale = phoneRace ? 0.5 : 1;
-    // Phones stay under the panel. Desktop starts with a little soft-scale
-    // headroom so GO / first corner stay at 60 instead of climbing from late.
-    this._softRenderScale = phoneRace ? 0.62 : 0.94;
+    // Phones stay under the panel. Desktop opens at full present scale —
+    // 0.94 soft-scale was reading as a permanent low-res wash.
+    this._softRenderScale = phoneRace ? 0.62 : 1;
     if (this.qualityMgr) this.qualityMgr.reset(this._softRenderScale);
     if (this.pipeline && this.pipeline.setRenderScale) {
       this.pipeline.setRenderScale(this._softRenderScale);

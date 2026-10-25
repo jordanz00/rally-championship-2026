@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Cinema desktop graphics (2026-10-25)
+
+**Player moment:** Championship Desert chase — sharp Retina present, denser banks, richer IBL/paint, 2k ground maps, 60 Hz open (no forced lock-30 at settle).
+
+**Cause:** Race path was capped at DPR 1.15 / 1.8M pixels, soft-scale 0.94, 6@512 terrain, 1k maps, 64³ PMREM, and forceLock30AtSettle — read as soft / low-fi.
+
+**Shipped:** DPR 1.75 · 3.2M pixels · 2048 shadows · 128³ PMREM · hi-maps on medium+ · high-tier denser tiles · full soft-scale · hotter grade/IBL · restore stream radii · `forceLock30AtSettle=false`. Phones stay min/safe.
+
+**Proof:** `node tools/qa-fast-load.mjs` · headed: `?perf=high` Desert at native sharpness.
+
+**Boot:** `main.js?v=1152` · `config.js?v=251`
+
 ## Smooth 3-2-1-GO — stage fully ready before countdown (2026-10-25)
 
 **Player moment:** Load plate finishes. Then a clean natural 3 · 2 · 1 · GO — no hung "3", no mid-count hitch, no glitchy lights-out.

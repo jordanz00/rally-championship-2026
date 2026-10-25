@@ -15,10 +15,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=250";
+import { VISUAL } from "../config.js?v=251";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 import { NeuralShade, nshadeWanted } from "./neural-shade.js?v=6";
-import { burnoutLookFor } from "./burnout-look.js?v=4";
+import { burnoutLookFor } from "./burnout-look.js?v=5";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;

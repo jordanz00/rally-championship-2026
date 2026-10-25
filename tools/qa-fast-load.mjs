@@ -118,9 +118,10 @@ check(
 );
 check("load bar snaps at Ready", /Math\.exp\(-18 \* dt\)/.test(hud));
 check(
-  "desktop fast terrain tiles 6@512",
-  /terrainTileSegs = Math\.min\(STREAM\.terrainTileSegs \|\| 24, 6\)/.test(game) &&
-    /terrainTileSize = Math\.max\(STREAM\.terrainTileSize \|\| 256, 512\)/.test(game)
+  "desktop cinema terrain denser on high",
+  /terrainTileSegs = high/.test(game) &&
+    /Math\.min\(STREAM\.terrainTileSegs \|\| 24, 12\)/.test(game) &&
+    /__rallyHiMaps/.test(game)
 );
 check("load skips land-vert scrub", /_scrubRoadwayVisuals\(\{ skipLand: true \}\)/.test(track));
 check("cache-bust chain", cacheOk && Number(gameV) >= 1137, `main=${mainV} game=${gameV}`);

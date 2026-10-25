@@ -11,10 +11,10 @@
 
 /** @type {Record<string, BurnoutBase>} */
 const STAGE = {
-  desert: { contrast: 1.08, sat: 1.02, warmth: 0.06, bloom: 0.14, thresh: 0.72, teal: 0, vig: 0.11, roll: 0.2 },
-  forest: { contrast: 1.08, sat: 1.02, warmth: 0.05, bloom: 0.14, thresh: 0.72, teal: 0, vig: 0.11, roll: 0.2 },
-  mountain: { contrast: 1.08, sat: 1.02, warmth: 0.05, bloom: 0.14, thresh: 0.72, teal: 0, vig: 0.11, roll: 0.2 },
-  lakeside: { contrast: 1.06, sat: 1.0, warmth: 0.04, bloom: 0.1, thresh: 0.76, teal: 0, vig: 0.1, roll: 0.22 },
+  desert: { contrast: 1.12, sat: 1.06, warmth: 0.07, bloom: 0.2, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
+  forest: { contrast: 1.11, sat: 1.05, warmth: 0.05, bloom: 0.18, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
+  mountain: { contrast: 1.12, sat: 1.04, warmth: 0.05, bloom: 0.18, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
+  lakeside: { contrast: 1.1, sat: 1.04, warmth: 0.05, bloom: 0.16, thresh: 0.72, teal: 0, vig: 0.09, roll: 0.2 },
 };
 
 /**

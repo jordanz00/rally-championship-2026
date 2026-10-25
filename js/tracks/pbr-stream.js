@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=250";
+import { VISUAL } from "../config.js?v=251";
 
 const ASSET_V = "2";
 const BOOT_MS = 900;
@@ -82,6 +82,7 @@ async function pumpHi() {
 export function wantHiMaps() {
   if ((VISUAL.tier || 0) < 8) return false;
   try {
+    // Explicit false blocks; undefined falls through to desktop heuristics.
     if (typeof window !== "undefined" && window.__rallyHiMaps === false) return false;
     if (typeof window !== "undefined" && window.__rallyRenderCaps?.lowPower) return false;
     const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";

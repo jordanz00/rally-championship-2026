@@ -39,8 +39,8 @@ export const QUALITY_CAPS = {
   maxCloudViewSteps: 0,
   maxCloudLightSteps: 0,
   /** Rearview render target — readable cabin glass, ~1/4 framebuffer width. */
-  maxMirrorW: 384,
-  maxMirrorH: 120,
+  maxMirrorW: 512,
+  maxMirrorH: 160,
 };
 
 /** Presented frames a verdict must hold before the tier moves. */

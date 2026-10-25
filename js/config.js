@@ -35,16 +35,16 @@ export const GFX = {
    * free-running below that.
    */
   /**
-   * Visual Pass V1 — hard DPR ceiling. Never use raw devicePixelRatio alone
-   * (Retina 2×–3× multiplies fill-rate). Quality ladder may scale this down.
+   * Cinema desktop — Retina-sharp race present. Cap below raw 3× so fill-rate
+   * stays holdable at 60; quality ladder may still scale down under load.
    */
-  maxPixelRatio: 1.15,
-  maxPixels: 1800000,
+  maxPixelRatio: 1.75,
+  maxPixels: 3200000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
-  titleMaxPixelRatio: 1.0,
-  titleMaxPixels: 1200000,
+  titleMaxPixelRatio: 1.15,
+  titleMaxPixels: 1600000,
   /** Title sun atlas — pad runs without live shadows; size kept for race settle. */
-  titleShadowMap: 512,
+  titleShadowMap: 1024,
   /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
   targetFps: 60,
   lockRenderFps: true,
@@ -54,39 +54,37 @@ export const GFX = {
    */
   unlockFpsOnTitle: false,
   /**
-   * Soft PCF sun atlas. 2048² was still too heavy once the scaler hit `min`
-   * on M1; 1536 keeps a readable contact blob at chase distance.
+   * Soft PCF sun atlas — 2048² contact at chase distance on desktop high.
+   * Min/integrated tiers still clamp via perf-tier.
    */
-  shadowMap: 1536,
-  shadowExtent: 36,
+  shadowMap: 2048,
+  shadowExtent: 40,
   /**
-   * Race sun ortho half-width (metres). V1 prioritizes vehicle/road/near-field
-   * over distant coverage — 40 m keeps contact sharp without ballooning texels.
+   * Race sun ortho half-width (metres). Near-field priority; 48 m keeps
+   * verge contact sharp without ballooning texels off-ribbon.
    */
-  shadowExtentRace: 40,
+  shadowExtentRace: 48,
   shadowNear: 2.5,
-  shadowFar: 140,
+  shadowFar: 160,
   /** Shared soft-PCF bias contract (all championship stages). */
   shadowBias: -0.00016,
   shadowNormalBias: 0.042,
-  shadowRadius: 2.4,
+  shadowRadius: 2.6,
   /**
-   * Soft PCF (shadowRadius ≥ 2) hides a skipped bake. Two presents between
-   * atlas updates keeps contact glued without a full 1536² rebuild every
-   * 16 ms — that was a major M1 fill-rate hitch with no readable gain.
-   * Min tier stretches further / can disable the atlas entirely.
+   * Soft PCF hides a skipped bake. Every-2 keeps 60 Hz headroom on M-series
+   * while contact stays glued; high tier can still force every-1 via freeze.
    */
   shadowEvery: 2,
   reflectEvery: 0,
-  cubeSize: 64,
+  cubeSize: 128,
   /**
    * Rearview RT — low-res fixed size (readable cabin glass, ~1/4 of a
    * 1600-wide framebuffer). Full-res was a hitch; postage-stamp is unreadable.
    * FOV is vertical; ~26° at 384×120 ≈ 70° horizontal — a real cabin mirror,
    * not a 130° security cam. Far covers the road/trees/rivals behind you.
    */
-  mirrorW: 384,
-  mirrorH: 120,
+  mirrorW: 512,
+  mirrorH: 160,
   /** Chase / non-POV mirror cadence (presented frames). POV uses mirrorEveryPov. */
   mirrorEvery: 2,
   /** POV rearview — every presented frame; tier throttle made glass feel laggy. */
@@ -94,18 +92,18 @@ export const GFX = {
   /** Vertical FOV for the rearview camera (Three.js PerspectiveCamera). */
   mirrorFov: 26,
   /** Draw distance for the rearview pass (metres). */
-  mirrorFar: 200,
+  mirrorFar: 220,
   mirrorNear: 0.4,
-  /** PMREM sky capture far plane (internal bake is 256³). */
-  pmremFar: 240,
-  /** PMREM atlas resolution — 64³ is the 60 Hz / 30-lock budget (QA sprint 12/23). */
-  pmremSize: 64,
+  /** PMREM sky capture far plane. */
+  pmremFar: 280,
+  /** PMREM atlas — 128³ sharpens lacquer / chrome IBL on desktop cinema. */
+  pmremSize: 128,
   /**
    * Adaptive present quality (Sprint 24 / 30 fps floor).
    * frameMs above highMs → drop post bloom; above floorMs → emergency low + DPR cut.
    */
-  adaptHighMs: 20,
-  adaptLowMs: 14.5,
+  adaptHighMs: 21,
+  adaptLowMs: 15.2,
   /** Hard floor — present cost above this forces low post + thinner pixel ratio. */
   adaptFloorMs: 33.3,
   /**
@@ -120,19 +118,18 @@ export const GFX = {
    * frames and deliberately present every second vsync instead. A clean 30 is
    * the minimum acceptable cadence.
    */
-  lock30AboveMs: 20,
+  lock30AboveMs: 22,
   /**
    * When the machine cannot hold 60, lock an even 30 *before* dumping the
    * quality ladder to `min`. Photographic shadows/AO beat a soft 50 fps mush.
-   * Settle does not force 30 — capable GPUs still free-run at 60 from GO.
+   * Capable GPUs free-run at 60 from GO — do not force 30 at settle.
    */
   preferLock30: true,
   /**
-   * Arm an even 30 Hz present at race settle. Photographic quality stays at the
-   * start tier (lockRaceQuality); cadence is locked so realism never rides a
-   * 46 fps judder band.
+   * Do not arm lock-30 at settle. Capable desktops must open at 60; the scaler
+   * still locks later if present cost proves the machine cannot hold it.
    */
-  forceLock30AtSettle: true,
+  forceLock30AtSettle: false,
   /**
    * Once the race present path is armed, never downgrade post / sky / shadow /
    * DPR mid-stage. Tunnel streaming and shader warms spike present cost for a
@@ -170,19 +167,19 @@ export const VISUAL = {
    * Depth comes from ACES + IBL + texture, not saturation/bloom boosts.
    */
   postFx: true,
-  /** V1 — restrained grade; polish from ACES + IBL, not punchier post. */
-  bloomStrength: 0.14,
-  bloomThreshold: 0.74,
+  /** Cinema grade — readable bloom on chrome / sky without soup. */
+  bloomStrength: 0.2,
+  bloomThreshold: 0.7,
   /**
    * Half-res SSGI (Phase R.2) samples scene colour and adds it back — reads as
    * a semi-transparent double of the whole frame. Keep off until depth-aware.
    */
   ssgi: false,
   ssgiStrength: 0,
-  vignette: 0.11,
-  gradeContrast: 1.08,
-  gradeSaturation: 1.02,
-  gradeWarmth: 0.06,
+  vignette: 0.1,
+  gradeContrast: 1.12,
+  gradeSaturation: 1.06,
+  gradeWarmth: 0.07,
   /** Film grain off — it read as crawling static on the volumetric sky. */
   sharpen: 0,
   fxaa: false,
@@ -230,25 +227,25 @@ export const VISUAL = {
   /** Procedural anamorphic lens flare + ghosts when the sun is in frame. */
   lensFlare: true,
   /** Stage IBL fallback — LIGHTING[stage].worldEnv wins at PMREM bake. */
-  worldEnvIntensity: 0.95,
-  /** Sky IBL on lacquer — high enough that pack + player read wet reflections. */
-  carEnvIntensity: 1.68,
+  worldEnvIntensity: 1.12,
+  /** Sky IBL on lacquer — wet reflections on pack + player. */
+  carEnvIntensity: 1.85,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
   highlightRolloff: 0.18,
   pbrSkySigma: 0,
   /** Screen-space crevice AO — contact; kept modest so blacks stay open. */
-  aoStrength: 0.42,
-  aoRadius: 1.35,
+  aoStrength: 0.48,
+  aoRadius: 1.45,
   /** Normal strength on road/terrain. */
-  normalStrength: 1.72,
-  /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
-  normalMapScale: 0.92,
+  normalStrength: 1.85,
+  /** Near-full normals — sharper grit without the full-res fill cliff. */
+  normalMapScale: 1,
   /**
-   * Albedo ×2.65 + procedural roughness — photographic ground grain (Sprint 23/30).
+   * Albedo scale + procedural roughness — photographic ground grain.
    */
-  textureScale: 2.65,
+  textureScale: 2.9,
   roughnessMaps: true,
   /** Cone/cylinder segments for procedural foliage + trunk cards. */
   propSegments: 20,
@@ -303,9 +300,9 @@ export const STREAM = {
    * Metres of racing line forced visible + shader-warmed under the load
    * overlay so mid-stage slices do not first-compile at race speed.
    */
-  settleLookaheadMeters: 420,
+  settleLookaheadMeters: 720,
   /** Sample step along the line for settle prewarm (metres). */
-  settleLookaheadStep: 72,
+  settleLookaheadStep: 56,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
   boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */
