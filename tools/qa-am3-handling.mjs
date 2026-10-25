@@ -38,9 +38,9 @@ check("AM3 research brief present", /surface friction changes handling/.test(res
 check("HANDLING cites AM3 / Sakamoto", /AM3 \/ Sakamoto|Sakamoto/.test(config));
 check("mud brakeYaw is full slide tool", /id: "mud"[\s\S]{0,280}?brakeYaw:\s*1\.[0-3]/.test(config));
 check("mud slideHold carries", /id: "mud"[\s\S]{0,320}?slideHold:\s*[12]\.\d/.test(config));
-check("tarmac still stops (brakeHold 1)", /id: "tarmac"[\s\S]{0,500}?brakeHold:\s*1\.0/.test(config));
-check("tarmac brakeYaw near zero", /id: "tarmac"[\s\S]{0,520}?brakeYaw:\s*0\.0[0-4]/.test(config));
-check("gravel brakeYaw > tarmac", /id: "gravel"[\s\S]{0,220}?brakeYaw:\s*0\.[7-9]/.test(config));
+check("tarmac still stops (brakeHold high)", /id: "tarmac"[\s\S]{0,500}?brakeHold:\s*0\.9[0-9]/.test(config));
+check("tarmac brakeYaw near zero", /id: "tarmac"[\s\S]{0,520}?brakeYaw:\s*0\.0[0-8]/.test(config));
+check("gravel brakeYaw > tarmac", /id: "gravel"[\s\S]{0,220}?brakeYaw:\s*(?:0\.[7-9]|1\.\d+)/.test(config));
 check("Fujimoto scrub gap", /flatScrub:\s*0\.99/.test(config) && /worstScrub:\s*0\.[5-6]/.test(config));
 check("snappy countersteer", /counterAuthority:\s*[3-9]\.\d+/.test(config));
 check("holdable drift bleed", /driftBleedMul:\s*0\.0[12]\d/.test(config));

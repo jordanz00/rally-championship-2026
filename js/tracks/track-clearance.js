@@ -9,7 +9,7 @@
  * POWER BI MAPPING: none
  */
 
-import { EnvironmentConfig } from "./world-config.js?v=3";
+import { EnvironmentConfig } from "./world-config.js?v=4";
 
 /** Painted verge beyond the ribbon edge (metres) — props stay outside. */
 export const ROAD_SHOULDER = EnvironmentConfig.roadShoulder;

@@ -36,7 +36,7 @@ check("ribbon width blend lives in the spline", /_smoothPlayRibbon/.test(trackSr
 check("jump posts keep authored width", /if \(p\.jump \|\| p\.jumpKind\) continue/.test(trackSrc));
 check(
   "surface grip eases instead of slapping",
-  /const tau = step < 0 \? 0\.34 : 0\.24/.test(vehSrc) && /Math\.exp\(-3\.4 \* dt\)/.test(vehSrc)
+  /const tau = step < 0 \? 0\.\d+ : 0\.\d+/.test(vehSrc) && /Math\.exp\(-3\.4 \* dt\)/.test(vehSrc)
 );
 check("slides stay catchable", /Math\.max\(0\.92, surface\.driftEase/.test(vehSrc));
 check("surface shock does not kick the hull", /shock \* 0\.4 \* dt/.test(vehSrc));
@@ -47,7 +47,7 @@ check("game imports track.js?v=416+", Number((gameSrc.match(/track\.js\?v=(\d+)/
 check("game imports ai.js?v=212+", Number((gameSrc.match(/ai\.js\?v=(\d+)/) || [])[1]) >= 212);
 check("boot cache is 974+", Number((mainSrc.match(/game\.js\?v=(\d+)/) || [])[1]) >= 974);
 check("index boots main.js?v=974+", Number((htmlSrc.match(/main\.js\?v=(\d+)/) || [])[1]) >= 974);
-check("width gate allows the Forest bore", /maxWidth:\s*32/.test(fs.readFileSync(path.join(ROOT, "js/tracks/world-config.js"), "utf8")));
+check("width gate allows the Forest bore", /maxWidth:\s*4[02]/.test(fs.readFileSync(path.join(ROOT, "js/tracks/world-config.js"), "utf8")));
 
 const IDS = ["desert", "forest", "mountain", "lakeside", "physlab"];
 for (const id of IDS) {

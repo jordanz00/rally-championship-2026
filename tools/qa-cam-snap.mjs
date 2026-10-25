@@ -31,18 +31,28 @@ const main = read("js/main.js");
 const html = read("index.html");
 
 check(
-  "C starts a 0.12/0.14s snap, not a 0.72s slide",
-  /const SNAP = 0\.12/.test(game) &&
-    /const SNAP_POV = 0\.14/.test(game) &&
+  "C hard-snaps pose (blendT 0, camCut)",
+  /_camBlendDur = 0\.001/.test(game) &&
+    /_camBlendT = 0/.test(game) &&
+    /_camCut = true/.test(game) &&
     !/Math\.max\(0\.72/.test(game) &&
     !/Math\.max\(0\.95/.test(game)
 );
 
 check(
-  "C never renderer.compile",
-  /_cycleCamera\(\) \{[\s\S]{0,400}?\}/.test(game) &&
-    !/_cycleCamera\(\) \{[\s\S]{0,400}?renderer\.compile/.test(game)
+  "C seats cabin same frame",
+  /_cycleCamera\(\) \{[\s\S]{0,500}?_applyCockpitCam\(\)/.test(game) &&
+    /_chaseCam\(0\)/.test(game)
 );
+
+{
+  const cycle = game.match(/_cycleCamera\(\) \{[\s\S]*?\n  \}/);
+  check(
+    "C never renderer.compile",
+    !!(cycle && cycle[0] && !/renderer\.compile/.test(cycle[0])),
+    cycle ? `len=${cycle[0].length}` : "no _cycleCamera block"
+  );
+}
 
 check(
   "cabin seats on the click",
@@ -64,9 +74,12 @@ check(
 
 check(
   "setCockpitView C-path is a warmed visibility flip",
-  /C-key path: cache \+ clip \+ driver already warmed/.test(car) &&
+  /function flipCockpitVisibility/.test(car) &&
     /_povClipPrepared/.test(car) &&
-    /_povHideReady/.test(car)
+    /_povHideReady/.test(car) &&
+    !/attachPovDriverArms\(root\);\s*\n\s*const driver/.test(
+      car.slice(car.indexOf("export function setCockpitView"))
+    )
 );
 
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1]);
@@ -74,7 +87,7 @@ const mainV = Number((html.match(/main\.js\?v=(\d+)/) || [])[1]);
 const celV = Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]);
 check(
   "cache bust main↔game + celica",
-  gameV >= 1017 && mainV === gameV && celV >= 229,
+  gameV >= 1145 && mainV === gameV && celV >= 272,
   `main=${mainV} game=${gameV} celica=${celV}`
 );
 

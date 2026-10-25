@@ -9,13 +9,13 @@
 import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=211";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=268";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=100";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=272";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=457";
+import { Track } from "./tracks/track.js?v=458";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=62";
-import { Opponent } from "./ai.js?v=261";
+import { Opponent } from "./ai.js?v=262";
 import { RallyAudio } from "./audio/engine.js?v=82";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=47";
@@ -30,8 +30,8 @@ import {
 } from "./ui/hud.js?v=55";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
-import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=50";
-import { applyEnvMap, setShowcaseReflectivity } from "./gfx/pbr.js?v=60";
+import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=51";
+import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./gfx/pbr.js?v=63";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=29";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=44";
@@ -75,7 +75,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=243";
+} from "./config.js?v=249";
 
 /**
  * First-drive ease. The slide is still the tool. A miss on Desert comes back,
@@ -1202,7 +1202,7 @@ export class RallyGame {
     if (this._mirrorRT) setCockpitMirrorMap(mesh, this._mirrorRT.texture);
     if (this.scene.environment) {
       if (this._titleShowcase) this._applyTitleCarShowcase(true);
-      else applyEnvMap(mesh, this.scene.environment, VISUAL.carEnvIntensity ?? 0.52);
+      else armRaceCarReflections(mesh, this.scene.environment);
     }
     this._bindPlayerCarDirt(mesh);
     this._applyCockpitCam();
@@ -1353,7 +1353,7 @@ export class RallyGame {
     if (this._mirrorRT) setCockpitMirrorMap(next, this._mirrorRT.texture);
     if (this.scene.environment) {
       if (this._titleShowcase) this._applyTitleCarShowcase(true);
-      else applyEnvMap(next, this.scene.environment, VISUAL.carEnvIntensity ?? 0.52);
+      else armRaceCarReflections(next, this.scene.environment);
     }
     this._bindPlayerCarDirt(next);
     this._povWarmKey = "";
@@ -2209,7 +2209,7 @@ export class RallyGame {
           : "desert";
       preparePropKit(scenery).catch((err) => console.warn("[warm] prop kit", err));
       if (scenery === "desert") {
-        import("./tracks/desert-pbr.js?v=66")
+        import("./tracks/desert-pbr.js?v=67")
           .then((m) => m.prepareDesertPbr && m.prepareDesertPbr())
           .catch(() => {});
       }
@@ -2669,7 +2669,7 @@ export class RallyGame {
     const L = LIGHTING.title;
     const env = this.scene.environment || this._skyEnv;
     if (on && env) applyEnvMap(this.playerMesh, env, L.envIntensity);
-    else if (!on && env) applyEnvMap(this.playerMesh, env, VISUAL.carEnvIntensity ?? 0.52);
+    else if (!on && env) armRaceCarReflections(this.playerMesh, env);
     setShowcaseReflectivity(this.playerMesh, on, env, {
       bodyEnv: L.bodyEnv,
       chromeEnv: L.chromeEnv,
@@ -2842,12 +2842,18 @@ export class RallyGame {
           console.warn("[load] phone car warm — soft shell", err);
         });
       } else {
-        carWarm = prepareHeroCar(this.carId).catch((err) => {
+        // Player hero + full garage heroes so near-pack hero shells can clone.
+        carWarm = Promise.all([
+          prepareHeroCar(this.carId),
+          ...GARAGE_CAR_IDS.filter((id) => id !== this.carId).map((id) =>
+            prepareHeroCar(id).catch((err) => console.warn("[load] pack hero warm", id, err))
+          ),
+        ]).catch((err) => {
           console.warn("[load] hero warm", err);
         });
       }
-      if (!phoneLoad && !isRivalGarageReady()) {
-        // Fire-and-forget — grid uses whatever lands; solo if still empty.
+      if (!phoneLoad) {
+        // LOD still needed for far grid slots past AI.heroShellCount.
         prepareRivalLods().catch((err) => console.warn("[load] rival LOD warm", err));
       }
     }
@@ -5238,16 +5244,18 @@ export class RallyGame {
   }
 
   /**
-   * Cycle POV → medium → far. C only records the from-pose. Cabin visibility
-   * flips on the next `_chaseCam` tick — never `renderer.compile` here.
-   * Load/`_warmPov` already baked cabin, HUD, clip, and driver shaders.
+   * Cycle POV → medium → far. Cabin + lens flip on this press — never wait a
+   * frame, never `renderer.compile`. Load/`_warmPov` already baked shaders.
    */
   _cycleCamera() {
     const from = CAMERA.views[this.camMode] || null;
     this.camMode = (this.camMode + 1) % CAMERA.views.length;
     const next = CAMERA.views[this.camMode];
-    this._camCut = false;
     this._startCamBlend(from, next);
+    // Same-frame seat + hard lens lock. Waiting for the next `_chaseCam` tick
+    // read as hesitation on C.
+    this._applyCockpitCam();
+    if (this.player && this.player._draw) this._chaseCam(0);
     if (this.state === "race" || this.state === "countdown") {
       this.hud.flashMessage(next.label);
     }
@@ -5260,7 +5268,8 @@ export class RallyGame {
    * @param {{id?:string}|null} [toMode]
    */
   _startCamBlend(fromMode, toMode) {
-    this._camSnap = false;
+    // Hard seat on the next chase tick — no spring trail after C.
+    this._camSnap = true;
     this._camBlendFrom.copy(this.camera.position);
     if (this._camLookSmooth.lengthSq() > 0.01) this._camBlendFromLook.copy(this._camLookSmooth);
     else {
@@ -5278,14 +5287,11 @@ export class RallyGame {
       this._camBlendAnchor.copy(this.camera.position);
       this._camBlendAnchorYaw = this._camYaw;
     }
-    const povBlend =
-      (fromMode && fromMode.id === "pov") || (toMode && toMode.id === "pov");
-    // Snap — a C press must feel instant. Config 0.28/0.32 already reads as a
-    // pause; the old 0.72/0.95 floor felt like the game froze on the key.
-    const SNAP = 0.12;
-    const SNAP_POV = 0.14;
-    this._camBlendDur = povBlend ? SNAP_POV : SNAP;
-    this._camBlendT = this._camBlendDur;
+    // Instant lock — any multi-frame ease felt like the game paused on C.
+    // FOV/near cut with the pose so nothing eases in late.
+    this._camBlendDur = 0.001;
+    this._camBlendT = 0;
+    this._camCut = true;
     this._camBlendToPov = !!(toMode && toMode.id === "pov");
     this._camBlendFromPov = !!(fromMode && fromMode.id === "pov");
   }
@@ -5298,6 +5304,7 @@ export class RallyGame {
       this._cockpitLive = false;
       this._gaugeHoldPov = false;
       this.hud.setChaseGauges(false);
+      if (this.camera) this.camera.layers.disable(POV_HUD_LAYER);
       return;
     }
     const pov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
@@ -5307,15 +5314,18 @@ export class RallyGame {
       setCockpitView(this.playerMesh, true, this.camera, this.renderer);
       this._cockpitLive = true;
       this._povHudFade = 1;
-      this._ensureMirrorRT();
+      if (this.camera) this.camera.layers.enable(POV_HUD_LAYER);
+      // Mirror RT is pre-warmed; never allocate or capture here on the C press.
       if (this._mirrorRT) {
         setCockpitMirrorMap(this.playerMesh, this._mirrorRT.texture);
         this._mirrorTick = 0;
+        this._mirrorDefer = Math.max(2, CAMERA.mirrorDeferFrames | 0);
       }
     } else if (this._cockpitLive) {
       setCockpitView(this.playerMesh, false, this.camera, this.renderer);
       this._cockpitLive = false;
       this._povHudFade = 0;
+      if (this.camera) this.camera.layers.disable(POV_HUD_LAYER);
     }
     updatePovHudFade(this.playerMesh, this._povHudFade);
   }
@@ -6173,9 +6183,14 @@ export class RallyGame {
     this._gaugeHoldPov = false;
     if (this._cabinFill) {
       if (wantPov && this._cockpitLive) {
-        this._cabinFill.intensity = 0.4;
+        // Warm dash bounce — cabin plastics / leather read instead of a black hole.
+        this._cabinFill.intensity = 1.05;
+        this._cabinFill.distance = 3.4;
+        this._cabinFill.decay = 1.45;
+        this._cabinFill.color.setHex(0xffe6c8);
         this._cabinFill.position.copy(this._camTarget);
-        this._cabinFill.position.y -= 0.1;
+        this._cabinFill.position.y -= 0.08;
+        this._cabinFill.position.z += 0.22;
       } else {
         this._cabinFill.intensity = 0;
       }
@@ -6206,7 +6221,7 @@ export class RallyGame {
       : Math.max(12, (L.fogNear || 40) * 0.92);
     const vistaFar = phoneRace
       ? Math.min(380, Math.max(220, (L.fogFar || 400) * 0.55))
-      : Math.min(1100, Math.max(420, (L.fogFar || 400) * 1.32));
+      : Math.min(1280, Math.max(460, (L.fogFar || 400) * 1.48));
     if (!this.scene.fog) this.scene.fog = new THREE.Fog(L.fog, vistaNear, vistaFar);
     else {
       this.scene.fog.near = vistaNear;
@@ -6827,14 +6842,15 @@ export class RallyGame {
       this._skyEnv = cached;
       this.scene.environment = cached;
       if (this.playerMesh) {
-        const tint = key === "title" ? LIGHTING.title.envIntensity : VISUAL.carEnvIntensity ?? 0.52;
-        applyEnvMap(this.playerMesh, cached, tint);
         if (key === "title" && this._titleShowcase) {
+          applyEnvMap(this.playerMesh, cached, LIGHTING.title.envIntensity);
           setShowcaseReflectivity(this.playerMesh, true, cached, {
             bodyEnv: LIGHTING.title.bodyEnv,
             chromeEnv: LIGHTING.title.chromeEnv,
             glassEnv: LIGHTING.title.glassEnv,
           });
+        } else {
+          armRaceCarReflections(this.playerMesh, cached);
         }
       }
       this._applyPackCarEnv(cached);
@@ -6859,14 +6875,15 @@ export class RallyGame {
     this._skyEnv = env.texture;
     this.scene.environment = this._skyEnv;
     if (this.playerMesh) {
-      const tint = key === "title" ? LIGHTING.title.envIntensity : VISUAL.carEnvIntensity ?? 0.52;
-      applyEnvMap(this.playerMesh, this._skyEnv, tint);
       if (key === "title" && this._titleShowcase) {
+        applyEnvMap(this.playerMesh, this._skyEnv, LIGHTING.title.envIntensity);
         setShowcaseReflectivity(this.playerMesh, true, this._skyEnv, {
           bodyEnv: LIGHTING.title.bodyEnv,
           chromeEnv: LIGHTING.title.chromeEnv,
           glassEnv: LIGHTING.title.glassEnv,
         });
+      } else {
+        armRaceCarReflections(this.playerMesh, this._skyEnv);
       }
     }
     this._applyPackCarEnv(this._skyEnv);
@@ -6874,23 +6891,27 @@ export class RallyGame {
   }
 
   /**
-   * Lacquer + glass on every rival. Player was the only car getting IBL —
-   * the pack read as flat plastic next to the hero.
+   * Lacquer + glass IBL on every rival (and ghost). Same race reflection
+   * pass as the player so the pack does not read as flat plastic.
    * @param {THREE.Texture|null} [env]
    */
   _applyPackCarEnv(env) {
     const map = env || this.scene.environment || this._skyEnv;
-    if (!map || !this.opponents || !this.opponents.length) return;
-    const tint = (VISUAL.carEnvIntensity ?? 0.52) * 1.08;
-    for (let i = 0; i < this.opponents.length; i++) {
-      const mesh = this.opponents[i] && this.opponents[i].mesh;
-      if (!mesh || mesh.userData.softCar) continue;
+    if (!map) return;
+    const arm = (mesh) => {
+      if (!mesh) return;
       try {
-        applyEnvMap(mesh, map, tint);
+        armRaceCarReflections(mesh, map);
       } catch {
         /* ignore */
       }
+    };
+    if (this.opponents) {
+      for (let i = 0; i < this.opponents.length; i++) {
+        arm(this.opponents[i] && this.opponents[i].mesh);
+      }
     }
+    if (this.ghostMesh) arm(this.ghostMesh);
   }
 
   /**
@@ -7033,9 +7054,10 @@ export class RallyGame {
     const mesh = this.playerMesh;
     if (!mesh || !this.renderer) return;
     const wantPov = !!(CAMERA.views[this.camMode] && CAMERA.views[this.camMode].id === "pov");
-    const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}`;
+    const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}|glb${mesh.userData.hasGlbCabin ? 1 : 0}`;
     const cabinReady =
       !!mesh.userData._povHideReady &&
+      mesh.userData._povHideVer === 5 &&
       !!mesh.userData._povClipPrepared &&
       !!mesh.userData.povDriver;
     if (!force && this._povWarmKey === key && cabinReady) {
@@ -7048,6 +7070,8 @@ export class RallyGame {
     }
     getPovRig(mesh);
     this._ensureMirrorRT();
+    // Cold lists / clip must finish here — never on the C press.
+    mesh.userData._povHideReady = false;
     // Cabin compile is mandatory. Mirror RT is optional — never skip the warm.
     const wasCockpit = !!this._cockpitLive;
     setCockpitView(mesh, true, this.camera, this.renderer);

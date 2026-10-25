@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=243";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=248";
 import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=60";
+} from "../gfx/pbr.js?v=63";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -78,7 +78,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=65";
+} from "./forest-pbr.js?v=66";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -86,7 +86,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=66";
+} from "./desert-pbr.js?v=67";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -2657,8 +2657,8 @@ export class Track {
       Math.abs(Math.sin(x * 0.41 + z * 0.33)) * 1.55 + Math.abs(Math.sin(x * 0.093 - z * 0.11)) * 0.85;
     if (scenery === "desert") {
       // Compacted verge → warm sand → dune crest. Soft distance blend, not a hard sheet.
-      const vergeEnd = 3.4 + wobble;
-      const sandEnd = 11 + wobble * 1.6;
+      const vergeEnd = 4.6 + wobble * 1.2;
+      const sandEnd = 14.5 + wobble * 2.0;
       const verge = { r: 0.72, g: 0.62, b: 0.42 };
       const sand = { r: 0.84 + lift * 0.08, g: 0.7 + lift * 0.08, b: 0.46 + lift * 0.04 };
       const dune = { r: 0.9 + lift * 0.08, g: 0.74 + lift * 0.06, b: 0.48 };
@@ -2716,8 +2716,8 @@ export class Track {
       return;
     }
     if (scenery === "mountain") {
-      const vergeEnd = 2.8 + wobble;
-      const scrubEnd = 9.5 + wobble * 1.5;
+      const vergeEnd = 3.8 + wobble * 1.15;
+      const scrubEnd = 12.5 + wobble * 1.8;
       const verge = { r: 0.5, g: 0.48, b: 0.4 };
       const scrub = { r: 0.34 + lift * 0.08, g: 0.44 + lift * 0.1, b: 0.24 };
       const rock = { r: 0.55 + lift * 0.14, g: 0.5 + lift * 0.1, b: 0.4 + lift * 0.06 };
@@ -2768,8 +2768,8 @@ export class Track {
     }
     if (scenery === "lakeside") {
       // Soft shoulder → autumn litter → reed shelf. Distance blend reads cinematic.
-      const vergeEnd = 2.6 + wobble;
-      const litterEnd = 8.5 + wobble * 1.4;
+      const vergeEnd = 3.6 + wobble * 1.1;
+      const litterEnd = 11.2 + wobble * 1.7;
       const verge = { r: 0.4, g: 0.38, b: 0.22 };
       const litterCol = { r: 0.48, g: 0.3, b: 0.12 };
       const floor = { r: 0.34 + lift * 0.1, g: 0.32 + lift * 0.08, b: 0.16 + lift * 0.05 };
@@ -2819,8 +2819,8 @@ export class Track {
     }
     // Forest floor: gravel/dust shoulder → packed soil → moss/litter.
     // Vertex colour only — height/trench authority stays in _addLandTile.
-    const gravelEnd = 2.8 + wobble;
-    const soilEnd = 8.4 + wobble * 1.5;
+    const gravelEnd = 3.8 + wobble * 1.15;
+    const soilEnd = 11.2 + wobble * 1.8;
     const gravel = { r: 0.26, g: 0.36, b: 0.16 };
     const soil = { r: 0.16, g: 0.3, b: 0.12 };
     const floor = { r: 0.12 + lift * 0.05, g: 0.34 + lift * 0.14, b: 0.1 + lift * 0.04 };
@@ -2938,10 +2938,11 @@ export class Track {
     if (scenery === "mountain") {
       this._addMountainTreeline(def, b);
       this._addBackdropRockRings(b, 0x6a6258, [
-        { r: b.maxR + 430, n: 48, sMin: 18, sMax: 34, y: 0.2 },
-        { r: b.maxR + 680, n: 38, sMin: 26, sMax: 46, y: 0.3 },
-        { r: b.maxR + 860, n: 28, sMin: 32, sMax: 52, y: 0.35 },
-        { r: b.maxR + 1040, n: 22, sMin: 40, sMax: 62, y: 0.42 },
+        { r: b.maxR + 380, n: 64, sMin: 16, sMax: 30, y: 0.18 },
+        { r: b.maxR + 520, n: 56, sMin: 20, sMax: 36, y: 0.22 },
+        { r: b.maxR + 700, n: 48, sMin: 26, sMax: 46, y: 0.28 },
+        { r: b.maxR + 900, n: 36, sMin: 32, sMax: 54, y: 0.36 },
+        { r: b.maxR + 1100, n: 26, sMin: 40, sMax: 64, y: 0.44 },
       ], "mountain");
       return;
     }
@@ -2951,10 +2952,11 @@ export class Track {
         b,
         0xa38254,
         [
-          { r: b.maxR + 420, n: 48, sMin: 12, sMax: 24, y: 0.12 },
-          { r: b.maxR + 700, n: 36, sMin: 20, sMax: 36, y: 0.18 },
-          { r: b.maxR + 880, n: 26, sMin: 26, sMax: 42, y: 0.22 },
-          { r: b.maxR + 1060, n: 20, sMin: 34, sMax: 52, y: 0.28 },
+          { r: b.maxR + 360, n: 64, sMin: 10, sMax: 22, y: 0.1 },
+          { r: b.maxR + 520, n: 56, sMin: 14, sMax: 28, y: 0.14 },
+          { r: b.maxR + 720, n: 44, sMin: 20, sMax: 36, y: 0.18 },
+          { r: b.maxR + 920, n: 32, sMin: 26, sMax: 44, y: 0.24 },
+          { r: b.maxR + 1120, n: 22, sMin: 34, sMax: 54, y: 0.3 },
         ],
         "desert"
       );
@@ -2964,11 +2966,12 @@ export class Track {
       this._addBackdropTreeRings(
         b,
         [
-          { kind: "autumn", r: b.maxR + 280, n: 68, hMin: 22, hMax: 40, wMin: 6.8, wMax: 11.8 },
-          { kind: "autumn", r: b.maxR + 320, n: 64, hMin: 24, hMax: 42, wMin: 6.8, wMax: 11.8 },
-          { kind: "autumnGold", r: b.maxR + 500, n: 48, hMin: 30, hMax: 48, wMin: 7.5, wMax: 12.8 },
-          { kind: "oak", r: b.maxR + 700, n: 38, hMin: 28, hMax: 46, wMin: 8.5, wMax: 13.5 },
-          { kind: "oak", r: b.maxR + 900, n: 28, hMin: 32, hMax: 52, wMin: 9.0, wMax: 14.5 },
+          { kind: "autumn", r: b.maxR + 240, n: 84, hMin: 20, hMax: 38, wMin: 6.5, wMax: 11.5 },
+          { kind: "autumn", r: b.maxR + 300, n: 76, hMin: 22, hMax: 40, wMin: 6.8, wMax: 11.8 },
+          { kind: "autumnGold", r: b.maxR + 460, n: 58, hMin: 28, hMax: 46, wMin: 7.2, wMax: 12.5 },
+          { kind: "oak", r: b.maxR + 640, n: 46, hMin: 28, hMax: 46, wMin: 8.2, wMax: 13.2 },
+          { kind: "oak", r: b.maxR + 840, n: 36, hMin: 32, hMax: 52, wMin: 9.0, wMax: 14.5 },
+          { kind: "autumnGold", r: b.maxR + 1020, n: 28, hMin: 34, hMax: 56, wMin: 9.5, wMax: 15.0 },
         ],
         "lakeside"
       );
@@ -2976,8 +2979,9 @@ export class Track {
         b,
         0x5a6c58,
         [
-          { r: b.maxR + 410, n: 32, sMin: 10, sMax: 18, y: 0.14 },
-          { r: b.maxR + 620, n: 24, sMin: 14, sMax: 24, y: 0.18 },
+          { r: b.maxR + 380, n: 42, sMin: 9, sMax: 17, y: 0.12 },
+          { r: b.maxR + 580, n: 32, sMin: 13, sMax: 22, y: 0.16 },
+          { r: b.maxR + 780, n: 22, sMin: 16, sMax: 26, y: 0.2 },
         ],
         "lakeside"
       );
@@ -2995,13 +2999,14 @@ export class Track {
     const treeE = [];
     const treeF = [];
     const rings = [
-      { r: b.maxR + 80, n: 88, hMin: 12, hMax: 24 },
-      { r: b.maxR + 95, n: 84, hMin: 14, hMax: 26 },
-      { r: b.maxR + 160, n: 128, hMin: 18, hMax: 32 },
-      { r: b.maxR + 280, n: 108, hMin: 24, hMax: 42 },
-      { r: b.maxR + 400, n: 88, hMin: 30, hMax: 52 },
-      { r: b.maxR + 520, n: 68, hMin: 34, hMax: 56 },
-      { r: b.maxR + 680, n: 48, hMin: 38, hMax: 62 },
+      { r: b.maxR + 70, n: 104, hMin: 12, hMax: 24 },
+      { r: b.maxR + 95, n: 96, hMin: 14, hMax: 26 },
+      { r: b.maxR + 150, n: 140, hMin: 18, hMax: 32 },
+      { r: b.maxR + 260, n: 120, hMin: 24, hMax: 42 },
+      { r: b.maxR + 380, n: 100, hMin: 30, hMax: 52 },
+      { r: b.maxR + 520, n: 78, hMin: 34, hMax: 56 },
+      { r: b.maxR + 680, n: 58, hMin: 38, hMax: 62 },
+      { r: b.maxR + 860, n: 40, hMin: 42, hMax: 68 },
     ];
     const packReady = FOREST_TREE_KINDS.some((k) => !!propForestTreeParts(k));
     for (let ri = 0; ri < rings.length; ri++) {
@@ -3241,7 +3246,32 @@ export class Track {
         );
       }
     }
-    // Split bags for rock variety.
+    // Desert: Poly Haven heroes on the horizon when warm. Else Kenney large rocks.
+    const desertHeroes = [
+      "desert_hero_boulder_a",
+      "desert_hero_boulder_b",
+      "desert_hero_boulder_c",
+      "desert_hero_boulder_d",
+      "desert_hero_boulder_e",
+      "desert_hero_rocks",
+      "desert_hero_sand_rocks",
+      "desert_hero_stones",
+    ];
+    const liveHeroes =
+      scenery === "desert"
+        ? desertHeroes.filter((k) => !!propGeometry(k))
+        : [];
+    if (liveHeroes.length) {
+      /** @type {Record<string, object[]>} */
+      const split = Object.create(null);
+      for (let i = 0; i < poses.length; i++) {
+        const k = liveHeroes[i % liveHeroes.length];
+        if (!split[k]) split[k] = [];
+        split[k].push(poses[i]);
+      }
+      for (const k of Object.keys(split)) this._addHdBackdrop(k, split[k], b);
+      return;
+    }
     const a = [];
     const bb = [];
     for (let i = 0; i < poses.length; i++) (i % 2 === 0 ? a : bb).push(poses[i]);
@@ -3252,10 +3282,11 @@ export class Track {
   _addBackdropCactusRings(b) {
     const stems = [];
     const rings = [
-      { r: b.maxR + 280, n: 36, hMin: 8, hMax: 14 },
-      { r: b.maxR + 320, n: 34, hMin: 8, hMax: 14 },
-      { r: b.maxR + 560, n: 26, hMin: 11, hMax: 18 },
-      { r: b.maxR + 740, n: 18, hMin: 13, hMax: 20 },
+      { r: b.maxR + 220, n: 48, hMin: 7, hMax: 13 },
+      { r: b.maxR + 300, n: 44, hMin: 8, hMax: 14 },
+      { r: b.maxR + 420, n: 36, hMin: 9, hMax: 16 },
+      { r: b.maxR + 580, n: 30, hMin: 11, hMax: 18 },
+      { r: b.maxR + 780, n: 22, hMin: 13, hMax: 20 },
     ];
     for (let ri = 0; ri < rings.length; ri++) {
       const ring = rings[ri];
@@ -3278,6 +3309,23 @@ export class Track {
           )
         );
       }
+    }
+    // Prefer Poly Haven quiver / scrub on the horizon when warm.
+    const plantHeroes = ["desert_hero_quiver_a", "desert_hero_quiver_b", "desert_hero_scrub", "desert_hero_othonna"].filter(
+      (k) => !!propGeometry(k)
+    );
+    if (plantHeroes.length) {
+      /** @type {Record<string, object[]>} */
+      const split = Object.create(null);
+      for (let i = 0; i < stems.length; i++) {
+        const k = plantHeroes[i % plantHeroes.length];
+        if (!split[k]) split[k] = [];
+        // Quiver / scrub authored taller — ease scale so silhouette stays believable.
+        const pose = { ...stems[i], s: Math.max(0.55, (stems[i].s || 1) * 0.42) };
+        split[k].push(pose);
+      }
+      for (const k of Object.keys(split)) this._addHdBackdrop(k, split[k], b);
+      return;
     }
     this._addHdBackdrop("cactus_tall", stems, b);
   }
@@ -11906,7 +11954,7 @@ export class Track {
    */
   _surfaceBlend(dist, here) {
     const pts = this.points;
-    const BLEND = 168;
+    const BLEND = 220;
     let prev = here;
     let prevDist = -1e9;
     let lo = 0;

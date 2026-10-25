@@ -68,7 +68,7 @@ check("no candy tint names", !/hot-pink|electric-blue|castrol-green/.test(livery
 
 check("Physical lacquer", /new THREE\.MeshPhysicalMaterial/.test(livery), "getRivalPaintMaterial");
 check("clearcoat on rivals", /clearcoat:\s*1/.test(livery), "clearcoat");
-check("roughness authored", /roughness:\s*livery\.roughness/.test(livery), "roughness");
+check("roughness authored", /roughness:\s*(?:livery\.roughness|Math\.max\(0\.12, livery\.roughness)/.test(livery), "roughness");
 check("env-aware paint", /envMapIntensity:\s*1\.\d+/.test(livery), "envMapIntensity");
 check("object-space panels", /vRivalLocal/.test(livery), "panel shader");
 check("door numbers", /doorTexture|Impact/.test(livery) && /livery\.number/.test(livery), "readable numbers");
@@ -94,9 +94,10 @@ check("title car not rival-dressed", !/createTitleCar[\s\S]{0,400}dressRivalCar/
 check("player keeps GLB paint (no box wipe)", !/function dressPlayerCarRace[\s\S]*?applyPlayerBoxLivery/.test(celica), "toyota albedo");
 
 check(
-  "AI uses tint+index+LOD",
-  /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId,\s*false\)/.test(ai),
-  "race pack must prefer rival LOD"
+  "AI uses tint+index+hero/LOD",
+  /createRivalCar\(aiTintForIndex\(index\), index, this\.chassisId,\s*wantHero\)/.test(ai) &&
+    /heroShellCount/.test(ai),
+  "near pack hero shells; far slots LOD"
 );
 check("dressRivalRaceShell", /function dressRivalRaceShell/.test(celica) && /rebuildRivalRaceWindows/.test(celica), "glass+cabin");
 check("pack gets IBL", /_applyPackCarEnv/.test(game), "rivals not flat plastic");

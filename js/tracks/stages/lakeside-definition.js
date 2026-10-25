@@ -3,7 +3,7 @@
  * Wide tarmac, jumps, one slideable hairpin, a cobble rush. Built to go fast.
  */
 
-import { COLORS } from "../../config.js?v=243";
+import { COLORS } from "../../config.js?v=248";
 
 const W = 15.6;
 
@@ -81,12 +81,12 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 32,
-      angle: 142,
+      radius: 42,
+      angle: 128,
       surface: "cobble",
       width: W,
-      bank: 0.05,
-      purpose: "Hairpin — slide it, punch out",
+      bank: 0.07,
+      purpose: "Hairpin — easy power slide, punch out",
     },
     { kind: "straight", length: 64, surface: "cobble", width: W, purpose: "Unwind on brick" },
     {

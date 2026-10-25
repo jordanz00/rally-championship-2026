@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=243";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=248";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -71,8 +71,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.22,
     exposureMax: 0.9,
     exposureCeil: 0.97,
-    carEnvMax: 1.22,
-    coatEnvMax: 1.7,
+    carEnvMax: 1.72,
+    coatEnvMax: 2.85,
     worldEnvMax: 0.88,
   },
   forest: {
@@ -83,8 +83,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.2,
     exposureMax: 0.86,
     exposureCeil: 0.92,
-    carEnvMax: 1.24,
-    coatEnvMax: 1.78,
+    carEnvMax: 1.75,
+    coatEnvMax: 2.9,
     worldEnvMax: 0.88,
   },
   mountain: {
@@ -95,8 +95,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.2,
     exposureMax: 0.9,
     exposureCeil: 0.96,
-    carEnvMax: 1.18,
-    coatEnvMax: 1.62,
+    carEnvMax: 1.68,
+    coatEnvMax: 2.75,
     worldEnvMax: 0.68,
   },
   lakeside: {
@@ -107,8 +107,8 @@ export const HARSH_PEAKS = {
     rimMax: 0.14,
     exposureMax: 0.78,
     exposureCeil: 0.82,
-    carEnvMax: 0.82,
-    coatEnvMax: 1.2,
+    carEnvMax: 1.45,
+    coatEnvMax: 2.4,
     worldEnvMax: 0.52,
     sunMax: 1.22,
   },
@@ -294,8 +294,8 @@ export function harshEnvLook(L, tunnelBlend, courseId) {
   const t = tunnelBlend < 0 ? 0 : tunnelBlend > 1 ? 1 : tunnelBlend;
   const stage = lightingStageId(L, courseId);
   const pk = HARSH_PEAKS[stage] || {
-    carEnvMax: 1.2,
-    coatEnvMax: 1.8,
+    carEnvMax: 1.7,
+    coatEnvMax: 2.85,
     worldEnvMax: 0.95,
   };
   // High sun (y) + open sky = lacquer flash. Soften spec, keep tunnel IBL.

@@ -15,9 +15,9 @@ import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=9";
 const BASE = "assets/env/forest";
 
 /** Larger tiles = fewer wallpaper repeats at chase distance. */
-const TILE_DIRT_M = 2.9;
-const TILE_GRAVEL_M = 2.75;
-const TILE_FLOOR_M = 4.1;
+const TILE_DIRT_M = 3.6;
+const TILE_GRAVEL_M = 3.4;
+const TILE_FLOOR_M = 5.2;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */

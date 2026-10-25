@@ -1,5 +1,75 @@
 # QA report — quality-control pass
 
+## C-key instant camera (2026-10-24)
+
+**Player moment:** Press C. POV / medium / far switch on that frame — no pause, no ease hang, no shader hitch.
+
+**Shipped:** `_camBlendT = 0` + `_camCut` · cabin via `_applyCockpitCam` on the press · `_chaseCam(0)` hard seat · `flipCockpitVisibility` only (no Box3 / no arm load on C) · `_warmPov` rebakes GLB cabin shaders at load.
+
+**Proof:** `node tools/qa-cam-snap.mjs` · `node tools/qa-cam-blend.mjs`
+
+**Boot:** `main.js?v=1145` · `celica.js?v=272` · `config.js?v=249`
+
+## Proper modeled POV interior (2026-10-24)
+
+**Player moment:** C → cockpit. Hero GT4 cabin (COCKPIT_HR, seats, doors, dials, STEER_HR) fills the lens — not box plastic.
+
+**Shipped:** `tagGlbCabin` + `_povGlbCabin` · cabin v3 skips procedural fill when GLB present · gauges / live mirror / hands kept · int_window + MIRROR_CENT stay hidden · cabin IBL dress.
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-hands.mjs`
+
+**Boot:** `main.js?v=1144` · `celica.js?v=271`
+
+## Nice POV interior (2026-10-24)
+
+**Player moment:** C → cockpit. Leather seats with bolsters, dash stack/vents, tunnel, door cards, warm cabin light, grain plastics catching sky IBL.
+
+**Shipped:** cabin v2 (Physical + grain) · richer seats/doors/dash · cabinFill 1.05 · POV FOV 84 · `armRaceCarReflections` cabin branch. Superseded by modeled GLB cabin when present.
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-hands.mjs`
+
+**Boot:** `main.js?v=1143` · `celica.js?v=270` · `pbr.js?v=63` · `config.js?v=248`
+
+## Nice reflections on all cars (2026-10-24)
+
+**Player moment:** Player + every rival lacquer / chrome / glass picks up sky IBL — wet clearcoat, not flat plastic.
+
+**Shipped:** `armRaceCarReflections` on player, pack, ghost · `carEnvIntensity` 1.68 · higher paint/chrome/glass env multipliers · harsh `carEnvMax`/`coatEnvMax` raised so clamps stop killing shine.
+
+**Proof:** `node tools/qa-car-reflections.mjs`
+
+**Boot:** `main.js?v=1142` · `pbr.js?v=62` · `config.js?v=247` · `lighting-rig.js?v=33`
+
+## Rival pace +50% · higher-fidelity cars (2026-10-24)
+
+**Player moment:** Pack digs and pulls 50% harder on GO / straights. Near rivals read with hero lacquer, not soft LOD plastic.
+
+**Shipped:** `AI.peakPowerMul` 2.3→3.45 · `maxSpeedMul` 1.5 · `heroShellCount` 8 (desktop) · pack hero warm on load · rival lacquer clearcoat/env up · `sharpenHeroTextures` on every rival clone.
+
+**Proof:** `node tools/qa-rival-pace-fidelity.mjs` · `node tools/qa-sprint19-speed.mjs`
+
+**Boot:** `main.js?v=1141` · `config.js?v=246` · `ai.js?v=262` · `celica.js?v=269` · `rival-livery.js?v=9`
+
+## Stage environment beauty — blend / backdrop / sky (2026-10-24)
+
+**Player moment:** Road→verge→biome soft dissolve · denser hero horizon rings · sky fades into haze · grit reads as litter not wallpaper.
+
+**Shipped:** road-organic v10 + surface-noise v4 · Forest/Desert larger PBR tiles · BLEND 220 m · wider shoulder tints · desert Poly Haven rocks/plants on backdrop · denser treelines · vista fog ×1.48 · stronger horizon seam + stage fogFar.
+
+**Proof:** `node tools/qa-texture-layers.mjs` · `node tools/qa-asset-quality.mjs` · `node tools/qa-stage-beauty.mjs`
+
+**Boot:** `main.js?v=1140` · `config.js?v=245` · `pbr.js?v=61` · `track.js?v=458` · `sky.js?v=51`
+
+## Easy power-slide stages (2026-10-24)
+
+**Player moment:** Wide easy ribbons · hairpins you slide through · sand/dirt/gravel (and soft tarmac) hang a power slide.
+
+**Shipped:** `PLAY_*` open lane + hairpin angle ease · Desert/Forest/Mountain/Lakeside wider + opened hooks · sand/dirt/gravel/tarmac/cobble `driftEase` up · `TrackConfig.maxWidth` 42.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-stage-flow.mjs` · `tools/qa-play-lane.mjs` · `tools/qa-drift-swing.mjs`
+
+**Boot:** `main.js?v=1139` · `config.js?v=244` · `courses.js?v=100` · `track-definition.js?v=10`
+
 ## Drift tournament turn-in (2026-10-24)
 
 **Player moment:** Hard steer at speed starts a power slide; corners rotate tighter and hold attitude like a rally / drift entry.

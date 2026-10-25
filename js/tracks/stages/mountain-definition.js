@@ -5,14 +5,14 @@
  * QA gates: cobble open, exactly 3 CPs, hairpin + tight_corner, no tunnel.
  */
 
-import { COLORS } from "../../config.js?v=243";
+import { COLORS } from "../../config.js?v=248";
 
 const W = {
-  start: 17.2,
-  open: 16.8,
-  drift: 16.4,
-  tight: 15.6,
-  finish: 17.4,
+  start: 18.4,
+  open: 18.0,
+  drift: 17.6,
+  tight: 16.8,
+  finish: 18.6,
 };
 
 export const MOUNTAIN_DEFINITION = {
@@ -125,13 +125,13 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 30,
-      angle: 154,
+      radius: 40,
+      angle: 136,
       surface: "tarmac",
       width: W.drift,
       landmark: true,
-      bank: 0.06,
-      purpose: "Hairpin right — slide the apex, do not park it",
+      bank: 0.08,
+      purpose: "Hairpin right — easy power slide, do not park it",
       visual: "rock_face_hairpin",
     },
     { kind: "straight", length: 100, surface: "tarmac", width: W.drift, dy: -0.7, purpose: "Unwind downhill — big jump" },

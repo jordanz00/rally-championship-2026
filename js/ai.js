@@ -25,8 +25,8 @@
 import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=211";
 import { getSurface } from "./physics/surfaces.js?v=58";
-import { AI, CARS } from "./config.js?v=243";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=268";
+import { AI, CARS } from "./config.js?v=249";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=272";
 
 const G = 9.81;
 
@@ -226,22 +226,25 @@ export class Opponent {
     this.chassisId = rivalChassisForIndex(index);
     const base = CARS[this.chassisId] || CARS.celica;
     const mul = AI.peakPowerMul != null ? AI.peakPowerMul : 1;
+    const speedMul = AI.maxSpeedMul != null ? AI.maxSpeedMul : 1;
     const specs = {
       ...base,
       peakPowerKw: Math.max(40, (base.peakPowerKw || 84) * mul),
+      maxSpeedKmh: Math.max(120, (base.maxSpeedKmh || 255) * speedMul),
     };
     this.vehicle = new Vehicle(specs, { lowDetail: true });
     this.vehicle.ai = true;
     this.vehicle.spawn(track, startDist, this.lane);
-    // Race pack uses rival LOD (heroShell false). Soft coupe if GLB missing —
-    // still a visible car; only an empty Group is skipped by the grid.
+    // Near pack: hero GLB on desktop for lacquer fidelity. Far slots stay LOD.
+    const heroSlots = AI.heroShellCount != null ? AI.heroShellCount : 0;
+    const wantHero = index < heroSlots;
     try {
-      this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, false);
+      this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, wantHero);
       this._meshMissing = !this.mesh || this.mesh.name === "rival-placeholder";
     } catch (err) {
       console.warn("[ai] rival mesh missing — soft coupe", err);
       try {
-        this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, false);
+        this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, wantHero);
         this._meshMissing = !this.mesh;
       } catch {
         this.mesh = new THREE.Group();

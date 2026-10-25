@@ -14,10 +14,10 @@ import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=9";
 const BASE = "assets/env/desert";
 
 /** Larger tiles = fewer wallpaper repeats; world-XZ blotch + grit finish the blend. */
-const TILE_SAND_M = 32;
-const TILE_DIRT_M = 9.2;
-const TILE_GRAVEL_M = 16;
-const TILE_TARMAC_M = 11;
+const TILE_SAND_M = 38;
+const TILE_DIRT_M = 11.5;
+const TILE_GRAVEL_M = 19;
+const TILE_TARMAC_M = 13.5;
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */

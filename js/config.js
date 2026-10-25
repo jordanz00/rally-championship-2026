@@ -200,7 +200,7 @@ export const VISUAL = {
   packSeeThrough: false,
   /** Soft distance fade — stronger at tier 13 for atmospheric depth. */
   aerialPerspective: true,
-  aerialStrength: 0.88,
+  aerialStrength: 0.94,
   aerialStart: 22,
   aerialEnd: 680,
   /**
@@ -231,7 +231,8 @@ export const VISUAL = {
   lensFlare: true,
   /** Stage IBL fallback — LIGHTING[stage].worldEnv wins at PMREM bake. */
   worldEnvIntensity: 0.95,
-  carEnvIntensity: 1.32,
+  /** Sky IBL on lacquer — high enough that pack + player read wet reflections. */
+  carEnvIntensity: 1.68,
   /** Sprint 32 — sky-rim directional (no shadow) for PBR specular fill. */
   pbrSkyRim: true,
   /** Composite highlight shoulder after ACES ( tame spec bloom ). */
@@ -241,7 +242,7 @@ export const VISUAL = {
   aoStrength: 0.42,
   aoRadius: 1.35,
   /** Normal strength on road/terrain. */
-  normalStrength: 1.55,
+  normalStrength: 1.72,
   /** Half-res normals — capped below full-res fill-rate cliff (Sprint 96). */
   normalMapScale: 0.92,
   /**
@@ -421,13 +422,13 @@ export const LIGHTING = {
     groundBounceMix: 0.24,
     cloudCover: 0.3,
     cloudScale: 1.72,
-    horizonGlow: 0xf4d8b0,
-    horizonStrength: 0.4,
+    horizonGlow: 0xf6dcb4,
+    horizonStrength: 0.52,
     dustStrength: 0.56,
     wind: [1.85, 0, 0.65],
     fog: 0xe8d090,
-    fogNear: 52,
-    fogFar: 380,
+    fogNear: 48,
+    fogFar: 460,
     hemiSky: 0xb0cce0,
     hemiGround: 0xdcc088,
     hemi: 0.6,
@@ -477,13 +478,13 @@ export const LIGHTING = {
     groundBounceMix: 0.11,
     cloudCover: 0.4,
     cloudScale: 1.68,
-    horizonGlow: 0xc8dcd0,
-    horizonStrength: 0.24,
+    horizonGlow: 0xcce0d4,
+    horizonStrength: 0.36,
     dustStrength: 0.28,
     wind: [0.35, 0, -0.85],
     fog: 0x8a9aa0,
-    fogNear: 38,
-    fogFar: 260,
+    fogNear: 34,
+    fogFar: 340,
     skyBack: 0x2274c0,
     hemiSky: 0x8ec4e8,
     hemiGround: 0x4a7840,
@@ -529,13 +530,13 @@ export const LIGHTING = {
     groundBounceMix: 0.1,
     cloudCover: 0.28,
     cloudScale: 1.65,
-    horizonGlow: 0xb8d0e4,
-    horizonStrength: 0.22,
+    horizonGlow: 0xc0d6e8,
+    horizonStrength: 0.34,
     dustStrength: 0.045,
     wind: [2.4, 0, 1.1],
     fog: 0xa8b8c4,
-    fogNear: 55,
-    fogFar: 380,
+    fogNear: 48,
+    fogFar: 460,
     skyBack: 0x2070c8,
     hemiSky: 0x90c4f0,
     hemiGround: 0x6a6454,
@@ -581,13 +582,13 @@ export const LIGHTING = {
     groundBounceMix: 0.13,
     cloudCover: 0.36,
     cloudScale: 1.7,
-    horizonGlow: 0xb0d4e0,
-    horizonStrength: 0.34,
+    horizonGlow: 0xb8dae8,
+    horizonStrength: 0.44,
     dustStrength: 0.14,
     wind: [-0.8, 0, 1.4],
     fog: 0x90b4c4,
-    fogNear: 62,
-    fogFar: 720,
+    fogNear: 56,
+    fogFar: 860,
     skyBack: 0x2278b8,
     hemiSky: 0x88c4e0,
     hemiGround: 0x3e6c4c,
@@ -828,26 +829,26 @@ export const SURFACES = {
   tarmac: {
     id: "tarmac",
     label: "TARMAC",
-    muPeak: 1.64,
+    muPeak: 1.52,
     /**
      * AM3: brake on tarmac and you STOP. Peak/slide gap still allows a tidy
      * attitude, but brakeHold keeps the stop short and mostly straight.
-     * Sprint v581: widen STOP vs mud POWER-SLIDE — almost no brake yaw, snap recovery.
+     * Opened slightly so Mountain/Lakeside power slides stay fun.
      */
-    muSlide: 1.14,
-    slipPeak: 0.078,
+    muSlide: 1.02,
+    slipPeak: 0.088,
     /** Threshold braking holds: shortest stop on the championship, arrow-straight. */
-    brakeHold: 1.0,
-    brakeYaw: 0.02,
-    slideHold: 0.58,
-    gripSnap: 1.88,
-    bumpSteer: 0.32,
-    roll: 0.011,
+    brakeHold: 0.92,
+    brakeYaw: 0.06,
+    slideHold: 0.78,
+    gripSnap: 1.72,
+    bumpSteer: 0.36,
+    roll: 0.012,
     sink: 0,
     bump: 0.012,
     dust: 0,
     speedScale: 1.0,
-    driftEase: 0.82,
+    driftEase: 1.05,
     pacejkaB: 3.7,
     pacejkaC: 1.26,
     pacejkaE: 0.14,
@@ -857,22 +858,22 @@ export const SURFACES = {
   gravel: {
     id: "gravel",
     label: "GRAVEL",
-    muPeak: 1.1,
-    muSlide: 0.62,
-    slipPeak: 0.156,
+    muPeak: 1.02,
+    muSlide: 0.58,
+    slipPeak: 0.168,
     /** Half-locking: brakes bite, then let go — the classic gravel pitch-in. */
-    brakeHold: 0.26,
-    brakeYaw: 0.98,
-    slideHold: 1.82,
+    brakeHold: 0.22,
+    brakeYaw: 1.05,
+    slideHold: 2.05,
     /** Catch authority on opposite-lock — still patient vs tarmac, not mush. */
-    gripSnap: 1.4,
-    bumpSteer: 0.88,
-    roll: 0.032,
-    sink: 0.038,
-    bump: 0.054,
+    gripSnap: 1.48,
+    bumpSteer: 0.82,
+    roll: 0.03,
+    sink: 0.036,
+    bump: 0.05,
     dust: 1.12,
-    speedScale: 0.93,
-    driftEase: 1.64,
+    speedScale: 0.94,
+    driftEase: 1.78,
     pacejkaB: 3.25,
     pacejkaC: 1.22,
     pacejkaE: 0.16,
@@ -883,20 +884,20 @@ export const SURFACES = {
   dirt: {
     id: "dirt",
     label: "DIRT",
-    muPeak: 1.06,
-    muSlide: 0.74,
-    slipPeak: 0.128,
-    brakeHold: 0.34,
-    brakeYaw: 0.78,
-    slideHold: 1.48,
-    gripSnap: 1.36,
-    bumpSteer: 0.9,
-    roll: 0.034,
-    sink: 0.042,
-    bump: 0.052,
+    muPeak: 0.98,
+    muSlide: 0.68,
+    slipPeak: 0.142,
+    brakeHold: 0.28,
+    brakeYaw: 0.92,
+    slideHold: 1.72,
+    gripSnap: 1.42,
+    bumpSteer: 0.84,
+    roll: 0.032,
+    sink: 0.04,
+    bump: 0.048,
     dust: 1.0,
-    speedScale: 0.9,
-    driftEase: 1.48,
+    speedScale: 0.92,
+    driftEase: 1.68,
     pacejkaB: 3.05,
     pacejkaC: 1.2,
     pacejkaE: 0.18,
@@ -907,21 +908,21 @@ export const SURFACES = {
   cobble: {
     id: "cobble",
     label: "COBBLE",
-    muPeak: 1.32,
-    muSlide: 0.92,
-    slipPeak: 0.085,
+    muPeak: 1.22,
+    muSlide: 0.84,
+    slipPeak: 0.098,
     /** Almost tarmac stopping power, but the stones steer you while you do it. */
-    brakeHold: 0.88,
-    brakeYaw: 0.18,
-    slideHold: 0.75,
-    gripSnap: 1.4,
-    bumpSteer: 1.05,
+    brakeHold: 0.78,
+    brakeYaw: 0.28,
+    slideHold: 0.95,
+    gripSnap: 1.48,
+    bumpSteer: 0.98,
     roll: 0.02,
     sink: 0.008,
-    bump: 0.062,
+    bump: 0.058,
     dust: 0,
-    speedScale: 0.95,
-    driftEase: 0.9,
+    speedScale: 0.96,
+    driftEase: 1.12,
     color: COLORS.cobble,
     ribbon: COLORS.ribbonCobble,
   },
@@ -948,25 +949,25 @@ export const SURFACES = {
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.82,
-    muSlide: 0.5,
-    slipPeak: 0.172,
+    muPeak: 0.76,
+    muSlide: 0.46,
+    slipPeak: 0.188,
     /**
      * Desert headline (AM3): brake late → rotate → hold → catch on throttle.
      * Soft brakeHold keeps the stop from becoming a parking brake; gripSnap
      * is the catch switch so long slideHold is not runoff.
      */
-    brakeHold: 0.15,
-    brakeYaw: 1.18,
-    slideHold: 2.34,
-    gripSnap: 1.28,
-    bumpSteer: 0.86,
-    roll: 0.062,
-    sink: 0.092,
-    bump: 0.028,
+    brakeHold: 0.12,
+    brakeYaw: 1.28,
+    slideHold: 2.55,
+    gripSnap: 1.38,
+    bumpSteer: 0.78,
+    roll: 0.058,
+    sink: 0.088,
+    bump: 0.024,
     dust: 1.55,
-    speedScale: 0.86,
-    driftEase: 1.94,
+    speedScale: 0.88,
+    driftEase: 2.12,
     pacejkaB: 3.1,
     pacejkaC: 1.22,
     pacejkaE: 0.17,
@@ -1720,12 +1721,12 @@ export const CAMERA = {
   /** Cap on |lateral kick| during a slide (metres). */
   slideKickMax: 0.018,
   /**
-   * Seconds for a C-key pose ease. Short so mode swaps feel instant, not a hang.
+   * Legacy config — C-key now hard-snaps (`_camBlendT = 0`). Kept for docs/QA.
    */
-  viewBlendTime: 0.28,
-  /** POV↔chase ease — keep brief; hitch-free warm means we do not need a long cover.
+  viewBlendTime: 0.001,
+  /** POV↔chase — instant with the C press (no ease hang).
    */
-  viewBlendTimePov: 0.32,
+  viewBlendTimePov: 0.001,
   /** Chase follow while settled — snappy, no float. */
   viewBlendStiffness: 26,
   /** Seat lock once POV blend finishes (hard copy, this is a fallback). */
@@ -1757,9 +1758,10 @@ export const CAMERA = {
       eyeZ: -0.12,
       lookY: 1.18,
       lookZ: 4.5,
-      fov: 80,
+      /** Slightly wider — more dash / doors / wheel in frame without fish-eye. */
+      fov: 84,
       stiffness: 42,
-      near: 0.05,
+      near: 0.04,
     },
     {
       id: "medium",
@@ -1915,15 +1917,24 @@ export const CHAMPIONSHIP = {
 export const AI = {
   /**
    * Rival engine scale vs shared CARS.*.peakPowerKw (player template).
-   * Player is at 84 kW; pack keeps the prior 168 kW punch × 1.15 → mul 2.3.
+   * Player is at 84 kW. Pack accel is +50% over the prior 2.3 mul → 3.45.
    */
-  peakPowerMul: 2.3,
+  peakPowerMul: 3.45,
   /**
-   * Pack is deliberately a beat slower than a committed player so handbrake
-   * slides and exits feel like passing moves, not a same-pace train.
+   * Rival soft top-speed scale vs CARS.*.maxSpeedKmh. +50% so the pack
+   * pulls away on straights unless the player hangs a clean stage.
    */
-  skillFloor: 0.8,
-  skillCeiling: 0.98,
+  maxSpeedMul: 1.5,
+  /**
+   * Desktop race: how many grid slots clone the hero GLB (rest stay LOD).
+   * Near pack reads like the player car without 14× hero cost.
+   */
+  heroShellCount: 8,
+  /**
+   * Pack pace floor / ceiling — still beatable, but they dig hard.
+   */
+  skillFloor: 0.86,
+  skillCeiling: 1.02,
   /** Corner-entry braking bias. Higher = more trail-braking, later apex. */
   trailBrake: 0.52,
   /** Seconds between a rival's chances to make a small mistake. */

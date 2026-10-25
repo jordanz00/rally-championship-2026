@@ -320,17 +320,18 @@ export function compileSegment(seg, ctx) {
  * Playable lane — wider ribbon, opened corners. Tight hooks open the most;
  * sweepers still ease so every stage turn is holdable.
  */
-/** Wider lane + longer straights — pro rally feel, room to slide. */
-const PLAY_WIDTH = 1.52;
-const PLAY_TIGHT_RADIUS = 1.42;
-const PLAY_MEDIUM_RADIUS = 1.3;
-const PLAY_SWEEP_RADIUS = 1.18;
-const PLAY_SPEED_TIGHT = 1.24;
-const PLAY_SPEED_SWEEP = 1.18;
-const PLAY_WIDTH_MIN = 6;
-const PLAY_WIDTH_MAX = 36;
-const PLAY_TUNNEL_EXTRA = 2.4;
-const PLAY_STRAIGHT = 2.2;
+/** Wider lane + opened corners — easy power-slide championship ribbon. */
+const PLAY_WIDTH = 1.68;
+const PLAY_TIGHT_RADIUS = 1.62;
+const PLAY_MEDIUM_RADIUS = 1.42;
+const PLAY_SWEEP_RADIUS = 1.28;
+const PLAY_SPEED_TIGHT = 1.36;
+const PLAY_SPEED_SWEEP = 1.26;
+const PLAY_HAIRPIN_ANGLE = 0.88;
+const PLAY_WIDTH_MIN = 7.5;
+const PLAY_WIDTH_MAX = 40;
+const PLAY_TUNNEL_EXTRA = 2.8;
+const PLAY_STRAIGHT = 2.35;
 const PLAY_FINISH_PAD = {
   desert: 320,
   forest: 300,
@@ -370,13 +371,21 @@ export function easePlayRadius(r, speedLane = false) {
 export function easePlayAngle(angle, radius, speedLane = false) {
   if (!Number.isFinite(angle)) return angle;
   const a = Math.abs(angle);
-  if (a >= 130) return angle;
-  if (speedLane && radius < 70 && a > 55) {
-    const eased = Math.max(46, a * 0.84);
+  // Hairpins stay a hook, but open enough to slide through — not a park.
+  if (a >= 130) {
+    const eased = Math.max(112, a * PLAY_HAIRPIN_ANGLE);
     return angle < 0 ? -eased : eased;
   }
-  if (radius < 50 && a > 62) {
-    const eased = Math.max(48, a * 0.9);
+  if (speedLane && radius < 70 && a > 52) {
+    const eased = Math.max(42, a * 0.8);
+    return angle < 0 ? -eased : eased;
+  }
+  if (radius < 55 && a > 58) {
+    const eased = Math.max(44, a * 0.86);
+    return angle < 0 ? -eased : eased;
+  }
+  if (a > 70) {
+    const eased = Math.max(52, a * 0.92);
     return angle < 0 ? -eased : eased;
   }
   return angle;

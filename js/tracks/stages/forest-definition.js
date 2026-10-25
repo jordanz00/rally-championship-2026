@@ -8,14 +8,15 @@
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=243";
+import { COLORS } from "../../config.js?v=248";
 
 /**
  * Forest ribbon scale vs the Saturn-narrow authoring (11.6–13.2 m).
  * Packed dirt must read as a road through the trees, not a goat track.
  */
 function forestWidth(w) {
-  return Math.round(w * 1.42 * 10) / 10;
+  // Room to hang a dirt power slide through the corridor.
+  return Math.round(w * 1.58 * 10) / 10;
 }
 
 export const FOREST_DEFINITION = {
@@ -200,12 +201,12 @@ export const FOREST_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 28,
-      angle: 156,
+      radius: 38,
+      angle: 138,
       surface: "dirt",
-      width: forestWidth(13.6),
+      width: forestWidth(14.4),
       landmark: true,
-      purpose: "Hairpin right — slide it, do not park it",
+      purpose: "Hairpin right — easy power slide, do not park it",
       visual: "forest_hairpin",
     },
     { kind: "straight", length: 52, surface: "dirt", width: forestWidth(13.2), purpose: "Unwind — get back on the gas" },

@@ -31,21 +31,23 @@ const game = read("js/game.js");
 
 check("stochastic UV helper", /vec2 stochasticUv\(/.test(pbr));
 check("macro/meso/micro layer weights", /wMacro/.test(pbr) && /wMeso/.test(pbr) && /wMicro/.test(pbr));
-check("road organic v9 cache", /road-organic-v9-/.test(pbr));
-check("soft layer dissolve masks", /smoothstep\( 0\.18, 0\.82, n6 \)/.test(pbr));
-check("surface noise v3", /sn-v3-/.test(sn) && /dust/.test(sn));
-check("forest larger tiles", /TILE_FLOOR_M = 4\.1/.test(forest) && /TILE_DIRT_M = 2\.9/.test(forest));
-check("desert larger tiles", /TILE_SAND_M = 11\.5/.test(desert) && /TILE_DIRT_M = 3\.2/.test(desert));
-check("surface blend ≥160m", /const BLEND = 168/.test(track));
-check("wider play lane", /PLAY_WIDTH = 1\.52/.test(def) && /PLAY_STRAIGHT = 2\.2/.test(def));
-check("shoulder verge blend desert", /vergeEnd = 3\.4/.test(track) && /Compacted verge/.test(track));
-check("cinematic vista fog", /vistaFar/.test(game) && /1\.32/.test(game));
-check("pbr cache-bust v60", /pbr\.js\?v=60/.test(track) && /pbr\.js\?v=60/.test(game));
-check("forest/desert pbr v64", /forest-pbr\.js\?v=64/.test(track) && /desert-pbr\.js\?v=64/.test(track));
+check("road organic v10 cache", /road-organic-v10-/.test(pbr));
+check("soft layer dissolve masks", /smoothstep\( 0\.12, 0\.88, n6 \)/.test(pbr));
+check("surface noise v4", /sn-v4-/.test(sn) && /dust/.test(sn));
+check("forest larger tiles", /TILE_FLOOR_M = 5\.2/.test(forest) && /TILE_DIRT_M = 3\.6/.test(forest));
+check("desert larger tiles", /TILE_SAND_M = 38/.test(desert) && /TILE_DIRT_M = 11\.5/.test(desert));
+check("surface blend ≥200m", /const BLEND = 220/.test(track));
+check("wider play lane", /PLAY_WIDTH = 1\.6/.test(def) && /PLAY_STRAIGHT = 2\./.test(def));
+check("shoulder verge blend desert", /vergeEnd = 4\.6/.test(track) && /Compacted verge/.test(track));
+check("cinematic vista fog", /vistaFar/.test(game) && /1\.48/.test(game));
+check("pbr cache-bust v61", /pbr\.js\?v=61/.test(track) && /pbr\.js\?v=61/.test(game));
+check("forest/desert pbr bumped", /forest-pbr\.js\?v=66/.test(track) && /desert-pbr\.js\?v=67/.test(track));
+check("desert hero backdrop rocks", /desert_hero_boulder_a/.test(track) && /liveHeroes/.test(track));
+check("sky horizon seam soft", /hs \* 0\.58/.test(read("js/sky.js")));
 
 const mainV = Number((index.match(/main\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = Number((main.match(/game\.js\?v=(\d+)/) || [])[1] || 0);
-check("boot main/game 1093+", mainV >= 1093 && gameV >= 1093 && mainV === gameV, `main=${mainV} game=${gameV}`);
+check("boot main/game 1140+", mainV >= 1140 && gameV >= 1140 && mainV === gameV, `main=${mainV} game=${gameV}`);
 
 if (fail) {
   console.log(`\nFAIL  ·  ${fail} check(s)`);

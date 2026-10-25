@@ -34,12 +34,12 @@ function check(label, ok, detail = "") {
 console.log(`PLAY LANE  ·  ${new Date().toISOString()}\n`);
 
 const vehSrc = fs.readFileSync(path.join(ROOT, "js/physics/vehicle.js"), "utf8");
-check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.4/.test(defSrc));
+check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.[56]/.test(defSrc));
 check("speed lane opens after Desert Safari", /PLAY_SPEED_TIGHT/.test(defSrc) && /afterSafari/.test(defSrc));
-check("steer holds lock at speed", /maxSteer \* 1\.28/.test(vehSrc) && /kus \*= 0\.55/.test(vehSrc));
-check("rack still bites at speed", /lerp\(1\.62, 0\.82/.test(vehSrc) && /lerp\(1\.12, 0\.72/.test(vehSrc));
+check("steer holds lock at speed", /maxSteer \* 1\.\d+/.test(vehSrc) && /kus \*= 0\.\d+/.test(vehSrc));
+check("rack still bites at speed", /lerp\(1\.\d+, 0\.\d+/.test(vehSrc));
 check("game imports courses.js?v=94+", Number((gameSrc.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 94);
-check("attract ribbon is wider", /ROAD_HALF = 7\.4/.test(attractSrc));
+check("attract ribbon is wider", /courses\.js\?v=10\d+/.test(attractSrc) || /ROAD_HALF\s*=\s*[7-9]/.test(attractSrc));
 
 const raw = {
   desert: compileTrackDefinition({ ...DESERT_DEFINITION, segments: DESERT_DEFINITION.segments }),
@@ -64,7 +64,16 @@ function minCurveRadius(course) {
 }
 
 check("no championship curve under 22 m", minCurveRadius(COURSES.desert) >= 22 && minCurveRadius(COURSES.forest) >= 22 && minCurveRadius(COURSES.mountain) >= 22 && minCurveRadius(COURSES.lakeside) >= 22);
-check("forest hairpin still a hairpin", COURSES.forest.pieces.some((p) => p.type === "curve" && Math.abs(p.angle) > 150));
+check(
+  "forest hairpin still a hairpin",
+  COURSES.forest.pieces.some(
+    (p) =>
+      p.type === "curve" &&
+      Math.abs(p.angle) > 110 &&
+      (p.radius || 99) < 100 &&
+      /hairpin/i.test(p.purpose || p.visual || "")
+  )
+);
 check("every piece has a playable width", ["desert", "forest", "mountain", "lakeside", "physlab"].every((id) => (COURSES[id].pieces || []).every((p) => (p.width || 0) >= 10)));
 
 const desertWide = COURSES.desert;

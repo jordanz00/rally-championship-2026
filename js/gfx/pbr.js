@@ -15,9 +15,9 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=243";
+import { VISUAL } from "../config.js?v=248";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
-import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=4";
+import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=5";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
 const WORLD_ENV =
@@ -530,7 +530,7 @@ function armRoadOrganic(mat, id) {
     ribbon: dirty ? 0.03 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.1 : 0.08,
     bump: dirty ? 0.82 : id === "tarmac" ? 0.34 : id === "cobble" ? 0.58 : 0.48,
     blotch: true,
-    key: `road-organic-v9-${id}`,
+    key: `road-organic-v10-${id}`,
   });
 }
 
@@ -546,8 +546,8 @@ function injectProjectedMaps(shader, opts) {
   shader.uniforms.uRoadVar = { value: opts.amount };
   shader.uniforms.uNoiseAmt = { value: opts.amount > 0.7 ? 0.38 : 0.28 };
   const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
-  // Macro islands + meso grain + micro flecks, with soft masks so layers fade
-  // into each other instead of one tiled sheet.
+  // Macro islands + meso grain + micro flecks — soft dissolve so layers read
+  // as painted geology, not wallpaper sheets.
   const blotchSrc = opts.blotch
     ? `	float n1 = roadNoise( vProjWorld.xz * 0.07 );
 	float n2 = roadNoise( vProjWorld.xz * 0.26 + 17.0 );
@@ -556,23 +556,27 @@ function injectProjectedMaps(shader, opts) {
 	float n5 = roadNoise( vProjWorld.xz * 0.04 + 9.0 );
 	float n6 = roadNoise( vProjWorld.xz * 0.0038 + 63.0 );
 	float n7 = roadNoise( vProjWorld.xz * 0.0021 + 91.0 );
-	float blotch = n1 * 0.24 + n2 * 0.2 + n3 * 0.16 + n4 * 0.12 + n5 * 0.1 + n6 * 0.1 + n7 * 0.08;
-	float hueShift = ( n2 - 0.5 ) * 0.1 * uProjAmt + ( n5 - 0.5 ) * 0.045 * uProjAmt + ( n6 - 0.5 ) * 0.055 * uProjAmt;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.55 + blotch * 0.72 ), uProjAmt );
+	float n8 = roadNoise( vProjWorld.xz * 0.0012 + 131.0 );
+	float blotch = n1 * 0.2 + n2 * 0.18 + n3 * 0.16 + n4 * 0.12 + n5 * 0.1 + n6 * 0.12 + n7 * 0.08 + n8 * 0.04;
+	float hueShift = ( n2 - 0.5 ) * 0.11 * uProjAmt + ( n5 - 0.5 ) * 0.05 * uProjAmt + ( n6 - 0.5 ) * 0.06 * uProjAmt;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.52 + blotch * 0.78 ), uProjAmt );
 	sampledDiffuseColor.r *= 1.0 + hueShift;
-	sampledDiffuseColor.g *= 1.0 + hueShift * 0.3;
-	sampledDiffuseColor.b *= 1.0 - hueShift * 0.7;
-	// Soft masks — layers dissolve into each other (no hard island edges).
-	float wMacro = smoothstep( 0.18, 0.82, n6 ) * smoothstep( 0.2, 0.75, n7 ) * 0.42 * uProjAmt;
-	float wMeso = smoothstep( 0.15, 0.8, n3 ) * ( 1.0 - wMacro * 0.35 ) * 0.34 * uProjAmt;
-	float wMicro = ( 0.14 + n4 * 0.2 ) * ( 1.0 - wMacro * 0.25 ) * uProjAmt;
-	vec2 uvMacro = stochasticUv( vProjWorld.xz, 0.014, 4.2 );
-	vec2 uvMeso = stochasticUv( vProjWorld.xz, 0.048, 12.5 );
-	vec2 uvMicro = stochasticUv( vProjWorld.xz, 0.34, 26.0 );
+	sampledDiffuseColor.g *= 1.0 + hueShift * 0.32;
+	sampledDiffuseColor.b *= 1.0 - hueShift * 0.68;
+	// Wider smoothsteps — soft layer dissolve (no hard island edges).
+	float wMacro = smoothstep( 0.12, 0.88, n6 ) * smoothstep( 0.14, 0.82, n7 ) * 0.52 * uProjAmt;
+	float wMeso = smoothstep( 0.1, 0.86, n3 ) * ( 1.0 - wMacro * 0.42 ) * 0.4 * uProjAmt;
+	float wMicro = ( 0.16 + n4 * 0.24 ) * ( 1.0 - wMacro * 0.3 ) * uProjAmt;
+	float wMeso2 = smoothstep( 0.18, 0.78, n8 ) * ( 1.0 - wMacro * 0.5 ) * 0.18 * uProjAmt;
+	vec2 uvMacro = stochasticUv( vProjWorld.xz, 0.011, 5.6 );
+	vec2 uvMeso = stochasticUv( vProjWorld.xz, 0.042, 14.0 );
+	vec2 uvMicro = stochasticUv( vProjWorld.xz, 0.3, 28.0 );
+	vec2 uvMeso2 = stochasticUv( vProjWorld.xz * vec2( 0.93, 1.07 ), 0.028, 19.0 );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMacro ), wMacro );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMeso ), wMeso );
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMeso2 ), wMeso2 );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMicro ), wMicro );
-	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.26 + vec2( 0.17, 0.09 ) ), 0.08 * uProjAmt );`
+	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, vMapUv * 0.22 + vec2( 0.19, 0.11 ) ), 0.1 * uProjAmt );`
     : "";
   shader.vertexShader = shader.vertexShader
     .replace(
@@ -639,13 +643,16 @@ vec4 projTex(sampler2D tex, vec2 meshUv) {
     + texture2D(tex, vProjWorld.xz * sc) * n.y
     + texture2D(tex, vProjWorld.xy * sc) * n.z;
 #else
-  float layerMask = smoothstep(0.12, 0.88, roadNoise(vProjWorld.xz * 0.018));
-  float layerMask2 = smoothstep(0.2, 0.8, roadNoise(vProjWorld.xz * 0.009 + 5.0));
+  float layerMask = smoothstep(0.08, 0.92, roadNoise(vProjWorld.xz * 0.016));
+  float layerMask2 = smoothstep(0.14, 0.86, roadNoise(vProjWorld.xz * 0.008 + 5.0));
+  float layerMask3 = smoothstep(0.2, 0.8, roadNoise(vProjWorld.xz * 0.0045 + 13.0));
   vec4 a = texture2D(tex, projUvA(vProjWorld));
   vec4 b = texture2D(tex, projUvB(vProjWorld));
-  mixW = mix(a, b, 0.28 + 0.48 * layerMask * uProjAmt);
-  vec4 macro = texture2D(tex, stochasticUv(vProjWorld.xz, 0.018, 32.0));
-  mixW = mix(mixW, macro, 0.28 * layerMask2 * uProjAmt);
+  mixW = mix(a, b, 0.32 + 0.52 * layerMask * uProjAmt);
+  vec4 macro = texture2D(tex, stochasticUv(vProjWorld.xz, 0.014, 36.0));
+  mixW = mix(mixW, macro, 0.34 * layerMask2 * uProjAmt);
+  vec4 mesoFar = texture2D(tex, stochasticUv(vProjWorld.xz, 0.032, 22.0));
+  mixW = mix(mixW, mesoFar, 0.18 * layerMask3 * uProjAmt);
 #endif
   return mix(mixW, texture2D(tex, meshUv), uProjRibbon);
 }
@@ -1011,9 +1018,9 @@ export function applyEnvMap(root, envMap, intensity) {
             if (kind === "road") {
               if (m.userData.dryEnv != null) tint = m.userData.dryEnv;
               else tint *= m.userData.surfaceId === "tarmac" ? 0.28 : 0.78;
-            } else if (kind === "chrome") tint *= cinema ? 1.55 : 1.35;
-            else if (kind === "glass") tint *= cinema ? 2.55 : 2.2;
-            else if (kind === "paint") tint *= cinema ? 1.28 : 1.15;
+            }             else if (kind === "chrome") tint *= cinema ? 1.72 : 1.55;
+            else if (kind === "glass") tint *= cinema ? 2.85 : 2.45;
+            else if (kind === "paint") tint *= cinema ? 1.48 : 1.38;
             else if (kind === "prop") tint *= cinema ? 0.92 : 0.88;
             else if (kind === "terrain") tint *= cinema ? 1.05 : 0.98;
             m.envMapIntensity = tint;
@@ -1022,7 +1029,7 @@ export function applyEnvMap(root, envMap, intensity) {
           if (m.isMeshPhysicalMaterial && m.clearcoat > 0) {
             m.clearcoatMap = m.clearcoatMap || null;
             const coatFloor =
-              m.userData.kind === "glass" ? 3.2 : m.userData.kind === "paint" ? 2.0 : ue5() ? 1.35 : 0.9;
+              m.userData.kind === "glass" ? 3.8 : m.userData.kind === "paint" ? 2.75 : ue5() ? 1.55 : 1.15;
             if (m.clearcoatEnvMapIntensity == null || m.clearcoatEnvMapIntensity < coatFloor) {
               m.clearcoatEnvMapIntensity = coatFloor;
             }
@@ -1044,6 +1051,83 @@ export function applyEnvMap(root, envMap, intensity) {
     });
   } catch (err) {
     console.warn("applyEnvMap failed", err);
+  }
+}
+
+/**
+ * Hot lacquer / chrome / glass reflections for every race car (player + pack).
+ * Keeps showroom paint identity — only IBL + clearcoat + roughness floors.
+ *
+ * @param {THREE.Object3D} root
+ * @param {THREE.Texture|null} envMap
+ * @param {{ bodyEnv?: number, chromeEnv?: number, glassEnv?: number, coatEnv?: number }} [profile]
+ */
+export function armRaceCarReflections(root, envMap, profile = {}) {
+  if (!root) return;
+  const bodyEnv = profile.bodyEnv != null ? profile.bodyEnv : VISUAL.carEnvIntensity ?? 1.55;
+  const chromeEnv = profile.chromeEnv != null ? profile.chromeEnv : bodyEnv * 1.35;
+  const glassEnv = profile.glassEnv != null ? profile.glassEnv : bodyEnv * 2.2;
+  const coatEnv = profile.coatEnv != null ? profile.coatEnv : 2.85;
+  applyEnvMap(root, envMap, bodyEnv);
+  try {
+    root.traverse((obj) => {
+      if (!obj.isMesh) return;
+      const list = [].concat(obj.material || []);
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        if (!m || m.userData.hud || m.userData.povHud) continue;
+        if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
+        if (envMap) m.envMap = envMap;
+        const kind = m.userData.kind;
+        const label = `${m.name || ""} ${obj.name || ""}`.toLowerCase();
+        const isGlass =
+          kind === "glass" ||
+          !!(m.userData.titleWindowPane || m.userData.rivalWindowPane) ||
+          (!!m.transparent && (m.opacity == null || m.opacity < 0.92) && /window|glass|glazing|windshield/.test(label));
+        const isChrome = kind === "chrome" || (m.metalness != null && m.metalness > 0.62 && !isGlass);
+        const isRubber = kind === "rubber" || /tyre|tire|rubber/.test(label);
+        const isCabin = !!(m.userData.cabin) || /^cabin/.test(kind || "");
+        if (m.userData.lockEnv) continue;
+        if (isCabin) {
+          m.envMapIntensity = Math.max(m.envMapIntensity || 0, bodyEnv * 0.72);
+          if (m.isMeshPhysicalMaterial) {
+            m.clearcoatEnvMapIntensity = Math.max(
+              m.clearcoatEnvMapIntensity || 0,
+              kind === "cabinPlastic" ? 1.55 : 0.85
+            );
+          }
+        } else if (isGlass) {
+          m.envMapIntensity = Math.max(m.envMapIntensity || 0, glassEnv);
+          m.roughness = Math.min(m.roughness != null ? m.roughness : 0.08, 0.04);
+          if (m.isMeshPhysicalMaterial) {
+            m.clearcoat = 1;
+            m.clearcoatRoughness = Math.min(m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.02, 0.012);
+            m.clearcoatEnvMapIntensity = Math.max(m.clearcoatEnvMapIntensity || 0, coatEnv * 1.35);
+          }
+        } else if (isChrome) {
+          m.envMapIntensity = Math.max(m.envMapIntensity || 0, chromeEnv);
+          m.roughness = Math.min(m.roughness != null ? m.roughness : 0.18, 0.06);
+          m.metalness = Math.max(m.metalness != null ? m.metalness : 0.8, 0.92);
+        } else if (isRubber) {
+          m.envMapIntensity = Math.min(m.envMapIntensity != null ? m.envMapIntensity : 0.2, 0.28);
+        } else if (kind === "paint" || kind == null || /paint|body|lacquer|car_body/.test(label)) {
+          m.envMapIntensity = Math.max(m.envMapIntensity || 0, bodyEnv * 1.12);
+          m.roughness = Math.min(m.roughness != null ? m.roughness : 0.35, 0.22);
+          m.metalness = Math.max(m.metalness != null ? m.metalness : 0.08, 0.14);
+          if (m.isMeshPhysicalMaterial) {
+            m.clearcoat = Math.max(m.clearcoat != null ? m.clearcoat : 0, 1);
+            m.clearcoatRoughness = Math.min(
+              m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.08,
+              0.032
+            );
+            m.clearcoatEnvMapIntensity = Math.max(m.clearcoatEnvMapIntensity || 0, coatEnv);
+          }
+        }
+        m.needsUpdate = true;
+      }
+    });
+  } catch (err) {
+    console.warn("armRaceCarReflections failed", err);
   }
 }
 

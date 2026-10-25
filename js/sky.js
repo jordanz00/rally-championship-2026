@@ -12,7 +12,7 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { RGBELoader } from "../vendor/RGBELoader.js";
-import { VISUAL } from "./config.js?v=243";
+import { VISUAL } from "./config.js?v=248";
 
 /**
  * GPU budget + technique — QA greps this object; do not rename keys.
@@ -170,14 +170,14 @@ export function applySky(mesh, L, stageId) {
     mesh.userData.sunDir.set(L.sunDir[0], L.sunDir[1], L.sunDir[2]).normalize();
   }
 
-  // Soft sky↔haze seam: photo HDR stays dominant; slight lean toward stage
-  // horizon glow / fog so the dome does not hard-cut against land dissolve.
+  // Soft sky↔haze seam: photo HDR stays dominant; lean toward stage
+  // horizon glow / fog so the dome dissolves into land, not a hard cut.
   if (L && mesh.material.color) {
     const hs = Math.max(0, Math.min(1, Number(L.horizonStrength) || 0));
-    const amount = Math.min(0.26, hs * 0.42 + (Number(L.dustStrength) || 0) * 0.18);
+    const amount = Math.min(0.38, hs * 0.58 + (Number(L.dustStrength) || 0) * 0.22);
     const tint = new THREE.Color(0xffffff);
     if (L.horizonGlow != null) tint.lerp(new THREE.Color(L.horizonGlow), amount);
-    if (L.fog != null) tint.lerp(new THREE.Color(L.fog), amount * 0.4);
+    if (L.fog != null) tint.lerp(new THREE.Color(L.fog), amount * 0.55);
     // Misty lakeside HDR + ACES was a white dome. Dim the skybox only.
     if (id === "lakeside") tint.multiplyScalar(0.72);
     mesh.material.color.copy(tint);

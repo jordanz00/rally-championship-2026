@@ -19,7 +19,7 @@
  * }>} */
 export const TrackConfig = Object.freeze({
   minWidth: 6,
-  maxWidth: 36,
+  maxWidth: 42,
   minStraightLength: 4,
   minCurveRadius: 8,
   maxAbsAngleDeg: 200,

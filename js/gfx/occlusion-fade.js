@@ -11,7 +11,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=243";
+import { VISUAL } from "../config.js?v=248";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 
 const UNIFORMS = {
