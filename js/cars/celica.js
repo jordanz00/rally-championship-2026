@@ -6049,7 +6049,7 @@ function isExteriorMirrorGlass(obj, hull, c) {
  */
 function buildPovHideCache(root) {
   if (!root) return;
-  const POV_HIDE_VER = 5;
+  const POV_HIDE_VER = 6;
   if (root.userData._povHideReady && root.userData._povHideVer === POV_HIDE_VER) return;
   // Re-tag so roofs marked interior still get povShell (Sprint 543).
   tagPovShell(root);
@@ -6351,6 +6351,25 @@ function tagInterior(root) {
 }
 
 /**
+ * GLTF cabin meshes are often named Object_194 while the parent node is
+ * COCKPIT_HR / int_door / seatR_*. Walk the parent chain so POV can find them.
+ * @param {THREE.Object3D} obj
+ * @returns {string}
+ */
+function cabinNamePath(obj) {
+  const parts = [];
+  for (let p = obj; p; p = p.parent) {
+    if (p.name) parts.push(p.name);
+    if (parts.length >= 8) break;
+  }
+  const mats = obj.isMesh ? [].concat(obj.material || []) : [];
+  for (let i = 0; i < mats.length; i++) {
+    if (mats[i] && mats[i].name) parts.push(mats[i].name);
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+/**
  * Hero GT4 GLB already ships a modeled cabin (COCKPIT_HR, seats, dials, doors).
  * Tag those for POV — chase hides them; seated view shows the real mesh.
  * @param {THREE.Object3D} root
@@ -6361,22 +6380,28 @@ function tagGlbCabin(root) {
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     if (obj.userData.glbSteer) return;
-    const n = (obj.name || "").toLowerCase();
+    const n = cabinNamePath(obj);
     // Exterior shell / wing mirrors / outer glass stay chase-visible.
-    if (/^x0_door_|^x0_wing_mirror|^x0_window_|^x0_main_body|^x0_bumper/.test(n)) return;
+    if (/\bx0_door_|\bx0_wing_mirror|\bx0_window_|\bx0_main_body|\bx0_bumper/.test(n)) {
+      // Interior door cards still match int_door_* — keep those.
+      if (!/\bint_door_/.test(n)) return;
+    }
     const isCabin =
-      /^cockpit_hr/.test(n) ||
-      n.includes("cockpit_hr") ||
-      /^int_/.test(n) ||
-      /^seatr_|^seatl_|^seat_/.test(n) ||
-      /^steer_hr/.test(n) ||
-      /x0_main_interior/.test(n) ||
-      /^arrow_rpm|^arrow_turbo/.test(n);
+      /\bcockpit_hr\b/.test(n) ||
+      /\bint_/.test(n) ||
+      /\bseatr_|\bseatl_|\bseat_/.test(n) ||
+      /\bsteer_hr\b/.test(n) ||
+      /\bx0_main_interior\b/.test(n) ||
+      /\barrow_rpm|\barrow_turbo\b/.test(n) ||
+      // Authored cabin material names on Object_* meshes.
+      /\b(cabin|suede|leather|cloth|carbon_fibre|dials_matt)\b/.test(n);
     if (!isCabin) return;
+    // Exterior Window_Glass on the body is not cabin fill.
+    if (/\bwindow_glass\b/.test(n) && !/\bint_window|\binterior_glass/.test(n)) return;
     obj.userData.glbCabin = true;
     obj.userData.interior = true;
     // Inner glass + authored center mirror fight the live RT / exterior panes.
-    if (/^int_window|^mirror_cent/.test(n)) {
+    if (/\bint_window|\bmirror_cent|\binterior_glass_windows\b/.test(n)) {
       obj.userData.interiorKeepHidden = true;
       obj.visible = false;
     } else {
@@ -6390,24 +6415,41 @@ function tagGlbCabin(root) {
 }
 
 /**
- * IBL / clearcoat so the modeled cabin plastics and leather read in POV.
+ * Opaque plastics / leather so POV does not read as an empty glass shell.
+ * Cloth/dials ship as BLEND in the GT4 GLB — force solid for seated view.
  * @param {THREE.Object3D} root
  */
 function dressGlbCabinMaterials(root) {
   if (!root || !root.userData.hasGlbCabin) return;
   root.traverse((obj) => {
     if (!obj.isMesh || !obj.userData.glbCabin || !obj.material) return;
+    if (obj.userData.interiorKeepHidden) return;
     const mats = [].concat(obj.material);
     for (let i = 0; i < mats.length; i++) {
       const m = mats[i];
       if (!m || m.userData.hud) continue;
-      m.envMapIntensity = Math.max(m.envMapIntensity != null ? m.envMapIntensity : 0.5, 1.25);
+      const label = `${m.name || ""} ${obj.name || ""}`.toLowerCase();
+      const isGlass =
+        /interior_glass|int_window|window_glass|glazing/.test(label) ||
+        (!!m.transparent && /glass|window/.test(label));
+      if (isGlass) continue;
+      // Kill Sketchfab BLEND on suede/cloth/dials — that was the "hollow" POV.
+      m.transparent = false;
+      m.opacity = 1;
+      m.alphaTest = 0;
+      if ("alphaMap" in m) m.alphaMap = null;
+      if ("transmission" in m) m.transmission = 0;
+      m.depthWrite = true;
+      m.depthTest = true;
+      m.side = THREE.DoubleSide;
+      m.envMapIntensity = Math.max(m.envMapIntensity != null ? m.envMapIntensity : 0.5, 1.15);
       if (m.isMeshPhysicalMaterial || m.isMeshStandardMaterial) {
-        m.roughness = Math.min(m.roughness != null ? m.roughness : 0.7, 0.72);
+        m.roughness = Math.min(Math.max(m.roughness != null ? m.roughness : 0.62, 0.35), 0.85);
+        m.metalness = Math.min(m.metalness != null ? m.metalness : 0.08, 0.35);
         if (m.isMeshPhysicalMaterial) {
-          m.clearcoat = Math.max(m.clearcoat != null ? m.clearcoat : 0, 0.35);
-          m.clearcoatRoughness = Math.min(m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.4, 0.4);
-          m.clearcoatEnvMapIntensity = Math.max(m.clearcoatEnvMapIntensity || 0, 1.35);
+          m.clearcoat = Math.max(m.clearcoat != null ? m.clearcoat : 0, 0.28);
+          m.clearcoatRoughness = Math.min(m.clearcoatRoughness != null ? m.clearcoatRoughness : 0.45, 0.45);
+          m.clearcoatEnvMapIntensity = Math.max(m.clearcoatEnvMapIntensity || 0, 1.2);
         }
       }
       m.userData.cabin = true;
@@ -6681,7 +6723,7 @@ function makeDial(kind, maxVal, redFrom) {
  * @param {THREE.Object3D} root
  */
 function attachCockpit(root) {
-  const CABIN_VER = 3;
+  const CABIN_VER = 4;
   if (root.userData.cockpit && root.userData._cabinVer === CABIN_VER) {
     bindGlbSteeringWheel(root);
     return;
@@ -6699,7 +6741,8 @@ function attachCockpit(root) {
   const rpmMax = 9;
   const rpmRed = Math.max(6, (spec.redline || 7500) / 1000);
   const hull = rig.hull || localHull(root);
-  // Hero GT4 already has COCKPIT_HR / seats / dials — skip box cabin fill.
+  // Hero GT4 already has COCKPIT_HR / seats / dials — keep a dark occlusion
+  // shell under the GLB so POV never reads as an empty windshield.
   const useGlbCabin = !!root.userData.hasGlbCabin;
 
   const cab = new THREE.Group();
@@ -6724,71 +6767,71 @@ function attachCockpit(root) {
   const dashZ = clusterZ + 0.22;
   const dashY = rig.eyeY - 0.44;
 
+  // Always build an opaque shell. With the hero GLB, this sits under the
+  // modeled dash/doors so a missed tag never leaves a hollow windshield.
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.04, 1.42), carpet);
+  floor.position.set(0, floorY, rig.eyeZ + 0.08);
+  floor.userData.cabinFill = true;
+  cab.add(floor);
+
+  const tunnel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 1.05), vinyl);
+  tunnel.position.set(0, floorY + 0.1, rig.eyeZ + 0.05);
+  tunnel.userData.cabinFill = true;
+  cab.add(tunnel);
+  const handbrake = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.14, 8), dark);
+  handbrake.position.set(-0.04, floorY + 0.2, rig.eyeZ - 0.05);
+  handbrake.rotation.z = 0.35;
+  handbrake.userData.cabinFill = true;
+  cab.add(handbrake);
+
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.18, 0.32), plastic);
+  dash.position.set(0, dashY, dashZ);
+  dash.userData.cabinFill = true;
+  cab.add(dash);
+  const dashTop = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.96, 0.035, 0.26), vinyl);
+  dashTop.position.set(0, dashY + 0.1, dashZ - 0.02);
+  dashTop.userData.cabinFill = true;
+  cab.add(dashTop);
+  const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.045, 0.14), dark);
+  cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.02);
+  cowl.userData.cabinFill = true;
+  cab.add(cowl);
+  const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.46, 0.045, 0.17), dark);
+  binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.15, clusterZ + 0.04);
+  binnacleHood.rotation.x = -0.32;
+  binnacleHood.userData.cabinFill = true;
+  cab.add(binnacleHood);
+  const stack = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.08), dark);
+  stack.position.set(0, dashY - 0.02, dashZ - 0.12);
+  stack.userData.cabinFill = true;
+  cab.add(stack);
+  const ventL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.03), stitch);
+  ventL.position.set(-0.28, dashY + 0.04, dashZ - 0.14);
+  ventL.userData.cabinFill = true;
+  const ventR = ventL.clone();
+  ventR.position.x = 0.28;
+  cab.add(ventL, ventR);
+
+  const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.58, 1.12), vinyl);
+  doorL.position.set(-cabinW * 0.48, floorY + 0.36, rig.eyeZ + 0.1);
+  doorL.userData.cabinFill = true;
+  const doorR = doorL.clone();
+  doorR.position.x = cabinW * 0.48;
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.42), leather);
+  armL.position.set(-cabinW * 0.42, floorY + 0.42, rig.eyeZ + 0.05);
+  armL.userData.cabinFill = true;
+  const armR = armL.clone();
+  armR.position.x = cabinW * 0.42;
+  const sillL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.7), dark);
+  sillL.position.set(-cabinW * 0.45, floorY + 0.62, rig.eyeZ + 0.15);
+  sillL.userData.cabinFill = true;
+  const sillR = sillL.clone();
+  sillR.position.x = cabinW * 0.45;
+  cab.add(doorL, doorR, armL, armR, sillL, sillR);
+
+  // Full seats only when the GLB cabin is missing — otherwise the modeled
+  // seatR_* / COCKPIT_HR meshes own the view.
   if (!useGlbCabin) {
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.04, 1.42), carpet);
-    floor.position.set(0, floorY, rig.eyeZ + 0.08);
-    floor.userData.cabinFill = true;
-    cab.add(floor);
-
-    // Transmission tunnel — sells a real cabin between the seats.
-    const tunnel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 1.05), vinyl);
-    tunnel.position.set(0, floorY + 0.1, rig.eyeZ + 0.05);
-    tunnel.userData.cabinFill = true;
-    cab.add(tunnel);
-    const handbrake = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.14, 8), dark);
-    handbrake.position.set(-0.04, floorY + 0.2, rig.eyeZ - 0.05);
-    handbrake.rotation.z = 0.35;
-    handbrake.userData.cabinFill = true;
-    cab.add(handbrake);
-
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.98, 0.18, 0.32), plastic);
-    dash.position.set(0, dashY, dashZ);
-    dash.userData.cabinFill = true;
-    cab.add(dash);
-    // Upper dash shelf + soft pad.
-    const dashTop = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.96, 0.035, 0.26), vinyl);
-    dashTop.position.set(0, dashY + 0.1, dashZ - 0.02);
-    dashTop.userData.cabinFill = true;
-    cab.add(dashTop);
-    const cowl = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.72, 0.045, 0.14), dark);
-    cowl.position.set(rig.eyeX * 0.15, dashY + 0.1, dashZ + 0.02);
-    cowl.userData.cabinFill = true;
-    cab.add(cowl);
-    const binnacleHood = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.46, 0.045, 0.17), dark);
-    binnacleHood.position.set(rig.eyeX + 0.02, dashY + 0.15, clusterZ + 0.04);
-    binnacleHood.rotation.x = -0.32;
-    binnacleHood.userData.cabinFill = true;
-    cab.add(binnacleHood);
-    // Center stack / radio face.
-    const stack = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.08), dark);
-    stack.position.set(0, dashY - 0.02, dashZ - 0.12);
-    stack.userData.cabinFill = true;
-    cab.add(stack);
-    const ventL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.03), stitch);
-    ventL.position.set(-0.28, dashY + 0.04, dashZ - 0.14);
-    ventL.userData.cabinFill = true;
-    const ventR = ventL.clone();
-    ventR.position.x = 0.28;
-    cab.add(ventL, ventR);
-
-    const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.58, 1.12), vinyl);
-    doorL.position.set(-cabinW * 0.48, floorY + 0.36, rig.eyeZ + 0.1);
-    doorL.userData.cabinFill = true;
-    const doorR = doorL.clone();
-    doorR.position.x = cabinW * 0.48;
-    // Door armrests + window ledge.
-    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.42), leather);
-    armL.position.set(-cabinW * 0.42, floorY + 0.42, rig.eyeZ + 0.05);
-    armL.userData.cabinFill = true;
-    const armR = armL.clone();
-    armR.position.x = cabinW * 0.42;
-    const sillL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.7), dark);
-    sillL.position.set(-cabinW * 0.45, floorY + 0.62, rig.eyeZ + 0.15);
-    sillL.userData.cabinFill = true;
-    const sillR = sillL.clone();
-    sillR.position.x = cabinW * 0.45;
-    cab.add(doorL, doorR, armL, armR, sillL, sillR);
-
     cab.add(makeSeat(rig.eyeX, floorY + 0.22, rig.eyeZ - 0.28, leather));
     const passSeat = makeSeat(-rig.eyeX * 0.85, floorY + 0.22, rig.eyeZ - 0.28, leather);
     passSeat.userData.cabinFill = true;
@@ -6803,15 +6846,13 @@ function attachCockpit(root) {
   rpmDial.group.position.set(-POV_GAUGE_R * 1.28, 0, 0);
   speedDial.group.position.set(POV_GAUGE_R * 1.28, 0, 0);
   cluster.add(rpmDial.group, speedDial.group);
-  if (!useGlbCabin) {
-    const binnacle = new THREE.Mesh(
-      new THREE.BoxGeometry(POV_GAUGE_R * 5.2, 0.028, 0.08),
-      dark
-    );
-    binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
-    binnacle.userData.cabinFill = true;
-    cluster.add(binnacle);
-  }
+  const binnacle = new THREE.Mesh(
+    new THREE.BoxGeometry(POV_GAUGE_R * 5.2, 0.028, 0.08),
+    dark
+  );
+  binnacle.position.set(0, POV_GAUGE_R * 0.95, 0.02);
+  binnacle.userData.cabinFill = true;
+  cluster.add(binnacle);
   // Behind the rim, lower in the FOV so gauges do not eat the windshield.
   cluster.position.set(rig.eyeX + 0.02, rig.eyeY - 0.24, clusterZ);
   // Face the seated eye so the printed discs are not edge-on or windshield-facing.
@@ -7422,6 +7463,8 @@ export function setPovRoofClip(root, on, renderer) {
     root.traverse((obj) => {
       if (!obj.isMesh || !obj.material) return;
       if (obj.userData.povHud || obj.userData.cabinFill) return;
+      // Modeled cabin must stay whole in POV — roof clip is for exterior shell only.
+      if (obj.userData.glbCabin) return;
       if (inCockpitTree(obj)) return;
       const n = (obj.name || "").toLowerCase();
       if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
@@ -7499,7 +7542,6 @@ export function updatePovRoofClip(root) {
  * @param {boolean} want
  */
 function flipCockpitVisibility(root, want) {
-  const useGlbCabin = !!root.userData.hasGlbCabin;
   const hide = root.userData._povHide || [];
   for (let i = 0; i < hide.length; i++) {
     const obj = hide[i];
@@ -7518,15 +7560,10 @@ function flipCockpitVisibility(root, want) {
   if (cab) {
     if (cab.parent !== root) root.add(cab);
     cab.visible = want;
-    if (useGlbCabin) {
-      cab.traverse((obj) => {
-        if (obj.userData && obj.userData.cabinFill) obj.visible = false;
-      });
-    } else {
-      cab.traverse((obj) => {
-        if (obj.userData && obj.userData.cabinFill) obj.visible = want;
-      });
-    }
+    // Opaque shell always seats with POV — GLB cabin layers on top.
+    cab.traverse((obj) => {
+      if (obj.userData && obj.userData.cabinFill) obj.visible = want;
+    });
   }
   const mir = root.userData.mirror;
   if (mir) {
@@ -7550,7 +7587,7 @@ export function setCockpitView(root, on, _camera, renderer) {
   const want = !!on;
   // Force a hide-cache rebuild when the POV shell / GLB cabin tag set changes.
   // Only createPlayerCar / _warmPov should hit a cold cache — never mid-race C.
-  if (root.userData._povHideVer !== 5) root.userData._povHideReady = false;
+  if (root.userData._povHideVer !== 6) root.userData._povHideReady = false;
   if (!root.userData._povHideReady) buildPovHideCache(root);
   if (!root.userData._povClipPrepared) setPovRoofClip(root, false, renderer);
   // C-key path: cache + clip + driver already warmed — visibility flip only.

@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## POV cabin visible (2026-10-25)
+
+**Player moment:** C → cockpit. Modeled dash / doors / seats / wheel fill the cabin — not a hollow windshield.
+
+**Cause:** GT4 cabin meshes are named `Object_*`; tags only checked mesh names so `hasGlbCabin` never armed. Cloth/dials BLEND stayed see-through. Procedural fill was skipped when GLB was (falsely) expected.
+
+**Shipped:** `cabinNamePath` parent/material tags · force opaque cabin mats · occlusion shell always · skip `glbCabin` from roof clip · cabin v4 · hide cache v6.
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-hands.mjs`
+
+**Boot:** `main.js?v=1147` · `celica.js?v=273`
+
 ## Hotfix — road/terrain invisible (2026-10-25)
 
 **Player moment:** Attract + race. Sky draws; ribbon and land do not.
