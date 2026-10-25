@@ -95,8 +95,14 @@ check(
     /terrainTileSize = Math\.max\(STREAM\.terrainTileSize \|\| 256, 512\)/.test(game)
 );
 check("load skips land-vert scrub", /_scrubRoadwayVisuals\(\{ skipLand: true \}\)/.test(track));
-check("cache-bust chain", cacheOk && Number(gameV) >= 1136, `main=${mainV} game=${gameV}`);
-check("index main.js?v=1136+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1136);
+check("cache-bust chain", cacheOk && Number(gameV) >= 1137, `main=${mainV} game=${gameV}`);
+check("index main.js?v=1137+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1137);
+check(
+  "promote requires race cockpit mesh",
+  /_isRaceCockpitMesh/.test(game) &&
+    /titleShowroom = true/.test(read("js/cars/celica.js")) &&
+    /Never keep the title\/showroom mesh for race/.test(game)
+);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "fast-load gates green"}`);
 process.exit(fail ? 1 : 0);

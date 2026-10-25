@@ -563,6 +563,10 @@ export function createTitleCar(carId = "celica") {
   clone.userData.wheels = findWheels(clone);
   clone.userData.body = clone;
   clone.userData.carId = chassis;
+  // Pad mesh is never race-ready — hideHeavyInterior + no attachCockpit.
+  // titleLod was false when the hero GLB warmed, so promote treated the
+  // showroom shell as the race car and POV had no cabin / wheel / dash.
+  clone.userData.titleShowroom = true;
   clone.userData.titleLod = !hero;
   clone.userData.titleHero = !!hero;
   // Pad never bakes a sun atlas — casting shadows here still costs draw setup.

@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## POV cabin restore — showroom ≠ race mesh (2026-10-24)
+
+**Player moment:** C → POV shows dash, wheel, cabin again (not empty shell).
+
+**Cause:** Title car preferred the hero GLB with `titleLod=false`. Promote treated that showroom mesh (interior stripped, no cockpit) as the race car.
+
+**Shipped:** `titleShowroom` flag · promote requires cockpit/`povRig` · always `prepareHeroCar` before race promote on desktop.
+
+**Proof:** `node tools/qa-pov-hands.mjs` (static) · hard-refresh `?v=1137`
+
+**Boot:** `main.js?v=1137` · `game.js?v=1137` · `celica.js?v=268`
+
 ## First-stage load ~50% cut (2026-10-24)
 
 **Player moment:** Championship → Celica → Desert reaches countdown roughly twice as fast.

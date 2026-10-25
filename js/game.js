@@ -10,7 +10,7 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=267";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=268";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=457";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
@@ -1250,11 +1250,23 @@ export class RallyGame {
    * Hero attract mesh for title / SELECT MODE (rival LOD). Cockpit waits until race.
    * @param {string} id
    */
+  _isTitleShowroomMesh(mesh) {
+    if (!mesh || !mesh.userData) return false;
+    return !!(mesh.userData.titleShowroom || mesh.userData.titleLod || mesh.userData.titleHero);
+  }
+
+  _isRaceCockpitMesh(mesh) {
+    if (!mesh || !mesh.userData) return false;
+    if (this._isTitleShowroomMesh(mesh)) return false;
+    // createPlayerCar always attaches cockpit on desktop; phoneLod soft shell has none.
+    return !!(mesh.userData.cockpit || mesh.userData.povRig);
+  }
+
   _showTitleLod(id) {
     if (!this.scene) return;
     if (
       this.playerMesh &&
-      this.playerMesh.userData.titleLod &&
+      this._isTitleShowroomMesh(this.playerMesh) &&
       this.playerMesh.userData.carId === id
     ) {
       // Keep hidden until IBL — revealing early was the black-then-texture flash.
@@ -1265,7 +1277,7 @@ export class RallyGame {
     }
     // Race hero stays in `_carMeshPool`. Leaving it on the pad kept inner
     // `int_window_*` panes in the side glass (broken triangles).
-    if (this.playerMesh && !this.playerMesh.userData.titleLod) {
+    if (this.playerMesh && !this._isTitleShowroomMesh(this.playerMesh)) {
       setCockpitView(this.playerMesh, false);
       this.playerMesh.visible = false;
       this.playerMesh = null;
@@ -1297,16 +1309,26 @@ export class RallyGame {
     ) {
       return false;
     }
+    // Never keep the title/showroom mesh for race — it has no cockpit (POV empty).
     if (
       this.playerMesh &&
-      !this.playerMesh.userData.titleLod &&
+      this._isRaceCockpitMesh(this.playerMesh) &&
       this.playerMesh.userData.carId === this.carId
     ) {
       return true;
     }
     this._swapPlayerCar(this.carId);
-    // Title LOD is a valid race shell when hero clone failed.
     if (
+      this.playerMesh &&
+      this._isRaceCockpitMesh(this.playerMesh) &&
+      this.playerMesh.userData.carId === this.carId
+    ) {
+      this.playerMesh.visible = true;
+      return true;
+    }
+    // Last resort on phone: LOD/soft shell without full cockpit.
+    if (
+      isPhonePlay() &&
       this.playerMesh &&
       this.playerMesh.userData.carId === this.carId
     ) {
@@ -1322,7 +1344,7 @@ export class RallyGame {
     if (!next) return;
     if (this.playerMesh && this.playerMesh !== next) {
       setCockpitView(this.playerMesh, false, this.camera, this.renderer);
-      if (this.playerMesh.userData.titleLod) this.scene.remove(this.playerMesh);
+      if (this._isTitleShowroomMesh(this.playerMesh)) this.scene.remove(this.playerMesh);
       else this.playerMesh.visible = false;
     }
     this.playerMesh = next;
@@ -2811,14 +2833,15 @@ export class RallyGame {
 
     const phoneLoad = isPhonePlay();
     // Overlap player car parse with Track.create — was serial after terrain.
-    // Pack LODs: menu already warms them; do not re-await three chassis here.
+    // Always warm the hero on desktop so promote can build a cockpit race mesh
+    // (title showroom hero is not race-ready).
     let carWarm = Promise.resolve();
     if (!preview) {
       if (phoneLoad) {
         carWarm = preparePhoneRaceCars(this.carId).catch((err) => {
           console.warn("[load] phone car warm — soft shell", err);
         });
-      } else if (!isGltfCar(this.carId)) {
+      } else {
         carWarm = prepareHeroCar(this.carId).catch((err) => {
           console.warn("[load] hero warm", err);
         });
