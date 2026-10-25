@@ -17,7 +17,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { VISUAL } from "../config.js?v=248";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
-import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=5";
+import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=6";
 
 /** Tier 13 cinema IBL; prior tiers keep arcade pack budget. */
 const WORLD_ENV =

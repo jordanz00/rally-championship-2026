@@ -36,14 +36,15 @@ vec3 surfaceGrit(vec3 world, float amt) {
   float n = snFbm(world.xz * 1.28);
   float fine = snFbm(world.xz * 5.6 + 11.0);
   float dust = snFbm(world.xz * 0.016 + 7.3);
-  float patch = snFbm(world.xz * 0.007 + 19.0);
+  // `patch` is a GLSL reserved word (tessellation) — never use it as an id.
+  float isle = snFbm(world.xz * 0.007 + 19.0);
   float speckle = snHash(floor(world.xz * 48.0 + 0.5));
   float grit = (macro - 0.5) * 0.28 + (n - 0.5) * 0.26 + (fine - 0.5) * 0.16
-    + (dust - 0.5) * 0.12 + (patch - 0.5) * 0.08;
+    + (dust - 0.5) * 0.12 + (isle - 0.5) * 0.08;
   float fleck = speckle > 0.95 ? 0.12 : speckle < 0.035 ? -0.09 : 0.0;
   float k = clamp(amt, 0.0, 1.0);
   // Soft warm/cool tint so grit reads as litter, not grey noise.
-  float warm = (patch - 0.5) * 0.06 * k;
+  float warm = (isle - 0.5) * 0.06 * k;
   return vec3(
     1.0 + (grit + fleck) * k + warm,
     1.0 + (grit + fleck) * k * 0.96 + warm * 0.4,
@@ -121,7 +122,7 @@ ${SURFACE_NOISE_GLSL}`
       );
   };
   mat.customProgramCacheKey = function surfaceNoiseCacheKey() {
-    return `sn-v4-${amt.toFixed(2)}`;
+    return `sn-v5-${amt.toFixed(2)}`;
   };
   mat.needsUpdate = true;
 }

@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Hotfix — road/terrain invisible (2026-10-25)
+
+**Player moment:** Attract + race. Sky draws; ribbon and land do not.
+
+**Cause:** `surface-noise` v4 named a GLSL local `patch` — reserved (tessellation). Fragment shaders failed to compile (`GL_INVALID_OPERATION`); road/terrain never shaded.
+
+**Shipped:** rename to `isle` · cache `sn-v5` · `surface-noise.js?v=6` · `pbr.js?v=64`.
+
+**Proof:** `node tools/qa-texture-layers.mjs` · headed: no `Illegal use of reserved word` shader log.
+
+**Boot:** `main.js?v=1146` · `pbr.js?v=64` · `surface-noise.js?v=6`
+
 ## C-key instant camera (2026-10-24)
 
 **Player moment:** Press C. POV / medium / far switch on that frame — no pause, no ease hang, no shader hitch.
