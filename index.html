@@ -158,16 +158,25 @@
           report("Engine failed during async startup.", String(r && r.stack ? r.stack : r));
         });
         var phoneBoot = /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || "");
-        // Slow Android radios spend the first seconds downloading the engine.
-        // An 8s "failed" banner on top of a page that then starts reads as broken.
-        window.setTimeout(function () {
+        // Cold parse of game.js + track + celica + three is often 10–40s on
+        // laptop / Pages. An 8s "failed" banner over a still-booting tab reads
+        // as broken. Wait out an active import; only fail when truly stuck.
+        var constructFirstMs = phoneBoot ? 25000 : 15000;
+        var constructHardMs = phoneBoot ? 90000 : 60000;
+        function checkConstructed() {
           var curtain = document.getElementById("fx-curtain");
           if (curtain) curtain.classList.remove("is-on");
           // Phones intentionally defer RallyGame until PRESS START.
           if (window.__rallyPhoneDefer) return;
           if (window.game) return;
+          // Still downloading / parsing the module graph — keep waiting.
+          if (window.__rallyBooting && performance.now() < constructHardMs) {
+            window.setTimeout(checkConstructed, 2000);
+            return;
+          }
           report("Engine never finished starting (timed out).", "js/main.js loaded but RallyGame did not construct in time. Try Chrome or Safari — in-app browsers (Instagram, Facebook, Messenger) often block the 3D engine.");
-        }, phoneBoot ? 22000 : 8000);
+        }
+        window.setTimeout(checkConstructed, constructFirstMs);
         window.setTimeout(function () {
           var curtain = document.getElementById("fx-curtain");
           if (curtain) curtain.classList.remove("is-on");
@@ -176,13 +185,16 @@
           if (phoneBoot && window.game.state !== "race" && window.game.state !== "countdown" && window.game.state !== "loading") return;
           if (window.game.renderer) return;
           report("3D graphics did not start on this device.", "Open this page in Chrome or Safari (not an in-app browser). On Android, enable Settings → Chrome → Use hardware acceleration.");
-        }, phoneBoot ? 28000 : 12000);
+        }, phoneBoot ? 45000 : 30000);
         window.setInterval(function () {
           if (!window.game) return;
           var el = document.getElementById("boot-error");
           if (!el || el.hidden) return;
-          if (/never finished starting/.test(el.textContent || "")) el.hidden = true;
-        }, 1000);
+          if (/never finished starting/.test(el.textContent || "")) {
+            el.hidden = true;
+            el.textContent = "";
+          }
+        }, 250);
       })();
 
       // Phone class before modules load — menus need it even if WebGL is slow.
@@ -592,6 +604,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1148" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1149" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

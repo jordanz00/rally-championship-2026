@@ -7,7 +7,7 @@
  * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-const GAME_MODULE = "./game.js?v=1148";
+const GAME_MODULE = "./game.js?v=1149";
 
 function phoneLite() {
   try {
@@ -19,18 +19,36 @@ function phoneLite() {
   return false;
 }
 
+/** Drop a false "timed out" banner once the engine is actually up. */
+function clearBootTimeoutBanner() {
+  try {
+    const el = document.getElementById("boot-error");
+    if (!el || el.hidden) return;
+    if (/never finished starting/i.test(el.textContent || "")) {
+      el.hidden = true;
+      el.textContent = "";
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Load RallyGame once. Safe to call from PRESS START or desktop boot.
  * @returns {Promise<object>}
  */
 export async function bootEngine() {
-  if (window.game) return window.game;
+  if (window.game) {
+    clearBootTimeoutBanner();
+    return window.game;
+  }
   if (window.__rallyBooting) return window.__rallyBooting;
   window.__rallyBooting = (async () => {
     const mod = await import(GAME_MODULE);
     if (!window.game) {
       window.game = new mod.RallyGame();
     }
+    clearBootTimeoutBanner();
     return window.game;
   })();
   try {

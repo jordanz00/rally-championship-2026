@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Hotfix — false boot timeout during cold parse (2026-10-25)
+
+**Player moment:** Open the game. No red "Engine never finished starting" banner while the splash is still loading.
+
+**Cause:** Desktop watchdog fired at 8s. Cold ES-module parse (three + track + celica + game, ~2.5 MB) often takes 15–40s, so `__rallyBooting` was still true when the banner painted. Engine usually finished afterward; the banner made it look dead.
+
+**Shipped:** skip timeout while `__rallyBooting` · hard stop 60s desktop / 90s phone · first check 15s/25s · clear banner the instant `RallyGame` constructs.
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs`
+
+**Boot:** `main.js?v=1149`
+
 ## Hotfix — boot timeout / RallyGame never constructed (2026-10-25)
 
 **Player moment:** Open the game. Splash → engine starts (no red boot-error panel).
