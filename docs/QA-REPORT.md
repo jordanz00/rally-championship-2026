@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## First-stage load ~50% cut (2026-10-24)
+
+**Player moment:** Championship → Celica → Desert reaches countdown roughly twice as fast.
+
+**Shipped:** Desert FAST kit (6 heroes + light Kenney) on the load bar · rest via `warmDesertExtras` after Ready · player GLB overlaps Track.create · rival pack no longer blocks · one subdiv pass · plantStep 16 · shorter settle drains.
+
+**Proof:** `node tools/qa-fast-load.mjs` · `node tools/qa-desert-heroes.mjs` · optional `RALLY_QA_ALLOW_CHROME=1 node tools/qa-load-time.mjs`
+
+**Boot:** `main.js?v=1136` · `game.js?v=1136` · `track.js?v=457` · `prop-kit.js?v=62` · `celica.js?v=267`
+
 ## Desert load hung at ~67% (2026-10-24)
 
 **Player moment:** Championship Desert load bar moves past planting and reaches countdown.

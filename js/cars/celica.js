@@ -656,10 +656,10 @@ function retopoPlayerShell(root) {
     }
   });
   subdivCandidates.sort((a, b) => b.area - a.area);
-  // Two midpoint passes on the largest body shells — ~4× density on hero panels.
-  const SUBDIV_PASSES = 2;
-  const SUBDIV_MESH_CAP = 22;
-  const SUBDIV_TRI_BUDGET = 72000;
+  // One midpoint pass — two passes made createPlayerCar the stage-load cliff.
+  const SUBDIV_PASSES = 1;
+  const SUBDIV_MESH_CAP = 14;
+  const SUBDIV_TRI_BUDGET = 28000;
   let added = 0;
   for (let pass = 0; pass < SUBDIV_PASSES; pass++) {
     let touched = 0;

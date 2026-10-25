@@ -10,11 +10,11 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=210";
 import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=99";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, ensureRivalGarageReady, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=266";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=267";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=456";
+import { Track } from "./tracks/track.js?v=457";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
-import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=61";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=62";
 import { Opponent } from "./ai.js?v=261";
 import { RallyAudio } from "./audio/engine.js?v=82";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
@@ -2809,6 +2809,26 @@ export class RallyGame {
     // Join any in-flight background build for this course before starting another.
     await this._awaitTrackPreload(courseId, report);
 
+    const phoneLoad = isPhonePlay();
+    // Overlap player car parse with Track.create — was serial after terrain.
+    // Pack LODs: menu already warms them; do not re-await three chassis here.
+    let carWarm = Promise.resolve();
+    if (!preview) {
+      if (phoneLoad) {
+        carWarm = preparePhoneRaceCars(this.carId).catch((err) => {
+          console.warn("[load] phone car warm — soft shell", err);
+        });
+      } else if (!isGltfCar(this.carId)) {
+        carWarm = prepareHeroCar(this.carId).catch((err) => {
+          console.warn("[load] hero warm", err);
+        });
+      }
+      if (!phoneLoad && !isRivalGarageReady()) {
+        // Fire-and-forget — grid uses whatever lands; solo if still empty.
+        prepareRivalLods().catch((err) => console.warn("[load] rival LOD warm", err));
+      }
+    }
+
     let fromCache = false;
     if (this._trackCache[courseId]) {
       fromCache = true;
@@ -2836,41 +2856,14 @@ export class RallyGame {
     if (this.tireMarks) this.tireMarks.reset();
     if (this.track && this.track.resetWheelDeform) this.track.resetWheelDeform();
     report(fromCache ? 0.94 : 0.88, "Applying stage lighting…");
-    // Cars + lighting overlap — do not wait for IBL before starting GLB warm.
-    // Phones: ONE rival LOD only. Hero + three-chassis warm after Desert was
-    // the Safari kill on first-stage boot.
-    const phoneLoad = isPhonePlay();
-    // Phones: warm player LOD only AFTER track is live, and never the pack.
-    // Soft box shell is OK if rival.glb fails — stage must still start.
-    const carWarm = !preview
-      ? phoneLoad
-        ? preparePhoneRaceCars(this.carId).catch((err) => {
-            console.warn("[load] phone car warm — soft shell", err);
-          })
-        : // Settled separately — a rival LOD miss must not drop a finished hero.
-          Promise.all([
-            prepareHeroCar(this.carId).catch((err) => {
-              console.warn("[load] hero warm", err);
-            }),
-            prepareRivalLods().catch((err) => {
-              console.warn("[load] rival LOD warm", err);
-            }),
-          ])
-      : Promise.resolve();
     await tick();
     this._applyLighting(def.id);
 
     if (!preview) {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
       await carWarm;
-      if (!phoneLoad) {
-        const packOk = await ensureRivalGarageReady().catch((err) => {
-          console.warn("[load] rival garage", err);
-          return isRivalGarageReady();
-        });
-        if (!packOk) {
-          console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
-        }
+      if (!phoneLoad && !isRivalGarageReady()) {
+        console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
       }
       this._promotePlayerCar();
       if (!this.playerMesh) {
@@ -3383,15 +3376,15 @@ export class RallyGame {
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
     // One short compile pass only — second 800 ms drain was pure wall-clock waste.
-    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 30 : 60);
+    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 16 : 28);
     // Snap the bar; old 900 ms ease added a full second after the stage was ready.
-    await waitLoadingBarSettled(40);
+    await waitLoadingBarSettled(24);
     if (loadGen !== this._loadGen) return;
-    // Crowd + horizon/safari/verge after Ready — not on the load bar.
+    // Crowd + horizon/safari/verge + deferred Desert heroes after Ready.
     if (!isPhonePlay()) {
       void (async () => {
         try {
-          await Promise.all([warmCrowdKit(), warmFullTracksideKit()]);
+          await Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
           if (loadGen !== this._loadGen) return;
           if (this.track && typeof this.track.finishDeferredDressing === "function") {
             this.track.finishDeferredDressing();
@@ -3561,7 +3554,7 @@ export class RallyGame {
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    await this._drainStreamCompileUnderOverlay(phoneRace ? 40 : 100);
+    await this._drainStreamCompileUnderOverlay(phoneRace ? 20 : 40);
     this._warmPackPhysics();
 
     const present = () => {
@@ -3570,9 +3563,8 @@ export class RallyGame {
       else this.renderer.render(this.scene, this.camera);
     };
     try {
-      // One warm under the overlay — four desktop presents burned ~100–200 ms.
+      // One warm under the overlay — second present was pure wall-clock.
       present();
-      if (!phoneRace) present();
     } catch (err) {
       console.warn("Race present warm failed", err);
       this.renderer.setRenderTarget(null);

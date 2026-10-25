@@ -65,7 +65,7 @@ check("registry DESERT_HERO_ROCKS", /"DESERT_HERO_ROCKS"/.test(registry));
 check("registry DESERT_HERO_PLANTS", /"DESERT_HERO_PLANTS"/.test(registry));
 check(
   "cache-bust chain",
-  cacheOk && Number(gameV) >= 1135 && Number(mainV) >= 1135,
+  cacheOk && Number(gameV) >= 1136 && Number(mainV) >= 1136,
   `main=${mainV} game=${gameV}`
 );
 check(
@@ -80,8 +80,12 @@ check(
     /Do not cap at 0\.72/.test(track) &&
     /desertHeroLite/.test(kit)
 );
-check("track.js cache ≥456", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 456);
-check("prop-kit cache ≥61", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 61);
+check(
+  "desert FAST kit on critical path",
+  /DESERT_NATURE_FAST/.test(kit) && /warmDesertExtras/.test(kit) && /warmDesertExtras\(\)/.test(game)
+);
+check("track.js cache ≥457", Number((game.match(/track\.js\?v=(\d+)/) || [])[1]) >= 457);
+check("prop-kit cache ≥62", Number((game.match(/prop-kit\.js\?v=(\d+)/) || [])[1]) >= 62);
 check("desert-pbr cache ≥66", /desert-pbr\.js\?v=66/.test(game) || /desert-pbr\.js\?v=6[6-9]/.test(track));
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "desert heroes armed"}`);

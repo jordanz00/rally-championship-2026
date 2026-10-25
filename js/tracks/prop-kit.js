@@ -339,7 +339,24 @@ const CROWD_ALL = Object.freeze([
   "character-female-e",
   "character-female-f",
 ]);
-/** Critical-path desert kit — heroes + light Kenney far fallback. Animals deferred. */
+/**
+ * Critical-path Desert kit — small hero set + light Kenney.
+ * Full Namaqualand pack + tall cactus / large bush warm after Ready
+ * (`warmDesertExtras`) so the load bar is not twelve × 3 MB GLBs.
+ */
+const DESERT_NATURE_FAST = Object.freeze([
+  "desert_hero_boulder_a",
+  "desert_hero_boulder_c",
+  "desert_hero_sand_rocks",
+  "desert_hero_stones",
+  "desert_hero_quiver_a",
+  "desert_hero_scrub",
+  "cactus_short",
+  "rock_largeA",
+  "rock_smallA",
+  "plant_bushDetailed",
+]);
+/** Full desert nature (fast + deferred). Animals stay post-GO. */
 const DESERT_NATURE = Object.freeze([
   ...DESERT_HERO_KINDS,
   "cactus_tall",
@@ -356,6 +373,10 @@ const DESERT_ANIMALS = Object.freeze([
   "animal-elephant",
   "animal-gazelle",
 ]);
+/** Heroes / Kenney not on the Desert load bar — fill after countdown. */
+const DESERT_DEFERRED = Object.freeze(
+  DESERT_NATURE.filter((k) => !DESERT_NATURE_FAST.includes(k))
+);
 const FOREST_NATURE = Object.freeze([
   "rock_largeA",
   "rock_largeB",
@@ -623,7 +644,7 @@ export function kindsForScenery(scenery) {
   if (s === "mountain") return MOUNTAIN_NATURE.concat(FAST_TRACKSIDE);
   if (s === "forest") return FOREST_NATURE.concat(FOREST_HERO_KINDS, FAST_TRACKSIDE);
   if (s === "lakeside") return FOREST_NATURE.concat(FAST_TRACKSIDE);
-  return DESERT_NATURE.concat(FAST_TRACKSIDE);
+  return DESERT_NATURE_FAST.concat(FAST_TRACKSIDE);
 }
 
 /**
@@ -644,6 +665,16 @@ export function warmFullTracksideKit() {
   const rest = TRACKSIDE_KINDS.filter((k) => !FAST_TRACKSIDE.includes(k));
   const animals = DESERT_ANIMALS.filter((k) => !rest.includes(k));
   return Promise.all(rest.concat(animals).map((k) => ensureKind(k))).then(() => {});
+}
+
+/**
+ * Parse the rest of the Namaqualand / Kenney Desert set after Ready.
+ * Safe to call every stage — no-ops when already cached.
+ * @returns {Promise<void>}
+ */
+export function warmDesertExtras() {
+  if (phonePropLite()) return Promise.resolve();
+  return Promise.all(DESERT_DEFERRED.map((k) => ensureKind(k))).then(() => {});
 }
 
 /**
@@ -777,18 +808,11 @@ function loadSceneryKit(scenery) {
         setTimeout(fire, 0);
       });
     // Wide parallel parse — old BATCH=1/3 + 16 ms phone stalls inflated load ~3×.
-    // Desert heroes: serial + yield. Twelve × ~28k weld/farLod in one Promise.all
-    // froze the main thread so the load bar stuck mid-plant (~67%).
-    const BATCH = phonePropLite() ? 5 : 10;
+    // Desert heroes on the FAST kit: small batches + yield (full pack is deferred).
+    const BATCH = phonePropLite() ? 5 : 8;
     if (!phonePropLite() && key === "desert") {
-      const heroes = kinds.filter((k) => String(k).startsWith("desert_hero_"));
-      const rest = kinds.filter((k) => !String(k).startsWith("desert_hero_"));
-      for (let i = 0; i < rest.length; i += BATCH) {
-        await Promise.all(rest.slice(i, i + BATCH).map(ensureKind));
-        await yieldKit();
-      }
-      for (let hi = 0; hi < heroes.length; hi++) {
-        await ensureKind(heroes[hi]);
+      for (let i = 0; i < kinds.length; i += BATCH) {
+        await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
         await yieldKit();
       }
     } else {

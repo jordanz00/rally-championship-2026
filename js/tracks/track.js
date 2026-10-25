@@ -69,7 +69,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=61";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=62";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -4038,10 +4038,10 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(def.scenery === "desert" ? 48 : 96);
+    const yieldWork = createWorkYielder(def.scenery === "desert" ? 56 : 96);
     // Coarser plant step — denser bags still fill from vegScale; fewer loop iterations.
-    // Desert heroes are heavy meshes — wider step keeps first-stage plant under the hang.
-    const plantStep = def.scenery === "forest" ? 4 : def.scenery === "desert" ? 12 : 8;
+    // Desert: wide step — fast kit + deferred heroes; plant must stay cheap.
+    const plantStep = def.scenery === "forest" ? 4 : def.scenery === "desert" ? 16 : 8;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
     this._markSightlines(def);
@@ -5435,45 +5435,51 @@ export class Track {
     }
     const closeBelt = off < roadHalf + 32;
     const pick = rng();
-    if (closeBelt && heroRocks.length && pick < 0.48) {
+    // Cap per-kind bags — chase belt reads full; rest of stage uses Kenney/deferred.
+    const heroBagCap = 14;
+    if (closeBelt && heroRocks.length && pick < 0.36) {
       const kind = heroRocks[(rng() * heroRocks.length) | 0];
-      const sand = kind.includes("sand_rocks") || kind.includes("stones");
-      const s = sand ? 0.55 + rng() * 0.75 : 0.72 + rng() * 1.15;
-      const foot = Math.max(1.6, s * (sand ? 1.15 : 0.9));
-      if (!this._driveClear(px, pz, foot)) return;
-      if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
-      if (!bags[kind]) bags[kind] = [];
-      bags[kind].push({
-        c: chunk,
-        x: px,
-        y: py,
-        z: pz,
-        s,
-        ry: rng() * Math.PI * 2,
-        rx: (rng() - 0.5) * 0.12,
-        rz: (rng() - 0.5) * 0.1,
-      });
-      this._bumpNearRoad(px, pz, Math.max(0.85, s * 0.6));
-      return;
+      if (!bags[kind] || bags[kind].length < heroBagCap) {
+        const sand = kind.includes("sand_rocks") || kind.includes("stones");
+        const s = sand ? 0.55 + rng() * 0.75 : 0.72 + rng() * 1.15;
+        const foot = Math.max(1.6, s * (sand ? 1.15 : 0.9));
+        if (!this._driveClear(px, pz, foot)) return;
+        if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
+        if (!bags[kind]) bags[kind] = [];
+        bags[kind].push({
+          c: chunk,
+          x: px,
+          y: py,
+          z: pz,
+          s,
+          ry: rng() * Math.PI * 2,
+          rx: (rng() - 0.5) * 0.12,
+          rz: (rng() - 0.5) * 0.1,
+        });
+        this._bumpNearRoad(px, pz, Math.max(0.85, s * 0.6));
+        return;
+      }
     }
-    if (closeBelt && heroPlants.length && pick < 0.72) {
+    if (closeBelt && heroPlants.length && pick < 0.55) {
       const kind = heroPlants[(rng() * heroPlants.length) | 0];
-      const quiver = kind.includes("quiver");
-      const s = quiver ? 0.85 + rng() * 0.55 : 0.7 + rng() * 0.65;
-      const foot = quiver ? Math.max(2.4, s * 1.15) : Math.max(1.5, s * 0.95);
-      if (!this._driveClear(px, pz, foot)) return;
-      if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
-      if (!bags[kind]) bags[kind] = [];
-      bags[kind].push({
-        c: chunk,
-        x: px,
-        y: py,
-        z: pz,
-        s,
-        ry: rng() * Math.PI * 2,
-      });
-      this._bumpNearRoad(px, pz, quiver ? 1.0 : 0.7);
-      return;
+      if (!bags[kind] || bags[kind].length < heroBagCap) {
+        const quiver = kind.includes("quiver");
+        const s = quiver ? 0.85 + rng() * 0.55 : 0.7 + rng() * 0.65;
+        const foot = quiver ? Math.max(2.4, s * 1.15) : Math.max(1.5, s * 0.95);
+        if (!this._driveClear(px, pz, foot)) return;
+        if (off - s * 0.7 < roadHalf + ROAD_VERGE + 1.4) return;
+        if (!bags[kind]) bags[kind] = [];
+        bags[kind].push({
+          c: chunk,
+          x: px,
+          y: py,
+          z: pz,
+          s,
+          ry: rng() * Math.PI * 2,
+        });
+        this._bumpNearRoad(px, pz, quiver ? 1.0 : 0.7);
+        return;
+      }
     }
     // Far / no-hero fallback — Kenney densify stays off the medium hero belt.
     if (pick < 0.28 && glbCactus) {
