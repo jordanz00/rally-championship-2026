@@ -2842,21 +2842,18 @@ export class RallyGame {
           console.warn("[load] phone car warm — soft shell", err);
         });
       } else {
-        // Block Ready on the player's hero only. Pack uses rival LODs; other
-        // garage heroes fill in after GO so Desert is not 3× ~7 MB parses.
+        // Player hero on the load bar. Rival LODs join below before countdown
+        // so 3-2-1 never pays a mid-count GLB parse. Other garage heroes wait
+        // until after GO (_warmPackHeroesAfterGo).
         carWarm = prepareHeroCar(this.carId).catch((err) => {
           console.warn("[load] hero warm", err);
         });
-        for (let i = 0; i < GARAGE_CAR_IDS.length; i++) {
-          const id = GARAGE_CAR_IDS[i];
-          if (id === this.carId) continue;
-          prepareHeroCar(id).catch((err) => console.warn("[load] pack hero warm", id, err));
-        }
       }
       if (!phoneLoad) {
-        // Fire-and-forget — LOD for far grid slots past AI.heroShellCount.
-        // Rival garage readiness must not block the load bar.
-        prepareRivalLods().catch((err) => console.warn("[load] rival LOD warm", err));
+        // Overlap LOD parse with Track.create — awaited before countdown.
+        this._rivalLodWarm = prepareRivalLods().catch((err) => {
+          console.warn("[load] rival LOD warm", err);
+        });
       }
     }
 
@@ -2893,6 +2890,10 @@ export class RallyGame {
     if (!preview) {
       report(fromCache ? 0.955 : 0.89, "Loading cars…");
       await carWarm;
+      if (!phoneLoad && this._rivalLodWarm) {
+        await this._rivalLodWarm;
+        this._rivalLodWarm = null;
+      }
       if (!phoneLoad && !isRivalGarageReady()) {
         console.warn("[load] AI pack GLB missing — solo grid (stage still runs)");
       }
@@ -3405,24 +3406,32 @@ export class RallyGame {
     // — must finish before HUD paints "3" or the player sees a mid-count snap.
     await this._settleRacePresent();
     if (loadGen !== this._loadGen) return;
-    setLoadingProgress(1, "Ready");
-    // Settle already drained compiles — don't pay a second wall-clock pass.
-    await waitLoadingBarSettled(12);
-    if (loadGen !== this._loadGen) return;
-    // Crowd + horizon/safari/verge + deferred Desert heroes after Ready.
+    // Finish deferred scenery UNDER the load plate — never during 3-2-1.
+    // Running warmDesertExtras / finishDeferredDressing after Ready used to
+    // hitch the countdown (hung "3", skipped beeps, glitchy GO).
     if (!isPhonePlay()) {
-      void (async () => {
-        try {
-          await Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
-          if (loadGen !== this._loadGen) return;
-          if (this.track && typeof this.track.finishDeferredDressing === "function") {
-            this.track.finishDeferredDressing();
-          }
-        } catch (err) {
-          console.warn("[warm] deferred dressing", err);
+      setLoadingProgress(0.992, "Dressing stage…");
+      try {
+        await Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
+        if (loadGen !== this._loadGen) return;
+        if (this.track && typeof this.track.finishDeferredDressing === "function") {
+          this.track.finishDeferredDressing();
         }
-      })();
+        await yieldFrame();
+        // New geometry must compile before HUD paints "3".
+        if (this.track && this.track.prewarmAround && this.player && this.player.position) {
+          const r = STREAM.countdownLoadRadius || 720;
+          this.track.prewarmAround(this.player.position, this.camera.position, r);
+        }
+        this._syncWorldStream(true);
+        await this._drainStreamCompileUnderOverlay(140);
+      } catch (err) {
+        console.warn("[warm] deferred dressing", err);
+      }
     }
+    setLoadingProgress(1, "Ready");
+    await waitLoadingBarSettled(20);
+    if (loadGen !== this._loadGen) return;
     // Second guard against a latched QA override: no hold may survive into a
     // race the player just started. QA tools arm _qaDrive after the grid is
     // live, so this never cancels a legitimate run.
@@ -3468,9 +3477,9 @@ export class RallyGame {
     // HUD on top — a black curtain was a full-screen flash at every stage.
     await showScreen("screen-hud", { instant: true });
     if (loadGen !== this._loadGen) return;
-    // One frozen present — four frames added ~70 ms for little visual gain.
+    // Four frozen presents so "3" never lands on a hitchy first composite.
     this._enforcePresentFreeze();
-    await this._presentFrozenWarms(1);
+    await this._presentFrozenWarms(4);
     if (loadGen !== this._loadGen) return;
     // Re-snapshot after HUD warms — post uniforms can settle one tick late.
     if (this.perfTier) this._armPresentFreeze(this.perfTier.current());
@@ -3483,6 +3492,18 @@ export class RallyGame {
     // Do NOT start next-stage Track.create here — main-thread terrain work
     // during 3-2-1 hitchs presents and reads as a lighting/graphics snap at "1".
     // Championship lookahead arms at halfway / checkpoint instead.
+  }
+
+  /**
+   * Extra garage heroes after lights-out — never during 3-2-1.
+   */
+  _warmPackHeroesAfterGo() {
+    if (isPhonePlay()) return;
+    for (let i = 0; i < GARAGE_CAR_IDS.length; i++) {
+      const id = GARAGE_CAR_IDS[i];
+      if (id === this.carId) continue;
+      prepareHeroCar(id).catch((err) => console.warn("[warm] pack hero", id, err));
+    }
   }
 
   /**
@@ -3583,8 +3604,8 @@ export class RallyGame {
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    // Short drain — long lookahead + second drain after Ready was ~2× settle cost.
-    await this._drainStreamCompileUnderOverlay(phoneRace ? 12 : 18);
+    // Drain start-grid shaders under the plate — countdown must not compile live.
+    await this._drainStreamCompileUnderOverlay(phoneRace ? 40 : 90);
     this._warmPackPhysics();
 
     const present = () => {
@@ -3593,7 +3614,12 @@ export class RallyGame {
       else this.renderer.render(this.scene, this.camera);
     };
     try {
-      // One warm under the overlay — second present was pure wall-clock.
+      // Six warm presents so 3-2-1 never pays first-frame shader/link cost.
+      present();
+      present();
+      present();
+      present();
+      present();
       present();
     } catch (err) {
       console.warn("Race present warm failed", err);
@@ -4134,6 +4160,7 @@ export class RallyGame {
           this._enforcePresentFreeze();
           this.hud.flashMessage("GO!");
           this.audio.countGo();
+          this._warmPackHeroesAfterGo();
           // Lights-out punch. Present is forced through `_launchHold` and
           // `_goPresentHold`, so this is a start snap — not the hitch that
           // used to stack a skipped frame onto launchBoost.

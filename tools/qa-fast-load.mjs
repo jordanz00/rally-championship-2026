@@ -65,8 +65,8 @@ check(
     /await Track\.create/.test(game)
 );
 check(
-  "rival pack not blocking load bar",
-  /Fire-and-forget/.test(game) && !/await ensureRivalGarageReady/.test(game)
+  "rival pack does not call ensureRivalGarageReady on load bar",
+  !/await ensureRivalGarageReady/.test(game)
 );
 check("desert plantStep 24", /desert" \? 24 : 10/.test(track));
 check(
@@ -74,10 +74,16 @@ check(
   /SUBDIV_PASSES = 1/.test(celica) && /SUBDIV_TRI_BUDGET = 28000/.test(celica)
 );
 check(
-  "settle drains are short",
-  /waitLoadingBarSettled\(12\)/.test(game) &&
-    /_drainStreamCompileUnderOverlay\(phoneRace \? 12 : 18\)/.test(game) &&
-    !/_drainStreamCompileUnderOverlay\(isPhonePlay\(\)/.test(game)
+  "deferred dressing finishes under load overlay",
+  /Dressing stage/.test(game) &&
+    /await Promise\.all\(\[warmCrowdKit\(\), warmFullTracksideKit\(\), warmDesertExtras\(\)\]\)/.test(game) &&
+    /finishDeferredDressing/.test(game) &&
+    /_presentFrozenWarms\(4\)/.test(game)
+);
+check(
+  "settle drains before countdown",
+  /waitLoadingBarSettled\(20\)/.test(game) &&
+    /_drainStreamCompileUnderOverlay\(phoneRace \? 40 : 90\)/.test(game)
 );
 check(
   "Desert FAST kit drops multi-MB barriers/quiver",
@@ -87,15 +93,24 @@ check(
     !/road_side_barrier/.test(kit.match(/const FAST_TRACKSIDE = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "")
 );
 check(
-  "player hero only blocks Ready",
-  /Block Ready on the player's hero only/.test(game) &&
+  "player hero on load bar; pack heroes after GO",
+  /prepareHeroCar\(this\.carId\)/.test(game) &&
+    /_warmPackHeroesAfterGo/.test(game) &&
     !/Promise\.all\(\[\s*prepareHeroCar\(this\.carId\)/.test(game)
 );
 check(
-  "deferred dressing after Ready includes Desert extras",
+  "deferred dressing includes Desert extras",
   /finishDeferredDressing/.test(track) &&
     /warmDesertExtras\(\)/.test(game) &&
     /warmCrowdKit\(\)/.test(game)
+);
+check(
+  "rival LOD awaited before countdown (not mid 3-2-1)",
+  /_rivalLodWarm/.test(game) && /await this\._rivalLodWarm/.test(game)
+);
+check(
+  "pack heroes after GO only",
+  /_warmPackHeroesAfterGo/.test(game) && /countGo\(\);\s*\n\s*this\._warmPackHeroesAfterGo\(\)/.test(game)
 );
 check(
   "championship warms Desert kit on car select",

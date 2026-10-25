@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Smooth 3-2-1-GO — stage fully ready before countdown (2026-10-25)
+
+**Player moment:** Load plate finishes. Then a clean natural 3 · 2 · 1 · GO — no hung "3", no mid-count hitch, no glitchy lights-out.
+
+**Cause:** `warmDesertExtras` / `finishDeferredDressing` / pack hero parses ran *after* Ready as fire-and-forget during countdown. Settle warm presents and compile drain had also been cut too thin.
+
+**Shipped:** await deferred dressing + compile drain under the load overlay · rival LODs awaited before countdown · pack heroes only after GO · six settle presents · four HUD frozen warms before unlocking "3".
+
+**Proof:** `node tools/qa-countdown-present.mjs` · `node tools/qa-fast-load.mjs` · `node tools/qa-go-punch.mjs`
+
+**Boot:** `main.js?v=1151`
+
 ## Stage load −50% again (2026-10-25)
 
 **Player moment:** Championship → Celica → Desert Ready in about half the prior wall time. Belt still reads desert at GO; heavy heroes / barriers fill after countdown.
