@@ -14,7 +14,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { setWorldRoadWetness } from "../gfx/pbr.js?v=64";
+import { setWorldRoadWetness } from "../gfx/pbr.js?v=65";
 
 const NEAR_COUNT = 300;
 const FAR_COUNT = 400;

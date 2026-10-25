@@ -31,7 +31,7 @@ import {
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=102";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=51";
-import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./gfx/pbr.js?v=64";
+import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./gfx/pbr.js?v=65";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=29";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=23";
 import { PhotoRealPost } from "./gfx/postfx.js?v=44";

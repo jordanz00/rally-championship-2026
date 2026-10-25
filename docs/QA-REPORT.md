@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Hotfix — boot timeout / RallyGame never constructed (2026-10-25)
+
+**Player moment:** Open the game. Splash → engine starts (no red boot-error panel).
+
+**Cause:** Road-fix comment inside `SURFACE_NOISE_GLSL` used markdown backticks around `patch`. That closed the JS template literal early → `SyntaxError: Unexpected identifier 'patch'` while importing `pbr.js` → `RallyGame` never constructed → 8s watchdog.
+
+**Shipped:** quote with plain `"patch"` · `surface-noise.js?v=7` · `sn-v6` · `pbr.js?v=65`.
+
+**Proof:** `RALLY_QA_ALLOW_CHROME=1 node tools/qa-boot-smoke.mjs` · `node tools/qa-texture-layers.mjs`
+
+**Boot:** `main.js?v=1148` · `pbr.js?v=65` · `surface-noise.js?v=7`
+
 ## POV cabin visible (2026-10-25)
 
 **Player moment:** C → cockpit. Modeled dash / doors / seats / wheel fill the cabin — not a hollow windshield.

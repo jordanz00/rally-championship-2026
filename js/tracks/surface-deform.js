@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { armSurfaceNoise } from "../gfx/surface-noise.js?v=6";
+import { armSurfaceNoise } from "../gfx/surface-noise.js?v=7";
 
 /** Surfaces that accumulate wheel ruts. */
 export const DEFORM_SURFACES = new Set(["sand", "dirt", "mud", "gravel"]);

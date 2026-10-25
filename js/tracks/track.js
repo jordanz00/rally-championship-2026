@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=64";
+} from "../gfx/pbr.js?v=65";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
