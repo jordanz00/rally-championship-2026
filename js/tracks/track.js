@@ -69,7 +69,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=60";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=61";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -4038,9 +4038,10 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(96);
+    const yieldWork = createWorkYielder(def.scenery === "desert" ? 48 : 96);
     // Coarser plant step — denser bags still fill from vegScale; fewer loop iterations.
-    const plantStep = def.scenery === "forest" ? 4 : 8;
+    // Desert heroes are heavy meshes — wider step keeps first-stage plant under the hang.
+    const plantStep = def.scenery === "forest" ? 4 : def.scenery === "desert" ? 12 : 8;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
     this._markSightlines(def);
@@ -4347,15 +4348,17 @@ export class Track {
         }
       }
       planted += 1;
-      if (onProgress && planted % 18 === 0) {
-        onProgress(Math.min(0.72, planted / plantTotal));
+      // Do not cap at 0.72 — that froze the UI at ~67% while the last plant
+      // steps + hero InstancedMesh builds ran with no further reports.
+      if (onProgress && planted % (def.scenery === "desert" ? 8 : 18) === 0) {
+        onProgress(Math.min(0.74, planted / plantTotal));
         const wait = yieldWork();
         if (wait) await wait;
       }
     }
 
     if (onProgress) {
-      onProgress(0.75);
+      onProgress(0.76);
       const wait = yieldWork();
       if (wait) await wait;
     }
@@ -4480,6 +4483,11 @@ export class Track {
       if (!bag.length || !propGeometry(kind)) continue;
       this._addHdNature(kind, bag, { castShadow: true, scrubShadow: true });
       this._bumpPoses(bag, kind.includes("quiver") ? 0.7 : kind.includes("scrub") || kind.includes("othonna") ? 0.55 : 0.85);
+      if (onProgress) {
+        onProgress(0.76 + ((di + 1) / Math.max(1, desertKinds.length)) * 0.05);
+        const wait = yieldWork();
+        if (wait) await wait;
+      }
     }
     if (glbRock && rockGeo) {
       this._addInstances(rockGeo, propNatureMaterial("rock_largeA"), rocks, { castShadow: true });
@@ -4576,9 +4584,14 @@ export class Track {
       this._addLake();
     }
     // Hero landmarks / verge / spectators → finishDeferredDressing after Ready.
+    // Seat once in buildAsync — seating here too doubled land scans on Desert.
     this._scrubRoadwayColliders();
     this._scrubRoadwayVisuals({ skipLand: true });
-    this._seatAllScenery();
+    if (onProgress) {
+      onProgress(0.94);
+      const wait = yieldWork();
+      if (wait) await wait;
+    }
     if (onProgress) onProgress(1);
   }
 

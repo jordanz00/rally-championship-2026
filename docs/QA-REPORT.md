@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Desert load hung at ~67% (2026-10-24)
+
+**Player moment:** Championship Desert load bar moves past planting and reaches countdown.
+
+**Cause:** Plant progress capped at 0.72 (~67% after `×0.86`) while twelve ~28k-tri Namaqualand heroes ran `attachFarLod` / post-plant sync with no yields — main thread looked frozen.
+
+**Shipped:** Desert-hero decimate (skip farLod double-pass) · serial kit parse + yield · uncapped plant reports · yield per hero instance batch · wider desert plant step · single seat pass.
+
+**Proof:** `node tools/qa-desert-heroes.mjs`
+
+**Boot:** `main.js?v=1135` · `game.js?v=1135` · `track.js?v=456` · `prop-kit.js?v=61`
+
 ## Desert "failed to build" — null playerMesh (2026-10-24)
 
 **Player moment:** Championship → Celica → Desert loads to grid instead of fatal boot error.

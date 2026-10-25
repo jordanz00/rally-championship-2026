@@ -765,10 +765,36 @@ function loadSceneryKit(scenery) {
   sceneryLoads[cacheKey] = (async () => {
     if (!phonePropLite()) await loadNatureTextures();
     const kinds = kindsForScenery(key);
+    const yieldKit = () =>
+      new Promise((resolve) => {
+        let done = false;
+        const fire = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        requestAnimationFrame(fire);
+        setTimeout(fire, 0);
+      });
     // Wide parallel parse — old BATCH=1/3 + 16 ms phone stalls inflated load ~3×.
+    // Desert heroes: serial + yield. Twelve × ~28k weld/farLod in one Promise.all
+    // froze the main thread so the load bar stuck mid-plant (~67%).
     const BATCH = phonePropLite() ? 5 : 10;
-    for (let i = 0; i < kinds.length; i += BATCH) {
-      await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
+    if (!phonePropLite() && key === "desert") {
+      const heroes = kinds.filter((k) => String(k).startsWith("desert_hero_"));
+      const rest = kinds.filter((k) => !String(k).startsWith("desert_hero_"));
+      for (let i = 0; i < rest.length; i += BATCH) {
+        await Promise.all(rest.slice(i, i + BATCH).map(ensureKind));
+        await yieldKit();
+      }
+      for (let hi = 0; hi < heroes.length; hi++) {
+        await ensureKind(heroes[hi]);
+        await yieldKit();
+      }
+    } else {
+      for (let i = 0; i < kinds.length; i += BATCH) {
+        await Promise.all(kinds.slice(i, i + BATCH).map(ensureKind));
+      }
     }
     // Never pull forest hero / pack trees on phones — 8×8 MB jetsam.
     if (!phonePropLite() && (key === "forest" || key === "mountain")) {
@@ -1408,7 +1434,7 @@ function mergeMeshList(meshes, kind, role) {
   const merged = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   if (!merged) return null;
-  const solid = weldPropGeometry(merged);
+  const solid = weldPropGeometry(merged, kind);
   solid.userData.shared = true;
   solid.userData.propKind = kind;
   return solid;
@@ -1566,7 +1592,7 @@ function extractPropGeometry(root, kind) {
   groundAndCenter(merged);
   applyKindScale(merged, kind);
 
-  const solid = weldPropGeometry(merged);
+  const solid = weldPropGeometry(merged, kind);
   solid.userData.shared = true;
   solid.userData.propKind = kind;
   return solid;
@@ -1978,25 +2004,90 @@ function attachFarLod(geo) {
 }
 
 /**
- * The merge step expands every triangle into three private corners so mixed
- * GLBs can combine. Weld those corners back together. The shape stays.
+ * Namaqualand heroes ship ~28k tris. attachFarLod's second mergeVertices pass
+ * on twelve of those during Desert kit warm froze the first-stage load bar
+ * around "Planting trees & props…" (~67%). Chase cam needs silhouette, not CAD.
  * @param {THREE.BufferGeometry} geo
  * @returns {THREE.BufferGeometry}
  */
-function weldPropGeometry(geo) {
+function decimateDesertHeroGeo(geo) {
   if (!geo || !geo.getAttribute("position")) return geo;
+  const index = geo.getIndex();
+  const tris = (index ? index.count : geo.getAttribute("position").count) / 3;
+  if (tris < 7000) {
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    return geo;
+  }
+  // One wide weld — drop to ~4–8k without the farLod double-pass hang.
+  const src = new THREE.BufferGeometry();
+  src.setAttribute("position", geo.getAttribute("position").clone());
+  if (index) src.setIndex(index.clone());
+  if (geo.getAttribute("uv")) src.setAttribute("uv", geo.getAttribute("uv").clone());
+  if (geo.getAttribute("normal")) src.setAttribute("normal", geo.getAttribute("normal").clone());
+  let out = mergeVertices(src, 0.11);
+  src.dispose();
+  if (!out || !out.getAttribute("position")) {
+    if (out && out !== geo) out.dispose();
+    geo.computeVertexNormals();
+    return geo;
+  }
+  stripCollapsedTriangles(out);
+  const outTris = (out.getIndex() ? out.getIndex().count : out.getAttribute("position").count) / 3;
+  if (outTris < 48 || outTris >= tris * 0.92) {
+    out.dispose();
+    geo.computeVertexNormals();
+    return geo;
+  }
+  geo.dispose();
+  if (!out.getAttribute("uv")) {
+    const pos = out.getAttribute("position");
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = pos.getX(i) * 0.28 + 0.5;
+      uv[i * 2 + 1] = pos.getY(i) * 0.28 + 0.12;
+    }
+    out.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  }
+  out.computeVertexNormals();
+  out.computeBoundingBox();
+  out.computeBoundingSphere();
+  out.userData.shared = true;
+  out.userData.desertHeroLite = true;
+  return out;
+}
+
+/**
+ * The merge step expands every triangle into three private corners so mixed
+ * GLBs can combine. Weld those corners back together. The shape stays.
+ * @param {THREE.BufferGeometry} geo
+ * @param {string} [kind]
+ * @returns {THREE.BufferGeometry}
+ */
+function weldPropGeometry(geo, kind = "") {
+  if (!geo || !geo.getAttribute("position")) return geo;
+  const desertHero = String(kind || geo.userData?.propKind || "").startsWith("desert_hero_");
   const before = geo.getAttribute("position").count;
-  if (before < 300) return attachFarLod(geo);
+  if (before < 300) {
+    return desertHero ? decimateDesertHeroGeo(geo) : attachFarLod(geo);
+  }
   const welded = mergeVertices(geo, 1e-4);
-  if (!welded || welded === geo) return attachFarLod(geo);
+  if (!welded || welded === geo) {
+    return desertHero ? decimateDesertHeroGeo(geo) : attachFarLod(geo);
+  }
   const after = welded.getAttribute("position") ? welded.getAttribute("position").count : before;
   if (!(after > 0) || after >= before) {
     welded.dispose();
-    return attachFarLod(geo);
+    return desertHero ? decimateDesertHeroGeo(geo) : attachFarLod(geo);
   }
   geo.dispose();
   welded.computeBoundingBox();
   welded.computeBoundingSphere();
+  if (desertHero) {
+    welded.userData.propKind = kind;
+    return decimateDesertHeroGeo(welded);
+  }
   return attachFarLod(welded);
 }
 
