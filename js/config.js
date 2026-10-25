@@ -303,9 +303,9 @@ export const STREAM = {
    * Metres of racing line forced visible + shader-warmed under the load
    * overlay so mid-stage slices do not first-compile at race speed.
    */
-  settleLookaheadMeters: 980,
+  settleLookaheadMeters: 420,
   /** Sample step along the line for settle prewarm (metres). */
-  settleLookaheadStep: 48,
+  settleLookaheadStep: 72,
   /** Extra load margin for large bounds (terrain tiles, backdrop rings). */
   boundsPadding: 80,
   /** Minimum gap between load and unload when using fixed radii (metres). */

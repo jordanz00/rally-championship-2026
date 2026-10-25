@@ -68,15 +68,28 @@ check(
   "rival pack not blocking load bar",
   /Fire-and-forget/.test(game) && !/await ensureRivalGarageReady/.test(game)
 );
-check("desert plantStep 16", /desert" \? 16 : 8/.test(track));
+check("desert plantStep 24", /desert" \? 24 : 10/.test(track));
 check(
   "player subdiv one pass for load",
   /SUBDIV_PASSES = 1/.test(celica) && /SUBDIV_TRI_BUDGET = 28000/.test(celica)
 );
 check(
   "settle drains are short",
-  /waitLoadingBarSettled\(24\)/.test(game) &&
-    /_drainStreamCompileUnderOverlay\(isPhonePlay\(\) \? 16 : 28\)/.test(game)
+  /waitLoadingBarSettled\(12\)/.test(game) &&
+    /_drainStreamCompileUnderOverlay\(phoneRace \? 12 : 18\)/.test(game) &&
+    !/_drainStreamCompileUnderOverlay\(isPhonePlay\(\)/.test(game)
+);
+check(
+  "Desert FAST kit drops multi-MB barriers/quiver",
+  /desert_hero_stones/.test(kit.match(/const DESERT_NATURE_FAST = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "") &&
+    !/desert_hero_quiver_a/.test(kit.match(/const DESERT_NATURE_FAST = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "") &&
+    !/barrier_red/.test(kit.match(/const FAST_TRACKSIDE = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "") &&
+    !/road_side_barrier/.test(kit.match(/const FAST_TRACKSIDE = Object\.freeze\(\[[\s\S]*?\]\)/)?.[0] || "")
+);
+check(
+  "player hero only blocks Ready",
+  /Block Ready on the player's hero only/.test(game) &&
+    !/Promise\.all\(\[\s*prepareHeroCar\(this\.carId\)/.test(game)
 );
 check(
   "deferred dressing after Ready includes Desert extras",

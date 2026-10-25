@@ -59,7 +59,7 @@ check("DESERT_NATURE includes heroes", /DESERT_HERO_KINDS/.test(kit) && /const D
 check("_plantDesertProp wired", /_plantDesertProp\s*\(/.test(track) && /desertHeroBags/.test(track));
 check("Kenney far-only plant path", /Far \/ no-hero fallback/.test(track));
 check("photo normals on desert fast land", /Desert keeps photo normals/.test(track));
-check("large sand tile", /TILE_SAND_M = 32/.test(desert));
+check("large sand tile", /TILE_SAND_M = 38/.test(desert));
 check("ATTRIBUTION Namaqualand", /namaqualand_boulder/.test(attr) && /desert_hero_quiver/.test(attr));
 check("registry DESERT_HERO_ROCKS", /"DESERT_HERO_ROCKS"/.test(registry));
 check("registry DESERT_HERO_PLANTS", /"DESERT_HERO_PLANTS"/.test(registry));

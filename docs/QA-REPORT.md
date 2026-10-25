@@ -1,5 +1,15 @@
 # QA report — quality-control pass
 
+## Stage load −50% again (2026-10-25)
+
+**Player moment:** Championship → Celica → Desert Ready in about half the prior wall time. Belt still reads desert at GO; heavy heroes / barriers fill after countdown.
+
+**Shipped:** slim `DESERT_NATURE_FAST` (drop multi-MB boulder/quiver) · tiny `FAST_TRACKSIDE` (no 3.5 MB barriers/crate) · block Ready on player hero only · plantStep 24 · shorter settle lookahead/drain · construction_barrier wall fallback.
+
+**Proof:** `node tools/qa-fast-load.mjs` · `node tools/qa-desert-heroes.mjs` · `RALLY_QA_ALLOW_CHROME=1 node tools/qa-load-time.mjs`
+
+**Boot:** `main.js?v=1150` · `track.js?v=459` · `prop-kit.js?v=63` · `config.js?v=250`
+
 ## Hotfix — false boot timeout during cold parse (2026-10-25)
 
 **Player moment:** Open the game. No red "Engine never finished starting" banner while the splash is still loading.

@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=248";
+import { VISUAL } from "../config.js?v=250";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
 import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=7";
 

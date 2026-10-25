@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=248";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=250";
 import { roadMicroHeight } from "./road-micro.js?v=13";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=2";
@@ -69,7 +69,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=62";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=63";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -4086,10 +4086,10 @@ export class Track {
    * @param {((t: number) => void) | null} onProgress 0–1 within this phase
    */
   async _addSceneryBody(def, onProgress) {
-    const yieldWork = createWorkYielder(def.scenery === "desert" ? 56 : 96);
+    const yieldWork = createWorkYielder(def.scenery === "desert" ? 96 : 120);
     // Coarser plant step — denser bags still fill from vegScale; fewer loop iterations.
     // Desert: wide step — fast kit + deferred heroes; plant must stay cheap.
-    const plantStep = def.scenery === "forest" ? 4 : def.scenery === "desert" ? 16 : 8;
+    const plantStep = def.scenery === "forest" ? 4 : def.scenery === "desert" ? 24 : 10;
     const plantTotal = Math.max(1, Math.ceil((this.points.length - 2) / plantStep));
     let planted = 0;
     this._markSightlines(def);
@@ -4568,7 +4568,9 @@ export class Track {
         ? "barrier_wall"
         : useGlb && propGeometry("road_side_barrier")
           ? "road_side_barrier"
-          : null;
+          : useGlb && propGeometry("construction_barrier")
+            ? "construction_barrier"
+            : null;
       const wallGeo = wallKind ? propGeometry(wallKind) : new THREE.BoxGeometry(0.35, 0.85, 2.8);
       const wallMat = wallKind
         ? propKitMaterial(wallKind)

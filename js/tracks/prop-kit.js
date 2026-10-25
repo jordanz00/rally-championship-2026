@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=248";
+import { VISUAL } from "../config.js?v=250";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -340,17 +340,14 @@ const CROWD_ALL = Object.freeze([
   "character-female-f",
 ]);
 /**
- * Critical-path Desert kit — small hero set + light Kenney.
- * Full Namaqualand pack + tall cactus / large bush warm after Ready
- * (`warmDesertExtras`) so the load bar is not twelve × 3 MB GLBs.
+ * Critical-path Desert kit — lightest heroes + Kenney that still sell the belt.
+ * Multi-MB boulders / quiver / othonna warm after Ready (`warmDesertExtras`)
+ * so championship Desert is not ~25 MB of nature before the bar hits Ready.
  */
 const DESERT_NATURE_FAST = Object.freeze([
-  "desert_hero_boulder_a",
-  "desert_hero_boulder_c",
-  "desert_hero_sand_rocks",
   "desert_hero_stones",
-  "desert_hero_quiver_a",
   "desert_hero_scrub",
+  "desert_hero_sand_rocks",
   "cactus_short",
   "rock_largeA",
   "rock_smallA",
@@ -617,17 +614,18 @@ const PHONE_FOREST = Object.freeze([
  * Trackside essentials for a fast first paint — barriers, cones, flags, lights.
  * Full TRACKSIDE_KINDS still HTTP-prefetch in the background after GO.
  */
+/**
+ * Load-bar trackside — tiny Kenney only. The 3.5 MB barrier_* / road_side /
+ * crate GLBs land via warmFullTracksideKit after Ready (walls use a box or
+ * construction_barrier until then).
+ */
 const FAST_TRACKSIDE = Object.freeze([
-  "barrier_red",
-  "barrier_white",
   "construction_cone",
   "construction_barrier",
   "flag_checkers",
   "flag_red",
   "pylon",
   "light_post",
-  "road_side_barrier",
-  "crate",
   "gantry_overhead",
 ]);
 

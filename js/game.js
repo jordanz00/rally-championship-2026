@@ -12,9 +12,9 @@ import { getSurface } from "./physics/surfaces.js?v=58";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=100";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=273";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=458";
+import { Track } from "./tracks/track.js?v=459";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=9";
-import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=62";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=63";
 import { Opponent } from "./ai.js?v=262";
 import { RallyAudio } from "./audio/engine.js?v=82";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
@@ -75,7 +75,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=249";
+} from "./config.js?v=250";
 
 /**
  * First-drive ease. The slide is still the tool. A miss on Desert comes back,
@@ -2842,18 +2842,20 @@ export class RallyGame {
           console.warn("[load] phone car warm — soft shell", err);
         });
       } else {
-        // Player hero + full garage heroes so near-pack hero shells can clone.
-        carWarm = Promise.all([
-          prepareHeroCar(this.carId),
-          ...GARAGE_CAR_IDS.filter((id) => id !== this.carId).map((id) =>
-            prepareHeroCar(id).catch((err) => console.warn("[load] pack hero warm", id, err))
-          ),
-        ]).catch((err) => {
+        // Block Ready on the player's hero only. Pack uses rival LODs; other
+        // garage heroes fill in after GO so Desert is not 3× ~7 MB parses.
+        carWarm = prepareHeroCar(this.carId).catch((err) => {
           console.warn("[load] hero warm", err);
         });
+        for (let i = 0; i < GARAGE_CAR_IDS.length; i++) {
+          const id = GARAGE_CAR_IDS[i];
+          if (id === this.carId) continue;
+          prepareHeroCar(id).catch((err) => console.warn("[load] pack hero warm", id, err));
+        }
       }
       if (!phoneLoad) {
-        // LOD still needed for far grid slots past AI.heroShellCount.
+        // Fire-and-forget — LOD for far grid slots past AI.heroShellCount.
+        // Rival garage readiness must not block the load bar.
         prepareRivalLods().catch((err) => console.warn("[load] rival LOD warm", err));
       }
     }
@@ -3404,10 +3406,8 @@ export class RallyGame {
     await this._settleRacePresent();
     if (loadGen !== this._loadGen) return;
     setLoadingProgress(1, "Ready");
-    // One short compile pass only — second 800 ms drain was pure wall-clock waste.
-    await this._drainStreamCompileUnderOverlay(isPhonePlay() ? 16 : 28);
-    // Snap the bar; old 900 ms ease added a full second after the stage was ready.
-    await waitLoadingBarSettled(24);
+    // Settle already drained compiles — don't pay a second wall-clock pass.
+    await waitLoadingBarSettled(12);
     if (loadGen !== this._loadGen) return;
     // Crowd + horizon/safari/verge + deferred Desert heroes after Ready.
     if (!isPhonePlay()) {
@@ -3583,7 +3583,8 @@ export class RallyGame {
     this._syncWorldStream(true);
     this._warmPov();
     this._precompileStage();
-    await this._drainStreamCompileUnderOverlay(phoneRace ? 20 : 40);
+    // Short drain — long lookahead + second drain after Ready was ~2× settle cost.
+    await this._drainStreamCompileUnderOverlay(phoneRace ? 12 : 18);
     this._warmPackPhysics();
 
     const present = () => {

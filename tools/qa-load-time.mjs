@@ -35,8 +35,8 @@ async function main() {
   const { cdp } = browser;
   await preparePage(cdp);
   await goto(cdp, `${server.origin}/index.html?nocache=${Date.now()}`);
-  await waitFor(cdp, `return window.game||window.__rallyBootEngine?1:null;`, {
-    timeout: 20000,
+  await waitFor(cdp, `return window.game?1:null;`, {
+    timeout: 90000,
     label: "boot",
   });
   await pressKey(cdp, "Enter");

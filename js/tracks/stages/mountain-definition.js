@@ -5,7 +5,7 @@
  * QA gates: cobble open, exactly 3 CPs, hairpin + tight_corner, no tunnel.
  */
 
-import { COLORS } from "../../config.js?v=248";
+import { COLORS } from "../../config.js?v=250";
 
 const W = {
   start: 18.4,
