@@ -3293,3 +3293,390 @@ button.ui-ghost:focus-visible {
 .touch-pedal.hb {
   background: linear-gradient(180deg, rgba(48, 48, 54, 0.9), rgba(18, 18, 22, 0.88));
 }
+
+/* ==========================================================================
+   Shell — one type system for title, menus, pause, result, and load
+   ========================================================================== */
+
+.ui-card-art,
+.ui-card-art::after {
+  display: none !important;
+}
+
+.ui-panel-arcade::before {
+  display: none;
+}
+
+.screen-ui .ui-panel,
+.screen-ui .ui-panel-front,
+.screen-ui .ui-panel-stages,
+#screen-loading .load-shell {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
+  background: rgba(8, 10, 9, 0.88);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: ui-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+#screen-menu .ui-panel-front {
+  width: min(440px, 92vw);
+  padding: 28px 24px 22px;
+}
+
+#screen-courses .ui-panel-stages {
+  width: min(920px, 94vw);
+}
+
+.screen-ui .ui-title,
+#screen-menu .ui-title,
+#screen-cars .ui-title,
+#screen-courses .ui-title,
+#screen-controls .ui-title,
+#screen-paused .ui-title,
+#screen-result .ui-title,
+#screen-loading .load-shell h2 {
+  font-size: clamp(28px, 3.6vw, 40px);
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-shadow: none;
+  color: #f4f0e0;
+}
+
+.screen-ui .ui-lead,
+.ui-coin {
+  letter-spacing: 0.06em;
+  color: rgba(244, 240, 224, 0.62);
+  text-shadow: none;
+  animation: none;
+}
+
+.ui-coin {
+  margin-top: 18px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-align: left;
+}
+
+.ui-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ui-live {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 210, 0, 0.45);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #ffd200;
+}
+
+.screen-ui .ui-card,
+.screen-ui .ui-card:has(.ui-card-copyblock),
+#screen-menu .ui-card-hero,
+#screen-cars .ui-card-hero,
+#screen-courses .ui-card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 14px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 3px solid rgba(255, 255, 255, 0.28);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  color: #f4f0e0;
+  text-align: left;
+  transform: none;
+}
+
+.screen-ui .ui-card-copyblock {
+  padding: 0;
+  gap: 3px;
+}
+
+.screen-ui .ui-card-kicker {
+  letter-spacing: 0.2em;
+  opacity: 0.62;
+}
+
+.screen-ui .ui-card-title {
+  font-size: 18px;
+  letter-spacing: 0.14em;
+}
+
+.screen-ui .ui-card-copy {
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.screen-ui .ui-card-hero,
+#screen-menu .ui-card-hero,
+#screen-cars .ui-card-hero,
+#screen-paused .ui-card-hero,
+#screen-result .ui-card-hero {
+  min-height: 76px;
+  background: #ffd200;
+  border-color: #ffd200;
+  border-left-color: #1a1408;
+  color: #14110a;
+}
+
+.screen-ui .ui-card-hero .ui-card-kicker,
+.screen-ui .ui-card-hero .ui-card-copy,
+.screen-ui .ui-card-hero .ui-card-title {
+  color: #14110a;
+  opacity: 1;
+}
+
+.screen-ui .ui-card-hero .ui-card-kicker,
+.screen-ui .ui-card-hero .ui-card-copy {
+  opacity: 0.72;
+}
+
+.screen-ui .ui-card-quiet {
+  background: transparent;
+}
+
+.screen-ui .ui-card:hover,
+.screen-ui .ui-card:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: rgba(255, 210, 0, 0.7);
+  border-left-color: #ffd200;
+  transform: none;
+  outline: 2px solid #ffd200;
+  outline-offset: 2px;
+}
+
+.screen-ui .ui-card-hero:hover,
+.screen-ui .ui-card-hero:focus-visible {
+  background: #ffe14a;
+  color: #14110a;
+  border-color: #ffe14a;
+  border-left-color: #1a1408;
+}
+
+.screen-ui .ui-card-hero:hover .ui-card-title,
+.screen-ui .ui-card-hero:focus-visible .ui-card-title,
+.screen-ui .ui-card-hero:hover .ui-card-kicker,
+.screen-ui .ui-card-hero:focus-visible .ui-card-kicker,
+.screen-ui .ui-card-hero:hover .ui-card-copy,
+.screen-ui .ui-card-hero:focus-visible .ui-card-copy {
+  color: #14110a;
+}
+
+#screen-courses .ui-cards-stages {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+#screen-courses .ui-card-desert { border-left-color: #e0a15c; }
+#screen-courses .ui-card-forest { border-left-color: #3d8f4a; }
+#screen-courses .ui-card-mountain { border-left-color: #8aa4c4; }
+#screen-courses .ui-card-lakeside { border-left-color: #3aa0b8; }
+
+.ui-season {
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ui-season li {
+  padding: 8px 6px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(244, 240, 224, 0.7);
+  letter-spacing: 0.12em;
+}
+
+.screen-ui .ui-controls {
+  gap: 6px;
+}
+
+.screen-ui .ui-controls li {
+  min-height: 44px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.screen-ui .ui-controls kbd,
+.ui-ctrl-label {
+  min-width: 28px;
+  padding: 4px 7px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4f0e0;
+  text-align: center;
+}
+
+.screen-ui .ui-ghost,
+.screen-ui button.ui-ghost {
+  min-height: 44px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: rgba(244, 240, 224, 0.8);
+}
+
+.screen-ui .ui-ghost:hover,
+.screen-ui .ui-ghost:focus-visible,
+.screen-ui button.ui-ghost:hover,
+.screen-ui button.ui-ghost:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-color: #ffd200;
+  outline: 2px solid #ffd200;
+  outline-offset: 2px;
+}
+
+#screen-paused .pause-distance,
+#screen-paused .vol-row,
+#screen-result .result-detail li {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+#screen-result .result-headline {
+  color: #f4f0e0;
+  letter-spacing: 0.08em;
+}
+
+#screen-result .result-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#screen-result.active .result-panel {
+  width: min(440px, 92vw);
+}
+
+.vol-row input[type="range"]::-webkit-slider-runnable-track,
+.vol-row input[type="range"]::-moz-range-track {
+  height: 4px;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.vol-row input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffd200;
+}
+
+.vol-row input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffd200;
+}
+
+.vol-row select {
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4f0e0;
+}
+
+#screen-loading .load-shell {
+  padding: 32px 28px;
+}
+
+.load-bar,
+#screen-loading .load-bar {
+  height: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.load-bar-fill {
+  border-radius: 3px;
+  background: #ffd200;
+  box-shadow: none;
+}
+
+.load-bar-shine {
+  display: none;
+}
+
+#screen-title #btn-start {
+  min-height: 52px;
+  padding: 0 22px;
+  border-radius: 2px;
+  border: 0;
+  background: #ffd200;
+  color: #14110a;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  animation: none;
+  text-shadow: none;
+}
+
+#screen-title #btn-start:hover,
+#screen-title #btn-start:focus-visible {
+  background: #ffe14a;
+  filter: none;
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.sr-push-wrap {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+
+#screen-hud .hud-top > div,
+#screen-hud .speed-block,
+#screen-hud .gear-block,
+#screen-hud .meta,
+#screen-hud .hud-distance,
+#hud-rush {
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+#minimap {
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 900px) {
+  #screen-courses .ui-cards-stages {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-ui .ui-panel,
+  #screen-title #btn-start,
+  .ui-coin {
+    animation: none;
+  }
+}

@@ -1755,8 +1755,8 @@ export const CAMERA = {
       eyeZ: -0.12,
       lookY: 1.18,
       lookZ: 4.5,
-      /** Slightly wider — more dash / doors / wheel in frame without fish-eye. */
-      fov: 84,
+      /** Gran Turismo cockpit: the glass fills the frame, not a wide ceiling. */
+      fov: 58,
       stiffness: 42,
       near: 0.04,
     },

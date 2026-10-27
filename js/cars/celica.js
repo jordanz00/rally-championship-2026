@@ -6154,9 +6154,10 @@ function buildPovRig(root) {
   eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.85, roofClear);
 
   const lookX = eyeX * 0.08;
-  // Nearly level through the windshield. A hard downward aim stared into the hub.
-  const lookY = THREE.MathUtils.clamp(eyeY - 0.1, ground + 0.7, eyeY - 0.06);
-  const lookZ = hull.maxZ + 5.8;
+  const lookZ = hull.maxZ + 6.2;
+  // ~7° down the glass. The headliner is clipped; a steep aim stared into the dash.
+  const lookDrop = Math.max(0.55, (lookZ - eyeZ) * 0.12);
+  const lookY = THREE.MathUtils.clamp(eyeY - lookDrop, eyeY - 2.2, eyeY - 0.08);
   // Swap: interior glass sits on the opposite side of center from the driver
   // so the rearview reads on the right of an LHD lens (was left in RHD).
   const mirrorEyeX = -eyeX * 0.12;
@@ -6189,7 +6190,7 @@ function buildPovRig(root) {
     spanY,
     spanZ,
     hull,
-    fov: 84,
+    fov: 58,
     near: 0.055,
   };
 }
@@ -6201,7 +6202,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 12;
+  const POV_RIG_VER = 16;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -6431,7 +6432,7 @@ function tagGlbCabin(root) {
     obj.userData.glbCabin = true;
     obj.userData.interior = true;
     // Inner glass + authored center mirror fight the live RT / exterior panes.
-    if (/\bint_window|\bmirror_cent|\binterior_glass_windows\b/.test(n)) {
+    if (/\bint_window|\bmirror_cent|\binterior_glass_windows\b|int_rollcage|cockpit_hr_sub5/.test(n)) {
       obj.userData.interiorKeepHidden = true;
       obj.visible = false;
     } else {
@@ -7487,7 +7488,7 @@ export function setPovRoofClip(root, on, renderer) {
     }
   }
   const rig = getPovRig(root);
-  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.14;
+  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.02;
   root.userData._povRoofCutY = cutY;
   if (!root.userData._povClipPlanes) {
     root.userData._povClipPlanes = [new THREE.Plane()];
@@ -7499,10 +7500,14 @@ export function setPovRoofClip(root, on, renderer) {
     root.traverse((obj) => {
       if (!obj.isMesh || !obj.material) return;
       if (obj.userData.povHud || obj.userData.cabinFill) return;
-      // Modeled cabin must stay whole in POV — roof clip is for exterior shell only.
-      if (obj.userData.glbCabin) return;
-      if (inCockpitTree(obj)) return;
-      if (isModeledCabinName(cabinNamePath(obj))) return;
+      // Shave only the headliner. Dash, wheel, and doors stay below the eyes.
+      const path = cabinNamePath(obj);
+      if (obj.userData.glbCabin && !/rollcage|visor|headliner|sunshade/.test(path)) {
+        const center = new THREE.Vector3();
+        new THREE.Box3().setFromObject(obj).getCenter(center);
+        root.worldToLocal(center);
+        if (center.y < rig.eyeY - 0.02) return;
+      }
       const n = (obj.name || "").toLowerCase();
       if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
 
@@ -7590,7 +7595,9 @@ function flipCockpitVisibility(root, want) {
     const obj = keep[i];
     // Cabin groups (COCKPIT_HR, seats) are flagged keep-hidden for chase.
     // In the seat they must stay visible or every child dash mesh is culled.
-    if (want && obj.userData && !obj.userData.povShell && isModeledCabinName(cabinNamePath(obj))) {
+    const path = cabinNamePath(obj);
+    const roofPanel = /cockpit_hr_sub5|int_rollcage|int_window|mirror_cent|interior_glass/.test(path);
+    if (want && !roofPanel && obj.userData && !obj.userData.povShell && isModeledCabinName(path)) {
       obj.visible = true;
       continue;
     }

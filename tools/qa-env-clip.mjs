@@ -183,11 +183,10 @@ check(
   "land tuck + envProp cull after collider scrub"
 );
 check(
-  "fast land still samples 3×3 on ribbon tiles",
-  /halfDiag/.test(trackSrc) &&
-    /sampleN = onTrench \? 3 : 1/.test(trackSrc) &&
-    !/sampleN = this\._fastLandBuild \? 1/.test(trackSrc),
-  "256 m tiles must not force one centre sample on paint"
+  "ribbon land follows the rolling grade",
+  /onTrench \? segs : Math\.min\(segs, 4\)/.test(trackSrc) &&
+    /if \(onTrench\) near = this\._nearestRoad\(x, z\)/.test(trackSrc),
+  "64 m chords and a 3×3 roadY grid lift sand through dips"
 );
 check(
   "hairpin nearest-road keeps ±5 cell ring",

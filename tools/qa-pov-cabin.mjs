@@ -38,10 +38,10 @@ check("opaque cabin materials", /Kill Sketchfab BLEND/.test(car) && /m\.transpar
 check("occlusion shell always", /Always build an opaque shell/.test(car));
 check("cabin mode flag", /_cabinMode = useGlbCabin \? "glb" : "procedural"/.test(car));
 check("never hide glbCabin as roof shell", /if \(obj\.userData\.glbCabin\) return/.test(car) && /POV_HIDE_VER = 8/.test(car));
-check("windshield eye seat", /marks\.wheel\.z - 0\.42/.test(car) && /marks\.wheel\.z - 0\.32/.test(car) && /fov: 84/.test(car));
+check("windshield eye seat", /marks\.wheel\.z - 0\.42/.test(car) && /marks\.wheel\.z - 0\.32/.test(car) && /fov: 58/.test(car));
 check("cabin IBL in armRaceCarReflections", /isCabin/.test(pbr) && /cabinPlastic/.test(pbr));
 check("warm cabin fill lights the dash", /_cabinFill\.intensity = 36/.test(game));
-check("POV FOV widened", /id:\s*["']pov["'][\s\S]{0,500}fov:\s*84/.test(cfg));
+check("POV FOV is the windshield, not the headliner", /id:\s*["']pov["'][\s\S]{0,500}fov:\s*58/.test(cfg));
 check("celica?v=281+", Number((game.match(/celica\.js\?v=(\d+)/) || [])[1]) >= 281);
 check("boot 1169+", Number((index.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1169);
 

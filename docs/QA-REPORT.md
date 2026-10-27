@@ -1,5 +1,25 @@
 # QA report — quality-control pass
 
+## Menu shell (2026-10-27)
+
+**Player moment:** Main menu, car, stages, controls, pause, result, and the load screen share one layout. The championship button is type only.
+
+**Shipped:** Poster art is gone from every menu card. Primary actions are a gold fill. Secondary rows stay quiet. Focus rings, 44 px targets, and the same panel sit on pause, result, and load. `css/game.css?v=82`.
+
+**Proof:** `node tools/qa-menu-championship.mjs`
+
+## Land follows the rolling road (2026-10-27)
+
+**Player moment:** The pavement stays a floor. Sand, dirt, and the ground mesh do not rise through the roadway on the hills.
+
+**Cause:** Fast land used 64 m triangles and a road height from a 3×3 sample of a 256 m tile. The new grade dips between those samples, so the ground chord cut the deck.
+
+**Shipped:** Corridor tiles use the full land grid. Each vertex samples the ribbon under itself and tucks 10 cm past that station’s road bed so a straight edge cannot rise through a grade kink.
+
+**Proof:** `node tools/qa-env-clip.mjs`
+
+**Boot:** `main.js?v=1176` · `track.js?v=465`
+
 ## Camera ease on C (2026-10-27)
 
 **Player moment:** Press C. The lens eases into the next view. No cut, no pause.
@@ -10,7 +30,17 @@
 
 **Proof:** `node tools/qa-cam-snap.mjs` · `node tools/qa-cam-blend.mjs`
 
-**Boot:** `main.js?v=1170` · `config.js?v=254`
+**Boot:** `main.js?v=1172` · `config.js?v=255`
+
+## Windshield POV (2026-10-27)
+
+**Player moment:** Press C. The glass fills the frame. The headliner is a thin band, not the picture.
+
+**Shipped:** Cockpit FOV 58, aimed about 7° down the glass. The headliner and roof hoop are clipped off the lens. Wheel, gauges, and dash stay whole in the lower frame.
+
+**Boot:** `main.js?v=1175`
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-roof-clear.mjs`
 
 ## POV cabin in the seat (2026-10-27)
 

@@ -1882,7 +1882,14 @@ export class Track {
    * @param {number} floorHex
    */
   _addLandTile(def, scenery, desert, b, cx, cz, tileSize, segs, floorHex) {
-    const useSegs = this._fastLandBuild ? Math.min(segs, 4) : segs;
+    const nearC = this._nearestRoad(cx, cz);
+    const half = tileSize * 0.5;
+    const halfDiag = half * Math.SQRT2;
+    const trenchPad = (nearC.roadW || 14) * 0.5 + Math.max(36, (this._landCell || 24) * 2.2);
+    const onTrench = nearC.dist < trenchPad + halfDiag;
+    // Far tiles stay coarse. Ribbon tiles use the full grid so a triangle
+    // cannot chord across a grade kink and lift sand through the deck.
+    const useSegs = this._fastLandBuild ? (onTrench ? segs : Math.min(segs, 4)) : segs;
     const geo = new THREE.PlaneGeometry(tileSize, tileSize, useSegs, useSegs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
@@ -1892,11 +1899,6 @@ export class Track {
     // Far tiles: 1 centre sample. Ribbon tiles: 3×3 grid so paint verts get a
     // real over/roadY. Fast build used to force sampleN=1 on 256 m tiles —
     // corners sat on asphalt while the centre was off-road → dunes through deck.
-    const nearC = this._nearestRoad(cx, cz);
-    const half = tileSize * 0.5;
-    const halfDiag = half * Math.SQRT2;
-    const trenchPad = (nearC.roadW || 14) * 0.5 + Math.max(36, (this._landCell || 24) * 2.2);
-    const onTrench = nearC.dist < trenchPad + halfDiag;
     const sampleN = onTrench ? 3 : 1;
     const step = sampleN > 1 ? tileSize / (sampleN - 1) : 0;
     /** @type {ReturnType<Track["_nearestRoad"]>[]} */
@@ -1932,18 +1934,24 @@ export class Track {
         if (c0.dist < near.dist) near = c0;
         if (d.dist < near.dist) near = d;
       }
+      // Grade changes every few dozen metres. The 3×3 tile grid is the wrong
+      // station — sample the ribbon under this vertex.
+      if (onTrench) near = this._nearestRoad(x, z);
       let h;
       if (this._fastLandBuild) {
         // Per-vertex over only — whole-tile onTrench + _landSurfaceY washed
         // every bank on 384 m tiles into a flat under-deck trench.
         const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
         const bedDrop = desert ? 0.95 : scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : 0.55;
+        // Straight edges still sit above a grade kink. Tuck past the bed so
+        // the chord stays under the deck.
+        const chordTuck = 0.1;
         // On-road / car corridor — hard floor only (no dune / bank lift).
         if (over < ROAD_COLLIDER_CLEAR + 0.45) {
-          h = near.roadY - bedDrop;
+          h = near.roadY - bedDrop - chordTuck;
         } else if (over < ROAD_VERGE + 2.4 || near.dist < this._trenchWidth(near.roadW)) {
           h = this._groundHeightRaw(x, z, scenery, near);
-          h = Math.min(h, near.roadY - bedDrop);
+          h = Math.min(h, near.roadY - bedDrop - chordTuck);
         } else if (over < trenchPad * 0.45) {
           h = this._groundHeightRaw(x, z, scenery, near);
           const bed = near.roadY - bedDrop;

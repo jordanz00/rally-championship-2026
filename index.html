@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=81" />
+    <link rel="stylesheet" href="css/game.css?v=82" />
     <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
@@ -329,16 +329,14 @@
           <h2 class="ui-title">MAIN MENU</h2>
           <p class="ui-lead">Four stages. One grid. Beat the pack.</p>
           <div class="ui-cards" role="list">
-            <button type="button" class="ui-card ui-card-hero" data-menu="championship" role="listitem" autofocus>
-              <span class="ui-card-art ui-card-art-champ" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-hero" data-menu="championship" autofocus>
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Enter</span>
                 <span class="ui-card-title">CHAMPIONSHIP</span>
                 <span class="ui-card-copy">Desert → Forest → Mountain → Lakeside</span>
               </span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet" data-menu="controls" role="listitem">
-              <span class="ui-card-art ui-card-art-controls" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-quiet" data-menu="controls">
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Help</span>
                 <span class="ui-card-title">CONTROLS</span>
@@ -365,8 +363,7 @@
           <h2 class="ui-title">YOUR CAR</h2>
           <p class="ui-lead hint" id="cars-hint">Toyota Celica GT-Four — locked for the season.</p>
           <div class="ui-cards" role="list">
-            <button type="button" class="ui-card ui-card-hero" data-car="celica" role="listitem" autofocus>
-              <span class="ui-card-art ui-card-art-celica" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-hero" data-car="celica" autofocus>
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Toyota</span>
                 <span class="ui-card-title">CELICA GT-FOUR</span>
@@ -389,39 +386,35 @@
           <h2 class="ui-title">SELECT COURSE</h2>
           <p class="ui-lead">Choose the rally stage. Pack and surfaces change with the biome.</p>
           <div class="ui-cards ui-cards-stages" role="list">
-            <button type="button" class="ui-card ui-card-desert" data-course="desert" role="listitem">
-              <span class="ui-card-art ui-card-art-desert" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-desert" data-course="desert">
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Stage 1</span>
                 <span class="ui-card-title">DESERT</span>
                 <span class="ui-card-copy">Fast · open · jumps · sand</span>
               </span>
             </button>
-            <button type="button" class="ui-card ui-card-forest" data-course="forest" role="listitem">
-              <span class="ui-card-art ui-card-art-forest" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-forest" data-course="forest">
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Stage 2</span>
                 <span class="ui-card-title">FOREST</span>
                 <span class="ui-card-copy">Rhythm · tight · dirt · tunnel</span>
               </span>
             </button>
-            <button type="button" class="ui-card ui-card-mountain" data-course="mountain" role="listitem">
-              <span class="ui-card-art ui-card-art-mountain" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-mountain" data-course="mountain">
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Stage 3</span>
                 <span class="ui-card-title">MOUNTAIN</span>
                 <span class="ui-card-copy">Commitment · elevation · tarmac</span>
               </span>
             </button>
-            <button type="button" class="ui-card ui-card-lakeside" data-course="lakeside" hidden role="listitem">
-              <span class="ui-card-art ui-card-art-lakeside" aria-hidden="true"></span>
+            <button type="button" class="ui-card ui-card-lakeside" data-course="lakeside" hidden>
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Unlock</span>
                 <span class="ui-card-title">LAKESIDE</span>
                 <span class="ui-card-copy">Flow · speed · showcase</span>
               </span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet dev-only" data-course="physlab" role="listitem">
+            <button type="button" class="ui-card ui-card-quiet dev-only" data-course="physlab">
               <span class="ui-card-copyblock">
                 <span class="ui-card-kicker">Dev</span>
                 <span class="ui-card-title">PHYS LAB</span>
@@ -592,15 +585,15 @@
             </label>
           </div>
           <div class="ui-cards ui-cards-compact" role="list">
-            <button type="button" class="ui-card" data-menu="resume" role="listitem">
+            <button type="button" class="ui-card ui-card-hero" data-menu="resume">
               <span class="ui-card-title">RESUME</span>
               <span class="ui-card-copy">Back to the stage</span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet" data-menu="retry" role="listitem">
+            <button type="button" class="ui-card ui-card-quiet" data-menu="retry">
               <span class="ui-card-title">RESTART</span>
               <span class="ui-card-copy">Same stage · same car</span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet" data-menu="title" role="listitem">
+            <button type="button" class="ui-card ui-card-quiet" data-menu="title">
               <span class="ui-card-title">TITLE</span>
               <span class="ui-card-copy">Leave the race</span>
             </button>
@@ -626,15 +619,15 @@
           <ul id="result-detail" class="result-detail"></ul>
           <p id="result-copy" hidden aria-hidden="true"></p>
           <div class="ui-cards ui-cards-compact" role="list">
-            <button type="button" class="ui-card" id="result-next" data-menu="next" role="listitem">
+            <button type="button" class="ui-card ui-card-hero" id="result-next" data-menu="next">
               <span class="ui-card-title">NEXT STAGE</span>
               <span class="ui-card-copy">Keep the championship rolling</span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet" data-menu="retry" role="listitem">
+            <button type="button" class="ui-card ui-card-quiet" data-menu="retry">
               <span class="ui-card-title">RETRY</span>
               <span class="ui-card-copy">Run it again</span>
             </button>
-            <button type="button" class="ui-card ui-card-quiet" data-menu="title" role="listitem">
+            <button type="button" class="ui-card ui-card-quiet" data-menu="title">
               <span class="ui-card-title">TITLE</span>
               <span class="ui-card-copy">Back to attract</span>
             </button>
@@ -662,6 +655,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1170" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1176" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>
