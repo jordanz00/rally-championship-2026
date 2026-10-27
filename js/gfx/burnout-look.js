@@ -1,9 +1,9 @@
 /**
- * Race present grade — authored rally look, no arcade punch.
+ * Race present — Burnout juice on dirt.
  *
  * WHO THIS IS FOR: PhotoRealPost + RallyGame race present.
- * WHAT IT DOES: Holds contrast, bloom, and vignette at the config grade.
- *   Speed, rush, and On Fire do not add bloom, teal split, or color fringing.
+ * WHAT IT DOES: Teal shadows, amber highlights, sun bloom, speed fringe.
+ *   Title stays still. Lakeside stays under Desert. On Fire lifts bloom only.
  * HOW IT CONNECTS: postfx.syncFromConfig / render. config.js is not edited.
  */
 
@@ -11,19 +11,21 @@
 
 /** @type {Record<string, BurnoutBase>} */
 const STAGE = {
-  desert: { contrast: 1.12, sat: 1.06, warmth: 0.07, bloom: 0.2, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
-  forest: { contrast: 1.11, sat: 1.05, warmth: 0.05, bloom: 0.18, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
-  mountain: { contrast: 1.12, sat: 1.04, warmth: 0.05, bloom: 0.18, thresh: 0.7, teal: 0, vig: 0.1, roll: 0.18 },
-  lakeside: { contrast: 1.1, sat: 1.04, warmth: 0.05, bloom: 0.16, thresh: 0.72, teal: 0, vig: 0.09, roll: 0.2 },
+  desert: { contrast: 1.2, sat: 1.16, warmth: 0.12, bloom: 0.3, thresh: 0.6, teal: 0.26, vig: 0.16, roll: 0.15 },
+  forest: { contrast: 1.16, sat: 1.1, warmth: 0.06, bloom: 0.24, thresh: 0.64, teal: 0.2, vig: 0.18, roll: 0.16 },
+  mountain: { contrast: 1.16, sat: 1.08, warmth: 0.08, bloom: 0.22, thresh: 0.64, teal: 0.16, vig: 0.16, roll: 0.16 },
+  lakeside: { contrast: 1.08, sat: 1.02, warmth: 0.04, bloom: 0.14, thresh: 0.74, teal: 0.06, vig: 0.1, roll: 0.22 },
 };
 
 /**
- * Speed 0–1 for CA / bloom punch. Starts around 40 mph, full at ~90 mph.
+ * Speed 0–1 for the fringe. Quiet under ~42 mph, full by ~97 mph.
  * @param {number} speedMs
  * @returns {number}
  */
-export function burnoutSpeedAmt(_speedMs) {
-  return 0;
+export function burnoutSpeedAmt(speedMs) {
+  const mph = (speedMs || 0) * 2.23694;
+  if (mph < 42) return 0;
+  return Math.min(1, (mph - 42) / 55);
 }
 
 /**
@@ -35,17 +37,25 @@ export function burnoutLookFor(courseId, opts = {}) {
   const id = STAGE[courseId] ? courseId : "desert";
   const base = STAGE[id];
   const title = !!opts.title;
+  const tunnel = Math.max(0, Math.min(1, opts.tunnel || 0));
+  const rush = Math.max(0, Math.min(1, opts.rush || 0));
+  const fire = opts.fire ? 1 : 0;
+  const speedAmt = title ? 0 : burnoutSpeedAmt(opts.speed || 0);
+  const pulled = id === "lakeside";
+  const bloom =
+    (title ? Math.min(base.bloom, 0.18) : base.bloom * (1 - tunnel * 0.4)) +
+    (title ? 0 : fire * (pulled ? 0.03 : 0.07) + rush * (pulled ? 0.012 : 0.028));
   return {
     courseId: id,
     contrast: base.contrast,
     sat: base.sat,
-    warmth: title ? Math.min(base.warmth, 0.04) : base.warmth,
-    bloom: title ? Math.min(base.bloom, 0.1) : base.bloom,
+    warmth: title ? Math.min(base.warmth, 0.08) : base.warmth + (pulled ? 0 : fire * 0.03),
+    bloom,
     thresh: base.thresh,
-    teal: 0,
-    vig: title ? Math.min(base.vig, 0.08) : base.vig,
+    teal: title ? base.teal * 0.6 : base.teal * (1 - tunnel * 0.35),
+    vig: title ? Math.min(base.vig, 0.2) : base.vig + tunnel * 0.06,
     roll: base.roll,
-    speedAmt: 0,
-    chroma: 0,
+    speedAmt,
+    chroma: title || speedAmt <= 0 ? 0 : 0.008,
   };
 }

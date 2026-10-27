@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { GFX, TUNNEL, VISUAL } from "../config.js?v=251";
+import { GFX, TUNNEL, VISUAL } from "../config.js?v=253";
 
 /**
  * Blackbody-ish RGB from colour temperature (Kelvin).
@@ -107,7 +107,7 @@ export const HARSH_PEAKS = {
     rimMax: 0.14,
     exposureMax: 0.78,
     exposureCeil: 0.82,
-    carEnvMax: 1.45,
+    carEnvMax: 0.86,
     coatEnvMax: 2.4,
     worldEnvMax: 0.52,
     sunMax: 1.22,

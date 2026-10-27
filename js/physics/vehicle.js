@@ -48,10 +48,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=251";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=58";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=253";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=59";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
-import { JumpModel } from "./jump.js?v=40";
+import { JumpModel } from "./jump.js?v=41";
 import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=8";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
@@ -83,7 +83,7 @@ JUMP.worstScrub = 0.52;
 JUMP.landUpsetYaw = 0.95;
 JUMP.balanceDecay = 3.2;
 JUMP.balanceGripLoss = 0.34;
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=13";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=14";
 
 const TMP = {
   fwd: new THREE.Vector3(),

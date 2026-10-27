@@ -37,12 +37,14 @@ const main = read("js/main.js");
 const html = read("index.html");
 const css = read("css/game.css");
 
-check("post imports burnout-look", /burnout-look\.js\?v=4/.test(post) && /setDriveFeel/.test(post));
+check("post imports burnout-look", /burnout-look\.js\?v=6/.test(post) && /setDriveFeel/.test(post));
+check("desktop scene is linear HDR", /HalfFloatType/.test(post) && /acesFit/.test(post) && /setLinearScene/.test(post));
+check("low and phones skip the HDR buffer", /q === "low"\) return false/.test(post) && /__rallyPhoneLite/.test(post));
 check("composite has teal + speed CA", /tealLift/.test(post) && /speedAmt/.test(post) && /chroma/.test(post));
 check("low path still kills bloom", /if \(q === "low"\)[\s\S]{0,280}?bloomStrength\.value = 0/.test(post));
 check("game drives feel from speed", /setDriveFeel/.test(game) && /this\.player\.speed/.test(game));
 check("medium chase keeps speedFovScale 0", /speedFovScale:\s*0/.test(cfg));
-check("config grade stays muted (override lives in post)", /gradeSaturation:\s*1\.02/.test(cfg));
+check("config grade stays under the post override", /gradeSaturation:\s*1\.0[0-8]/.test(cfg));
 check("HUD speed is not an orange glow", /#hud-speed/.test(css) && !/rgba\(255, 140, 0/.test(css));
 check("Lakeside car env peak stays pulled", HARSH_PEAKS.lakeside.carEnvMax <= 0.88);
 check("Desert paint can go candy", HARSH_PEAKS.desert.carEnvMax >= 1.18);
@@ -50,20 +52,30 @@ check("Desert paint can go candy", HARSH_PEAKS.desert.carEnvMax >= 1.18);
 const desert = burnoutLookFor("desert", { speed: 40 });
 const lake = burnoutLookFor("lakeside", { speed: 40 });
 const title = burnoutLookFor("desert", { title: true, speed: 40 });
-check("Desert grade stays authored", desert.sat <= 1.04 && desert.bloom <= 0.16 && desert.chroma === 0 && desert.teal === 0, `sat=${desert.sat} bloom=${desert.bloom.toFixed(2)}`);
-check("Lakeside bloom stays under Desert", lake.bloom <= desert.bloom && lake.sat <= desert.sat);
+const crawl = burnoutLookFor("desert", { speed: 10 });
+check(
+  "Desert grade is hot",
+  desert.sat >= 1.12 && desert.sat <= 1.28 && desert.bloom >= 0.26 && desert.bloom <= 0.42 && desert.teal >= 0.18 && desert.chroma > 0 && desert.speedAmt > 0.4,
+  `sat=${desert.sat} bloom=${desert.bloom.toFixed(2)} teal=${desert.teal}`
+);
+check("Lakeside stays under Desert", lake.bloom < desert.bloom && lake.sat < desert.sat && lake.teal < desert.teal);
 check("title has no speed CA", title.speedAmt === 0 && title.chroma === 0);
-check("speed does not fringe", burnoutSpeedAmt(10) === 0 && burnoutSpeedAmt(60) === 0);
-check("game imports postfx.js?v=43+", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 43);
+check("crawl does not fringe", crawl.speedAmt === 0 && crawl.chroma === 0 && burnoutSpeedAmt(10) === 0);
+check("pace fringes", burnoutSpeedAmt(40) > 0.4 && burnoutSpeedAmt(60) > 0.9);
+check("game imports postfx.js?v=46+", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 46);
 check("game imports lighting-rig.js?v=33+", Number((game.match(/lighting-rig\.js\?v=(\d+)/) || [])[1]) >= 33);
-check("boot is 1026+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1026);
-check("index boots main.js?v=1026+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1026);
+const boot = Number((main.match(/game\.js\?v=(\d+)/) || [])[1]);
+const indexBoot = Number((html.match(/main\.js\?v=(\d+)/) || [])[1]);
+check("boot matches index", boot >= 1159 && boot === indexBoot, `main=${boot} index=${indexBoot}`);
 check("css cache is 65+", Number((html.match(/game\.css\?v=(\d+)/) || [])[1]) >= 65);
 
 const desertFire = burnoutLookFor("desert", { speed: 40, rush: 0.8, fire: 1 });
 const lakeFire = burnoutLookFor("lakeside", { speed: 40, rush: 0.8, fire: 1 });
-check("On Fire does not heat the grade", desertFire.bloom === desert.bloom && desertFire.chroma === 0 && desertFire.speedAmt === 0);
-check("Lakeside On Fire stays flat", lakeFire.bloom === lake.bloom && lakeFire.chroma === 0);
+check(
+  "On Fire lifts bloom, not a second fringe",
+  desertFire.bloom > desert.bloom && desertFire.chroma === desert.chroma && desertFire.speedAmt === desert.speedAmt
+);
+check("Lakeside On Fire stays under Desert", lakeFire.bloom < desert.bloom && lakeFire.sat < desert.sat);
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Race grade stays flat"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Desert grade is hot, Lakeside stays pulled"}`);
 process.exit(fail ? 1 : 0);

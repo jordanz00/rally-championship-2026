@@ -1,5 +1,155 @@
 # QA report — quality-control pass
 
+## Camera ease on C (2026-10-27)
+
+**Player moment:** Press C. The lens eases into the next view. No cut, no pause.
+
+**Cause:** C hard-snapped (`viewBlendTime` 0.001, `_camBlendT = 0`, FOV cut). The cabin also popped on the same frame while the camera was still outside.
+
+**Shipped:** Smootherstep over 0.38 s (0.45 s into or out of POV). Pose, look, up, and FOV move together. The from-pose rides with the car. Cabin appears when the lens is within 1.35 m of the seat, and the body returns once the lens has cleared 1.6 m.
+
+**Proof:** `node tools/qa-cam-snap.mjs` · `node tools/qa-cam-blend.mjs`
+
+**Boot:** `main.js?v=1170` · `config.js?v=254`
+
+## POV cabin in the seat (2026-10-27)
+
+**Player moment:** Press C. Dash, wheel, doors, and seats fill the cockpit.
+
+**Cause:** The eye was forced up to about 1.12 m and looked level, so the wheel and dash sat below the frame. Cabin parent groups stayed hidden, which hid every child mesh. Cabin fill was 1 against tunnel bulbs near 90.
+
+**Shipped:** Eye sits in the seat, about 0.42 m behind the rim, looking out the windshield. Cabin groups show in POV. `COCKPIT_HR_SUB*` matches. Cabin fill is 36. Dash meshes are not frustum-culled.
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-roof-clear.mjs`
+
+**Boot:** `main.js?v=1169` · `celica.js?v=281`
+
+## Rolling stage grades (2026-10-27)
+
+**Player moment:** The road rises and falls. Desert dunes, the Forest bore, Mountain passes, and the Lakeside shore are no longer one long table between corners. Jump landings stay level. The grid stays level.
+
+**Shipped:** `sculptRoadElevation` after the play-lane ease. Short chords on long straights, sweepers, and the Forest tunnel. Hills capped near ±3 m so a crossing can still clear. Quiet zones on the start and on jump decks (Desert 1654 stays y=2.06, grade 1.4%). Forest 3180–3900 eased under 5%.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs` PASS · `qa-desert-1654.mjs` PASS (headed Chrome skipped — harness will not launch Chrome.app inside Cursor) · `qa-jump-land.mjs` PASS. Forest 3485 still fails length / no bore crossing (layout already ~5623 m). Grade in 3440–3520 stayed under 5%.
+
+**Boot:** `main.js?v=1166` · `courses.js?v=104` · `track-definition.js?v=12`
+
+## POV hands — larger natural grip (2026-10-26)
+
+**Player moment:** C → cockpit. Adult hands wrap the rim at 9/3 — fingers curled onto the leather, thumbs opposed, not tiny floating claws.
+
+**Shipped:** `HAND_DISPLAY` 1.52 · deeper tube press · `curlFingers` on index–pinky · stronger thumb opposition · warmer skin + brighter hand lamp · thicker sleeves.
+
+**Proof:** `node tools/qa-pov-hands.mjs`
+
+**Boot:** `main.js?v=1165` · `celica.js?v=278` · `pov-driver.js?v=20`
+
+## POV windshield cabin (2026-10-26)
+
+**Player moment:** Press C. Modeled dash / doors / seats / wheel fill a windshield view — not a hollow shell with only rim + tires.
+
+**Cause:** `tagPovShell` geometric roof test tagged wide cabin meshes (COCKPIT_HR / doors / seats) as `povShell`, so POV hid them. Landmarks only read mesh names (`Object_*`), so the eye sat wrong.
+
+**Shipped:** never mark `glbCabin` as roof · hide-cache v7 · parent-path landmarks · eye behind rim aiming through glass (FOV 84) · unhide cabin parents on seat.
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-roof-clear.mjs`
+
+**Boot:** `main.js?v=1164` · `celica.js?v=277`
+
+## Showroom ground (2026-10-25)
+
+**Player moment:** Title pad. The apron is a desert photo, and the rocks are the scanned boulders, not a noise disc and Kenney stones.
+
+**Shipped:** Desktop title sand and the outer disc take `sand_diff_2k` plus normal and roughness. The pad plants `desert_hero_boulder_a`–`e` and scales each to about 1.7 m before the pose. Phones keep the Kenney fallback and the canvas sand. Kenney still loads if fewer than two scans arrive.
+
+**Proof:** `node tools/qa-burnout-look.mjs` PASS at boot 1163. `node tools/qa-texture-layers.mjs` PASS. Headed reload of `?show=1163` did not complete — the IDE browser navigate was blocked.
+
+**Boot:** `main.js?v=1163` · `prop-kit.js?v=65` · `track.js?v=464`
+
+## Showroom hero (2026-10-25)
+
+**Player moment:** Car select. The Celica on the pad is the real car, in daylight, not the grey stand-in.
+
+**Cause:** The pad mounted the rival LOD and never swapped it when the hero GLB arrived. The showroom sun and fill were also held down, so the shell read as an unfinished night mesh.
+
+**Shipped:** Desktop loads the hero after the LOD and replaces the pad mesh. Showroom sun, fill, kick, and exposure are up. Phones stay on the LOD.
+
+**Boot:** `main.js?v=1162`
+
+## Linear HDR race present (2026-10-25)
+
+**Player moment:** Desert chase on a desktop. Sun, sky, and paint stay bright without banding, and bloom comes off real highlights. The title screen stays one ACES pass. Phones stay 8-bit.
+
+**Cause:** The scene was tonemapped into an 8-bit buffer, so the lights clipped before bloom and the grade.
+
+**Shipped:** Desktop WebGL2 races render linear into a half-float target, bloom peaks above 1.15, then run the same ACES fit once in the composite. The switch happens when the race arms, not every frame. Low quality and phones keep the renderer ACES path.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs`
+
+**Boot:** `main.js?v=1161` · `postfx.js?v=47`
+
+## Sharp ground photos (2026-10-25)
+
+**Player moment:** Desert chase. The dirt under the car shows gravel and ruts instead of a stretched sheet. Sand and the forest floor use the same tighter sample.
+
+**Cause:** 2k albedo and normal maps were already on disk. The road shader laid each photo across 15–70 m, so a 2048 map landed at about 30 pixels per metre in the chase view.
+
+**Shipped:** Primary sample is about 5–6 m per tile, with a 2 m grit layer and a light 20 m color island. The photo is no longer crushed toward grey. Dirt, gravel, and sand normals are stronger. Phones still boot 1k; desktop still swaps 2k after GO.
+
+**Proof:** `node tools/qa-texture-layers.mjs` · headed Desert grid.
+
+**Boot:** `main.js?v=1160` · `pbr.js?v=67` · `track.js?v=463`
+
+## Hot race grade (2026-10-25)
+
+**Player moment:** Title showroom and Desert chase. Shadows go teal, sun and paint go amber, chrome blooms. Speed fringes once the car is up. Lakeside stays quieter. Title does not fringe.
+
+**Shipped:** Authored grade in `burnout-look.js` (Desert sat 1.16 / bloom 0.3 / teal 0.26, speed fringe from ~42 mph, On Fire bloom only). Wider teal–amber split in the composite. Lakeside car reflections capped at 0.86 so the lake stays pulled. `config.js` untouched. Phones on the low path still kill bloom.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs`
+
+**Boot:** `main.js?v=1159` · `postfx.js?v=46` · `burnout-look.js?v=6`
+
+## Menu posters (2026-10-25)
+
+**Player moment:** Press Start into a season board. Championship is a landscape poster. Course select is three stage posters. The Celica card is a livery plate. The live showroom stays on the right.
+
+**Shipped:** Poster layout on main, car, and course menus. Gold corner frame. Title start sits in a lower-third slate. `game.css?v=81`.
+
+**Proof:** headed title → menu → car → course → controls.
+
+## Race instruments (2026-10-25)
+
+**Player moment:** In the seat, time, place, speed, gear, rush, and the phone pedals read as one broadcast cluster. Loading, pause, and the result card match the menus.
+
+**Shipped:** Glass plates on the race HUD, gold-framed minimap, tabular speed, RPM lamp, rush housing, pause sliders, result rows, loading shell, and touch chips. Speed stays cream — no orange glow. Phone type sizes unchanged.
+
+**Proof:** headed HUD / pause / load plates · `node tools/qa-menu-championship.mjs`
+
+**Boot:** `game.css?v=78`
+
+## Stable boot + broadcast menus (2026-10-25)
+
+**Player moment:** Open the game. No red crash banner on a slow first fetch. Title, main menu, car, course, controls, pause, and result read as one broadcast package over the live showroom.
+
+**Cause:** One dropped module response rejected `import("./game.js")` and the watchdog painted that as a startup crash. Menus were flat yellow boxes. `config.js` was also loaded twice (`?v=251` and `?v=252`), so handling tweaks and the track did not share one surface table.
+
+**Shipped:** Three import retries, one guarded reload, watchdog stays quiet while the engine is still starting. One `config.js?v=253`. Gold start plaque, glass panels, stage art on every menu card, season strip, course posters. Showroom stays visible (`transparent 100%`).
+
+**Proof:** `node tools/qa-menu-championship.mjs` · headed reload of `index.html` through title → menu → car → controls.
+
+**Boot:** `main.js?v=1158` · `game.css?v=76` · `config.js?v=253`
+
+## Slide ribbon — hard turns / hairpins all stages (2026-10-25)
+
+**Player moment:** Every stage — pitch into tight hooks and twin hairpins, hang a power slide, punch the exit. Roads feel narrower but catchable; throttle steers the attitude.
+
+**Shipped:** Twin hairpins + tight/medium hooks on Desert / Forest / Mountain / Lakeside · `PLAY_WIDTH` 1.48 slide ribbon · easier pitch (`powerSlidePitch` 3.28, `throttleSlide` 2.88, longer bleed, stronger exit/assist) · Safari 1654 land stay-put.
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs` · `qa-stage-beauty.mjs` · `qa-stage-flow.mjs` · `qa-desert-1654.mjs` · `qa-drift-swing.mjs`
+
+**Boot:** `main.js?v=1153` · `courses.js?v=101` · `config.js?v=252`
+
 ## Cinema desktop graphics (2026-10-25)
 
 **Player moment:** Championship Desert chase — sharp Retina present, denser banks, richer IBL/paint, 2k ground maps, 60 Hz open (no forced lock-30 at settle).

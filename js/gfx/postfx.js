@@ -2,9 +2,9 @@
  * Photoreal post stack — bloom, AO, screen-space GI, colour grade, vignette.
  *
  * WHO THIS IS FOR: the race / title render path (Sprint 23–24, cinema ground).
- * WHAT IT DOES: scene → RT with depth, half-res SSAO, half-res SSGI (Lumen-like
- *   colour bounce, cost-gated), cheap quarter-res bloom, then a single composite
- *   with grade + vignette. Quality auto-scales so control lag cannot return.
+ * WHAT IT DOES: Desktop WebGL2 races render the scene linear into a half-float
+ *   buffer, bloom the real peaks, then ACES once. Phones and the low path
+ *   stay 8-bit with the renderer ACES. Title stays a single ACES present.
  * HOW IT CONNECTS: RallyGame creates PhotoRealPost; _render / _onResize drive it.
  * Legal GI-look: NeuralShade.apply() runs on sceneRT colour+depth here — not
  *   in game.js _render (TSR). See NSHADE_HOOK in neural-shade.js.
@@ -15,10 +15,10 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=251";
+import { VISUAL } from "../config.js?v=253";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 import { NeuralShade, nshadeWanted } from "./neural-shade.js?v=6";
-import { burnoutLookFor } from "./burnout-look.js?v=5";
+import { burnoutLookFor } from "./burnout-look.js?v=6";
 
 const BRIGHT_FRAG = /* glsl */ `
 precision mediump float;
@@ -176,7 +176,7 @@ void main() {
 `;
 
 const COMPOSITE_FRAG = /* glsl */ `
-precision mediump float;
+precision highp float;
 uniform sampler2D tDiffuse;
 uniform sampler2D tBloom;
 uniform sampler2D tAO;
@@ -196,9 +196,36 @@ uniform float highlightRolloff;
 uniform float tealLift;
 uniform float speedAmt;
 uniform float chroma;
+uniform float uHdr;
+uniform float uExposure;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+vec3 rrtAndOdtFit(vec3 v) {
+  vec3 a = v * (v + 0.0245786) - 0.000090537;
+  vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+  return a / b;
+}
+
+// Same fit as three r160 ACESFilmicToneMapping. Scene pass is linear on desktop.
+vec3 acesFit(vec3 color) {
+  const mat3 acesIn = mat3(
+    vec3(0.59719, 0.07600, 0.02840),
+    vec3(0.35458, 0.90834, 0.13383),
+    vec3(0.04823, 0.01566, 0.83777)
+  );
+  const mat3 acesOut = mat3(
+    vec3(1.60475, -0.10208, -0.00327),
+    vec3(-0.53108, 1.10813, -0.07276),
+    vec3(-0.07367, -0.00605, 1.07602)
+  );
+  color *= uExposure / 0.6;
+  color = acesIn * color;
+  color = rrtAndOdtFit(color);
+  color = acesOut * color;
+  return clamp(color, 0.0, 1.0);
+}
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -237,12 +264,13 @@ void main() {
   if (bloomStrength > 0.001) {
     color += texture2D(tBloom, vUv).rgb * bloomStrength;
   }
+  if (uHdr > 0.5) color = acesFit(color);
   color = (color - 0.5) * contrast + 0.5;
   float l = luma(color);
   color = mix(vec3(l), color, saturation);
-  vec3 teal = vec3(0.78, 0.94, 1.1);
-  vec3 amber = vec3(1.1, 0.96, 0.78);
-  color *= mix(teal, amber, smoothstep(0.16, 0.7, l));
+  vec3 teal = vec3(0.66, 0.9, 1.14);
+  vec3 amber = vec3(1.18, 0.98, 0.72);
+  color *= mix(teal, amber, smoothstep(0.12, 0.64, l));
   color = mix(color, color * teal, (1.0 - smoothstep(0.1, 0.42, l)) * tealLift);
   color.r += warmth * 0.04;
   color.b -= warmth * 0.03;
@@ -396,6 +424,8 @@ export class PhotoRealPost {
         tealLift: { value: 0.14 },
         speedAmt: { value: 0 },
         chroma: { value: 0.0046 },
+        uHdr: { value: 0 },
+        uExposure: { value: 1 },
       },
       vertexShader: VERT,
       fragmentShader: COMPOSITE_FRAG,
@@ -406,6 +436,9 @@ export class PhotoRealPost {
 
     this._w = 0;
     this._h = 0;
+    this._hdr = false;
+    this._rtHdr = false;
+    this._linearRequested = false;
     this._bloomDiv = 4;
     this._aoTick = 0;
     this._aoWarmed = false;
@@ -448,11 +481,62 @@ export class PhotoRealPost {
   }
 
   /**
+   * Desktop WebGL2 race keeps a linear half-float scene. Low and phones stay 8-bit.
+   * @param {'high'|'balanced'|'low'} q
+   * @returns {boolean}
+   */
+  _wantHdr(q) {
+    if (q === "low") return false;
+    const caps = this.renderer && this.renderer.capabilities;
+    if (!caps || !caps.isWebGL2) return false;
+    try {
+      if (typeof window !== "undefined" && window.__rallyPhoneLite) return false;
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      if (/Android|iPhone|iPod|Mobile/i.test(ua)) return false;
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+
+  /**
+   * Match the renderer to the buffer. Called when the race arms, not every frame.
+   * @returns {boolean}
+   */
+  _applyHdrState() {
+    const hdr = !!this._linearRequested && this._wantHdr(this.quality);
+    this._hdr = hdr;
+    const r = this.renderer;
+    if (r) {
+      r.toneMapping = hdr ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+    }
+    return hdr;
+  }
+
+  /**
+   * Race present asks for a linear scene. Title passes false and stays ACES.
+   * @param {boolean} on
+   */
+  setLinearScene(on) {
+    this._linearRequested = !!on;
+    const hdr = this._applyHdrState();
+    if (this.sceneRT && this._rtHdr !== hdr && this._cssW) {
+      const w = this._cssW;
+      const h = this._cssH;
+      const pr = this._pr || 1;
+      this._w = 0;
+      this.setSize(w, h, pr);
+    }
+  }
+
+  /**
    * @param {'high'|'balanced'|'low'} q
    */
   setQuality(q) {
-    if (q === this.quality) return;
-    this.quality = q === "high" || q === "low" ? q : "balanced";
+    const next = q === "high" || q === "low" ? q : "balanced";
+    if (next === this.quality) return;
+    this.quality = next;
+    this._applyHdrState();
   }
 
   /**
@@ -481,7 +565,7 @@ export class PhotoRealPost {
     if (u.tealLift) u.tealLift.value = look.teal;
     if (u.speedAmt) u.speedAmt.value = look.speedAmt;
     if (u.chroma) u.chroma.value = look.chroma;
-    this._brightMat.uniforms.threshold.value = look.thresh;
+    this._brightMat.uniforms.threshold.value = this._hdr ? Math.max(look.thresh, 1.15) : look.thresh;
     this._aoMat.uniforms.aoRadius.value = VISUAL.aoRadius ?? 1.35;
   }
 
@@ -491,19 +575,24 @@ export class PhotoRealPost {
    * @param {number} pixelRatio
    */
   setSize(width, height, pixelRatio = 1) {
+    this._cssW = width;
+    this._cssH = height;
+    this._pr = pixelRatio;
+    const hdr = this._applyHdrState();
     const w = Math.max(1, Math.floor(width * pixelRatio));
     const h = Math.max(1, Math.floor(height * pixelRatio));
-    if (w === this._w && h === this._h) return;
+    if (w === this._w && h === this._h && hdr === !!this._rtHdr && this.sceneRT) return;
     this._w = w;
     this._h = h;
+    this._rtHdr = hdr;
     this._disposeTargets();
     const depth = new THREE.DepthTexture(w, h);
     depth.format = THREE.DepthFormat;
     depth.type = THREE.UnsignedIntType;
     const opts = {
-      type: THREE.UnsignedByteType,
+      type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
       format: THREE.RGBAFormat,
-      colorSpace: THREE.SRGBColorSpace,
+      colorSpace: hdr ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace,
       depthBuffer: true,
       stencilBuffer: false,
       samples: 0,
@@ -523,7 +612,15 @@ export class PhotoRealPost {
     this.ssgiRT = new THREE.WebGLRenderTarget(aw, ah, aoOpts);
     const bw = Math.max(1, w >> 2);
     const bh = Math.max(1, h >> 2);
-    const bloomOpts = { ...aoOpts };
+    const bloomOpts = hdr
+      ? {
+          type: THREE.HalfFloatType,
+          format: THREE.RGBAFormat,
+          colorSpace: THREE.LinearSRGBColorSpace,
+          depthBuffer: false,
+          stencilBuffer: false,
+        }
+      : { ...aoOpts };
     this.brightRT = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurA = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
     this.blurB = new THREE.WebGLRenderTarget(bw, bh, bloomOpts);
@@ -544,6 +641,10 @@ export class PhotoRealPost {
     const r = this.renderer;
     const prevAuto = r.autoClear;
     r.autoClear = true;
+    const hdr = !!this._hdr;
+    const cu0 = this._compMat.uniforms;
+    if (cu0.uHdr) cu0.uHdr.value = hdr ? 1 : 0;
+    if (cu0.uExposure) cu0.uExposure.value = r.toneMappingExposure || 1;
     const q = this.quality;
     const titlePad = !!this._titleShowroom;
     const useAo =
@@ -664,7 +765,7 @@ export class PhotoRealPost {
     if (cu.tealLift) cu.tealLift.value = look.teal;
     if (cu.speedAmt) cu.speedAmt.value = titlePad ? 0 : look.speedAmt;
     if (cu.chroma) cu.chroma.value = titlePad ? 0 : look.chroma;
-    this._brightMat.uniforms.threshold.value = look.thresh;
+    this._brightMat.uniforms.threshold.value = this._hdr ? Math.max(look.thresh, 1.15) : look.thresh;
     // Only composite SSGI from a bake this present — never a prior frame's colour field.
     const giComp =
       useSsgi && refreshGi

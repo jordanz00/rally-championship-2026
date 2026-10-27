@@ -10,7 +10,7 @@
  *   the staggered drift when a texture change catches one axle first.
  */
 
-import { SURFACES } from "../config.js?v=251";
+import { SURFACES } from "../config.js?v=253";
 
 /** Fields that are a simple numeric lerp between two surfaces. */
 const LERP_FIELDS = [

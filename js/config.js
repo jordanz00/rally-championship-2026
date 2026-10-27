@@ -1041,7 +1041,7 @@ export const HANDLING = {
    * straight on hard ground). Scales with the surface driftEase spread, so
    * one dial covers "throttle steers you" across all seven surfaces.
    */
-  throttleSlide: 2.58,
+  throttleSlide: 2.88,
   /**
    * Bump + steering-away amplifier. Research: two wheels on a bump plus
    * steering away from it can end you. Amplify it, do not hide it.
@@ -1077,7 +1077,7 @@ export const HANDLING = {
   handbrakeYawKick: 3.35,
   handbrakePowerMul: 2.72,
   /** Power-slide sustain without e-brake (throttle + steer sideways). */
-  driftBleedMul: 0.012,
+  driftBleedMul: 0.0085,
   /** Lateral grip scale at full slide angle. High enough that a catch still exists. */
   slideGripMul: 0.4,
   /**
@@ -1089,7 +1089,7 @@ export const HANDLING = {
    * Throttle + steer pitch-in on loose ground (no e-brake). Higher = easier
    * to light the rear with power alone — classic arcade power slide.
    */
-  powerSlidePitch: 2.96,
+  powerSlidePitch: 3.28,
   /**
    * Trail-brake rotation. Brake + steer on loose surfaces transfers weight
    * forward and rotates the nose — AM3 "brake into the corner" technique.
@@ -1179,7 +1179,7 @@ export const HANDLING = {
    * Multiplies tqDrive while sideways + on throttle so the car *surges*
    * as you straighten — classic rally power-slide fun.
    */
-  slideExitBoost: 1.92,
+  slideExitBoost: 2.18,
   /** |driftAngle| (rad) where exit boost is fully armed. */
   slideExitAngle: 0.08,
   /** Fade exit boost once speed exceeds this (km/h) so top end stays honest. */
@@ -1291,20 +1291,20 @@ export const ARCADE_ASSIST = {
    * Extra yaw toward steering intent while grip is building (0 = off).
    * Cap is hard inside vehicle.js — never a spin motor.
    */
-  yawAssist: 0.24,
+  yawAssist: 0.34,
   /** Soften lateral velocity when opposite-lock + slip still recoverable. */
   recoveryAssist: 0.96,
   /** |vy| (m/s) below which recoveryAssist may help (above = consequence). */
   recoverableSlide: 14.2,
   /** Extra rear grip rebuild while countersteering at mid slip (0–1 scale). */
-  driftStability: 0.6,
+  driftStability: 0.74,
   /** Landing: damp residual yaw rate after a planted touchdown. */
   landingAssist: 0.55,
   /**
    * Tire sweet-spot width. Higher = longer progressive fall from peak grip
    * into slide (grip→slide→recover), not cliff→spin.
    */
-  tireSlideSoft: 3.15,
+  tireSlideSoft: 3.5,
   /**
    * Hold peak force until slip/peak exceeds this (1 = fall immediately at peak).
    * >1 gives a readable "you're at the limit" plateau before breakaway.
@@ -1718,12 +1718,12 @@ export const CAMERA = {
   /** Cap on |lateral kick| during a slide (metres). */
   slideKickMax: 0.018,
   /**
-   * Legacy config — C-key now hard-snaps (`_camBlendT = 0`). Kept for docs/QA.
+   * C-key ease. Smootherstep in `_chaseCam` — slow in, slow out, no cut.
+   * POV is a touch longer so the seat reads; still under half a second.
    */
-  viewBlendTime: 0.001,
-  /** POV↔chase — instant with the C press (no ease hang).
-   */
-  viewBlendTimePov: 0.001,
+  viewBlendTime: 0.38,
+  /** POV↔chase ease. Same curve as chase↔chase. */
+  viewBlendTimePov: 0.45,
   /** Chase follow while settled — snappy, no float. */
   viewBlendStiffness: 26,
   /** Seat lock once POV blend finishes (hard copy, this is a fallback). */

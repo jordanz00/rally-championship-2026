@@ -3,9 +3,8 @@
  *
  * WHO THIS IS FOR: cockpit / POV camera only (layer 1 overlay).
  * WHAT IT DOES: loads a CC0 skinned hand (MakeHuman mesh, 26-bone rig),
- *   already posed in a grip, and seats each one on the rim at 9 and 3.
- *   Knuckles face the driver. Fingers close on the far side of the tube.
- *   Hands ride steer-spin so a turn rotates the grip with the wheel.
+ *   seats large grips at 9 and 3 with fingers curled onto the leather.
+ *   Knuckles face the driver. Hands ride steer-spin with the wheel.
  *   Two-bone sleeves hang from the wrist empties.
  * HOW IT CONNECTS: celica.js attachPovDriverArms → cockpit-anim IK each frame.
  *   Models: assets/driver/hand-grip-l.glb, hand-grip-r.glb (see ATTRIBUTION.txt).
@@ -32,6 +31,13 @@ const _corner = new THREE.Vector3();
 
 /** 9/3 plus a few degrees toward 10/2 — planted, thumbs on the crown. */
 const CLOCK_9_3 = 0.14;
+/**
+ * Final display scale after tube fit. The export is a small MakeHuman hand —
+ * POV needs a readable adult grip without floating off the leather.
+ */
+const HAND_DISPLAY = 1.52;
+/** Extra squeeze into the tube after scale (fraction of tubeR). */
+const HAND_PRESS = 0.72;
 
 const HAND_L_URL = new URL("../../assets/driver/hand-grip-l.glb", import.meta.url).href;
 const HAND_R_URL = new URL("../../assets/driver/hand-grip-r.glb", import.meta.url).href;
@@ -111,40 +117,41 @@ function ensureSkinMaps() {
 function ensureMats() {
   if (SKIN_MAT) return;
   ensureSkinMaps();
+  // Warm living skin — readable under the cabin fill without looking plastic.
   SKIN_MAT = new THREE.MeshStandardMaterial({
     map: SKIN_MAP,
     bumpMap: SKIN_BUMP,
-    bumpScale: 0.18,
-    color: 0xc4927c,
-    roughness: 0.62,
-    metalness: 0.02,
-    envMapIntensity: 0.28,
-    emissive: 0xa87864,
+    bumpScale: 0.42,
+    color: 0xd4a088,
+    roughness: 0.78,
+    metalness: 0.0,
+    envMapIntensity: 0.22,
+    emissive: 0xb88870,
     emissiveMap: SKIN_MAP,
-    emissiveIntensity: 0.38,
+    emissiveIntensity: 0.48,
     toneMapped: false,
   });
   SKIN_MAT.userData.shared = true;
   SUIT_MAT = new THREE.MeshStandardMaterial({
-    color: 0x141820,
-    roughness: 0.9,
+    color: 0x12161e,
+    roughness: 0.92,
     metalness: 0.02,
-    envMapIntensity: 0.35,
+    envMapIntensity: 0.3,
     bumpMap: SKIN_BUMP,
-    bumpScale: 0.18,
-    emissive: 0x0c1016,
-    emissiveIntensity: 0.55,
+    bumpScale: 0.22,
+    emissive: 0x0a0e14,
+    emissiveIntensity: 0.5,
     toneMapped: false,
     side: THREE.DoubleSide,
   });
   SUIT_MAT.userData.shared = true;
   CUFF_MAT = new THREE.MeshStandardMaterial({
-    color: 0x0a0c10,
-    roughness: 0.7,
-    metalness: 0.12,
-    envMapIntensity: 0.4,
-    emissive: 0x08090c,
-    emissiveIntensity: 0.5,
+    color: 0x080a0e,
+    roughness: 0.68,
+    metalness: 0.14,
+    envMapIntensity: 0.35,
+    emissive: 0x06080c,
+    emissiveIntensity: 0.45,
     toneMapped: false,
     side: THREE.DoubleSide,
   });
@@ -324,8 +331,8 @@ function seatRig(mount, rig, tubeR) {
  * Park the baked grip on the rim tube.
  *
  * Tip bones stick out past the flesh — seating on them floats the mesh off the
- * leather. Use the skinned mesh AABB in the curl plane (XZ, tube along +Y).
- * Keep the export curl; a half-turn around Y puts palms at the seat.
+ * leather. Sample skinned verts in the curl plane (XZ, tube along +Y), scale
+ * up to a readable adult hand, then curl fingers onto the leather.
  *
  * @param {THREE.Object3D} rig
  * @param {number} side +1 left / −1 right
@@ -339,13 +346,13 @@ function seatGrip(rig, side, tubeR, _handScale) {
   rig.scale.setScalar(1);
   rig.updateMatrixWorld(true);
 
-  let mesh = null;
+  let skin = null;
   rig.traverse((o) => {
-    if (o.isSkinnedMesh && !mesh) mesh = o;
+    if (o.isSkinnedMesh && !skin) skin = o;
   });
-  if (!mesh || !mesh.geometry) return;
+  if (!skin || !skin.geometry) return;
 
-  const pos = mesh.geometry.attributes.position;
+  const pos = skin.geometry.attributes.position;
   if (!pos) return;
   // Sample real verts — AABB corners sit inside the C and fake contact.
   const step = Math.max(1, (pos.count / 800) | 0);
@@ -358,7 +365,7 @@ function seatGrip(rig, side, tubeR, _handScale) {
   let nearZ = 0;
   for (let i = 0; i < pos.count; i += step) {
     _corner.fromBufferAttribute(pos, i);
-    mesh.localToWorld(_corner);
+    skin.localToWorld(_corner);
     rig.worldToLocal(_corner);
     cx += _corner.x;
     cy += _corner.y;
@@ -376,24 +383,54 @@ function seatGrip(rig, side, tubeR, _handScale) {
   cy /= n;
   cz /= n;
 
-  // Flesh meets the leather. Press slightly into the tube so pads read closed.
-  const target = tubeR * 0.82;
-  const fit = THREE.MathUtils.clamp(target / rMin, 0.32, 0.85);
+  // Fit the crook to the tube, then boost to an adult POV hand.
+  const target = tubeR * 0.9;
+  const baseFit = THREE.MathUtils.clamp(target / rMin, 0.4, 1.05);
+  const fit = baseFit * HAND_DISPLAY;
   const radial = Math.hypot(nearX, nearZ) || Math.hypot(cx, cz) || 1;
   const dirX = nearX / radial;
   const dirZ = nearZ / radial;
-  // Closest flesh lands on the tube; Y centered on the palm mass.
   rig.scale.setScalar(fit);
-  rig.position.set(dirX * (target - fit * rMin), -cy * fit, dirZ * (target - fit * rMin));
-  // Pull the C onto the tube so the rim sits in the finger crook, not beside it.
-  rig.position.x -= dirX * tubeR * 0.55;
-  rig.position.z -= dirZ * tubeR * 0.55;
+  // Closest flesh on the leather; Y centered on the palm mass.
+  const contact = target - fit * rMin;
+  rig.position.set(dirX * contact, -cy * fit, dirZ * contact);
+  // Squeeze so the rim sits in the finger crook — pads wrap, not hover.
+  rig.position.x -= dirX * tubeR * HAND_PRESS;
+  rig.position.z -= dirZ * tubeR * HAND_PRESS;
+  curlFingers(rig, side);
   tuckThumb(rig, side);
   rig.updateMatrixWorld(true);
 }
 
 /**
- * Lay the thumb on the near rim face, tip toward the hub — closed 9/3 grip.
+ * Close the four fingers onto the far side of the rim.
+ * Small local bends only — big curls tear MakeHuman weights.
+ * @param {THREE.Object3D} rig
+ * @param {number} side
+ */
+function curlFingers(rig, side) {
+  const tag = side > 0 ? "L" : "R";
+  const digits = ["Index", "Middle", "Ring", "Pinky"];
+  // Stronger curl on pinky/ring; index stays a touch more open (natural wheel grip).
+  const curl = [0.42, 0.5, 0.58, 0.64];
+  const s = side > 0 ? 1 : -1;
+  for (let i = 0; i < digits.length; i++) {
+    const name = digits[i];
+    const prox = rig.getObjectByName(`${name}_Proximal_${tag}`);
+    const mid = rig.getObjectByName(`${name}_Intermediate_${tag}`);
+    const dist = rig.getObjectByName(`${name}_Distal_${tag}`);
+    const k = curl[i];
+    if (prox) {
+      prox.rotateX(k * 0.55);
+      prox.rotateZ(s * k * 0.08);
+    }
+    if (mid) mid.rotateX(k * 0.72);
+    if (dist) dist.rotateX(k * 0.55);
+  }
+}
+
+/**
+ * Oppose the thumb across the near rim face — closed 9/3 power grip.
  * Tiny local bends only; big curls tear the baked weights.
  * @param {THREE.Object3D} rig
  * @param {number} side
@@ -405,15 +442,23 @@ function tuckThumb(rig, side) {
   const dist = rig.getObjectByName(`Thumb_Distal_${tag}`);
   if (!meta) return;
   if (side > 0) {
-    meta.rotateY(-0.35);
-    meta.rotateZ(0.28);
-    if (prox) prox.rotateZ(-0.18);
-    if (dist) dist.rotateZ(-0.12);
+    meta.rotateY(-0.48);
+    meta.rotateZ(0.38);
+    meta.rotateX(0.22);
+    if (prox) {
+      prox.rotateZ(-0.28);
+      prox.rotateX(0.2);
+    }
+    if (dist) dist.rotateZ(-0.22);
   } else {
-    meta.rotateY(0.35);
-    meta.rotateZ(-0.28);
-    if (prox) prox.rotateZ(0.18);
-    if (dist) dist.rotateZ(0.12);
+    meta.rotateY(0.48);
+    meta.rotateZ(-0.38);
+    meta.rotateX(0.22);
+    if (prox) {
+      prox.rotateZ(0.28);
+      prox.rotateX(0.2);
+    }
+    if (dist) dist.rotateZ(0.22);
   }
 }
 
@@ -469,10 +514,10 @@ export function attachPovDriverArms(root, hooks) {
   grips.add(handL, handR);
 
   const layer = hooks.POV_HUD_LAYER;
-  const lamp = new THREE.PointLight(0xffe6cc, 0.85, 1.15, 1.6);
+  const lamp = new THREE.PointLight(0xffe2c4, 1.15, 1.45, 1.45);
   lamp.name = "pov-hand-light";
   lamp.layers.set(layer);
-  lamp.position.set(0, 0, 0.04);
+  lamp.position.set(0, 0, 0.06);
   grips.add(lamp);
 
   spin.add(grips);
@@ -494,22 +539,22 @@ export function attachPovDriverArms(root, hooks) {
   function armChain(side) {
     const deltoid = mesh(
       SUIT_MAT,
-      geo("deltoid", () => new THREE.SphereGeometry(0.042, 12, 10))
+      geo("deltoid-v2", () => new THREE.SphereGeometry(0.052, 12, 10))
     );
     deltoid.layers.set(layer);
     deltoid.renderOrder = 7;
-    deltoid.scale.set(1.15, 0.85, 0.95);
-    const upper = makeSleeveMesh(0.04, 0.03, "upper");
+    deltoid.scale.set(1.2, 0.88, 1.0);
+    const upper = makeSleeveMesh(0.048, 0.036, "upper-v2");
     upper.layers.set(layer);
     upper.renderOrder = 7;
     const elbow = new THREE.Object3D();
     elbow.name = side > 0 ? "elbow-L" : "elbow-R";
-    const lower = makeSleeveMesh(0.029, 0.022, "lower");
+    const lower = makeSleeveMesh(0.034, 0.026, "lower-v2");
     lower.layers.set(layer);
     lower.renderOrder = 7;
     const cuffRing = mesh(
       CUFF_MAT,
-      geo("sleeve-cuff", () => new THREE.TorusGeometry(0.023, 0.006, 8, 14))
+      geo("sleeve-cuff-v2", () => new THREE.TorusGeometry(0.028, 0.007, 8, 14))
     );
     cuffRing.rotation.x = Math.PI * 0.5;
     cuffRing.position.y = 0.98;
@@ -546,8 +591,8 @@ export function attachPovDriverArms(root, hooks) {
     tubeR,
     trisL: 0,
     trisR: 0,
-    upperLen: 0.28,
-    foreLen: 0.24,
+    upperLen: 0.32,
+    foreLen: 0.27,
     _tmpA: new THREE.Vector3(),
     _tmpB: new THREE.Vector3(),
     _tmpC: new THREE.Vector3(),

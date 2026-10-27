@@ -5,6 +5,7 @@
  * WHAT IT DOES: Segment vocabulary with gameplay purpose → compiles to the
  *   existing Track piece format (`straight` / `curve` / `jump` + flags).
  * HOW IT CONNECTS: courses.js / stages/* call compileTrackDefinition();
+ *   sculptRoadElevation rolls the grade after the play-lane ease.
  *   Track.create still consumes pieces only. No track.js rewrite.
  *
  * POWER BI MAPPING: none
@@ -321,21 +322,22 @@ export function compileSegment(seg, ctx) {
  * sweepers still ease so every stage turn is holdable.
  */
 /** Wider lane + opened corners — easy power-slide championship ribbon. */
-const PLAY_WIDTH = 1.68;
-const PLAY_TIGHT_RADIUS = 1.62;
-const PLAY_MEDIUM_RADIUS = 1.42;
-const PLAY_SWEEP_RADIUS = 1.28;
-const PLAY_SPEED_TIGHT = 1.36;
-const PLAY_SPEED_SWEEP = 1.26;
-const PLAY_HAIRPIN_ANGLE = 0.88;
+/** Slide ribbon: narrow enough to hang attitude, wide enough to catch. */
+const PLAY_WIDTH = 1.48;
+const PLAY_TIGHT_RADIUS = 1.52;
+const PLAY_MEDIUM_RADIUS = 1.28;
+const PLAY_SWEEP_RADIUS = 1.22;
+const PLAY_SPEED_TIGHT = 1.28;
+const PLAY_SPEED_SWEEP = 1.2;
+const PLAY_HAIRPIN_ANGLE = 0.9;
 const PLAY_WIDTH_MIN = 7.5;
 const PLAY_WIDTH_MAX = 40;
 const PLAY_TUNNEL_EXTRA = 2.8;
 const PLAY_STRAIGHT = 2.35;
 const PLAY_FINISH_PAD = {
   desert: 320,
-  forest: 300,
-  mountain: 300,
+  forest: 360,
+  mountain: 320,
   lakeside: 280,
   physlab: 48,
 };
@@ -465,6 +467,246 @@ export function easePlayCourse(course) {
   };
 }
 
+/** Metres per hill chord — short enough that a crest is not sliced off flat. */
+const HILL_CHUNK_M = 32;
+
+/**
+ * Rolling grade per stage. Cap stays under the 7.4 m flyover gap so a later
+ * ribbon still clears an earlier one. Quiet zones hold the grid and jump
+ * landings. Forest 3180–3900 is eased so that deck stays under a 5% grade.
+ */
+const HILL_PROFILE = {
+  desert: {
+    cap: 3.25,
+    fade: 72,
+    startQuiet: 24,
+    jumpPre: 34,
+    jumpPost: 92,
+    trend: 0.7,
+    waves: [
+      { amp: 2.45, k: 84, phase: 0.35 },
+      { amp: 1.4, k: 36, phase: 1.65 },
+      { amp: 0.85, k: 18, phase: 0.55 },
+    ],
+  },
+  forest: {
+    cap: 3.15,
+    fade: 80,
+    startQuiet: 28,
+    jumpPre: 30,
+    jumpPost: 64,
+    trend: 0.4,
+    deck: { from: 3180, to: 3900, keep: 0.38, fade: 110 },
+    waves: [
+      { amp: 2.3, k: 78, phase: 0.55 },
+      { amp: 1.25, k: 34, phase: 2.05 },
+      { amp: 0.8, k: 17.5, phase: 0.2 },
+    ],
+  },
+  mountain: {
+    cap: 3.35,
+    fade: 70,
+    startQuiet: 22,
+    jumpPre: 30,
+    jumpPost: 52,
+    trend: 1.5,
+    waves: [
+      { amp: 2.55, k: 70, phase: 0.2 },
+      { amp: 1.45, k: 32, phase: 1.35 },
+      { amp: 0.9, k: 16.5, phase: 2.4 },
+    ],
+  },
+  lakeside: {
+    cap: 3.0,
+    fade: 74,
+    startQuiet: 26,
+    jumpPre: 32,
+    jumpPost: 70,
+    trend: 0.55,
+    waves: [
+      { amp: 2.15, k: 76, phase: 0.8 },
+      { amp: 1.2, k: 31, phase: 2.2 },
+      { amp: 0.78, k: 16, phase: 0.15 },
+    ],
+  },
+};
+
+/**
+ * @param {number} t
+ * @returns {number}
+ */
+function smoothstep01(t) {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * (3 - 2 * x);
+}
+
+/**
+ * Spline length of one piece, matching Track._buildSpline.
+ * @param {object} piece
+ * @returns {number}
+ */
+function pieceRunMetres(piece) {
+  if (!piece) return 0;
+  if (piece.type === "straight") return piece.length || 0;
+  if (piece.type === "curve") {
+    return ((Math.abs(piece.angle || 0) * Math.PI) / 180) * (piece.radius || 0);
+  }
+  if (piece.type === "jump") {
+    const ramp = piece.ramp || 26;
+    const lip = Math.max(5, piece.lip || 7);
+    const gap = piece.gap || 20;
+    const land = piece.land || 24;
+    const dropFast = Math.min(11, Math.max(8, gap * 0.4));
+    const flyover = Math.max(10, gap - dropFast + 4);
+    return ramp + lip + dropFast + flyover + land;
+  }
+  return 0;
+}
+
+/**
+ * Break a long straight or sweeper into short chords so a hill can rise and fall.
+ * Hairpins and the Forest finish-left stay one piece (QA pins 3469 and 3485).
+ * @param {object} piece
+ * @returns {object[]}
+ */
+function splitDrivePiece(piece) {
+  if (!piece || piece.type === "jump") return [piece];
+  const run = pieceRunMetres(piece);
+  if (!(run > 0)) return [piece];
+  if (piece.type === "curve") {
+    if (Math.abs(piece.angle || 0) >= 100) return [piece];
+    if (/finish/i.test(piece.purpose || "")) return [piece];
+    if (run < 110) return [piece];
+  } else if (run < 56) {
+    return [piece];
+  }
+  const n = Math.max(2, Math.round(run / HILL_CHUNK_M));
+  /** @type {object[]} */
+  const out = [];
+  let consumed = 0;
+  const switchAt = piece.type === "curve" ? 0.55 : 0.45;
+  for (let i = 0; i < n; i++) {
+    const isLast = i === n - 1;
+    const share = isLast ? run - consumed : run / n;
+    const frac0 = consumed / run;
+    const frac1 = (consumed + share) / run;
+    consumed += share;
+    const chunk = { ...piece };
+    if (piece.type === "straight") chunk.length = share;
+    else chunk.angle = (piece.angle || 0) * (share / run);
+    chunk.dy = (piece.dy || 0) * (share / run);
+    if (piece.surfaceOut) {
+      if (frac0 >= switchAt) {
+        chunk.surface = piece.surfaceOut;
+        delete chunk.surfaceOut;
+      } else if (frac1 <= switchAt) {
+        delete chunk.surfaceOut;
+      }
+    }
+    if (i > 0) {
+      chunk.landmark = false;
+      delete chunk.visual;
+    }
+    if (!isLast) chunk.checkpoint = false;
+    out.push(chunk);
+  }
+  return out;
+}
+
+/**
+ * @param {number} s
+ * @param {{a:number,b:number}[]} zones
+ * @param {number} fade
+ * @returns {number}
+ */
+function hillWindow(s, zones, fade) {
+  let w = 1;
+  for (let i = 0; i < zones.length; i++) {
+    const z = zones[i];
+    if (s >= z.a && s <= z.b) return 0;
+    if (s < z.a && z.a - s < fade) w = Math.min(w, smoothstep01((z.a - s) / fade));
+    else if (s > z.b && s - z.b < fade) w = Math.min(w, smoothstep01((s - z.b) / fade));
+  }
+  return w;
+}
+
+/**
+ * @param {number} s
+ * @param {object} spec
+ * @param {{a:number,b:number}[]} zones
+ * @param {number} total
+ * @returns {number}
+ */
+/**
+ * Forest 3180–3900 must stay a fast deck. Ease the hill there; full rolls elsewhere.
+ * @param {number} s
+ * @param {object} spec
+ * @returns {number}
+ */
+function deckScale(s, spec) {
+  const d = spec.deck;
+  if (!d) return 1;
+  if (s >= d.from && s <= d.to) return d.keep;
+  if (s < d.from && d.from - s < d.fade) {
+    return d.keep + (1 - d.keep) * smoothstep01((d.from - s) / d.fade);
+  }
+  if (s > d.to && s - d.to < d.fade) {
+    return d.keep + (1 - d.keep) * smoothstep01((s - d.to) / d.fade);
+  }
+  return 1;
+}
+
+function stageHill(s, spec, zones, total) {
+  let y = spec.trend ? spec.trend * Math.sin((Math.PI * s) / Math.max(1, total)) : 0;
+  const waves = spec.waves;
+  for (let i = 0; i < waves.length; i++) {
+    const w = waves[i];
+    y += w.amp * Math.sin(s / w.k + w.phase);
+  }
+  const capped = spec.cap * Math.tanh(y / spec.cap);
+  return capped * hillWindow(s, zones, spec.fade) * deckScale(s, spec);
+}
+
+/**
+ * Lay a rolling grade on a compiled course. XZ and jump throws stay.
+ * @param {object} course
+ * @returns {object}
+ */
+export function sculptRoadElevation(course) {
+  const spec = HILL_PROFILE[course && course.id];
+  if (!spec || !Array.isArray(course.pieces)) return course;
+  /** @type {object[]} */
+  const pieces = [];
+  for (let i = 0; i < course.pieces.length; i++) {
+    const parts = splitDrivePiece(course.pieces[i]);
+    for (let j = 0; j < parts.length; j++) pieces.push(parts[j]);
+  }
+  const runs = pieces.map((p) => pieceRunMetres(p));
+  let total = 0;
+  for (let i = 0; i < runs.length; i++) total += runs[i];
+  /** @type {{a:number,b:number}[]} */
+  const zones = [{ a: 0, b: spec.startQuiet }];
+  let s = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const run = runs[i];
+    const p = pieces[i];
+    if (p.type === "jump") zones.push({ a: s - spec.jumpPre, b: s + run + spec.jumpPost });
+    s += run;
+  }
+  s = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const run = runs[i];
+    const p = pieces[i];
+    const s1 = s + run;
+    if (p.type !== "jump" && run > 0) {
+      p.dy = (p.dy || 0) + (stageHill(s1, spec, zones, total) - stageHill(s, spec, zones, total));
+    }
+    s = s1;
+  }
+  course.pieces = pieces;
+  return course;
+}
+
 export function compileTrackDefinition(def) {
   if (!def || !Array.isArray(def.segments)) {
     throw new Error("compileTrackDefinition: def.segments required");
@@ -502,7 +744,7 @@ export function compileTrackDefinition(def) {
     segments: def.segments,
     pieces,
   };
-  return easePlayCourse(course);
+  return sculptRoadElevation(easePlayCourse(course));
 }
 
 /**

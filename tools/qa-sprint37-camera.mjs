@@ -37,7 +37,7 @@ check(
 
 check(
   "C-key pose blend is a short ease, not a cut",
-  /viewBlendTime:\s*0\.2[0-9]/.test(config) && /_startCamBlend/.test(game) && /_carryBlendPoint/.test(game),
+  /viewBlendTime:\s*0\.[2-4][0-9]/.test(config) && /_startCamBlend/.test(game) && /_carryBlendPoint/.test(game),
   "viewBlendTime ~0.2s and from-pose must ride with the car"
 );
 

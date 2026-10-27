@@ -10,19 +10,19 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=251";
-import { roadMicroHeight } from "./road-micro.js?v=13";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=253";
+import { roadMicroHeight } from "./road-micro.js?v=14";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
-import { shoulderPadForScenery } from "./track-clearance.js?v=2";
-import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
-import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=9";
+import { shoulderPadForScenery } from "./track-clearance.js?v=3";
+import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=4";
+import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=11";
 import {
   shadowGeometry,
   shadowMaterial,
   crownGeometry,
   foliageMaterial,
   treeCardKind,
-} from "./trees.js?v=45";
+} from "./trees.js?v=46";
 import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=6";
 import {
   upgradeWorld,
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=65";
+} from "../gfx/pbr.js?v=67";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -68,8 +68,8 @@ function envExtrasEnabled() {
   return true;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=23";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=63";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=24";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=65";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -78,7 +78,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=66";
+} from "./forest-pbr.js?v=67";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -86,7 +86,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=67";
+} from "./desert-pbr.js?v=68";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -101,10 +101,10 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=25";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=49";
+} from "./forest-tunnel.js?v=27";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=51";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=15";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=16";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;

@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=75" />
+    <link rel="stylesheet" href="css/game.css?v=81" />
     <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
@@ -146,15 +146,23 @@
           el.hidden = false;
           el.textContent = label + "\n\n" + detail + "\n\nThe engine did not start. Reload with a hard refresh; if this repeats, the message above names the file at fault.";
         }
+        function bootStillStarting() {
+          return !!(window.game || window.__rallyBooting);
+        }
         window.addEventListener("error", function (e) {
+          if (bootStillStarting() && window.game) return;
           if (e && e.target && e.target.tagName === "SCRIPT") {
             report("Engine script failed to load.", String(e.target.src || "js/main.js"));
             return;
           }
+          if (window.__rallyBooting) return;
           if (e && e.message) report("Engine crashed while starting.", String(e.message) + (e.filename ? "\n" + e.filename + ":" + e.lineno : ""));
         }, true);
         window.addEventListener("unhandledrejection", function (e) {
+          if (window.game || window.__rallyBooting) return;
           var r = e && e.reason;
+          var msg = String(r && (r.message || r) || "");
+          if (/failed to fetch dynamically imported module/i.test(msg)) return;
           report("Engine failed during async startup.", String(r && r.stack ? r.stack : r));
         });
         var phoneBoot = /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || "");
@@ -313,36 +321,57 @@
       <pre id="boot-error" hidden style="position:fixed;z-index:99999;left:12px;right:12px;bottom:12px;background:#200;color:#fcc;padding:12px;font:12px/1.4 monospace;white-space:pre-wrap;"></pre>
 
       <section id="screen-menu" class="screen screen-ui">
-        <div class="ui-panel ui-panel-arcade">
-          <p class="ui-eyebrow">Rally Championship 2026</p>
+        <div class="ui-panel ui-panel-arcade ui-panel-front">
+          <div class="ui-brand">
+            <span class="ui-live">LIVE</span>
+            <p class="ui-eyebrow">Rally Championship 2026</p>
+          </div>
           <h2 class="ui-title">MAIN MENU</h2>
           <p class="ui-lead">Four stages. One grid. Beat the pack.</p>
           <div class="ui-cards" role="list">
             <button type="button" class="ui-card ui-card-hero" data-menu="championship" role="listitem" autofocus>
-              <span class="ui-card-kicker">Enter</span>
-              <span class="ui-card-title">CHAMPIONSHIP</span>
-              <span class="ui-card-copy">Desert → Forest → Mountain → Lakeside</span>
+              <span class="ui-card-art ui-card-art-champ" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Enter</span>
+                <span class="ui-card-title">CHAMPIONSHIP</span>
+                <span class="ui-card-copy">Desert → Forest → Mountain → Lakeside</span>
+              </span>
             </button>
             <button type="button" class="ui-card ui-card-quiet" data-menu="controls" role="listitem">
-              <span class="ui-card-kicker">Help</span>
-              <span class="ui-card-title">CONTROLS</span>
-              <span class="ui-card-copy">Keyboard · gamepad · phone</span>
+              <span class="ui-card-art ui-card-art-controls" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Help</span>
+                <span class="ui-card-title">CONTROLS</span>
+                <span class="ui-card-copy">Keyboard · gamepad · phone</span>
+              </span>
             </button>
           </div>
+          <ol class="ui-season" aria-hidden="true">
+            <li>01 Desert</li>
+            <li>02 Forest</li>
+            <li>03 Mountain</li>
+            <li>04 Lakeside</li>
+          </ol>
           <p class="ui-coin">PRESS CHAMPIONSHIP TO START</p>
         </div>
       </section>
 
       <section id="screen-cars" class="screen screen-ui">
-        <div class="ui-panel ui-panel-arcade">
-          <p class="ui-eyebrow" id="cars-mode-label">Championship</p>
+        <div class="ui-panel ui-panel-arcade ui-panel-front">
+          <div class="ui-brand">
+            <span class="ui-live">GRID</span>
+            <p class="ui-eyebrow" id="cars-mode-label">Championship</p>
+          </div>
           <h2 class="ui-title">YOUR CAR</h2>
           <p class="ui-lead hint" id="cars-hint">Toyota Celica GT-Four — locked for the season.</p>
           <div class="ui-cards" role="list">
             <button type="button" class="ui-card ui-card-hero" data-car="celica" role="listitem" autofocus>
-              <span class="ui-card-kicker">Toyota</span>
-              <span class="ui-card-title">CELICA GT-FOUR</span>
-              <span class="ui-card-copy">Confirm · grid up · GO</span>
+              <span class="ui-card-art ui-card-art-celica" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Toyota</span>
+                <span class="ui-card-title">CELICA GT-FOUR</span>
+                <span class="ui-card-copy">Confirm · grid up · GO</span>
+              </span>
             </button>
           </div>
           <div class="ui-actions">
@@ -352,35 +381,52 @@
       </section>
 
       <section id="screen-courses" class="screen screen-ui">
-        <div class="ui-panel">
-          <p class="ui-eyebrow">Stage select</p>
+        <div class="ui-panel ui-panel-arcade ui-panel-stages">
+          <div class="ui-brand">
+            <span class="ui-live">STAGES</span>
+            <p class="ui-eyebrow">Stage select</p>
+          </div>
           <h2 class="ui-title">SELECT COURSE</h2>
           <p class="ui-lead">Choose the rally stage. Pack and surfaces change with the biome.</p>
-          <div class="ui-cards" role="list">
+          <div class="ui-cards ui-cards-stages" role="list">
             <button type="button" class="ui-card ui-card-desert" data-course="desert" role="listitem">
-              <span class="ui-card-kicker">Stage 1</span>
-              <span class="ui-card-title">DESERT</span>
-              <span class="ui-card-copy">Fast · open · jumps · sand</span>
+              <span class="ui-card-art ui-card-art-desert" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Stage 1</span>
+                <span class="ui-card-title">DESERT</span>
+                <span class="ui-card-copy">Fast · open · jumps · sand</span>
+              </span>
             </button>
             <button type="button" class="ui-card ui-card-forest" data-course="forest" role="listitem">
-              <span class="ui-card-kicker">Stage 2</span>
-              <span class="ui-card-title">FOREST</span>
-              <span class="ui-card-copy">Rhythm · tight · dirt · tunnel</span>
+              <span class="ui-card-art ui-card-art-forest" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Stage 2</span>
+                <span class="ui-card-title">FOREST</span>
+                <span class="ui-card-copy">Rhythm · tight · dirt · tunnel</span>
+              </span>
             </button>
             <button type="button" class="ui-card ui-card-mountain" data-course="mountain" role="listitem">
-              <span class="ui-card-kicker">Stage 3</span>
-              <span class="ui-card-title">MOUNTAIN</span>
-              <span class="ui-card-copy">Commitment · elevation · tarmac</span>
+              <span class="ui-card-art ui-card-art-mountain" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Stage 3</span>
+                <span class="ui-card-title">MOUNTAIN</span>
+                <span class="ui-card-copy">Commitment · elevation · tarmac</span>
+              </span>
             </button>
             <button type="button" class="ui-card ui-card-lakeside" data-course="lakeside" hidden role="listitem">
-              <span class="ui-card-kicker">Unlock</span>
-              <span class="ui-card-title">LAKESIDE</span>
-              <span class="ui-card-copy">Flow · speed · showcase</span>
+              <span class="ui-card-art ui-card-art-lakeside" aria-hidden="true"></span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Unlock</span>
+                <span class="ui-card-title">LAKESIDE</span>
+                <span class="ui-card-copy">Flow · speed · showcase</span>
+              </span>
             </button>
             <button type="button" class="ui-card ui-card-quiet dev-only" data-course="physlab" role="listitem">
-              <span class="ui-card-kicker">Dev</span>
-              <span class="ui-card-title">PHYS LAB</span>
-              <span class="ui-card-copy">Torture · handling · F8</span>
+              <span class="ui-card-copyblock">
+                <span class="ui-card-kicker">Dev</span>
+                <span class="ui-card-title">PHYS LAB</span>
+                <span class="ui-card-copy">Torture · handling · F8</span>
+              </span>
             </button>
           </div>
           <div class="ui-actions">
@@ -390,8 +436,11 @@
       </section>
 
       <section id="screen-controls" class="screen screen-ui">
-        <div class="ui-panel ui-panel-arcade ui-panel-wide">
-          <p class="ui-eyebrow">How to drive</p>
+        <div class="ui-panel ui-panel-arcade ui-panel-wide ui-panel-front">
+          <div class="ui-brand">
+            <span class="ui-live">PACE</span>
+            <p class="ui-eyebrow">How to drive</p>
+          </div>
           <h2 class="ui-title">CONTROLS</h2>
           <p class="ui-lead">Arcade rally — plant it, slide it, finish it.</p>
           <ul class="ui-controls">
@@ -500,8 +549,11 @@
       </div>
 
       <section id="screen-paused" class="screen screen-ui">
-        <div class="ui-panel">
-          <p class="ui-eyebrow">Race held</p>
+        <div class="ui-panel ui-panel-arcade ui-panel-front">
+          <div class="ui-brand">
+            <span class="ui-live">HOLD</span>
+            <p class="ui-eyebrow">Race held</p>
+          </div>
           <h2 class="ui-title">PAUSED</h2>
           <p class="pause-distance">
             <span class="label">DISTANCE</span>
@@ -564,8 +616,11 @@
           <span id="broadcast-shot" class="broadcast-shot">WORLD FEED</span>
           <span id="broadcast-clock" class="broadcast-clock">0:00.00</span>
         </div>
-        <div class="ui-panel result-panel">
-          <p class="ui-eyebrow">Stage complete</p>
+        <div class="ui-panel ui-panel-arcade result-panel ui-panel-front">
+          <div class="ui-brand">
+            <span class="ui-live">FINISH</span>
+            <p class="ui-eyebrow">Stage complete</p>
+          </div>
           <h2 class="ui-title">RESULT</h2>
           <p id="result-headline" class="result-headline"></p>
           <ul id="result-detail" class="result-detail"></ul>
@@ -589,7 +644,10 @@
 
       <section id="screen-loading" class="screen" aria-live="polite" aria-busy="true">
         <div class="load-shell">
-          <p class="eyebrow">RALLY CHAMPIONSHIP</p>
+          <div class="ui-brand">
+            <span class="ui-live">LOAD</span>
+            <p class="eyebrow">RALLY CHAMPIONSHIP</p>
+          </div>
           <h2 id="load-stage">LOADING STAGE</h2>
           <p id="load-sub" class="load-sub"></p>
           <div id="load-bar" class="load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -604,6 +662,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1152" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1170" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

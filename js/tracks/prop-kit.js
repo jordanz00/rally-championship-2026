@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=251";
+import { VISUAL } from "../config.js?v=253";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -892,6 +892,13 @@ export function prefetchForestHeroTrees() {
 }
 
 const TITLE_ROCK_KINDS = Object.freeze(["rock_largeA", "rock_largeB", "rock_tallA", "rock_smallA"]);
+const TITLE_HERO_KINDS = Object.freeze([
+  "desert_hero_boulder_a",
+  "desert_hero_boulder_b",
+  "desert_hero_boulder_c",
+  "desert_hero_boulder_d",
+  "desert_hero_boulder_e",
+]);
 
 /** Warm sandstone tints — match the title sand apron, not grey Kenney plastic. */
 const TITLE_ROCK_TINTS = Object.freeze([
@@ -974,19 +981,23 @@ export function loadTitleRocks() {
     const loader = new GLTFLoader();
     /** @type {Record<string, THREE.Object3D>} */
     const out = {};
-    await Promise.all(
-      TITLE_ROCK_KINDS.map(async (kind) => {
-        try {
-          const gltf = await loader.loadAsync(`assets/props/${kind}.glb?v=16`);
-          const root = (gltf.scene || gltf.scenes[0]).clone(true);
-          styleTitleRock(root, TITLE_ROCK_KINDS.indexOf(kind));
-          root.name = `title-${kind}`;
-          out[kind] = root;
-        } catch (err) {
-          console.warn(`[title] rock failed ${kind}`, err);
-        }
-      })
-    );
+    const loadKind = async (kind, dress) => {
+      try {
+        const gltf = await loader.loadAsync(`assets/props/${kind}.glb?v=16`);
+        const root = (gltf.scene || gltf.scenes[0]).clone(true);
+        if (dress) styleTitleRock(root, TITLE_ROCK_KINDS.indexOf(kind));
+        else root.userData.heroScan = true;
+        root.name = `title-${kind}`;
+        out[kind] = root;
+      } catch (err) {
+        console.warn(`[title] rock failed ${kind}`, err);
+      }
+    };
+    const phone = typeof window !== "undefined" && window.__rallyPhoneLite === true;
+    if (!phone) await Promise.all(TITLE_HERO_KINDS.map((kind) => loadKind(kind, false)));
+    if (phone || Object.keys(out).length < 2) {
+      await Promise.all(TITLE_ROCK_KINDS.map((kind) => loadKind(kind, true)));
+    }
     return out;
   })();
   return titleRockPromise;

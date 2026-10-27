@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { burnoutLookFor } from "../js/gfx/burnout-look.js";
 import { RallyRush } from "../js/gameplay/rally-rush.js";
 import { applyBurnoutDriveTuning, rushTorqueMul } from "../js/physics/burnout-drive.js";
 import { HANDLING, ARCADE_ASSIST } from "../js/config.js";
@@ -49,7 +50,12 @@ check("burnout callouts stay off the HUD", !/flashMessage\("RUSH"\)/.test(game) 
 check("rush bar is hidden", /#hud-rush \{\s*display:\s*none/.test(read("css/game.css")));
 check("practice packs the grid", /Math\.max\(10, CHAMPIONSHIP\.practiceOpponents/.test(game));
 check("tail fire does not emit", /emit\(_car, _heat, _fire = 0\) \{\}/.test(effects));
-check("grade ignores rush and fire", /speedAmt: 0/.test(look) && /chroma: 0/.test(look) && !/fire \* \(lake/.test(look));
+const rushLook = burnoutLookFor("desert", { speed: 40, rush: 1, fire: 1 });
+const calmLook = burnoutLookFor("desert", { speed: 40 });
+check(
+  "On Fire lifts bloom, not a second fringe",
+  rushLook.bloom > calmLook.bloom && rushLook.chroma === calmLook.chroma && /chroma: title/.test(look)
+);
 check("cabin rush hiss exists", /setRush\(heat/.test(audio) && /audio\.setRush/.test(game));
 check("game imports vehicle.js?v=189+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 189);
 check("game imports postfx.js?v=43+", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 43);

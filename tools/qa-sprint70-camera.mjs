@@ -110,7 +110,7 @@ check(
   "POV roof clip parks without stripping materials (no C-key recompile)",
   /parkPovRoofClip/.test(car) &&
     /_povClipPrepared/.test(car) &&
-    /viewBlendTimePov:\s*0\.3/.test(config) &&
+    /viewBlendTimePov:\s*0\.[3-5][0-9]/.test(config) &&
     /povSeatEase:\s*0\.1[0-9]/.test(config)
 );
 check(

@@ -34,7 +34,7 @@ function check(label, ok, detail = "") {
 console.log(`PLAY LANE  ·  ${new Date().toISOString()}\n`);
 
 const vehSrc = fs.readFileSync(path.join(ROOT, "js/physics/vehicle.js"), "utf8");
-check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.[56]/.test(defSrc));
+check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.[45]/.test(defSrc));
 check("speed lane opens after Desert Safari", /PLAY_SPEED_TIGHT/.test(defSrc) && /afterSafari/.test(defSrc));
 check("steer holds lock at speed", /maxSteer \* 1\.\d+/.test(vehSrc) && /kus \*= 0\.\d+/.test(vehSrc));
 check("rack still bites at speed", /lerp\(1\.\d+, 0\.\d+/.test(vehSrc));
@@ -49,10 +49,10 @@ const raw = {
   physlab: COURSES.physlab,
 };
 
-check("desert start ≥ 20 m", (COURSES.desert.startWidth || 0) >= 20, String(COURSES.desert.startWidth));
+check("desert start ≥ 24 m", (COURSES.desert.startWidth || 0) >= 24, String(COURSES.desert.startWidth));
 check("forest start ≥ 16 m", (COURSES.forest.startWidth || 0) >= 16, String(COURSES.forest.startWidth));
-check("mountain start ≥ 18 m", (COURSES.mountain.startWidth || 0) >= 18, String(COURSES.mountain.startWidth));
-check("lakeside start ≥ 12 m", (COURSES.lakeside.startWidth || 0) >= 12, String(COURSES.lakeside.startWidth));
+check("mountain start ≥ 22 m", (COURSES.mountain.startWidth || 0) >= 22, String(COURSES.mountain.startWidth));
+check("lakeside start ≥ 20 m", (COURSES.lakeside.startWidth || 0) >= 20, String(COURSES.lakeside.startWidth));
 check("physlab start ≥ 16 m", (COURSES.physlab.startWidth || 0) >= 16, String(COURSES.physlab.startWidth));
 
 function minCurveRadius(course) {

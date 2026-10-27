@@ -13,8 +13,8 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { armProjectedMaps } from "../gfx/pbr.js?v=65";
-import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=10";
+import { armProjectedMaps } from "../gfx/pbr.js?v=67";
+import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=11";
 
 const TEX_BASE = "assets/env/forest";
 /** Poly Haven boulder_01 tile size (metres) — unique UVs, not one stretch. */

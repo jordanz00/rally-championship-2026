@@ -66,7 +66,8 @@ check(
 );
 check("grips sit at 9 and 3", /CLOCK_9_3 = 0\.14/.test(driver) && /clock = side > 0 \? CLOCK_9_3/.test(driver));
 check("license is CC0 and attributed", /CC0/.test(attr) && /MakeHuman/.test(attr) && /godot-xr-tools/.test(attr));
-check("celica imports pov-driver.js?v=11+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 11);
+check("celica imports pov-driver.js?v=20+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 20);
+check("adult hand display scale", /HAND_DISPLAY = 1\.5/.test(driver) && /curlFingers/.test(driver));
 check(
   "celica split still resolves rival-livery if imported",
   !/rival-livery\.js/.test(car) || fs.existsSync(path.join(ROOT, "js/cars/rival-livery.js"))

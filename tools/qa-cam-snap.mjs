@@ -31,18 +31,18 @@ const main = read("js/main.js");
 const html = read("index.html");
 
 check(
-  "C hard-snaps pose (blendT 0, camCut)",
-  /_camBlendDur = 0\.001/.test(game) &&
-    /_camBlendT = 0/.test(game) &&
-    /_camCut = true/.test(game) &&
+  "C eases the pose (smootherstep, no cut)",
+  /_camBlendT = dur/.test(game) &&
+    /_camCut = false/.test(game) &&
+    /blendU \* \(blendU \* 6 - 15\) \+ 10/.test(game) &&
     !/Math\.max\(0\.72/.test(game) &&
     !/Math\.max\(0\.95/.test(game)
 );
 
 check(
-  "C seats cabin same frame",
-  /_cycleCamera\(\) \{[\s\S]{0,500}?_applyCockpitCam\(\)/.test(game) &&
-    /_chaseCam\(0\)/.test(game)
+  "C does not seat the cabin before the lens moves",
+  /_cycleCamera\(\) \{[\s\S]{0,700}?_startCamBlend\(/.test(game) &&
+    !/_cycleCamera\(\) \{[\s\S]{0,700}?_applyCockpitCam\(\)/.test(game)
 );
 
 {
@@ -55,8 +55,8 @@ check(
 }
 
 check(
-  "cabin seats on the click",
-  /const seatIn = true/.test(game) && /seatIn/.test(game)
+  "cabin seats when the lens reaches the glass",
+  /const seatIn = !blending \|\| distEye <= attach/.test(game) && /povAttachDist/.test(game)
 );
 
 check(
@@ -95,5 +95,5 @@ if (fail) {
   console.log(`\nFAIL  ${fail}`);
   process.exit(1);
 }
-console.log("\nPASS  ·  C-key snap, POV warm off the click");
+console.log("\nPASS  ·  C-key ease, POV warm off the click");
 process.exit(0);

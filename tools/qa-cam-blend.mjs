@@ -43,28 +43,29 @@ const index = read("index.html");
 
 const blendTime = config.match(/viewBlendTime:\s*([0-9.]+)/);
 check(
-  "blend window is instant (≤0.05s)",
-  blendTime && Number(blendTime[1]) <= 0.05,
+  "blend window is a short ease (0.2–0.5s)",
+  blendTime && Number(blendTime[1]) >= 0.2 && Number(blendTime[1]) <= 0.5,
   blendTime ? `viewBlendTime=${blendTime[1]}` : "missing"
 );
 
 check(
-  "C seats cabin on the press + hard lens lock",
+  "C starts a smootherstep, cabin seats when the lens arrives",
   /_startCamBlend\(/.test(game) &&
-    /_applyCockpitCam\(\)/.test(game) &&
-    /_camBlendT = 0/.test(game) &&
-    /_camCut = true/.test(game) &&
-    /const seatIn = true/.test(game),
-  "cabin + FOV flip same frame as C — no ease hang"
+    /_camBlendT = dur/.test(game) &&
+    /_camCut = false/.test(game) &&
+    /const seatIn = !blending \|\| distEye <= attach/.test(game) &&
+    /blendU \* \(blendU \* 6 - 15\) \+ 10/.test(game),
+  "pose, look, and FOV ease together; cabin waits for povAttachDist"
 );
 
 check(
-  "C never hangs on a long ease",
-  /_camBlendDur = 0\.001/.test(game) &&
+  "C never hangs on a stalled ease or a shader compile",
+  /_camBlendDur = dur/.test(game) &&
     !/Math\.max\(0\.72/.test(game) &&
     !/Math\.max\(0\.95/.test(game) &&
-    !/const SNAP = 0\.12/.test(game),
-  "old 0.12–0.95 windows felt like a freeze on C"
+    !/const SNAP = 0\.12/.test(game) &&
+    !/renderer\.compile/.test((game.match(/_cycleCamera\(\) \{[\s\S]*?\n  \}/) || [""])[0]),
+  "ease is under half a second and C does not compile"
 );
 
 check(
@@ -83,10 +84,11 @@ check(
 );
 
 check(
-  "C starts blend helper then hard-locks",
+  "C starts the ease; cabin follows the lens",
   /_cycleCamera\(\) \{[\s\S]{0,700}?_startCamBlend\(/.test(game) &&
-    /_cycleCamera\(\) \{[\s\S]{0,700}?_applyCockpitCam\(/.test(game),
-  "same-frame cabin + lens"
+    !/_cycleCamera\(\) \{[\s\S]{0,700}?_applyCockpitCam\(/.test(game) &&
+    /distEye <= attach/.test(game),
+  "same-frame blend start; cabin at povAttachDist"
 );
 
 check(
@@ -117,7 +119,14 @@ async function live() {
     return;
   }
   const server = await startServer(ROOT);
-  const browser = await launchChrome({ headless: true, width: 1280, height: 720 });
+  let browser;
+  try {
+    browser = await launchChrome({ headless: true, width: 1280, height: 720 });
+  } catch (err) {
+    console.log(`  skip  live blend probe (${err && err.message ? err.message : err})`);
+    await server.close();
+    return;
+  }
   const { cdp } = browser;
   await preparePage(cdp);
   try {
@@ -151,12 +160,13 @@ async function live() {
       return { afterKey, afterTick };
     `);
     check(
-      "live: C spends blendT and flips mode",
+      "live: C starts the ease and flips mode",
       sample &&
         sample.afterKey &&
-        sample.afterKey.blendT === 0 &&
+        sample.afterKey.blendT > 0.2 &&
         sample.afterTick &&
-        sample.afterTick.modeChanged,
+        sample.afterTick.modeChanged &&
+        sample.afterTick.dist < 1.2,
       JSON.stringify(sample)
     );
     check(
@@ -183,5 +193,5 @@ async function live() {
 
 await live();
 
-console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " failed" : "C-key instant, no hitch"}`);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " failed" : "C-key ease, no hitch"}`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=251";
+import { VISUAL } from "../config.js?v=253";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
 import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=7";
 
@@ -432,11 +432,11 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
       : id === "cobble"
         ? 1.18
         : id === "gravel"
-          ? 1.22
+          ? 1.42
           : id === "sand"
-            ? 1.12
+            ? 1.28
             : id === "dirt"
-              ? 1.16
+              ? 1.35
               : id === "mud"
                 ? 1.08
                 : 0.9;
@@ -530,7 +530,7 @@ function armRoadOrganic(mat, id) {
     ribbon: dirty ? 0.03 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.1 : 0.08,
     bump: dirty ? 0.82 : id === "tarmac" ? 0.34 : id === "cobble" ? 0.58 : 0.48,
     blotch: true,
-    key: `road-organic-v10-${id}`,
+    key: `road-organic-v11-${id}`,
   });
 }
 
@@ -558,20 +558,20 @@ function injectProjectedMaps(shader, opts) {
 	float n7 = roadNoise( vProjWorld.xz * 0.0021 + 91.0 );
 	float n8 = roadNoise( vProjWorld.xz * 0.0012 + 131.0 );
 	float blotch = n1 * 0.2 + n2 * 0.18 + n3 * 0.16 + n4 * 0.12 + n5 * 0.1 + n6 * 0.12 + n7 * 0.08 + n8 * 0.04;
-	float hueShift = ( n2 - 0.5 ) * 0.11 * uProjAmt + ( n5 - 0.5 ) * 0.05 * uProjAmt + ( n6 - 0.5 ) * 0.06 * uProjAmt;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.52 + blotch * 0.78 ), uProjAmt );
+	float hueShift = ( n2 - 0.5 ) * 0.05 * uProjAmt + ( n5 - 0.5 ) * 0.025 * uProjAmt + ( n6 - 0.5 ) * 0.03 * uProjAmt;
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.84 + blotch * 0.28 ), uProjAmt );
 	sampledDiffuseColor.r *= 1.0 + hueShift;
 	sampledDiffuseColor.g *= 1.0 + hueShift * 0.32;
 	sampledDiffuseColor.b *= 1.0 - hueShift * 0.68;
 	// Wider smoothsteps — soft layer dissolve (no hard island edges).
-	float wMacro = smoothstep( 0.12, 0.88, n6 ) * smoothstep( 0.14, 0.82, n7 ) * 0.52 * uProjAmt;
-	float wMeso = smoothstep( 0.1, 0.86, n3 ) * ( 1.0 - wMacro * 0.42 ) * 0.4 * uProjAmt;
-	float wMicro = ( 0.16 + n4 * 0.24 ) * ( 1.0 - wMacro * 0.3 ) * uProjAmt;
-	float wMeso2 = smoothstep( 0.18, 0.78, n8 ) * ( 1.0 - wMacro * 0.5 ) * 0.18 * uProjAmt;
-	vec2 uvMacro = stochasticUv( vProjWorld.xz, 0.011, 5.6 );
-	vec2 uvMeso = stochasticUv( vProjWorld.xz, 0.042, 14.0 );
-	vec2 uvMicro = stochasticUv( vProjWorld.xz, 0.3, 28.0 );
-	vec2 uvMeso2 = stochasticUv( vProjWorld.xz * vec2( 0.93, 1.07 ), 0.028, 19.0 );
+	float wMacro = smoothstep( 0.12, 0.88, n6 ) * smoothstep( 0.14, 0.82, n7 ) * 0.22 * uProjAmt;
+	float wMeso = smoothstep( 0.1, 0.86, n3 ) * ( 1.0 - wMacro * 0.42 ) * 0.55 * uProjAmt;
+	float wMicro = ( 0.48 + n4 * 0.32 ) * ( 1.0 - wMacro * 0.3 ) * uProjAmt;
+	float wMeso2 = smoothstep( 0.18, 0.78, n8 ) * ( 1.0 - wMacro * 0.5 ) * 0.36 * uProjAmt;
+	vec2 uvMacro = stochasticUv( vProjWorld.xz, 0.055, 14.0 );
+	vec2 uvMeso = stochasticUv( vProjWorld.xz, 0.16, 6.5 );
+	vec2 uvMicro = stochasticUv( vProjWorld.xz, 0.42, 3.2 );
+	vec2 uvMeso2 = stochasticUv( vProjWorld.xz * vec2( 0.93, 1.07 ), 0.24, 4.8 );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMacro ), wMacro );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMeso ), wMeso );
 	sampledDiffuseColor = mix( sampledDiffuseColor, texture2D( map, uvMeso2 ), wMeso2 );
@@ -627,11 +627,11 @@ vec2 stochasticUv(vec2 xz, float scale, float cell) {
   vec2 off = vec2(roadHash(cellId + 19.0), roadHash(cellId + 47.0));
   return (rot + 0.5 + off * 0.37) * scale * cell;
 }
-vec2 projUvA(vec3 w) { return stochasticUv(w.xz, 0.072, 7.5); }
+vec2 projUvA(vec3 w) { return stochasticUv(w.xz, 0.18, 5.5); }
 vec2 projUvB(vec3 w) {
-  return stochasticUv(vec2(w.x * 0.91 + w.z * 0.22, w.z * 0.91 - w.x * 0.22), 0.061, 11.0);
+  return stochasticUv(vec2(w.x * 0.91 + w.z * 0.22, w.z * 0.91 - w.x * 0.22), 0.22, 4.2);
 }
-vec2 projUvDetail(vec3 w) { return stochasticUv(w.xz, 0.36, 3.2); }
+vec2 projUvDetail(vec3 w) { return stochasticUv(w.xz, 0.52, 2.2); }
 vec4 projTex(sampler2D tex, vec2 meshUv) {
   vec4 mixW;
 #ifdef USE_PROJ_TRIPLANAR
@@ -649,10 +649,10 @@ vec4 projTex(sampler2D tex, vec2 meshUv) {
   vec4 a = texture2D(tex, projUvA(vProjWorld));
   vec4 b = texture2D(tex, projUvB(vProjWorld));
   mixW = mix(a, b, 0.32 + 0.52 * layerMask * uProjAmt);
-  vec4 macro = texture2D(tex, stochasticUv(vProjWorld.xz, 0.014, 36.0));
-  mixW = mix(mixW, macro, 0.34 * layerMask2 * uProjAmt);
-  vec4 mesoFar = texture2D(tex, stochasticUv(vProjWorld.xz, 0.032, 22.0));
-  mixW = mix(mixW, mesoFar, 0.18 * layerMask3 * uProjAmt);
+  vec4 macro = texture2D(tex, stochasticUv(vProjWorld.xz, 0.048, 16.0));
+  mixW = mix(mixW, macro, 0.16 * layerMask2 * uProjAmt);
+  vec4 mesoFar = texture2D(tex, stochasticUv(vProjWorld.xz, 0.11, 8.0));
+  mixW = mix(mixW, mesoFar, 0.28 * layerMask3 * uProjAmt);
 #endif
   return mix(mixW, texture2D(tex, meshUv), uProjRibbon);
 }
@@ -821,7 +821,7 @@ export function worldTerrainMaterial(opts = {}) {
     ribbon: 0.04,
     bump: opts.bumpScale ?? 0.62,
     blotch: true,
-    key: "terrain-proj-v5",
+    key: "terrain-proj-v6",
   });
   return mat;
 }
@@ -867,7 +867,7 @@ export function worldSkirtMaterial(map = null, normalMap = null, roughnessMap = 
     ribbon: 0.04,
     bump: 0.58,
     blotch: true,
-    key: "skirt-proj-v5",
+    key: "skirt-proj-v6",
   });
   return mat;
 }

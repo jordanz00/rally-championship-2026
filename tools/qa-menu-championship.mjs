@@ -39,9 +39,13 @@ check("arcade panel class", /ui-panel-arcade/.test(html) && /\.ui-panel-arcade/.
 check("timeattack/practice remap to championship", /id === "timeattack" \|\| id === "practice"/.test(game));
 check("_pickCar locks celica", /const pick = "celica"/.test(game));
 check("leave title forces championship+celica", /this\.mode = "championship"[\s\S]*?this\.carId = "celica"/.test(game));
+const mainV = (html.match(/main\.js\?v=(\d+)/) || [])[1];
+const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];
+const cssV = (html.match(/game\.css\?v=(\d+)/) || [])[1];
 check(
   "cache bust",
-  /main\.js\?v=1133/.test(html) && /game\.js\?v=1133/.test(main) && /game\.css\?v=75/.test(html)
+  !!mainV && mainV === gameV && Number(cssV) >= 76,
+  `main=${mainV} game=${gameV} css=${cssV}`
 );
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "championship-only Toyota menu"}`);

@@ -11,8 +11,8 @@
  * Rules: docs/WORLD_GEOMETRY_RULES.md
  */
 
-import { shoulderPadForScenery } from "./track-clearance.js?v=2";
-import { buildTunnelVolumes, tunnelExclusionHalf } from "./tunnel-volume.js?v=3";
+import { shoulderPadForScenery } from "./track-clearance.js?v=3";
+import { buildTunnelVolumes, tunnelExclusionHalf } from "./tunnel-volume.js?v=4";
 import { TerrainConfig } from "./world-config.js?v=4";
 
 /**

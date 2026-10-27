@@ -16,13 +16,13 @@
  * SIGN CONVENTION: positive `angle` bends left, negative bends right.
  */
 
-import { COLORS } from "../config.js?v=251";
-import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=10";
-import { validateCourseData } from "./stage-data-validate.js?v=5";
-import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=14";
-import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=17";
-import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=13";
-import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=10";
+import { COLORS } from "../config.js?v=253";
+import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=12";
+import { validateCourseData } from "./stage-data-validate.js?v=7";
+import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=16";
+import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=19";
+import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=15";
+import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=12";
 
 /**
  * Compile + fail-fast gate for a TrackDefinition.

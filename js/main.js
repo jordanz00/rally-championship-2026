@@ -7,7 +7,30 @@
  * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-const GAME_MODULE = "./game.js?v=1152";
+const GAME_MODULE = "./game.js?v=1170";
+
+function bootWait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Import the engine. A cold graph is ~80 modules; one dropped response
+ * poisons that URL for the document, so each retry uses a fresh query.
+ * @returns {Promise<object>}
+ */
+async function importGameModule() {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const href = attempt === 0 ? GAME_MODULE : `${GAME_MODULE}&retry=${attempt}`;
+    try {
+      return await import(href);
+    } catch (err) {
+      lastErr = err;
+      await bootWait(280 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
 
 function phoneLite() {
   try {
@@ -44,11 +67,16 @@ export async function bootEngine() {
   }
   if (window.__rallyBooting) return window.__rallyBooting;
   window.__rallyBooting = (async () => {
-    const mod = await import(GAME_MODULE);
+    const mod = await importGameModule();
     if (!window.game) {
       window.game = new mod.RallyGame();
     }
     clearBootTimeoutBanner();
+    try {
+      sessionStorage.removeItem("rally-boot-reload");
+    } catch {
+      /* private mode */
+    }
     return window.game;
   })();
   try {
@@ -69,10 +97,23 @@ function boot() {
   }
   bootEngine().catch((err) => {
     console.error(err);
+    const msg = String(err && (err.message || err) || "");
+    const fetchFail = /failed to fetch dynamically imported module/i.test(msg);
+    try {
+      if (fetchFail && !sessionStorage.getItem("rally-boot-reload")) {
+        sessionStorage.setItem("rally-boot-reload", "1");
+        location.reload();
+        return;
+      }
+    } catch {
+      /* private mode */
+    }
     const el = document.getElementById("boot-error");
     if (el) {
       el.hidden = false;
-      el.textContent = String(err && err.stack ? err.stack : err);
+      el.textContent =
+        "Engine failed to start.\n\n" +
+        (err && err.stack ? String(err.stack) : msg);
     }
   });
 }

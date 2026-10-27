@@ -19,10 +19,10 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=251";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=65";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=253";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=67";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=19";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=20";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
@@ -5797,7 +5797,8 @@ function cabinLandmarks(root) {
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     if (inCockpitTree(obj)) return;
-    const n = (obj.name || "").toLowerCase();
+    // GT4 meshes are Object_* — parent path carries seatR_* / COCKPIT_HR / int_*.
+    const n = cabinNamePath(obj);
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(c);
     root.worldToLocal(c);
@@ -5809,22 +5810,23 @@ function cabinLandmarks(root) {
     const locMaxZ = Math.max(min.z, max.z);
     const locMaxY = Math.max(min.y, max.y);
     // Seated lookAt(+Z) maps car +X to screen-left. Prefer that seat for LHD.
-    if (/seat|chair|bucket/.test(n) && !/rear|back.?seat/.test(n) && c.x > -0.05) {
+    if (/seatr_|seatl_|seat_|chair|bucket|cockpit_hr/.test(n) && !/rear|back.?seat/.test(n) && c.x > -0.05) {
       const score =
-        (/driver|lhd|left/.test(n) ? -1.5 : 0) + Math.abs(c.x - 0.36) + Math.abs(c.y - 0.5);
+        (/driver|lhd|seatr_/.test(n) ? -1.5 : 0) + Math.abs(c.x - 0.36) + Math.abs(c.y - 0.5);
       if (score < seatScore) {
         seatScore = score;
         seat = { x: c.x, y: c.y, z: c.z, maxZ: locMaxZ, minZ: locMinZ, maxY: locMaxY };
       }
     }
-    if (/dash|dashboard|cowl|fascia|facia|instrument/.test(n) && Math.abs(c.x) < 0.7) {
-      const score = Math.abs(c.y - 0.85) + Math.abs(c.x);
+    const isDashName = /int_dials|dash|dashboard|cowl|fascia|facia|instrument|arrow_rpm|dials_matt/.test(n);
+    if (isDashName && Math.abs(c.x) < 0.85) {
+      const score = Math.abs(c.y - 0.85) + Math.abs(c.x) * 0.4;
       if (score < dashScore) {
         dashScore = score;
         dash = { z: c.z, minZ: locMinZ, maxY: locMaxY, y: c.y };
       }
     }
-    if (/hood|bonnet/.test(n) && Math.abs(c.x) < 0.55) hoodY = c.y;
+    if (/hood|bonnet|motorhood/.test(n) && Math.abs(c.x) < 0.55) hoodY = c.y;
   });
   const glbWheel = root.userData.glbSteerWheel;
   let wheel = null;
@@ -6049,9 +6051,14 @@ function isExteriorMirrorGlass(obj, hull, c) {
  */
 function buildPovHideCache(root) {
   if (!root) return;
-  const POV_HIDE_VER = 6;
+  const POV_HIDE_VER = 8;
   if (root.userData._povHideReady && root.userData._povHideVer === POV_HIDE_VER) return;
-  // Re-tag so roofs marked interior still get povShell (Sprint 543).
+  // Clear stale shell tags, then re-tag (v7 never marks glbCabin as roof).
+  root.traverse((obj) => {
+    if (obj.userData && obj.userData.povShell && obj.userData.glbCabin) {
+      delete obj.userData.povShell;
+    }
+  });
   tagPovShell(root);
   /** @type {THREE.Object3D[]} */
   const hide = [];
@@ -6066,16 +6073,21 @@ function buildPovHideCache(root) {
   const s = new THREE.Vector3();
   root.traverse((obj) => {
     if (!obj.userData) return;
-    if (obj.userData.windshield || obj.userData.povShell) {
+    if (obj.userData.glbCabin && !obj.userData.interiorKeepHidden) glbCabin.push(obj);
+    if (obj.userData.glbSteer) steer.push(obj);
+    if (obj.userData.interiorKeepHidden) keepHidden.push(obj);
+    // Windshield / exterior roof — never the modeled cabin.
+    if (
+      (obj.userData.windshield || obj.userData.povShell) &&
+      !obj.userData.glbCabin &&
+      !obj.userData.glbSteer
+    ) {
       hide.push(obj);
       return;
     }
-    if (obj.userData.interiorKeepHidden) keepHidden.push(obj);
-    if (obj.userData.glbSteer) steer.push(obj);
-    if (obj.userData.glbCabin && !obj.userData.interiorKeepHidden) glbCabin.push(obj);
     // Interior roofs / headers that tagPovShell missed on older tags.
     if (obj.isMesh && obj.userData.interior && !inCockpitTree(obj) && !obj.userData.glbCabin) {
-      const n = (obj.name || "").toLowerCase();
+      const n = cabinNamePath(obj);
       if (/roof|headliner|ceiling|cabin.?top|header|canopy|top.?shell|cabin.?shell/.test(n)) {
         hide.push(obj);
         return;
@@ -6124,40 +6136,27 @@ function buildPovRig(root) {
   }
   eyeX = THREE.MathUtils.clamp(eyeX, 0.22, 0.5);
 
-  // In front of the seat back, behind the dash — looking out over the hood.
-  let eyeZ = axles ? axles.rearZ + axles.wb * 0.5 : hull.minZ + spanZ * 0.52;
-  if (axles) {
-    eyeZ = THREE.MathUtils.clamp(
-      eyeZ,
-      axles.rearZ + axles.wb * 0.42,
-      axles.frontZ - axles.wb * 0.36
-    );
-  }
-  if (marks.seat) {
-    eyeZ = Math.max(eyeZ, marks.seat.maxZ + 0.1);
-    eyeZ = Math.max(eyeZ, marks.seat.z + 0.22);
-  }
-  if (marks.dash) eyeZ = Math.min(eyeZ, marks.dash.minZ - 0.38);
-  if (marks.wheel) eyeZ = Math.min(eyeZ, marks.wheel.z - 0.28);
-
-  // Clear the cowl without sitting inside the roof (FOV 80 + roof−0.12 clipped
-  // the underside of the cabin top into the lens — Sprint 543).
-  const seated = ground + 1.15;
-  let eyeY = THREE.MathUtils.clamp(ground + 1.18, seated, roof - 0.4);
-  if (marks.dash) {
-    eyeY = Math.max(eyeY, marks.dash.maxY + 0.08);
-    eyeY = Math.min(eyeY, roof - 0.4);
+  // In the seat, looking out the windshield. The rim sits in the lower frame.
+  let eyeZ = axles ? axles.rearZ + axles.wb * 0.55 : hull.minZ + spanZ * 0.42;
+  if (marks.wheel) eyeZ = marks.wheel.z - 0.42;
+  if (marks.seat && (!marks.wheel || marks.seat.minZ + 0.22 < marks.wheel.z - 0.28)) {
+    // Headrest rear face. Stay in front of it so the seat back does not fill the lens.
+    eyeZ = Math.max(eyeZ, marks.seat.minZ + 0.22);
   }
   if (marks.wheel) {
-    eyeY = THREE.MathUtils.clamp(marks.wheel.y + 0.14, seated, roof - 0.4);
+    eyeZ = THREE.MathUtils.clamp(eyeZ, marks.wheel.z - 0.55, marks.wheel.z - 0.32);
   }
 
-  let hoodY = ground + Math.min(0.92, spanY * 0.48);
-  if (marks.hoodY != null) hoodY = marks.hoodY;
-  const lookX = eyeX * 0.12;
-  // Aim at the road ahead — keep look below the eye so the roof stays out of frame.
-  const lookY = THREE.MathUtils.clamp(hoodY + 0.12, ground + 0.8, eyeY - 0.12);
-  const lookZ = hull.maxZ + 4.2;
+  // Eyes above the rim, under the roof, aimed out the glass.
+  const roofClear = roof - 0.36;
+  let eyeY = ground + Math.min(1.12, Math.max(0.9, spanY * 0.62));
+  if (marks.wheel) eyeY = marks.wheel.y + 0.28;
+  eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.85, roofClear);
+
+  const lookX = eyeX * 0.08;
+  // Nearly level through the windshield. A hard downward aim stared into the hub.
+  const lookY = THREE.MathUtils.clamp(eyeY - 0.1, ground + 0.7, eyeY - 0.06);
+  const lookZ = hull.maxZ + 5.8;
   // Swap: interior glass sits on the opposite side of center from the driver
   // so the rearview reads on the right of an LHD lens (was left in RHD).
   const mirrorEyeX = -eyeX * 0.12;
@@ -6190,8 +6189,8 @@ function buildPovRig(root) {
     spanY,
     spanZ,
     hull,
-    fov: 80,
-    near: 0.05,
+    fov: 84,
+    near: 0.055,
   };
 }
 
@@ -6202,7 +6201,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 8;
+  const POV_RIG_VER = 12;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -6230,8 +6229,10 @@ function tagPovShell(root) {
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     if (obj.userData.windshield || obj.userData.povHud) return;
+    // Modeled GT4 cabin must stay in POV — never treat dash/doors/seats as "roof".
+    if (obj.userData.glbCabin) return;
     if (inCockpitTree(obj)) return;
-    const n = (obj.name || "").toLowerCase();
+    const n = cabinNamePath(obj);
     // Roofs / headers block the lens — tag even when also marked interior
     // (procedural loft roofs set interior=true and used to stay visible in POV).
     if (
@@ -6242,16 +6243,18 @@ function tagPovShell(root) {
       obj.userData.povShell = true;
       return;
     }
+    // Exterior A/B pillars only — keep int_rollcage / cabin cage in the lens.
     if (
-      /a.?pillar|apillar|b.?pillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|roll.?cage|cage|header/.test(
+      /a.?pillar|apillar|b.?pillar|front.?pillar|window.?frame|windscreen.?frame|windshield.?frame|door.?frame|header/.test(
         n
       ) &&
-      !/wheel|tire|tyre|seat|steer/.test(n)
+      !/wheel|tire|tyre|seat|steer|int_|cockpit|cabin/.test(n)
     ) {
       obj.userData.povShell = true;
       return;
     }
-    // Dash / seats stay; only geometric roof slabs among interiors are hidden.
+    // Cabin fill stays; geometric roof only on exterior shell.
+    if (obj.userData.interior) return;
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(c);
     box.getSize(s);
@@ -6265,7 +6268,6 @@ function tagPovShell(root) {
       obj.userData.povShell = true;
       return;
     }
-    if (obj.userData.interior) return;
     // Tall thin posts at the windshield corners — A-pillars that fill the lens.
     const tall = s.y > 0.32;
     const thin = Math.min(s.x, s.z) < 0.16 && Math.max(s.x, s.z) < 0.38;
@@ -6370,6 +6372,32 @@ function cabinNamePath(obj) {
 }
 
 /**
+ * Hero GT4 cabin meshes are Object_* under COCKPIT_HR / seatR_* / int_*.
+ * Word-boundary checks missed `COCKPIT_HR_SUB0` because `_` is a word char.
+ * @param {string} n
+ * @returns {boolean}
+ */
+function isModeledCabinName(n) {
+  if (!n) return false;
+  if (/x0_wing_mirror|x0_window_|x0_main_body|x0_bumper|x0_light_/.test(n) && !/int_/.test(n)) {
+    return false;
+  }
+  if (/x0_door_/.test(n) && !/int_door_|cabin|suede|leather|cloth|carbon_fibre/.test(n)) {
+    return false;
+  }
+  if (/int_window|mirror_cent|interior_glass/.test(n)) return false;
+  return (
+    /cockpit_hr/.test(n) ||
+    /(?:^|[^a-z])int_/.test(n) ||
+    /seatr_|seatl_|seat_/.test(n) ||
+    /steer_hr/.test(n) ||
+    /x0_main_interior|main_interior/.test(n) ||
+    /arrow_rpm|arrow_turbo/.test(n) ||
+    /(?:^|[^a-z])(cabin|suede|leather|cloth|carbon_fibre|dials_matt)(?:[^a-z]|$)/.test(n)
+  );
+}
+
+/**
  * Hero GT4 GLB already ships a modeled cabin (COCKPIT_HR, seats, dials, doors).
  * Tag those for POV — chase hides them; seated view shows the real mesh.
  * @param {THREE.Object3D} root
@@ -6382,19 +6410,21 @@ function tagGlbCabin(root) {
     if (obj.userData.glbSteer) return;
     const n = cabinNamePath(obj);
     // Exterior shell / wing mirrors / outer glass stay chase-visible.
-    if (/\bx0_door_|\bx0_wing_mirror|\bx0_window_|\bx0_main_body|\bx0_bumper/.test(n)) {
-      // Interior door cards still match int_door_* — keep those.
-      if (!/\bint_door_/.test(n)) return;
+    // Door cards that use the Cabin material still belong in the seat.
+    if (/x0_wing_mirror|x0_window_|x0_main_body|x0_bumper|x0_light_/.test(n) && !/int_/.test(n)) {
+      return;
+    }
+    if (/x0_door_/.test(n) && !/int_door_|cabin|suede|leather|cloth|carbon_fibre/.test(n)) {
+      return;
     }
     const isCabin =
-      /\bcockpit_hr\b/.test(n) ||
-      /\bint_/.test(n) ||
-      /\bseatr_|\bseatl_|\bseat_/.test(n) ||
-      /\bsteer_hr\b/.test(n) ||
-      /\bx0_main_interior\b/.test(n) ||
-      /\barrow_rpm|\barrow_turbo\b/.test(n) ||
-      // Authored cabin material names on Object_* meshes.
-      /\b(cabin|suede|leather|cloth|carbon_fibre|dials_matt)\b/.test(n);
+      /cockpit_hr/.test(n) ||
+      /(?:^|[^a-z])int_/.test(n) ||
+      /seatr_|seatl_|seat_/.test(n) ||
+      /steer_hr/.test(n) ||
+      /x0_main_interior|main_interior/.test(n) ||
+      /arrow_rpm|arrow_turbo/.test(n) ||
+      /(?:^|[^a-z])(cabin|suede|leather|cloth|carbon_fibre|dials_matt)(?:[^a-z]|$)/.test(n);
     if (!isCabin) return;
     // Exterior Window_Glass on the body is not cabin fill.
     if (/\bwindow_glass\b/.test(n) && !/\bint_window|\binterior_glass/.test(n)) return;
@@ -6407,6 +6437,8 @@ function tagGlbCabin(root) {
     } else {
       obj.userData.interiorKeepHidden = false;
       obj.visible = false;
+      // Camera sits inside these bounds — default culling drops the dash.
+      obj.frustumCulled = false;
     }
     count += 1;
   });
@@ -6443,6 +6475,10 @@ function dressGlbCabinMaterials(root) {
       m.depthTest = true;
       m.side = THREE.DoubleSide;
       m.envMapIntensity = Math.max(m.envMapIntensity != null ? m.envMapIntensity : 0.5, 1.15);
+      if (m.emissive) {
+        if (!m.emissive.getHex()) m.emissive.setHex(0x2a241c);
+        m.emissiveIntensity = Math.max(m.emissiveIntensity || 0, 0.45);
+      }
       if (m.isMeshPhysicalMaterial || m.isMeshStandardMaterial) {
         m.roughness = Math.min(Math.max(m.roughness != null ? m.roughness : 0.62, 0.35), 0.85);
         m.metalness = Math.min(m.metalness != null ? m.metalness : 0.08, 0.35);
@@ -6723,7 +6759,7 @@ function makeDial(kind, maxVal, redFrom) {
  * @param {THREE.Object3D} root
  */
 function attachCockpit(root) {
-  const CABIN_VER = 4;
+  const CABIN_VER = 5;
   if (root.userData.cockpit && root.userData._cabinVer === CABIN_VER) {
     bindGlbSteeringWheel(root);
     return;
@@ -7466,6 +7502,7 @@ export function setPovRoofClip(root, on, renderer) {
       // Modeled cabin must stay whole in POV — roof clip is for exterior shell only.
       if (obj.userData.glbCabin) return;
       if (inCockpitTree(obj)) return;
+      if (isModeledCabinName(cabinNamePath(obj))) return;
       const n = (obj.name || "").toLowerCase();
       if (obj.userData.wheel || /wheel|tire|tyre|rim|brake.?disc/.test(n)) return;
 
@@ -7549,13 +7586,34 @@ function flipCockpitVisibility(root, want) {
     else obj.visible = !obj.userData.interiorKeepHidden;
   }
   const keep = root.userData._povKeepHidden || [];
-  for (let i = 0; i < keep.length; i++) keep[i].visible = false;
+  for (let i = 0; i < keep.length; i++) {
+    const obj = keep[i];
+    // Cabin groups (COCKPIT_HR, seats) are flagged keep-hidden for chase.
+    // In the seat they must stay visible or every child dash mesh is culled.
+    if (want && obj.userData && !obj.userData.povShell && isModeledCabinName(cabinNamePath(obj))) {
+      obj.visible = true;
+      continue;
+    }
+    obj.visible = false;
+  }
   const glbCabin = root.userData._povGlbCabin || [];
-  for (let i = 0; i < glbCabin.length; i++) glbCabin[i].visible = want;
+  for (let i = 0; i < glbCabin.length; i++) {
+    const mesh = glbCabin[i];
+    mesh.visible = want;
+    if (want) {
+      mesh.frustumCulled = false;
+      for (let p = mesh.parent; p && p !== root; p = p.parent) p.visible = true;
+    }
+  }
   const steer = root.userData._povSteer || [];
   for (let i = 0; i < steer.length; i++) steer[i].visible = want;
   const glbWheel = root.userData.glbSteerWheel;
-  if (glbWheel) glbWheel.visible = want;
+  if (glbWheel) {
+    glbWheel.visible = want;
+    if (want) {
+      for (let p = glbWheel.parent; p && p !== root; p = p.parent) p.visible = true;
+    }
+  }
   const cab = root.userData.cockpit;
   if (cab) {
     if (cab.parent !== root) root.add(cab);
@@ -7587,7 +7645,7 @@ export function setCockpitView(root, on, _camera, renderer) {
   const want = !!on;
   // Force a hide-cache rebuild when the POV shell / GLB cabin tag set changes.
   // Only createPlayerCar / _warmPov should hit a cold cache — never mid-race C.
-  if (root.userData._povHideVer !== 6) root.userData._povHideReady = false;
+  if (root.userData._povHideVer !== 8) root.userData._povHideReady = false;
   if (!root.userData._povHideReady) buildPovHideCache(root);
   if (!root.userData._povClipPrepared) setPovRoofClip(root, false, renderer);
   // C-key path: cache + clip + driver already warmed — visibility flip only.

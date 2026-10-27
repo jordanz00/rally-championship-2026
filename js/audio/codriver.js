@@ -9,7 +9,7 @@
  * HOW IT CONNECTS: game.js feeds Track.noteAt(); RallyAudio.paceCall plays clips.
  */
 
-import { PACE } from "../config.js?v=251";
+import { PACE } from "../config.js?v=253";
 
 const VOL_NAV_KEY = "rally-vol-navigator";
 

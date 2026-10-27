@@ -31,17 +31,21 @@ const game = read("js/game.js");
 
 check("stochastic UV helper", /vec2 stochasticUv\(/.test(pbr));
 check("macro/meso/micro layer weights", /wMacro/.test(pbr) && /wMeso/.test(pbr) && /wMicro/.test(pbr));
-check("road organic v10 cache", /road-organic-v10-/.test(pbr));
+check("road organic v11 cache", /road-organic-v11-/.test(pbr));
 check("soft layer dissolve masks", /smoothstep\( 0\.12, 0\.88, n6 \)/.test(pbr));
 check("surface noise v6 (no GLSL reserved `patch`)", /sn-v6-/.test(sn) && /dust/.test(sn) && !/float patch\s*=/.test(sn));
 check("forest larger tiles", /TILE_FLOOR_M = 5\.2/.test(forest) && /TILE_DIRT_M = 3\.6/.test(forest));
 check("desert larger tiles", /TILE_SAND_M = 38/.test(desert) && /TILE_DIRT_M = 11\.5/.test(desert));
 check("surface blend ≥200m", /const BLEND = 220/.test(track));
-check("wider play lane", /PLAY_WIDTH = 1\.6/.test(def) && /PLAY_STRAIGHT = 2\./.test(def));
+check("slide play lane", /PLAY_WIDTH = 1\.4/.test(def) && /PLAY_STRAIGHT = 2\./.test(def));
 check("shoulder verge blend desert", /vergeEnd = 4\.6/.test(track) && /Compacted verge/.test(track));
 check("cinematic vista fog", /vistaFar/.test(game) && /1\.48/.test(game));
-check("pbr cache-bust v64+", Number((track.match(/pbr\.js\?v=(\d+)/) || [])[1]) >= 64 && Number((game.match(/pbr\.js\?v=(\d+)/) || [])[1]) >= 64);
-check("forest/desert pbr bumped", /forest-pbr\.js\?v=66/.test(track) && /desert-pbr\.js\?v=67/.test(track));
+check("pbr cache-bust v67+", Number((track.match(/pbr\.js\?v=(\d+)/) || [])[1]) >= 67 && Number((game.match(/pbr\.js\?v=(\d+)/) || [])[1]) >= 67);
+check(
+  "forest/desert pbr bumped",
+  Number((track.match(/forest-pbr\.js\?v=(\d+)/) || [])[1]) >= 67 &&
+    Number((track.match(/desert-pbr\.js\?v=(\d+)/) || [])[1]) >= 68
+);
 check("desert hero backdrop rocks", /desert_hero_boulder_a/.test(track) && /liveHeroes/.test(track));
 check("sky horizon seam soft", /hs \* 0\.58/.test(read("js/sky.js")));
 

@@ -38,7 +38,7 @@ function approxLen(c) {
 }
 
 const floors = { desert: 3600, forest: 5600, mountain: 4200, lakeside: 3600 };
-const widthFloor = { desert: 24, forest: 25, mountain: 22, lakeside: 22 };
+const widthFloor = { desert: 22, forest: 22, mountain: 20, lakeside: 20 };
 
 for (const id of Object.keys(floors)) {
   const c = COURSES[id];

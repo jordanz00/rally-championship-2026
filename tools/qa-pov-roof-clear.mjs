@@ -52,7 +52,7 @@ check(
 
 check(
   "POV hide cache is versioned (rebuild roofs)",
-  /POV_HIDE_VER\s*=\s*[456]/.test(car) && /_povHideVer\s*!==\s*[456]/.test(car),
+  /POV_HIDE_VER\s*=\s*[4-8]/.test(car) && /_povHideVer\s*!==\s*[4-8]/.test(car),
   "setCockpitView must invalidate stale hide lists"
 );
 
@@ -70,7 +70,7 @@ check(
 
 check(
   "POV_RIG_VER ≥ 5",
-  /POV_RIG_VER\s*=\s*[5-9]/.test(car),
+  /POV_RIG_VER\s*=\s*(?:[5-9]|1\d)/.test(car),
   "seat cache must rebuild after eye/look change"
 );
 

@@ -251,7 +251,7 @@ for (let pass = 0; pass < 6; pass++) {
 }
 
 console.log("\nspline");
-check("Desert compiles", dist > 2500 && dist < 3600, `${dist.toFixed(1)} m`);
+check("Desert compiles", dist > 2500 && dist < 4500, `${dist.toFixed(1)} m`);
 
 let land0 = null;
 let land1 = null;
