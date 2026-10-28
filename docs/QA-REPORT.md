@@ -1,5 +1,69 @@
 # QA report — quality-control pass
 
+## Lakeside light and the lake bridge (2026-10-27)
+
+**Player moment:** Stage 4. The meadow reads lighter than the gray tarmac. A long suspension bridge stands over the first lake.
+
+**Cause:** Shore, litter, and the land sheet sat in the same dark olive as the road, and the lakeside grade held the fill down.
+
+**Shipped:** The bank is a light yellow-green. The tarmac is a cool gray, and it no longer shares the bank's color. The lake bridge does not throw a shadow across the lane. Fill, sun, and sky bounce sit at the existing lakeside caps so the car does not blow out. The bridge is off the paint: two towers, a catenary, hangers, and a deck that follows the shore.
+
+**Boot:** `main.js?v=1186` · `track.js?v=470` · `lighting-rig.js?v=36`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lakeside-light.mjs`
+
+## POV shows the nose (2026-10-27)
+
+**Player moment:** Press C. The seat view stays. The bonnet and nose are in the lower frame.
+
+**Cause:** A one-piece body was tagged as the roof shell, so the hood hid with the headliner. The roof clip never got a chance to keep the deck.
+
+**Shipped:** Nose, bumper, and any shell that reaches the front stay visible. The clip sits above the cowl so the bonnet is kept and the headliner still goes. The eye clears the dash. Aim is about 10° down the nose, so the deck fills the lower glass and the horizon stays up.
+
+**Boot:** `main.js?v=1183` · `celica.js?v=291`
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-roof-clear.mjs`
+
+## Tunnel waterfall on stage 2 (2026-10-27)
+
+**Player moment:** Forest, the run into the rock tunnel. A gorge fall stands off the road. You see the sheet in the background, then pass it as the mouth takes the frame.
+
+**Shipped:** The fall sits on the approach, clear of the paint and the bore. A rock channel, five sheets, a pool, a short stream, and mist. The water scrolls. It does not sit on the racing line.
+
+**Boot:** `main.js?v=1180` · `track.js?v=467`
+
+## Jump wheels stay in the arches (2026-10-27)
+
+**Player moment:** Takeoff and landing. The tires stay in the wells. The shell stays one car. The hop still changes with speed, lip, and how you leave it, and the landing still settles from that attitude.
+
+**Cause:** On a jump the pose treated flight pitch and roll as brake dive. It shoved each hub by the pitch lever and, once the shell was nose-up or rolled, slid it along the body to chase the road. The wheel left the arch.
+
+**Shipped:** Jump attitude keeps the hubs on the shell (a few centimetres of hang in the air). Shock travel stays on the axis learned while the car is level, and it cannot leave the well. Launch and landing math are unchanged: speed × lip, side of the face, and the air attitude still decide the hop and the touchdown.
+
+**Boot:** `main.js?v=1179` · `celica.js?v=288`
+
+## Off-road plant stays with the road (2026-10-27)
+
+**Player moment:** Leaving the paint on either side no longer pops the car up above the road. The verge eases off the lip.
+
+**Cause:** A query off the side could latch a higher ribbon (hairpin arm, stacked grade). The chassis then took that height in one step. The ground beside the paint was also a hard drop, so the car and the verge did not share an edge.
+
+**Shipped:** Off-paint height may rise only with distance from the road just left. A foreign station stays pinned until that slope reaches it. Upward chassis correction off the paint is capped per tick. Corridor land just off the paint ramps from the lip down to the bed. Under the ribbon the bed stays tucked.
+
+**Boot:** `main.js?v=1178` · `track.js?v=466` · `vehicle.js?v=215`
+
+## Pack cars are the GLB (2026-10-27)
+
+**Player moment:** The cars ahead are Celica and Stratos shells, not boxes.
+
+**Cause:** `game.js` loaded `celica.js?v=286` and `ai.js` loaded `celica.js?v=276`. Those are two garages. The race filled one. The pack cloned the empty one and fell through to the box shell.
+
+**Shipped:** Both imports are `celica.js?v=287`. A chassis with no file borrows a loaded GLB. The box shell stays a phone last resort.
+
+**Proof:** `node tools/qa-garage-cars.mjs`
+
+**Boot:** `main.js?v=1177`
+
 ## Menu shell (2026-10-27)
 
 **Player moment:** Main menu, car, stages, controls, pause, result, and the load screen share one layout. The championship button is type only.

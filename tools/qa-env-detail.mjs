@@ -41,7 +41,7 @@ check("forest tiles tighter than 2 m", /TILE_DIRT_M = 1\.45/.test(forest) && /TI
 check("desert tiles large (anti-wallpaper)", /TILE_SAND_M = 32/.test(desert) && /TILE_DIRT_M = 9\.2/.test(desert));
 check("tunnel tile 1.45 m", /TILE_M = 1\.45/.test(tunnel));
 check("cinema land segs without ?perf=high", /VISUAL\.tier \|\| 0\) >= 8/.test(track));
-check("land paint 384 + aniso 16", /land-albedo-v7/.test(track) && /384 \* scale/.test(track));
+check("land paint 384 + aniso 16", /land-albedo-v8/.test(track) && /384 \* scale/.test(track));
 check("hero mesh radius 64 m", /Math\.min\(64/.test(game));
 check("nature shadows to 68 m", /Math\.max\(STREAM\.natureShadowFar \?\? 48, 68\)/.test(track));
 check("prop kit aniso 16", /mat\.map\.anisotropy = 16/.test(kit));

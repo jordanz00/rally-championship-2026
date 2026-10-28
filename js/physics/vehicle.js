@@ -1814,8 +1814,17 @@ export class Vehicle {
           ? deck
           : this._solidFloorY(track);
       const solidY = this._solidFloorY(track);
-      if (Number.isFinite(solidY) && (!Number.isFinite(plantDeck) || solidY > plantDeck + 0.08)) {
+      const offSide =
+        q2 && q2.onRoad === false && !q2.tunnel && q2.jumpKind !== "gap" && q2.jumpKind !== "ramp";
+      const riseCap = this._offRoadRiseCap(dt);
+      if (
+        !offSide &&
+        Number.isFinite(solidY) &&
+        (!Number.isFinite(plantDeck) || solidY > plantDeck + 0.08)
+      ) {
         plantDeck = solidY;
+      } else if (offSide && Number.isFinite(plantDeck) && plantDeck > prevY + riseCap) {
+        plantDeck = prevY + riseCap;
       }
       if (!Number.isFinite(plantDeck)) plantDeck = prevY;
       // A slide used to ride the deck filter. The filter hangs above a
@@ -2304,7 +2313,13 @@ export class Vehicle {
     if (!Number.isFinite(floor)) return;
     if (this._pinManeuverDeck()) return;
     const slack = tightDeckPlant(kind, this._landLock) ? 0 : DECK_FOLLOW_SLACK;
-    if (this.position.y < floor - slack) this.position.y = floor - slack;
+    if (this.position.y < floor - slack) {
+      const gap = floor - slack - this.position.y;
+      const riseCap = this._offRoadRiseCap(FIXED_DT);
+      // A small curb off the paint is a slope. A deep fall still snaps.
+      if (Number.isFinite(riseCap) && gap < 0.55) this.position.y += Math.min(gap, riseCap);
+      else this.position.y = floor - slack;
+    }
     // Hover cap only on the road we are actually on. A stale pit floor
     // (~hole Y) used to pull the car under the Desert climb after jump 3.
     const onSolid =
@@ -2899,7 +2914,12 @@ export class Vehicle {
     const pinned = this._pinQuery(track, q);
     if (this.onGround && Number.isFinite(pinned.height)) {
       const want = pinned.height - TIRE_PLANT;
-      if (this.position.y > want + 0.12 || this.position.y < want - 0.35) {
+      const above = this.position.y > want + 0.12;
+      // A shoulder below the deck is the runoff. Yanking back up to the
+      // paint is the pop off the side of the road. A query behind the car
+      // is still a false ditch and may be lifted.
+      const sunkBehind = behind && this.position.y < want - 0.35;
+      if (above || sunkBehind) {
         this.position.y = want;
         this.velY = 0;
         this._airTime = 0;
@@ -3510,6 +3530,8 @@ export class Vehicle {
       if (extra > lift) lift = extra;
     }
     if (lift > 0.0005) {
+      const riseCap = this._offRoadRiseCap(FIXED_DT);
+      if (lift > riseCap) lift = riseCap;
       this.position.y += lift;
       if (this.velY < 0) {
         if (this._padHitVy == null) this._padHitVy = this.velY;
@@ -3568,6 +3590,22 @@ export class Vehicle {
    * straight launch does not flatten the chassis.
    * @returns {boolean}
    */
+  /**
+   * Max metres the chassis may rise this tick while it is off the paint.
+   * On the ribbon this is unbounded so hills and landings still plant.
+   * @param {number} [dt]
+   * @returns {number}
+   */
+  _offRoadRiseCap(dt) {
+    const q = this._q;
+    if (!q || q.onRoad !== false || q.tunnel) return Infinity;
+    const kind = q.jumpKind || "";
+    if (kind === "gap" || kind === "ramp" || kind === "crest") return Infinity;
+    if (!this.onGround) return Infinity;
+    const step = Number.isFinite(dt) && dt > 0 ? dt : FIXED_DT;
+    return 0.035 + (this.speed || 0) * step * 0.3;
+  }
+
   _wantPlantedDeck() {
     if (!this.onGround) return false;
     if (this.throttle > 0.16) return true;
@@ -3621,7 +3659,9 @@ export class Vehicle {
     const raw = this._stableDeckY(q, hold);
     if (!Number.isFinite(raw)) return false;
     if (!Number.isFinite(this._maneuverY)) {
-      this._maneuverY = raw;
+      const cap = this._offRoadRiseCap(FIXED_DT);
+      this._maneuverY =
+        Number.isFinite(cap) && raw > this.position.y + cap ? this.position.y + cap : raw;
       this._maneuverFollow = 0;
     } else {
       const err = raw - this._maneuverY;

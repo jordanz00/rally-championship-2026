@@ -52,7 +52,7 @@ check(
 
 check(
   "POV hide cache is versioned (rebuild roofs)",
-  /POV_HIDE_VER\s*=\s*[4-8]/.test(car) && /_povHideVer\s*!==\s*[4-8]/.test(car),
+  /POV_HIDE_VER\s*=\s*[4-9]/.test(car) && /_povHideVer\s*!==\s*[4-9]/.test(car),
   "setCockpitView must invalidate stale hide lists"
 );
 

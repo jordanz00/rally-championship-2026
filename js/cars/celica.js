@@ -1877,11 +1877,17 @@ function buildSmoothWindowPane(src, root, carMid) {
  */
 export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShell = false) {
   const chassis = chassisId || rivalChassisForIndex(variant);
-  const lod = rivalTemplates[chassis] || rivalTemplates.celica || rivalTemplates.delta;
-  const hi = templates[chassis] || templates.celica || templates.delta;
   const phone = garagePhoneLite();
-  const useHero = !phone && heroShell && !!hi;
-  const template = useHero ? hi || lod : lod || hi;
+  const ownHero = templates[chassis];
+  const hi = ownHero || templates.celica || templates.stratos || templates.delta;
+  const lod =
+    rivalTemplates[chassis] ||
+    rivalTemplates.celica ||
+    rivalTemplates.stratos ||
+    rivalTemplates.delta;
+  const useHero = !phone && !!heroShell && !!ownHero;
+  // A chassis with no loaded file borrows another GLB. The box is phone-only.
+  const template = useHero ? ownHero : phone ? lod : lod || hi;
   if (!template) {
     if (!warnedMissing.has("rival")) {
       warnedMissing.add("rival");
@@ -3563,8 +3569,6 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
   const inAir = !!airborne || !!probedAir;
   /** Unloaded hang (m). Still inside the arch. */
   const AIR_HANG = 0.05;
-  if (inAir) _qRoll.identity();
-  else _qRoll.setFromAxisAngle(_rollAxis, -chassisRoll);
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
@@ -3574,6 +3578,13 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
   const pitch = root && Number.isFinite(root.rotation.x) ? root.rotation.x : 0;
   const pitchClamped = Math.max(-0.35, Math.min(0.35, pitch));
   const tanPitch = Math.tan(pitchClamped);
+  // Jump attitude is the shell. Undoing roll here leaves the tire upright
+  // while the arch rolls away — the wheel looks detached.
+  const pitchFlight = Math.max(0, Math.min(1, (Math.abs(pitchClamped) - 0.12) / 0.1));
+  const rollFlight = Math.max(0, Math.min(1, (Math.abs(rollClamped) - 0.14) / 0.1));
+  const flight = inAir ? 1 : Math.max(pitchFlight, rollFlight);
+  if (flight > 0.85) _qRoll.identity();
+  else _qRoll.setFromAxisAngle(_rollAxis, -roll * (1 - flight));
   for (let i = 0; i < wheels.length; i++) {
     const w = wheels[i];
     if (!w || !w.quaternion) continue;
@@ -3595,19 +3606,21 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
           : data.restPosZ != null
             ? data.restPosZ
             : 0;
-      // Parent +Rx (nose down) lowers the front and lifts the tail. Plant
-      // hubs by z·tan(pitch) so the body can dive without floating rears.
-      // Flight pitch is the car, not dive — leave the hubs in the wells.
-      const pitchPlant = inAir ? 0 : Math.max(-0.48, Math.min(0.48, tanPitch * zLong));
-      const rollPlant = inAir ? 0 : Math.max(-0.36, Math.min(0.36, tanRoll * xLat));
+      // Small dive / lean only. A jump pitch is the whole car — counter-
+      // moving the hub by z·tan(pitch) drops the tire out of the arch.
+      const planted = 1 - flight;
+      const pitchPlant = planted * Math.max(-0.14, Math.min(0.14, tanPitch * zLong));
+      const rollPlant = planted * Math.max(-0.1, Math.min(0.1, tanRoll * xLat));
       // Shocks tuck the hub into the arch (travel −). Extension (travel +)
       // only drops onto the verge — never through the painted slab.
-      const tuck = -Math.min(0, travelRaw);
-      const canDrop = !inAir && !!(dropOk && dropOk[i]);
+      const tuck = planted * -Math.min(0, travelRaw);
+      const canDrop = planted > 0.5 && !!(dropOk && dropOk[i]);
       const drop = canDrop ? Math.min(0.16, Math.max(0, travelRaw)) : 0;
-      const attitude = data.restPosY + (inAir ? 0 : lift) + pitchPlant - rollPlant;
+      const attitude = data.restPosY + (inAir ? 0 : lift * planted) + pitchPlant - rollPlant;
       let y = inAir ? data.restPosY - AIR_HANG : attitude + tuck - drop;
       if (!inAir && !canDrop) y = Math.max(attitude, y);
+      y = data.restPosY + Math.max(-0.16, Math.min(0.1, y - data.restPosY));
+      data._flight = flight;
       // Rest X/Z every frame. The shock may ride a parent axis that is not Y
       // (scaled LOD hubs), and that offset must not accumulate.
       if (data.restPosX != null) w.position.x = data.restPosX;
@@ -3645,34 +3658,47 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     // Pose first, then plant. Steering and spin swing the tread; measuring
     // the rest pose left the rubber inside the deck after the hub turned.
     const slot = probeCornerSlot(data, i);
-    const roadY = !inAir && cornerY && slot >= 0 ? cornerY[slot] : NaN;
+    const chasing = (data._flight || 0) < 0.35;
+    const roadY = chasing && cornerY && slot >= 0 ? cornerY[slot] : NaN;
     if (!Number.isFinite(roadY) || !w.parent || data._poseY == null) continue;
     const bottom = hubWorldBottom(w);
     if (!Number.isFinite(bottom)) continue;
     // 1 mm above the surface so the tread kisses it and does not enter it.
     let delta = roadY + 0.001 - bottom;
-    // One shock stroke. 0.45 m chased the road under a jump and left the arches.
-    const bump = 0.12;
-    const droop = data._canDrop ? 0.16 : 0.1;
+    // One shock stroke. Chasing the road under a jump pulled the hubs out.
+    const bump = 0.1;
+    const droop = data._canDrop ? 0.14 : 0.08;
     if (delta > 0.001) delta = Math.min(bump, delta);
     else if (delta < -0.002) delta = Math.max(-droop, delta);
     else delta = 0;
-    const ride = shockAxisStep(w.parent, delta);
+    const ride = shockAxisStep(w.parent, delta, data);
     if (!ride) continue;
     if (ride.axis === "x") w.position.x += ride.step;
     else if (ride.axis === "z") w.position.z += ride.step;
     else w.position.y += ride.step;
+    // The hub stays in the well. A jump must not leave a wheel behind.
+    const hold = ride.axis === "y" ? 0.16 : 0.05;
+    if (ride.axis === "x" && data.restPosX != null) {
+      w.position.x = Math.max(data.restPosX - hold, Math.min(data.restPosX + hold, w.position.x));
+    } else if (ride.axis === "z" && data.restPosZ != null) {
+      w.position.z = Math.max(data.restPosZ - hold, Math.min(data.restPosZ + hold, w.position.z));
+    } else if (data.restPosY != null) {
+      w.position.y = Math.max(data.restPosY - hold, Math.min(data.restPosY + 0.1, w.position.y));
+    }
   }
 }
 
 /**
  * Parent-local move that changes world Y by `deltaWorld`.
- * Most cars ride local Y. Scaled LOD hubs ride local Z (Y is the axle).
+ * The shock axis is learned while the car is near level. A pitched jump
+ * must not re-pick the axle or the length of the car — that slides the
+ * wheel out of the arch.
  * @param {THREE.Object3D} parent
  * @param {number} deltaWorld
+ * @param {{shockAxis?:string}} [data]
  * @returns {{axis:"x"|"y"|"z", step:number}|null}
  */
-function shockAxisStep(parent, deltaWorld) {
+function shockAxisStep(parent, deltaWorld, data) {
   if (!parent || !deltaWorld) return null;
   parent.updateWorldMatrix(true, false);
   const e = parent.matrixWorld.elements;
@@ -3685,8 +3711,16 @@ function shockAxisStep(parent, deltaWorld) {
   for (let i = 0; i < axes.length; i++) {
     if (Math.abs(axes[i].along) > Math.abs(best.along)) best = axes[i];
   }
-  if (!(Math.abs(best.along) > 1e-8)) return null;
-  return { axis: best.axis, step: deltaWorld / best.along };
+  const bag = data || {};
+  if (!bag.shockAxis && Math.abs(best.along) > 0.82) bag.shockAxis = best.axis;
+  const axis = bag.shockAxis || (Math.abs(best.along) > 0.72 ? best.axis : "y");
+  const along = axis === "x" ? e[1] : axis === "z" ? e[9] : e[5];
+  // Rolled or nose-up: keep the hub parked. Do not shove it along the body.
+  if (!(Math.abs(along) > 0.72)) return null;
+  let step = deltaWorld / along;
+  if (step > 0.1) step = 0.1;
+  if (step < -0.1) step = -0.1;
+  return { axis, step };
 }
 
 /**
@@ -6051,13 +6085,12 @@ function isExteriorMirrorGlass(obj, hull, c) {
  */
 function buildPovHideCache(root) {
   if (!root) return;
-  const POV_HIDE_VER = 8;
+  const POV_HIDE_VER = 9;
   if (root.userData._povHideReady && root.userData._povHideVer === POV_HIDE_VER) return;
-  // Clear stale shell tags, then re-tag (v7 never marks glbCabin as roof).
+  // Clear stale shell tags, then re-tag. A one-piece hull used to be marked
+  // roof and the hood vanished with it.
   root.traverse((obj) => {
-    if (obj.userData && obj.userData.povShell && obj.userData.glbCabin) {
-      delete obj.userData.povShell;
-    }
+    if (obj.userData && obj.userData.povShell) delete obj.userData.povShell;
   });
   tagPovShell(root);
   /** @type {THREE.Object3D[]} */
@@ -6147,17 +6180,17 @@ function buildPovRig(root) {
     eyeZ = THREE.MathUtils.clamp(eyeZ, marks.wheel.z - 0.55, marks.wheel.z - 0.32);
   }
 
-  // Eyes above the rim, under the roof, aimed out the glass.
+  // Above the cowl so the sightline clears the dash and lands on the bonnet.
   const roofClear = roof - 0.36;
   let eyeY = ground + Math.min(1.12, Math.max(0.9, spanY * 0.62));
-  if (marks.wheel) eyeY = marks.wheel.y + 0.28;
-  eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.85, roofClear);
+  if (marks.wheel) eyeY = marks.wheel.y + 0.52;
+  eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.92, roofClear);
 
   const lookX = eyeX * 0.08;
-  const lookZ = hull.maxZ + 6.2;
-  // ~7° down the glass. The headliner is clipped; a steep aim stared into the dash.
-  const lookDrop = Math.max(0.55, (lookZ - eyeZ) * 0.12);
-  const lookY = THREE.MathUtils.clamp(eyeY - lookDrop, eyeY - 2.2, eyeY - 0.08);
+  // ~10° down the nose. Far enough that the horizon stays up, close enough that the deck fills the lower glass.
+  const lookZ = hull.maxZ + 2.6;
+  const lookDrop = Math.max(0.72, (lookZ - eyeZ) * 0.17);
+  const lookY = THREE.MathUtils.clamp(eyeY - lookDrop, eyeY - 1.35, eyeY - 0.2);
   // Swap: interior glass sits on the opposite side of center from the driver
   // so the rearview reads on the right of an LHD lens (was left in RHD).
   const mirrorEyeX = -eyeX * 0.12;
@@ -6202,7 +6235,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 16;
+  const POV_RIG_VER = 19;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -6254,18 +6287,27 @@ function tagPovShell(root) {
       obj.userData.povShell = true;
       return;
     }
+    // Hood, bumper, and fenders stay in the lens. The roof clip shaves the headliner.
+    if (/hood|bonnet|motorhood|bumper|fender|grille|grill/.test(n)) return;
     // Cabin fill stays; geometric roof only on exterior shell.
     if (obj.userData.interior) return;
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(c);
     box.getSize(s);
+    const lo = box.min.clone();
+    const hi = box.max.clone();
     root.worldToLocal(c);
+    root.worldToLocal(lo);
+    root.worldToLocal(hi);
+    const locMaxZ = Math.max(lo.z, hi.z);
     const spanX = hull.maxX - hull.minX;
+    // A one-piece body includes the nose. Hiding it removes the hood.
+    const reachesNose = locMaxZ > hull.maxZ - spanZ * 0.16;
     const high = c.y > hull.minY + spanY * 0.55;
     const midCabin = c.z > hull.minZ + spanZ * 0.18 && c.z < hull.maxZ - spanZ * 0.06;
     const wide = s.x > spanY * 0.45 && s.z > spanZ * 0.22;
     const thinSlab = s.y < 0.45 && s.x > spanY * 0.4;
-    if (high && midCabin && (wide || thinSlab)) {
+    if (!reachesNose && high && midCabin && (wide || thinSlab)) {
       obj.userData.povShell = true;
       return;
     }
@@ -7488,7 +7530,8 @@ export function setPovRoofClip(root, on, renderer) {
     }
   }
   const rig = getPovRig(root);
-  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.02;
+  // Above the cowl so the hood deck is kept. The roof is still above this cut.
+  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.16;
   root.userData._povRoofCutY = cutY;
   if (!root.userData._povClipPlanes) {
     root.userData._povClipPlanes = [new THREE.Plane()];
@@ -7652,7 +7695,7 @@ export function setCockpitView(root, on, _camera, renderer) {
   const want = !!on;
   // Force a hide-cache rebuild when the POV shell / GLB cabin tag set changes.
   // Only createPlayerCar / _warmPov should hit a cold cache — never mid-race C.
-  if (root.userData._povHideVer !== 8) root.userData._povHideReady = false;
+  if (root.userData._povHideVer !== 9) root.userData._povHideReady = false;
   if (!root.userData._povHideReady) buildPovHideCache(root);
   if (!root.userData._povClipPrepared) setPovRoofClip(root, false, renderer);
   // C-key path: cache + clip + driver already warmed — visibility flip only.

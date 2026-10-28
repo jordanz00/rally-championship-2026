@@ -1801,7 +1801,7 @@ export class Track {
         : scenery === "mountain"
           ? 0x7a6e58
           : scenery === "lakeside"
-            ? 0x4a6a52
+            ? 0xa4c278
             : 0x324828;
 
     for (let tz = z0; tz < maxZ; tz += tileSize) {
@@ -1840,7 +1840,7 @@ export class Track {
         : scenery === "mountain"
           ? 0x7a6e58
           : scenery === "lakeside"
-            ? 0x4a6a52
+            ? 0xa4c278
             : 0x324828;
 
     const rows = [];
@@ -1948,7 +1948,18 @@ export class Track {
         const chordTuck = 0.1;
         // On-road / car corridor — hard floor only (no dune / bank lift).
         if (over < ROAD_COLLIDER_CLEAR + 0.45) {
-          h = near.roadY - bedDrop - chordTuck;
+          const bed = near.roadY - bedDrop - chordTuck;
+          // Under the ribbon the bed stays low so sand cannot rise through
+          // the deck. Just off the paint, ease from the lip down to that bed
+          // so the verge meets the road instead of a step.
+          if (over <= 0.2) {
+            h = bed;
+          } else {
+            const lip = near.roadY - 0.05;
+            const t = Math.min(1, (over - 0.2) / 8);
+            const s = t * t * (3 - 2 * t);
+            h = lip + (Math.min(bed, lip) - lip) * s;
+          }
         } else if (over < ROAD_VERGE + 2.4 || near.dist < this._trenchWidth(near.roadW)) {
           h = this._groundHeightRaw(x, z, scenery, near);
           h = Math.min(h, near.roadY - bedDrop - chordTuck);
@@ -1998,6 +2009,9 @@ export class Track {
     land.receiveShadow = true;
     land.renderOrder = -1;
     land.userData.envLand = true;
+    if (scenery === "lakeside" && land.material && land.material.color) {
+      land.material.color.setRGB(1.35, 2.05, 1.15);
+    }
     if (land.material) {
       land.material.polygonOffset = true;
       land.material.polygonOffsetFactor = 2;
@@ -2775,12 +2789,12 @@ export class Track {
       return;
     }
     if (scenery === "lakeside") {
-      // Soft shoulder → autumn litter → reed shelf. Distance blend reads cinematic.
+      // Bright autumn meadow against the gray tarmac. The old olive matched the road.
       const vergeEnd = 3.6 + wobble * 1.1;
       const litterEnd = 11.2 + wobble * 1.7;
-      const verge = { r: 0.4, g: 0.38, b: 0.22 };
-      const litterCol = { r: 0.48, g: 0.3, b: 0.12 };
-      const floor = { r: 0.34 + lift * 0.1, g: 0.32 + lift * 0.08, b: 0.16 + lift * 0.05 };
+      const verge = { r: 0.78, g: 0.74, b: 0.48 };
+      const litterCol = { r: 0.9, g: 0.62, b: 0.26 };
+      const floor = { r: 0.66 + lift * 0.08, g: 0.78 + lift * 0.06, b: 0.4 + lift * 0.04 };
       if (over < vergeEnd) {
         const u = smoothstep(over / vergeEnd);
         c.setRGB(
@@ -2799,22 +2813,22 @@ export class Track {
         c.setRGB(floor.r, floor.g, floor.b);
       }
       const litter = Math.abs(Math.sin(x * 0.021 + z * 0.018));
-      if (litter > 0.55 && litter < 0.92 && over > vergeEnd) c.setRGB(0.48, 0.28, 0.1);
+      if (litter > 0.55 && litter < 0.92 && over > vergeEnd) c.setRGB(0.92, 0.58, 0.2);
       const gold = Math.abs(Math.sin(x * 0.014 - z * 0.016));
-      if (gold > 0.78) c.setRGB(0.52 + lift * 0.08, 0.38 + lift * 0.06, 0.12);
+      if (gold > 0.78) c.setRGB(0.94 + lift * 0.04, 0.74 + lift * 0.04, 0.28);
       const wet = Math.abs(Math.sin(x * 0.03 + z * 0.028));
-      if (wet > 0.88) c.setRGB(0.22, 0.36, 0.3);
-      if (h < roadY - 0.55) c.setRGB(0.14, 0.26, 0.24);
+      if (wet > 0.88) c.setRGB(0.46, 0.66, 0.52);
+      if (h < roadY - 0.55) c.setRGB(0.38, 0.56, 0.5);
       if (hi) {
         if (h < roadY - 0.35 && h > roadY - 1.4) {
           const mud = Math.abs(Math.sin(x * 0.022 + z * 0.019));
-          if (mud > 0.7) c.setRGB(0.3, 0.28, 0.18);
+          if (mud > 0.7) c.setRGB(0.58, 0.5, 0.32);
         }
         const reed = Math.abs(Math.sin(x * 0.048 - z * 0.041));
-        if (reed > 0.86) c.setRGB(0.28, 0.34, 0.16);
+        if (reed > 0.86) c.setRGB(0.52, 0.68, 0.3);
         const spit = Math.abs(Math.sin(x * 0.017 + z * 0.023));
         if (spit > 0.9 && lift > 0.05 && lift < 0.4) {
-          c.setRGB(0.46, 0.4, 0.28);
+          c.setRGB(0.82, 0.74, 0.52);
         }
         const birch = Math.abs(Math.sin(x * 0.055 + z * 0.049));
         if (birch > 0.9) {
@@ -2985,7 +2999,7 @@ export class Track {
       );
       this._addBackdropRockRings(
         b,
-        0x5a6c58,
+        0x8e9a84,
         [
           { r: b.maxR + 380, n: 42, sMin: 9, sMax: 17, y: 0.12 },
           { r: b.maxR + 580, n: 32, sMin: 13, sMax: 22, y: 0.16 },
@@ -3475,7 +3489,7 @@ export class Track {
         return Math.floor(dist / 2.8) % 2 === 0 ? 0xead8b0 : 0x5a4830;
       }
       if (scenery === "mountain") return 0x6e6454;
-      if (scenery === "lakeside") return 0x4a5840;
+      if (scenery === "lakeside") return 0xc6d4a4;
       if (surface === "mud") return 0x5a4a38;
       if (surface === "grass") return 0x3a4c28;
       return 0x6a5e48;
@@ -3786,6 +3800,14 @@ export class Track {
             roadAoFor(b.id),
             roadRoughFor(b.id)
           );
+          if (scenery === "lakeside" && mat.color) {
+            const light = lakesideRoadMap(b.id);
+            if (light) mat.map = light;
+            mat.aoMap = null;
+            mat.aoMapIntensity = 0;
+            mat.color.setRGB(b.id === "tarmac" ? 2.1 : 1.7, b.id === "tarmac" ? 2.15 : 1.65, b.id === "tarmac" ? 2.28 : 1.55);
+            mat.userData.dryColor = mat.color.clone();
+          }
         }
         roadMats.set(b.id, mat);
       }
@@ -4637,9 +4659,11 @@ export class Track {
       this._addForestCorridorWalls(rng);
       this._addForestPuddles(rng);
       this._addForestWaterfall();
+      this._addForestTunnelWaterfall();
     }
     if (def.scenery === "lakeside") {
       this._addLake();
+      this._addLakesideSuspensionBridge();
     }
     // Hero landmarks / verge / spectators → finishDeferredDressing after Ready.
     // Seat once in buildAsync — seating here too doubled land scans on Desert.
@@ -8034,6 +8058,184 @@ export class Track {
   }
 
   /**
+   * Stage 2 — gorge waterfall on the approach to the rock tunnel.
+   * Off the paint, tall enough to clear the trees, facing the road so the
+   * chase view holds it in the background until the mouth takes the frame.
+   */
+  _addForestTunnelWaterfall() {
+    const vols = this._tunnelVolumes;
+    if (!vols || !vols.length || !this.points.length) return;
+    const mouth = vols[0].entranceDist != null ? vols[0].entranceDist : vols[0].dist0;
+    const along = Math.max(12, mouth - 34);
+    const p = this.sample(along);
+    if (!p || p.tunnel) return;
+    let spot = null;
+    for (let n = 0; n < 2 && !spot; n++) {
+      const reach = p.width * 0.5 + (n === 0 ? 24 : 34);
+      for (let s = 0; s < 2; s++) {
+        const side = s === 0 ? 1 : -1;
+        const x = p.x + p.nx * side * reach;
+        const z = p.z + p.nz * side * reach;
+        if (!this._ribbonClear(x, z, 8)) continue;
+        spot = { side, x, z };
+        break;
+      }
+    }
+    if (!spot) return;
+    const cx = spot.x;
+    const cz = spot.z;
+    const gy = this._visualLandY(cx, cz);
+    const base = Math.min(gy, (p.y || 0) - 0.2);
+    const lip = Math.max(base + 20, (p.y || 0) + 16);
+    const cliffH = lip - base + 1.6;
+    const fallW = 9.4;
+    const fallH = Math.max(14, lip - base - 1.2);
+    const yaw = Math.atan2(-spot.side * p.nx, -spot.side * p.nz);
+    const chunk = this._chunkOfDist(along);
+
+    const g = new THREE.Group();
+    g.name = "forest-tunnel-waterfall";
+    g.position.set(cx, 0, cz);
+    g.rotation.y = yaw;
+    g.userData.forestTunnelFalls = true;
+
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x6a6458,
+      roughness: 0.93,
+      metalness: 0.02,
+      vertexColors: true,
+    });
+    const mossMat = new THREE.MeshStandardMaterial({
+      color: 0x3d6a40,
+      roughness: 0.9,
+      metalness: 0,
+    });
+    const wall = new THREE.Mesh(gorgeWallGeometry(fallW + 11, cliffH), rockMat);
+    wall.position.set(0, base + cliffH * 0.5, -1.2);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    g.add(wall);
+    const wingGeo = gorgeWallGeometry(5.5, cliffH * 0.92);
+    const leftWing = new THREE.Mesh(wingGeo, rockMat);
+    leftWing.position.set(-(fallW * 0.5 + 4.2), base + cliffH * 0.46, -0.4);
+    leftWing.rotation.y = 0.42;
+    leftWing.castShadow = true;
+    g.add(leftWing);
+    const rightWing = new THREE.Mesh(wingGeo, rockMat);
+    rightWing.position.set(fallW * 0.5 + 4.2, base + cliffH * 0.46, -0.4);
+    rightWing.rotation.y = -0.42;
+    rightWing.castShadow = true;
+    g.add(rightWing);
+    const lipMoss = new THREE.Mesh(new THREE.BoxGeometry(fallW + 2.4, 0.45, 2.2), mossMat);
+    lipMoss.position.set(0, lip + 0.15, -0.6);
+    g.add(lipMoss);
+
+    const cascadeMat = waterfallPbr();
+    const sheets = [
+      { w: fallW, h: fallH, x: 0, z: 0.35, op: 0.9, scroll: { u: 0.01, v: -0.62 } },
+      { w: fallW * 0.72, h: fallH * 0.97, x: 0.4, z: 0.85, op: 0.62, scroll: { u: -0.02, v: -0.84 } },
+      { w: fallW * 0.4, h: fallH * 0.9, x: -0.2, z: 1.25, op: 0.42, scroll: { u: 0.03, v: -1.05 } },
+      { w: 2.4, h: fallH * 0.78, x: fallW * 0.5 + 1.5, z: 0.7, op: 0.7, scroll: { u: 0.02, v: -0.7 } },
+      { w: 1.7, h: fallH * 0.62, x: -(fallW * 0.5 + 1.2), z: 0.55, op: 0.55, scroll: { u: -0.015, v: -0.5 } },
+    ];
+    const poolY = base + 0.15;
+    for (let i = 0; i < sheets.length; i++) {
+      const s = sheets[i];
+      const mat = cascadeMat.clone();
+      mat.opacity = s.op;
+      if (mat.map) mat.map = mat.map.clone();
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h, 1, 10), mat);
+      sheet.position.set(s.x, poolY + s.h * 0.5, s.z);
+      sheet.name = "waterfall";
+      sheet.castShadow = false;
+      sheet.receiveShadow = false;
+      sheet.userData.waterScroll = s.scroll;
+      g.add(sheet);
+      if (!this._waterMeshes) this._waterMeshes = [];
+      this._waterMeshes.push(sheet);
+    }
+
+    const poolMat = waterPbr();
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(7.2, 32), poolMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(0, poolY + 0.05, 4.4);
+    pool.name = "waterfall-pool";
+    pool.userData.waterScroll = { u: 0.04, v: 0.035 };
+    g.add(pool);
+    this._waterMeshes.push(pool);
+
+    const stream = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 9.5), poolMat.clone());
+    stream.rotation.x = -Math.PI / 2;
+    stream.position.set(0.6, poolY + 0.03, 10.2);
+    stream.userData.waterScroll = { u: 0.02, v: 0.12 };
+    g.add(stream);
+    this._waterMeshes.push(stream);
+
+    const foam = new THREE.Mesh(
+      new THREE.RingGeometry(1.6, 5.4, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xf4fbff,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+    );
+    foam.rotation.x = -Math.PI / 2;
+    foam.position.set(0, poolY + 0.1, 4.4);
+    g.add(foam);
+
+    const mistMat = new THREE.MeshBasicMaterial({
+      color: 0xe7f4fb,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    for (let i = 0; i < 6; i++) {
+      const mist = new THREE.Mesh(new THREE.PlaneGeometry(4.2 + i * 0.7, 2.8 + i * 0.35), mistMat);
+      mist.position.set((i - 2.5) * 1.15, poolY + 1.6 + i * 0.7, 3.6 + (i % 3) * 0.4);
+      mist.rotation.y = (i - 2.5) * 0.22;
+      g.add(mist);
+    }
+
+    const rocks = [];
+    const boulder = cliffShardGeometry();
+    const rockDark = new THREE.MeshStandardMaterial({
+      color: 0x4a463e,
+      roughness: 0.95,
+      metalness: 0.02,
+    });
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 1.4 - 0.4;
+      const rad = 5.2 + (i % 3) * 0.8;
+      const lx = Math.sin(ang) * rad;
+      const lz = 4.2 + Math.cos(ang) * rad * 0.55;
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      const wx = cx + cosY * lx + sinY * lz;
+      const wz = cz - sinY * lx + cosY * lz;
+      if (!this._ribbonClear(wx, wz, 1.4)) continue;
+      rocks.push({
+        c: chunk,
+        x: wx,
+        y: this._visualLandY(wx, wz) + 0.2,
+        z: wz,
+        s: 0.85 + (i % 3) * 0.28,
+        rx: i * 0.35,
+        ry: i * 0.8,
+        rz: i * 0.2,
+      });
+    }
+    this._registerChunk(g, chunk);
+    this.group.add(g);
+    if (rocks.length) {
+      this._addInstances(boulder, rockDark, rocks, { castShadow: true });
+      this._bumpPoses(rocks, 0.45);
+    }
+  }
+
+  /**
    * Lakeside — wooden pier and boathouse on the far bank of the first lake run.
    */
   _addLakesideHeroLandmark() {
@@ -8858,7 +9060,7 @@ export class Track {
       { from: 0.12, to: 0.5, side: 1 },
       { from: 0.58, to: 0.86, side: -1 },
     ];
-    const shoreMat = new THREE.MeshLambertMaterial({ color: 0x6a7460, flatShading: true });
+    const shoreMat = new THREE.MeshLambertMaterial({ color: 0xa8b898, flatShading: true });
     const boulder = cliffShardGeometry();
     const rocks = [];
     const reeds = [];
@@ -8875,7 +9077,7 @@ export class Track {
       let n = 0;
       const vert = (x, y, z, deep) => {
         pos.push(x, y, z);
-        color.setRGB(0.32 + deep * 0.05, 0.52 + deep * 0.08, 0.5 + deep * 0.18);
+        color.setRGB(0.48 + deep * 0.06, 0.7 + deep * 0.08, 0.74 + deep * 0.1);
         col.push(color.r, color.g, color.b);
         uv.push(x * 0.028, z * 0.028);
         n += 1;
@@ -8957,6 +9159,229 @@ export class Track {
     this._bumpPoses(rocks, 0.55);
     if (reeds.length) this._addHdNature("plant_bushFern", reeds, { castShadow: true });
     this._addLakeFarShore(runs);
+  }
+
+  /**
+   * Long suspension span over the first lake. Scenic only — off the paint.
+   * Two towers, a catenary pair, hangers, and a deck that follows the shore.
+   */
+  _addLakesideSuspensionBridge() {
+    const pts = this.points;
+    if (!pts || pts.length < 24) return;
+    const lake = (this._lakes && this._lakes[0]) || { from: 0.16, to: 0.46, side: 1 };
+    const from = lake.from + 0.025;
+    const to = Math.min(lake.to - 0.02, from + 0.26);
+    const side = lake.side || 1;
+    const i0 = Math.max(2, (pts.length * from) | 0);
+    const i1 = Math.min(pts.length - 3, (pts.length * to) | 0);
+    if (i1 - i0 < 16) return;
+    const step = Math.max(1, ((i1 - i0) / 52) | 0);
+    /** @type {Array<{x:number,z:number,y:number,nx:number,nz:number,dist:number}>} */
+    const samples = [];
+    for (let i = i0; i <= i1; i += step) {
+      const p = pts[i];
+      const off = p.width * 0.5 + 64;
+      const nx = p.nx * side;
+      const nz = p.nz * side;
+      samples.push({
+        x: p.x + nx * off,
+        z: p.z + nz * off,
+        y: p.y + 7.2,
+        nx,
+        nz,
+        dist: p.dist,
+      });
+    }
+    if (samples.length < 8) return;
+
+    const n = samples.length;
+    const ia = Math.max(2, (n * 0.16) | 0);
+    const ib = Math.min(n - 3, (n * 0.84) | 0);
+    const deckHalf = 4.6;
+    const towerH = 34;
+    const chordLen = Math.hypot(samples[ib].x - samples[ia].x, samples[ib].z - samples[ia].z);
+    const mainSag = Math.max(9, chordLen * 0.08);
+    const sideSag = Math.max(3.2, mainSag * 0.38);
+    const yawAt = (i) => {
+      const a = samples[Math.max(0, i - 1)];
+      const b = samples[Math.min(n - 1, i + 1)];
+      return Math.atan2(b.x - a.x, b.z - a.z);
+    };
+    const cableY = (i) => {
+      const sideSpan = (i0s, i1s, sag) => {
+        const t = (i - i0s) / Math.max(1, i1s - i0s);
+        const y0 = samples[i0s].y + (i0s === 0 || i0s === n - 1 ? 2.4 : towerH);
+        const y1 = samples[i1s].y + (i1s === 0 || i1s === n - 1 ? 2.4 : towerH);
+        return y0 + (y1 - y0) * t - sag * 4 * t * (1 - t);
+      };
+      let y;
+      if (i <= ia) y = sideSpan(0, ia, sideSag);
+      else if (i >= ib) y = sideSpan(ib, n - 1, sideSag);
+      else y = sideSpan(ia, ib, mainSag);
+      return y;
+    };
+
+    const concrete = worldPropMaterial(0xe7e2d6, 0.7);
+    const steel = worldPropMaterial(0x2c323a, 0.4);
+    if (steel.metalness != null) steel.metalness = 0.64;
+    const cableMat = worldPropMaterial(0x1a1e24, 0.46);
+    if (cableMat.metalness != null) cableMat.metalness = 0.72;
+
+    const deckPos = [];
+    const deckIdx = [];
+    const steelPos = [];
+    const steelIdx = [];
+    const cablePos = [];
+    const cableIdx = [];
+    const push = (buf, x, y, z) => {
+      buf.push(x, y, z);
+      return buf.length / 3 - 1;
+    };
+    const L = [];
+    const R = [];
+    const chordL = [];
+    const chordR = [];
+    for (let i = 0; i < n; i++) {
+      const s = samples[i];
+      L.push(push(deckPos, s.x + s.nx * deckHalf, s.y, s.z + s.nz * deckHalf));
+      R.push(push(deckPos, s.x - s.nx * deckHalf, s.y, s.z - s.nz * deckHalf));
+      chordL.push(push(steelPos, s.x + s.nx * 3.1, s.y - 1.45, s.z + s.nz * 3.1));
+      chordR.push(push(steelPos, s.x - s.nx * 3.1, s.y - 1.45, s.z - s.nz * 3.1));
+    }
+    for (let i = 0; i < n - 1; i++) {
+      deckIdx.push(L[i], R[i], L[i + 1], R[i], R[i + 1], L[i + 1]);
+      steelIdx.push(chordL[i], chordR[i], chordL[i + 1], chordR[i], chordR[i + 1], chordL[i + 1]);
+      const s = samples[i];
+      const rail = 1.15;
+      const inset = deckHalf - 0.2;
+      const a = push(deckPos, s.x + s.nx * inset, s.y + 0.08, s.z + s.nz * inset);
+      const b = push(deckPos, s.x + s.nx * inset, s.y + rail, s.z + s.nz * inset);
+      const sn = samples[i + 1];
+      const c = push(deckPos, sn.x + sn.nx * inset, sn.y + 0.08, sn.z + sn.nz * inset);
+      const d = push(deckPos, sn.x + sn.nx * inset, sn.y + rail, sn.z + sn.nz * inset);
+      deckIdx.push(a, c, b, c, d, b);
+      const e = push(deckPos, s.x - s.nx * inset, s.y + 0.08, s.z - s.nz * inset);
+      const f = push(deckPos, s.x - s.nx * inset, s.y + rail, s.z - s.nz * inset);
+      const g = push(deckPos, sn.x - sn.nx * inset, sn.y + 0.08, sn.z - sn.nz * inset);
+      const h = push(deckPos, sn.x - sn.nx * inset, sn.y + rail, sn.z - sn.nz * inset);
+      deckIdx.push(e, f, g, f, h, g);
+    }
+
+    const addCable = (lane) => {
+      const ids = [];
+      for (let i = 0; i < n; i++) {
+        const s = samples[i];
+        const y = cableY(i);
+        const o = deckHalf - 0.55;
+        ids.push(push(cablePos, s.x + s.nx * lane * o, y, s.z + s.nz * lane * o));
+        ids.push(push(cablePos, s.x + s.nx * lane * o, y - 0.28, s.z + s.nz * lane * o));
+      }
+      for (let i = 0; i < n - 1; i++) {
+        const a = ids[i * 2];
+        const b = ids[i * 2 + 1];
+        const c = ids[(i + 1) * 2];
+        const d = ids[(i + 1) * 2 + 1];
+        cableIdx.push(a, b, c, b, d, c);
+      }
+    };
+    addCable(1);
+    addCable(-1);
+
+    const unit = new THREE.BoxGeometry(1, 1, 1);
+    const towerBoxes = [];
+    const hangerBoxes = [];
+    const addBox = (bag, x, y, z, sx, sy, sz, yaw) => {
+      const g = unit.clone();
+      const m = new THREE.Matrix4();
+      m.multiply(new THREE.Matrix4().makeTranslation(x, y, z));
+      m.multiply(new THREE.Matrix4().makeRotationY(yaw));
+      m.multiply(new THREE.Matrix4().makeScale(sx, sy, sz));
+      g.applyMatrix4(m);
+      bag.push(g);
+    };
+    const plantTower = (i) => {
+      const s = samples[i];
+      const yaw = yawAt(i);
+      const legX = deckHalf + 0.7;
+      const base = s.y - 8.2;
+      const top = s.y + towerH;
+      const legH = top - base;
+      for (const lane of [1, -1]) {
+        addBox(
+          towerBoxes,
+          s.x + s.nx * lane * legX,
+          base + legH * 0.5,
+          s.z + s.nz * lane * legX,
+          1.7,
+          legH,
+          2.1,
+          yaw
+        );
+      }
+      addBox(towerBoxes, s.x, s.y + towerH * 0.62, s.z, legX * 2 + 1.2, 1.15, 1.5, yaw);
+      addBox(towerBoxes, s.x, top - 0.7, s.z, legX * 2 + 1.6, 1.35, 1.8, yaw);
+      addBox(towerBoxes, s.x, base + 1.1, s.z, deckHalf * 2 + 2.4, 2.2, 3.4, yaw);
+    };
+    plantTower(ia);
+    plantTower(ib);
+    for (const end of [0, n - 1]) {
+      const s = samples[end];
+      addBox(towerBoxes, s.x, s.y - 3.2, s.z, deckHalf * 2 + 1.4, 8.4, 3.6, yawAt(end));
+    }
+    for (let i = ia + 1; i < ib; i += 1) {
+      const s = samples[i];
+      const y = cableY(i);
+      const h = Math.max(0.4, y - s.y);
+      for (const lane of [1, -1]) {
+        const o = deckHalf - 0.55;
+        addBox(
+          hangerBoxes,
+          s.x + s.nx * lane * o,
+          s.y + h * 0.5,
+          s.z + s.nz * lane * o,
+          0.1,
+          h,
+          0.1,
+          yawAt(i)
+        );
+      }
+    }
+
+    const makeMesh = (pos, indices, mat, name) => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = name;
+      // One mesh spans the whole lake. A sun shadow from it blacks out the road.
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      return mesh;
+    };
+    const root = new THREE.Group();
+    root.name = "lakeside-suspension-bridge";
+    root.userData.lakesideBridge = true;
+    root.add(makeMesh(deckPos, deckIdx, concrete, "bridge-deck"));
+    root.add(makeMesh(steelPos, steelIdx, steel, "bridge-chord"));
+    root.add(makeMesh(cablePos, cableIdx, cableMat, "bridge-cables"));
+    const addMerged = (parts, mat, name) => {
+      if (!parts.length) return;
+      const merged = mergeGeometries(parts, false);
+      for (let i = 0; i < parts.length; i++) parts[i].dispose();
+      if (!merged) return;
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.name = name;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      root.add(mesh);
+    };
+    addMerged(towerBoxes, concrete, "bridge-towers");
+    addMerged(hangerBoxes, steel, "bridge-hangers");
+    unit.dispose();
+    const mid = samples[(n / 2) | 0];
+    this._registerChunk(root, this._chunkOfDist(mid.dist));
+    this.group.add(root);
   }
 
   /**
@@ -11639,6 +12064,41 @@ export class Track {
   }
 
   /**
+   * Off the paint, do not adopt a higher ribbon in one sample.
+   * The road the car just left is the lip. Rise from there is a slope.
+   * A foreign loop (far along the spline) stays pinned until the slope
+   * can reach it, so a hairpin arm cannot pop the chassis.
+   * @param {number} x
+   * @param {number} z
+   * @param {number|undefined} hintDist
+   * @param {number} height
+   * @param {number} chosenDist
+   * @returns {{height:number, pinDist:number|null}|null}
+   */
+  _easeRunoff(x, z, hintDist, height, chosenDist) {
+    if (hintDist == null || !Number.isFinite(hintDist) || !Number.isFinite(height)) return null;
+    const hint = this.sample(hintDist, this._runoffBag || (this._runoffBag = {}));
+    if (!hint || !Number.isFinite(hint.x) || hint.jumpKind === "gap" || hint.tunnel) return null;
+    const lat = (x - hint.x) * (hint.nx || 0) + (z - hint.z) * (hint.nz || 0);
+    const off = Math.abs(lat) - (hint.width || 12) * 0.5;
+    if (!(off > 0.02)) return null;
+    const hintH = (hint.y || 0) + ROAD_DECK;
+    const rise = height - hintH;
+    if (!(rise > 0.04)) return null;
+    let along = Math.abs((chosenDist || 0) - (hint.dist != null ? hint.dist : hintDist));
+    const span = this.length || 0;
+    if (span > 80 && along > span * 0.5) along = span - along;
+    // Same ribbon, a few metres ahead: that rise is the grade. Leave it.
+    if (along < 14) return null;
+    const cap = off * 0.08;
+    if (!(rise > cap)) return null;
+    const hit = this._runoffHit || (this._runoffHit = { height: 0, pinDist: null });
+    hit.height = hintH + cap;
+    hit.pinDist = hint.dist != null ? hint.dist : hintDist;
+    return hit;
+  }
+
+  /**
    * Height, surface, and lateral offset at a world XZ.
    * Height is interpolated along the nearest spline segment so ramps
    * are a slope, not a staircase of sample posts.
@@ -11688,7 +12148,7 @@ export class Track {
     const lateral = (x - px) * nx + (z - pz) * nz;
     const width = a.width + (b.width - a.width) * t;
     const half = width * 0.5;
-    const onRoad = Math.abs(lateral) <= half;
+    let onRoad = Math.abs(lateral) <= half;
     const useB = t > 0.5;
     let surface = useB ? b.surface : a.surface;
     const tunnel = !!(useB ? b.tunnel : a.tunnel);
@@ -11698,7 +12158,7 @@ export class Track {
     const jtB = b.jumpThrow != null ? b.jumpThrow : 1;
     const jlA = a.jumpLip != null ? a.jumpLip : 1;
     const jlB = b.jumpLip != null ? b.jumpLip : 1;
-    const distAlong = a.dist + (b.dist - a.dist) * t;
+    let distAlong = a.dist + (b.dist - a.dist) * t;
     const blend = this._surfaceBlend(distAlong, surface);
     if (!onRoad && !tunnel) {
       const extra = Math.abs(lateral) - half;
@@ -11734,6 +12194,16 @@ export class Track {
       let landH = this._groundHeight(x, z, scenery, nearHint);
       if (!Number.isFinite(landH)) landH = roadH;
       height = this._shoulderPlantHeight(roadH, clearance, landH, scenery, distAlong, lateral);
+    }
+    if (jumpKind !== "gap" && !tunnel) {
+      const runoff = this._easeRunoff(x, z, hintDist, height, distAlong);
+      if (runoff) {
+        height = runoff.height;
+        if (runoff.pinDist != null) {
+          distAlong = runoff.pinDist;
+          onRoad = false;
+        }
+      }
     }
     const r = out || {};
     r.baseHeight = onRoad || tunnel || jumpKind === "gap" ? roadH : height;
@@ -12196,7 +12666,7 @@ function surfaceShoulderHex(id, scenery) {
     return 0xc4a878;
   }
   if (scenery === "mountain") return 0x7a6e58;
-  if (scenery === "lakeside") return 0x4a6a52;
+  if (scenery === "lakeside") return 0xa8c47a;
   if (scenery === "forest") return 0x324828;
   if (id === "tarmac") return 0x6a6256;
   if (id === "cobble") return 0x7e7260;
@@ -12228,6 +12698,7 @@ function liftForestPhotoTint(c) {
 
 function roadTintHex(from, to, mix, scenery) {
   let surfaceBlend = mixHex(surfaceRibbonHex(from), surfaceRibbonHex(to), mix);
+  if (scenery === "lakeside") return mixHex(surfaceBlend, 0xe7eef6, 0.78);
   // Transition band — slight darkening so gravel↔dirt swaps read in chase.
   if (from !== to && mix > 0.18 && mix < 0.82) {
     surfaceBlend = mixHex(surfaceBlend, 0x2a2218, 0.14);
@@ -12259,6 +12730,10 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
   const n3 = texHash((x * 0.9) | 0, (z * 0.9) | 0, 83);
   const n4 = texHash((x * 0.012) | 0, (z * 0.012) | 0, 29);
   const n5 = texHash((x * 0.38) | 0, (z * 0.38) | 0, 47);
+  if (scenery === "lakeside") {
+    _organicTint.multiplyScalar(0.94 + n * 0.1);
+    return _organicTint.getHex();
+  }
   // Photo stages still need world-space soil blotches — maps alone tile too evenly.
   if (scenery === "forest" && forestPbrReady()) {
     const k = 0.7 + n * 0.34 + (n2 - 0.5) * 0.18 + (n4 - 0.5) * 0.14 + (n5 - 0.5) * 0.1;
@@ -12439,6 +12914,35 @@ function tumbleweedMaterial() {
     color: 0xb89658,
     flatShading: true,
   });
+}
+
+/**
+ * Rock wall with a darker channel where the fall sits. One hero gorge,
+ * not a stack of boxes.
+ * @param {number} width
+ * @param {number} height
+ * @returns {THREE.BufferGeometry}
+ */
+function gorgeWallGeometry(width, height) {
+  const geo = new THREE.PlaneGeometry(width, height, 12, 16);
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const nx = x / (width * 0.5);
+    const ny = (y + height * 0.5) / height;
+    const channel = Math.exp(-nx * nx * 4.2);
+    const jag = Math.sin(nx * 8.4 + ny * 3.6) * 0.32 + Math.sin(nx * 2.7 - ny * 5.5) * 0.2;
+    pos.setZ(i, -0.6 - (1 - channel) * (1.7 + jag) + channel * 0.25);
+    const wet = 0.42 + (1 - channel) * 0.22 + ny * 0.06;
+    col[i * 3] = wet;
+    col[i * 3 + 1] = wet * 0.97;
+    col[i * 3 + 2] = wet * 0.9 + channel * 0.04;
+  }
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /** @type {THREE.BufferGeometry|null} */
@@ -13663,7 +14167,7 @@ function landAlbedoMap(scenery, span) {
   const scale = (VISUAL.textureScale || 1) * 2;
   const tier = VISUAL.tier || 1;
   const base = paintedTexture(
-    `land-albedo-v7-t${tier}-${kind}`,
+    `land-albedo-v8-t${tier}-${kind}`,
     (g, w, h) => {
       const img = g.createImageData(w, h);
       paintLandAlbedo(kind, w, h, img.data);
@@ -13845,9 +14349,9 @@ function paintLandAlbedo(kind, w, h, d) {
         const wet = texHash((x / 8) | 0, (y / 8) | 0, 13);
         if (wet > 0.68) {
           const k = (wet - 0.68) / 0.32;
-          r *= 1 - k * 0.28;
-          g *= 1 - k * 0.22;
-          b *= 1 - k * 0.18;
+          r *= 1 - k * 0.1;
+          g *= 1 - k * 0.08;
+          b *= 1 - k * 0.06;
         }
         const reed = texHash(x, (y / 12) | 0, 41);
         if (reed > 0.93 && reed < 0.97) {
@@ -14656,6 +15160,45 @@ function skirtNormalFor(scenery) {
   SKIRT_NORM.set(cacheKey, tex);
   return tex;
 }
+
+function lakesideRoadMap(id) {
+  const key = id === "cobble" ? "cobble" : "tarmac";
+  const hit = LAKESIDE_ROAD.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext("2d");
+  const img = g.createImageData(64, 64);
+  const d = img.data;
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const n = texHash(x, y, key === "cobble" ? 4 : 2);
+      const i = (y * 64 + x) * 4;
+      if (key === "cobble") {
+        d[i] = 168 + n * 28;
+        d[i + 1] = 158 + n * 22;
+        d[i + 2] = 140 + n * 16;
+      } else {
+        d[i] = 168 + n * 22;
+        d[i + 1] = 176 + n * 20;
+        d[i + 2] = 188 + n * 18;
+      }
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  LAKESIDE_ROAD.set(key, tex);
+  return tex;
+}
+
+const LAKESIDE_ROAD = new Map();
 
 /** @type {Map<string, THREE.CanvasTexture>} */
 const ROAD_AO = new Map();

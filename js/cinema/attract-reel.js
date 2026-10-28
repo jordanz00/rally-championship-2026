@@ -26,7 +26,7 @@ let CoursesMap = null;
 async function loadStageApi() {
   if (TrackCtor && CoursesMap) return;
   const [trackMod, courseMod] = await Promise.all([
-    import("../tracks/track.js?v=465"),
+    import("../tracks/track.js?v=470"),
     import("../tracks/courses.js?v=104"),
   ]);
   TrackCtor = trackMod.Track;

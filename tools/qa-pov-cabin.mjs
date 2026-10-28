@@ -37,7 +37,7 @@ check("POV shows glbCabin", /_povGlbCabin/.test(car) && /hasGlbCabin/.test(car))
 check("opaque cabin materials", /Kill Sketchfab BLEND/.test(car) && /m\.transparent = false/.test(car));
 check("occlusion shell always", /Always build an opaque shell/.test(car));
 check("cabin mode flag", /_cabinMode = useGlbCabin \? "glb" : "procedural"/.test(car));
-check("never hide glbCabin as roof shell", /if \(obj\.userData\.glbCabin\) return/.test(car) && /POV_HIDE_VER = 8/.test(car));
+check("never hide glbCabin as roof shell", /if \(obj\.userData\.glbCabin\) return/.test(car) && /POV_HIDE_VER = 9/.test(car));
 check("windshield eye seat", /marks\.wheel\.z - 0\.42/.test(car) && /marks\.wheel\.z - 0\.32/.test(car) && /fov: 58/.test(car));
 check("cabin IBL in armRaceCarReflections", /isCabin/.test(pbr) && /cabinPlastic/.test(pbr));
 check("warm cabin fill lights the dash", /_cabinFill\.intensity = 36/.test(game));
