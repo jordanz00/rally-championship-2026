@@ -1,5 +1,43 @@
 # QA report — quality-control pass
 
+## Stage load cut (2026-10-27)
+
+**Player moment:** The course is on screen much sooner. Desert’s road-and-land build went from 5.4 s to 0.76 s. Mountain went from 9.1 s to 1.0 s. Forest’s ribbon, which had sat for about 43 s, now finishes with the course in about 3.4 s. Most of that Forest time is the tunnel bore.
+
+**Shipped:** Land tiles use 8 segments instead of 28, and one shared ground material. Photos stream onto the road instead of blocking it. Procedural land paint is 96 px. The skirt no longer probes the ground on the fast path. Trees, signs, and the prop kit mount after the course is ready, so the bar is not waiting on multi-megabyte GLBs. Forest trees load the lighter LOD1 mesh. Extra gallery models no longer hold Ready.
+
+**Boot:** `main.js?v=1201` · `track.js?v=483`
+
+**Proof:** timed `Track.create` in the browser on `?boot=1200` (same build, before the lap logs were removed). `node tools/qa-fast-load.mjs`
+
+## Result screen stays live after stage 2 (2026-10-27)
+
+**Player moment:** Finish Forest. The result page stays clickable. Chrome does not offer to kill the tab while Mountain warms up.
+
+**Cause:** Finishing Forest starts Mountain in the background. Mountain has no photo ground, so the road build painted multi-megapixel canvases for about 36 seconds without returning to the browser. The skirt probe that was supposed to stay off was also running, because its segs clamp lived on a different config copy.
+
+**Shipped:** Those canvases are capped, the ribbon build yields, and the live segs value reaches the skirt gate.
+
+**Boot:** `main.js?v=1196` · `track.js?v=478`
+
+## Pack acceleration +50% (2026-10-27)
+
+**Player moment:** The cars ahead pull away harder from a stop and out of corners. Your car is unchanged.
+
+**Shipped:** Rival engine scale is 5.175, half again over 3.45. Top speed is the same.
+
+**Boot:** `main.js?v=1188` · `ai.js?v=274` · `config.js?v=256`
+
+## POV cabin restored, hood under the eye (2026-10-27)
+
+**Player moment:** Press C. The seat matches the previous cabin. The bonnet is in the lower glass, below the camera, and it does not fill the lens.
+
+**Shipped:** Eye and aim are the last cabin again. The hood mesh stays visible. The roof clip sits on the eye line so the bonnet cannot rise into the camera.
+
+**Boot:** `main.js?v=1187` · `celica.js?v=292`
+
+**Proof:** `node tools/qa-pov-cabin.mjs` · `node tools/qa-pov-roof-clear.mjs`
+
 ## Lakeside light and the lake bridge (2026-10-27)
 
 **Player moment:** Stage 4. The meadow reads lighter than the gray tarmac. A long suspension bridge stands over the first lake.

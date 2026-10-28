@@ -10,12 +10,12 @@ import * as THREE from "../vendor/three.module.js";
 import { Vehicle } from "./physics/vehicle.js?v=215";
 import { getSurface } from "./physics/surfaces.js?v=59";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=104";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=291";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=292";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=470";
-import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=11";
-import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=65";
-import { Opponent } from "./ai.js?v=273";
+import { Track } from "./tracks/track.js?v=483";
+import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=12";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=67";
+import { Opponent } from "./ai.js?v=274";
 import { RallyAudio } from "./audio/engine.js?v=83";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=48";
@@ -156,7 +156,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=43";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=35";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=48";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=6";
 import {
@@ -318,6 +318,13 @@ function armVegBudget(tierId) {
     STREAM.terrainTileSize = high
       ? Math.max(STREAM.terrainTileSize || 256, 384)
       : Math.max(STREAM.terrainTileSize || 256, 448);
+  }
+  try {
+    // track.js keeps its own config module, so the segs clamp above never
+    // reached the skirt probe. Publish the live value for that gate only.
+    if (typeof window !== "undefined") window.__rallyFastSkirtSegs = STREAM.terrainTileSegs;
+  } catch {
+    /* ignore */
   }
 }
 
@@ -2243,7 +2250,7 @@ export class RallyGame {
           : "desert";
       preparePropKit(scenery).catch((err) => console.warn("[warm] prop kit", err));
       if (scenery === "desert") {
-        import("./tracks/desert-pbr.js?v=68")
+        import("./tracks/desert-pbr.js?v=69")
           .then((m) => m.prepareDesertPbr && m.prepareDesertPbr())
           .catch(() => {});
       }
@@ -3507,7 +3514,9 @@ export class RallyGame {
     if (!isPhonePlay()) {
       setLoadingProgress(0.992, "Dressing stage…");
       try {
-        await Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
+        // These GLBs are the rest of the gallery. Waiting here held Ready
+        // after the road was already built. They stream during countdown.
+        void Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
         if (loadGen !== this._loadGen) return;
         if (this.track && typeof this.track.finishDeferredDressing === "function") {
           this.track.finishDeferredDressing();

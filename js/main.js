@@ -7,7 +7,7 @@
  * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-const GAME_MODULE = "./game.js?v=1186";
+const GAME_MODULE = "./game.js?v=1201";
 
 function bootWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

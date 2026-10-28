@@ -70,7 +70,7 @@ check(
 
 check(
   "POV_RIG_VER ≥ 5",
-  /POV_RIG_VER\s*=\s*(?:[5-9]|1\d)/.test(car),
+  /POV_RIG_VER\s*=\s*(?:[5-9]|[12]\d)/.test(car),
   "seat cache must rebuild after eye/look change"
 );
 

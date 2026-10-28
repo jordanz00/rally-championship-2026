@@ -76,7 +76,7 @@ check(
 check(
   "deferred dressing finishes under load overlay",
   /Dressing stage/.test(game) &&
-    /await Promise\.all\(\[warmCrowdKit\(\), warmFullTracksideKit\(\), warmDesertExtras\(\)\]\)/.test(game) &&
+    /void Promise\.all\(\[warmCrowdKit\(\), warmFullTracksideKit\(\), warmDesertExtras\(\)\]\)/.test(game) &&
     /finishDeferredDressing/.test(game) &&
     /_presentFrozenWarms\(4\)/.test(game)
 );

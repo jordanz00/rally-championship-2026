@@ -239,15 +239,44 @@ export function loadTex(loader, url, srgb, timeoutMs) {
  * @param {THREE.TextureLoader} loader
  * @param {{base:string, stem:string, tileMeters:number, tint?:string}} spec
  */
-export async function bootPbrSet(loader, spec) {
-  const { base, stem, tileMeters } = spec;
-  const map = stubTex(true, spec.tint || "#c4b090");
-  const normalMap = stubTex(false, "#8080ff");
-  const roughnessMap = stubTex(false, "#b8b8b8");
+/**
+ * Stub set the road can bind immediately. Photos replace the same textures.
+ * @param {string} [tint]
+ * @param {number} [tileMeters]
+ */
+export function emptyPbrSet(tint, tileMeters) {
+  return {
+    map: stubTex(true, tint || "#c4b090"),
+    normalMap: stubTex(false, "#8080ff"),
+    roughnessMap: stubTex(false, "#b8b8b8"),
+    aoMap: null,
+    tileMeters: tileMeters || 2,
+  };
+}
 
-  await bootColor(loader, base, stem, map);
-  void streamDetail(loader, base, stem, map, normalMap, roughnessMap);
-  return { map, normalMap, roughnessMap, aoMap: null, tileMeters };
+/**
+ * Stream 1k color, then detail, onto a set the mesh already holds.
+ * @param {THREE.TextureLoader} loader
+ * @param {{base:string, stem:string}} spec
+ * @param {{map:THREE.Texture, normalMap:THREE.Texture, roughnessMap:THREE.Texture}} set
+ */
+export function fillPbrSet(loader, spec, set) {
+  void (async () => {
+    await bootColor(loader, spec.base, spec.stem, set.map);
+    void streamDetail(loader, spec.base, spec.stem, set.map, set.normalMap, set.roughnessMap);
+  })();
+}
+
+/**
+ * Desktop used to wait out the 1k (and tunnel 2k) before the road mesh.
+ * The set is live immediately; fillPbrSet swaps the photo onto it.
+ * @param {THREE.TextureLoader} loader
+ * @param {{base:string, stem:string, tileMeters:number, tint?:string}} spec
+ */
+export async function bootPbrSet(loader, spec) {
+  const set = emptyPbrSet(spec.tint, spec.tileMeters);
+  fillPbrSet(loader, spec, set);
+  return set;
 }
 
 /**
@@ -298,11 +327,8 @@ export async function bootTunnelSet(loader, base) {
   const map = stubTex(true, "#6a655c");
   const normalMap = stubTex(false, "#8080ff");
   const armMap = stubTex(false, "#a8a090");
-  const boot = wantHiMaps()
-    ? await loadTex(loader, `${base}/tunnel_rock_diff_2k.jpg`, true, HI_BOOT_MS)
-    : null;
-  if (boot) applyImage(map, boot.image, 16);
-  else {
+  // 1k on the load path. A 2k wait here held Forest for seconds.
+  void (async () => {
     const lo = await loadTex(loader, `${base}/tunnel_rock_diff_1k.jpg`, true, BOOT_MS);
     if (lo) applyImage(map, lo.image, 16);
     if (wantHiMaps()) {
@@ -311,7 +337,7 @@ export async function bootTunnelSet(loader, base) {
         if (d2) applyImage(map, d2.image, 16);
       });
     }
-  }
+  })();
   void streamTunnel(loader, base, map, normalMap, armMap);
   return { map, normalMap, armMap };
 }

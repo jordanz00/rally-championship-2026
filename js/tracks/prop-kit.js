@@ -822,8 +822,9 @@ function loadSceneryKit(scenery) {
     if (!phonePropLite() && (key === "forest" || key === "mountain")) {
       if (!forestHeroPromise) forestHeroPromise = loadForestHeroTrees(getKitLoader(), KIT_ASSET_V);
       await forestHeroPromise;
+      // Far atlas cards. Close trees are the hero GLBs above — don't hold the bar.
       if (!forestPackPromise) forestPackPromise = loadForestTreePack(getKitLoader(), KIT_ASSET_V);
-      await forestPackPromise;
+      void forestPackPromise;
     }
     ready = true;
   })();
@@ -1015,10 +1016,24 @@ async function loadForestHeroTrees(loader, assetV) {
   const kinds = Object.keys(FOREST_HERO_TREE_FILES);
   await Promise.all(
     kinds.map(async (kind) => {
-      const file = FOREST_HERO_TREE_FILES[kind];
-      const url = `assets/props/${file}?v=${assetV}`;
-      try {
-        const gltf = await loader.loadAsync(url);
+        const file = FOREST_HERO_TREE_FILES[kind];
+        // LOD1 is ~1 MB. The full hero is 5–8 MB and was most of Forest load.
+        const lodFile = forestHeroLod1File(file);
+        const url = `assets/props/${FOREST_LOD1_OFF ? file : lodFile}?v=${assetV}`;
+        try {
+          let gltf = null;
+          if (!FOREST_LOD1_OFF) {
+            try {
+              const res = await fetch(url, { mode: "cors", credentials: "same-origin" });
+              if (res && res.ok) {
+                const buf = await res.arrayBuffer();
+                gltf = await new Promise((resolve, reject) => loader.parse(buf, "", resolve, reject));
+              }
+            } catch {
+              gltf = null;
+            }
+          }
+          if (!gltf) gltf = await loader.loadAsync(`assets/props/${file}?v=${assetV}`);
         const root = gltf.scene || gltf.scenes[0];
         if (!root) {
           console.warn(`[prop-kit] empty hero tree: ${url}`);
@@ -1034,7 +1049,8 @@ async function loadForestHeroTrees(loader, assetV) {
         CACHE[kind] = parts.canopy;
         MAT_CACHE[kind] = parts.canopyMat;
         MAT_CACHE[`${kind}_trunk`] = parts.trunkMat;
-        if (!FOREST_LOD1_OFF) await attachHeroTreeLod1(loader, kind, parts, assetV);
+        // LOD1 is the mid-distance copy. The full mesh is already race-ready.
+        // Primary mesh is already LOD1. Don't fetch it again.
       } catch (err) {
         console.warn(`[prop-kit] hero tree failed: ${url}`, err);
       }

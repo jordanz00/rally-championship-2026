@@ -1914,9 +1914,9 @@ export const CHAMPIONSHIP = {
 export const AI = {
   /**
    * Rival engine scale vs shared CARS.*.peakPowerKw (player template).
-   * Player is at 84 kW. Pack accel is +50% over the prior 2.3 mul → 3.45.
+   * Player stays at 84 kW. Pack accel is +50% over the prior 3.45 mul.
    */
-  peakPowerMul: 3.45,
+  peakPowerMul: 5.175,
   /**
    * Rival soft top-speed scale vs CARS.*.maxSpeedKmh. +50% so the pack
    * pulls away on straights unless the player hangs a clean stage.

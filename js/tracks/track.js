@@ -46,10 +46,13 @@ function terrainTileSegs() {
   } catch {
     /* ignore */
   }
-  if (wantCinema && STREAM.terrainTileSegsCinema) {
-    return STREAM.terrainTileSegsCinema;
-  }
-  return STREAM.terrainTileSegs;
+  const authored =
+    wantCinema && STREAM.terrainTileSegsCinema
+      ? STREAM.terrainTileSegsCinema
+      : STREAM.terrainTileSegs;
+  // Cinema 28 queried the ribbon once per vertex on 256 m tiles (~2.5 s).
+  // 8 keeps each triangle inside the trench, so the deck stays buried.
+  return Math.min(authored || 8, 8);
 }
 
 /**
@@ -69,7 +72,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=24";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=65";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=67";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -78,7 +81,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=67";
+} from "./forest-pbr.js?v=68";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -86,7 +89,7 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=68";
+} from "./desert-pbr.js?v=69";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -101,8 +104,8 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=27";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=51";
+} from "./forest-tunnel.js?v=28";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=53";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=16";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
@@ -356,7 +359,7 @@ export class Track {
     /** Far-plant density scale (0.5–1) — set at build from STREAM.vegScaleByTier. */
     this._vegScale =
       STREAM._activeVegScale != null ? STREAM._activeVegScale : 1;
-    if (!opts.deferBuild) this._build(def.pieces, def);
+    if (!opts.deferBuild) this._legacyReady = this._build(def.pieces, def);
   }
 
   /**
@@ -397,7 +400,10 @@ export class Track {
     await pbrP;
 
     report(0.08, "Laying tarmac & kerbs…");
-    this._mesh = this._buildMesh(def);
+    // One frame before the ribbon. The foreign-deck skirt used to run for
+    // tens of seconds with no yield and Chrome marked the result page unresponsive.
+    await tick();
+    this._mesh = await this._buildMesh(def);
     this.group.add(this._mesh);
 
     // Terrain is the bulk of first-load time — drive the bar from tile rows.
@@ -405,15 +411,33 @@ export class Track {
     report(0.1, "Sculpting terrain…");
     await this._addGroundAsync(def, (t) => report(0.1 + t * 0.42, "Sculpting terrain…"));
 
-    report(0.52, "Loading trackside models…");
-    await kitP;
-
-    report(0.54, "Planting trees & props…");
-    await this._addSceneryBody(def, (t) => report(0.54 + t * 0.34, "Planting trees & props…"));
-
     report(0.88, "Tunnel & stage gates…");
     this._addTunnel();
     this._addStageGates();
+    this._scrubRoadwayColliders();
+    this._scrubRoadwayVisuals({ skipLand: true });
+    armCameraFade(this.group);
+    this._initWheelDeform();
+    this._tunnelVolumes = buildTunnelVolumes(this.points);
+    this._deferredDressingPending = envExtrasEnabled() && !phoneLite;
+
+    // Road and land are ready. Props keep parsing — the bar used to sit on
+    // multi-MB GLBs after the course was already drivable.
+    report(1, "Course ready");
+    this._propPromise = this._mountStreamedProps(def, kitP, phoneLite);
+    await tick();
+  }
+
+  /**
+   * Trees, signs, and the prop kit. Started when the course promise resolves
+   * so the load bar is the road, not the GLB parse.
+   * @param {object} def
+   * @param {Promise<void>} kitP
+   * @param {boolean} phoneLite
+   */
+  async _mountStreamedProps(def, kitP, phoneLite) {
+    await kitP;
+    await this._addSceneryBody(def, () => {});
     if (
       !phoneLite &&
       VISUAL.tracksideSignage &&
@@ -422,17 +446,8 @@ export class Track {
       this._addTracksideSignage(def);
     }
     this._scrubRoadwayColliders();
-    // Skip land-vert scrub on the load bar — deferred dressing + paint props only.
     this._scrubRoadwayVisuals({ skipLand: true });
     this._seatAllScenery();
-    // PBR upgrade + world validation run after Ready (finishDeferredDressing).
-    armCameraFade(this.group);
-    this._initWheelDeform();
-    this._tunnelVolumes = buildTunnelVolumes(this.points);
-    this._deferredDressingPending = envExtrasEnabled() && !phoneLite;
-
-    report(1, "Course ready");
-    await tick();
   }
 
   /**
@@ -501,9 +516,9 @@ export class Track {
     if (this.wheelRuts) this.wheelRuts.reset();
   }
 
-  _build(pieces, def) {
+  async _build(pieces, def) {
     this._buildSpline(pieces, def);
-    this._mesh = this._buildMesh(def);
+    this._mesh = await this._buildMesh(def);
     this.group.add(this._mesh);
     this._addGround(def);
     this._addScenery(def);
@@ -1870,6 +1885,38 @@ export class Track {
   }
 
   /**
+   * One terrain material per stage. A fresh material per tile recompiled the
+   * shader and re-uploaded the ground photo for every 256 m square.
+   * @param {string} scenery
+   * @param {boolean} desert
+   * @param {number} tileSize
+   */
+  _sharedLandMaterial(scenery, desert, tileSize) {
+    if (!this._landMatCache) this._landMatCache = new Map();
+    const key = `${scenery}|${tileSize}`;
+    const hit = this._landMatCache.get(key);
+    if (hit) return hit;
+    const skipDetail = this._fastLandBuild && !desert;
+    const landNs =
+      desert ? 2.35 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
+    const mat = worldTerrainMaterial({
+      map: landAlbedoMap(scenery, tileSize) || null,
+      normalMap: skipDetail ? null : landNormalMap(scenery, tileSize) || null,
+      roughnessMap: skipDetail ? null : landRoughnessMap(scenery, tileSize) || null,
+      aoMap: skipDetail ? null : landAoMap(scenery, tileSize) || null,
+      normalScale: landNs,
+      vertexColors: true,
+      side: THREE.FrontSide,
+    });
+    if (scenery === "lakeside" && mat.color) mat.color.setRGB(1.35, 2.05, 1.15);
+    mat.polygonOffset = true;
+    mat.polygonOffsetFactor = 2;
+    mat.polygonOffsetUnits = 2;
+    this._landMatCache.set(key, mat);
+    return mat;
+  }
+
+  /**
    * One streamable terrain tile — heightmapped land only (no infinite underfill plane).
    * @param {object} def
    * @param {string} scenery
@@ -1984,39 +2031,11 @@ export class Track {
       geo.setAttribute("uv2", geo.attributes.uv.clone());
     }
     geo.computeVertexNormals();
-    const landMap = landAlbedoMap(scenery, tileSize);
-    // Desert keeps photo normals/rough/AO even on fast land — Kenney-free fidelity.
-    const skipDetail = this._fastLandBuild && !desert;
-    const landNorm = skipDetail ? null : landNormalMap(scenery, tileSize);
-    const landRough = skipDetail ? null : landRoughnessMap(scenery, tileSize);
-    const landAo = skipDetail ? null : landAoMap(scenery, tileSize);
-    // Visual Pass V4 — per-scenery normal punch (sand ripples pop; forest softer).
-    const landNs =
-      desert ? 2.35 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
-    const land = new THREE.Mesh(
-      geo,
-      worldTerrainMaterial({
-        map: landMap || null,
-        normalMap: landNorm || null,
-        roughnessMap: landRough || null,
-        aoMap: landAo || null,
-        normalScale: landNs,
-        vertexColors: true,
-        side: THREE.FrontSide,
-      })
-    );
+    const land = new THREE.Mesh(geo, this._sharedLandMaterial(scenery, desert, tileSize));
     land.position.set(cx, 0, cz);
     land.receiveShadow = true;
     land.renderOrder = -1;
     land.userData.envLand = true;
-    if (scenery === "lakeside" && land.material && land.material.color) {
-      land.material.color.setRGB(1.35, 2.05, 1.15);
-    }
-    if (land.material) {
-      land.material.polygonOffset = true;
-      land.material.polygonOffsetFactor = 2;
-      land.material.polygonOffsetUnits = 2;
-    }
     this.group.add(land);
     this._registerChunk(land, -1);
   }
@@ -3371,7 +3390,8 @@ export class Track {
    *    Lambert. The painted texture carries the surface read (see
    *    docs/AM3-RESEARCH.md section 5).
    */
-  _buildMesh(def) {
+  async _buildMesh(def) {
+    const yieldMesh = createWorkYielder(100);
     const pts = this.points;
     /** @type {Map<string, {id:string, chunk:number, pos:number[], col:number[], uv:number[], idx:number[], n:number}>} */
     const road = new Map();
@@ -3498,6 +3518,19 @@ export class Track {
     // —— Continuous skirt profile (per-point) ————————————————
     // Per-segment reach used to jump 2–5 m between samples, so adjacent quads
     // did not share an outer edge → visible holes / broken polygons.
+    // Fast load: skip foreign-deck probes + groundHeight seating — each was
+    // O(points × nearestRoad) and froze the load bar at 0% for minutes.
+    // armVegBudget clamps segs on the game module (≤12). This file keeps its
+    // own config copy at 24, so the clamp never arrived and Stage 2's result
+    // screen locked for ~40s while Mountain's ribbon built.
+    let skirtSegs = STREAM.terrainTileSegs || 24;
+    try {
+      const live = typeof window !== "undefined" ? window.__rallyFastSkirtSegs : 0;
+      if (live) skirtSegs = live;
+    } catch {
+      /* ignore */
+    }
+    const fastSkirt = skirtSegs <= 14;
     const nPts = pts.length;
     const reachL = new Float32Array(nPts);
     const reachR = new Float32Array(nPts);
@@ -3527,7 +3560,7 @@ export class Track {
       }
       let rL = base;
       let rR = base;
-      if (!(p.tunnel || p.underpass || p.jumpKind === "gap")) {
+      if (!fastSkirt && !(p.tunnel || p.underpass || p.jumpKind === "gap")) {
         for (const side of [-1, 1]) {
           const probeX = (side > 0 ? e.lx : e.rx) + p.nx * side * Math.max(2.2, base * 0.85);
           const probeZ = (side > 0 ? e.lz : e.rz) + p.nz * side * Math.max(2.2, base * 0.85);
@@ -3541,8 +3574,11 @@ export class Track {
       }
       reachL[i] = rL;
       reachR[i] = rR;
+      if (!fastSkirt && (i & 15) === 0) {
+        const wait = yieldMesh();
+        if (wait) await wait;
+      }
     }
-
     // Smooth reach so neighbouring posts agree (kills fan gaps on bends).
     for (let pass = 0; pass < 2; pass++) {
       const cL = Float32Array.from(reachL);
@@ -3555,10 +3591,6 @@ export class Track {
       }
     }
 
-    // Flyover skirt must not cross a foreign drive corridor. Smoothing can
-    // Fast load: skip foreign-deck probes + groundHeight seating — each was
-    // O(points × nearestRoad) and froze the load bar at 0% for minutes.
-    const fastSkirt = (STREAM.terrainTileSegs || 24) <= 14;
     if (!fastSkirt) {
       for (let i = 0; i < nPts; i++) {
         const p = pts[i];
@@ -3566,6 +3598,10 @@ export class Track {
         const e = edge(p);
         reachL[i] = this._limitSkirtReach(e.lx, e.lz, p.nx, p.nz, reachL[i], p.dist, kerbYL[i]);
         reachR[i] = this._limitSkirtReach(e.rx, e.rz, -p.nx, -p.nz, reachR[i], p.dist, kerbYR[i]);
+        if ((i & 3) === 0) {
+          const wait = yieldMesh();
+          if (wait) await wait;
+        }
       }
     }
     for (let i = 0; i < nPts; i++) {
@@ -3600,6 +3636,10 @@ export class Track {
       outYR[i] = plantOuter(oRx, oRz, kerbYR[i], reachR[i]);
       midYL[i] = kerbYL[i] + (outYL[i] - kerbYL[i]) * SKIRT_MID_DROP;
       midYR[i] = kerbYR[i] + (outYR[i] - kerbYR[i]) * SKIRT_MID_DROP;
+      if (!fastSkirt && (i & 7) === 0) {
+        const wait = yieldMesh();
+        if (wait) await wait;
+      }
     }
     this._skirtReachL = reachL;
     this._skirtReachR = reachR;
@@ -3755,9 +3795,21 @@ export class Track {
         vert(kb, f.rx - q.nx * kerbW, f.yR + 0.05, f.rz - q.nz * kerbW, hexQ);
         quad(kb);
       }
+      if (!fastSkirt && (i & 31) === 0) {
+        const wait = yieldMesh();
+        if (wait) await wait;
+      }
     }
 
     const group = new THREE.Group();
+    let meshN = 0;
+    const afterMesh = async () => {
+      meshN += 1;
+      if (!fastSkirt && (meshN & 1) === 0) {
+        const wait = yieldMesh();
+        if (wait) await wait;
+      }
+    };
     /** @type {Map<string, THREE.Material>} one material per surface, shared by its slices */
     const roadMats = new Map();
     for (const b of road.values()) {
@@ -3810,6 +3862,8 @@ export class Track {
           }
         }
         roadMats.set(b.id, mat);
+        const painted = yieldMesh();
+        if (painted) await painted;
       }
       const mesh = new THREE.Mesh(buildGeo(b, true), mat);
       mesh.receiveShadow = true;
@@ -3819,6 +3873,7 @@ export class Track {
       mat.polygonOffsetUnits = -8;
       this._registerChunk(mesh, b.chunk);
       group.add(mesh);
+      await afterMesh();
     }
 
     // Soffit is its own draw: road PBR leaves downward faces black, which read
@@ -3839,14 +3894,17 @@ export class Track {
       mesh.castShadow = false;
       this._registerChunk(mesh, chunk);
       group.add(mesh);
+      await afterMesh();
     }
 
-    const skirtMat = worldSkirtMaterial(
-      landAlbedoMap(scenery, tileSize),
-      landNormalMap(scenery, tileSize),
-      landRoughnessMap(scenery, tileSize),
-      landAoMap(scenery, tileSize)
-    );
+    await ensureProceduralLand(scenery);
+    const skirtAlbedo = landAlbedoMap(scenery, tileSize);
+    await afterMesh();
+    const skirtNorm = landNormalMap(scenery, tileSize);
+    await afterMesh();
+    const skirtRough = landRoughnessMap(scenery, tileSize);
+    const skirtAo = landAoMap(scenery, tileSize);
+    const skirtMat = worldSkirtMaterial(skirtAlbedo, skirtNorm, skirtRough, skirtAo);
     const kerbMat = worldKerbMaterial();
     for (const [chunk, b] of skirt) {
       if (!b.n) continue;
@@ -3854,6 +3912,7 @@ export class Track {
       mesh.receiveShadow = true;
       this._registerChunk(mesh, chunk);
       group.add(mesh);
+      await afterMesh();
     }
     for (const [chunk, b] of kerb) {
       if (!b.n) continue;
@@ -3861,6 +3920,7 @@ export class Track {
       mesh.receiveShadow = true;
       this._registerChunk(mesh, chunk);
       group.add(mesh);
+      await afterMesh();
     }
     return group;
   }
@@ -14154,6 +14214,95 @@ function landAoMap(scenery, span) {
   return null;
 }
 
+const PRIMED_LAND = new Map();
+
+/**
+ * Paint a tall canvas a few rows at a time so the result screen stays clickable.
+ * @param {number} w
+ * @param {number} h
+ * @param {(data: Uint8ClampedArray, y0: number, y1: number) => void} paintRange
+ */
+async function paintCanvasBands(w, h, paintRange) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  const img = ctx.createImageData(w, h);
+  const band = 16;
+  for (let y = 0; y < h; y += band) {
+    paintRange(img.data, y, Math.min(h, y + band));
+    if (y + band < h) await yieldFrame();
+  }
+  ctx.putImageData(img, 0, 0);
+  return { canvas, img };
+}
+
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {boolean} srgb
+ */
+function primedCanvasTexture(canvas, srgb) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 16;
+  tex.needsUpdate = true;
+  tex.userData.shared = true;
+  return tex;
+}
+
+/**
+ * One small land canvas. No row yields — 96² is a few milliseconds.
+ * @param {string} kind
+ * @param {number} w
+ * @param {number} h
+ */
+function paintLandCanvas(kind, w, h) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  const img = ctx.createImageData(w, h);
+  paintLandAlbedo(kind, w, h, img.data, 0, h);
+  ctx.putImageData(img, 0, 0);
+  return { canvas, img };
+}
+
+/**
+ * Mountain and Lakeside have no photo ground. Paint once, small, before the
+ * sync lookup. A 512px canvas blocked the result screen after Forest.
+ * @param {string} scenery
+ */
+async function ensureProceduralLand(scenery) {
+  if (scenery === "forest" || scenery === "desert") return;
+  const kind = scenery === "lakeside" ? "lakeside" : scenery === "mountain" ? "mountain" : "forest";
+  const tier = VISUAL.tier || 1;
+  const aKey = `albedo|${tier}|${kind}`;
+  if (PRIMED_LAND.has(aKey)) return;
+  // 96px once. A 512px cinema paint, one yield per 16 rows, was the Mountain mesh.
+  const w = 96;
+  const h = 96;
+  const albedo = paintLandCanvas(kind, w, h);
+  if (albedo) PRIMED_LAND.set(aKey, primedCanvasTexture(albedo.canvas, true));
+  const nKey = `normal|${tier}|${kind}`;
+  const nw = 64;
+  const nh = 64;
+  const src = paintLandCanvas(kind, nw, nh);
+  if (!src) return;
+  const norm = normalFromImageData(src.img.data, nw, nh);
+  const nc = document.createElement("canvas");
+  nc.width = nw;
+  nc.height = nh;
+  nc.getContext("2d").putImageData(new ImageData(norm, nw, nh), 0, 0);
+  PRIMED_LAND.set(nKey, primedCanvasTexture(nc, false));
+}
+
 function landAlbedoMap(scenery, span) {
   if (scenery === "forest") {
     const photo = forestPhotoLandMap("map", span);
@@ -14164,8 +14313,21 @@ function landAlbedoMap(scenery, span) {
     if (photo) return photo;
   }
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
-  const scale = (VISUAL.textureScale || 1) * 2;
+  // Cap ~2k cinema canvases. Mountain has no photo land, and a full paint
+  // blocked the result screen for ~36s after Forest.
+  const scale = Math.min((VISUAL.textureScale || 1) * 2, 96 / 384);
   const tier = VISUAL.tier || 1;
+  const primedAlbedo = PRIMED_LAND.get(`albedo|${tier}|${kind}`);
+  if (primedAlbedo) {
+    const map = primedAlbedo.clone();
+    const tiles = landMapTiles(span);
+    map.wrapS = THREE.RepeatWrapping;
+    map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(tiles, tiles);
+    map.userData.shared = true;
+    map.needsUpdate = true;
+    return map;
+  }
   const base = paintedTexture(
     `land-albedo-v8-t${tier}-${kind}`,
     (g, w, h) => {
@@ -14195,11 +14357,11 @@ function landAlbedoMap(scenery, span) {
  * @param {number} h
  * @param {Uint8ClampedArray} d
  */
-function paintLandAlbedo(kind, w, h, d) {
+function paintLandAlbedo(kind, w, h, d, y0 = 0, y1 = h) {
   const hi = (VISUAL.tier || 0) >= 7 || VISUAL.terrainRealism === true;
   const photo = (VISUAL.tier || 0) >= 9;
   const cinema = (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
-  for (let y = 0; y < h; y++) {
+  for (let y = y0; y < y1; y++) {
     for (let x = 0; x < w; x++) {
       const n = texHash(x, y, 1);
       const n2 = texHash(x, y, 11);
@@ -14930,8 +15092,20 @@ function landNormalMap(scenery, span) {
   }
   if (!VISUAL.realisticArcade) return null;
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
-  const scale = (VISUAL.textureScale || 1) * 2;
+  // Cap ~2k cinema canvases. Mountain has no photo land, and a full paint
+  // blocked the result screen for ~36s after Forest.
+  const scale = Math.min((VISUAL.textureScale || 1) * 2, 96 / 384);
   const tier = VISUAL.tier || 1;
+  const primedNorm = PRIMED_LAND.get(`normal|${tier}|${kind}`);
+  if (primedNorm) {
+    const map = primedNorm.clone();
+    const tiles = landMapTiles(span);
+    map.wrapS = THREE.RepeatWrapping;
+    map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(tiles, tiles);
+    map.needsUpdate = true;
+    return map;
+  }
   const hit = LAND_NORM.get(`v5|${tier}|${kind}|${scale}`);
   if (hit) {
     const map = hit.clone();
@@ -15042,7 +15216,7 @@ function roadNormalFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSurface(key, ww, hh, data), w, h);
@@ -15060,7 +15234,7 @@ function roadTextureFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -15115,7 +15289,7 @@ function skirtTextureFor(scenery) {
   const cacheKey = `skirt|v8|t${tier}|${kind}`;
   const hit = SKIRT_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = 128 * texScale;
   const h = 128 * texScale;
   const c = document.createElement("canvas");
@@ -15152,7 +15326,7 @@ function skirtNormalFor(scenery) {
   const cacheKey = `skirtN|v6|t${tier}|${kind}`;
   const hit = SKIRT_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = 128 * texScale;
   const h = 128 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSkirtGrain(kind, ww, hh, data), w, h);
@@ -15215,7 +15389,7 @@ function roadAoFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -15258,7 +15432,7 @@ function roadRoughFor(id) {
   const cacheKey = `rough|v6|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
-  const texScale = (VISUAL.textureScale || 1) * 2;
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
   const w = Math.max(64, Math.round(128 * texScale));
   const h = Math.max(128, Math.round(256 * texScale));
   const c = document.createElement("canvas");

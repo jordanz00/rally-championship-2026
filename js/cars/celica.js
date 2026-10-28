@@ -6180,17 +6180,16 @@ function buildPovRig(root) {
     eyeZ = THREE.MathUtils.clamp(eyeZ, marks.wheel.z - 0.55, marks.wheel.z - 0.32);
   }
 
-  // Above the cowl so the sightline clears the dash and lands on the bonnet.
+  // Last cabin seat. The eye stays above the bonnet so the hood sits in the lower glass.
   const roofClear = roof - 0.36;
   let eyeY = ground + Math.min(1.12, Math.max(0.9, spanY * 0.62));
-  if (marks.wheel) eyeY = marks.wheel.y + 0.52;
-  eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.92, roofClear);
+  if (marks.wheel) eyeY = marks.wheel.y + 0.28;
+  eyeY = THREE.MathUtils.clamp(eyeY, ground + 0.85, roofClear);
 
   const lookX = eyeX * 0.08;
-  // ~10° down the nose. Far enough that the horizon stays up, close enough that the deck fills the lower glass.
-  const lookZ = hull.maxZ + 2.6;
-  const lookDrop = Math.max(0.72, (lookZ - eyeZ) * 0.17);
-  const lookY = THREE.MathUtils.clamp(eyeY - lookDrop, eyeY - 1.35, eyeY - 0.2);
+  const lookZ = hull.maxZ + 6.2;
+  const lookDrop = Math.max(0.55, (lookZ - eyeZ) * 0.12);
+  const lookY = THREE.MathUtils.clamp(eyeY - lookDrop, eyeY - 2.2, eyeY - 0.08);
   // Swap: interior glass sits on the opposite side of center from the driver
   // so the rearview reads on the right of an LHD lens (was left in RHD).
   const mirrorEyeX = -eyeX * 0.12;
@@ -6235,7 +6234,7 @@ function buildPovRig(root) {
 export function getPovRig(root) {
   if (!root) return null;
   // Bump when mirrorCam / eye landmarks change so a live mesh re-aims.
-  const POV_RIG_VER = 19;
+  const POV_RIG_VER = 20;
   const prev = root.userData.povRig;
   if (!prev || prev._v !== POV_RIG_VER) {
     const next = buildPovRig(root);
@@ -7530,8 +7529,8 @@ export function setPovRoofClip(root, on, renderer) {
     }
   }
   const rig = getPovRig(root);
-  // Above the cowl so the hood deck is kept. The roof is still above this cut.
-  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.16;
+  // Cut at the eye. The bonnet stays below the camera; the roof cannot cross the lens.
+  const cutY = (rig && Number.isFinite(rig.eyeY) ? rig.eyeY : 1.1) + 0.02;
   root.userData._povRoofCutY = cutY;
   if (!root.userData._povClipPlanes) {
     root.userData._povClipPlanes = [new THREE.Plane()];
