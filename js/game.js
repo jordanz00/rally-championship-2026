@@ -7,7 +7,7 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=218";
+import { Vehicle } from "./physics/vehicle.js?v=219";
 import { getSurface } from "./physics/surfaces.js?v=59";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=107";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=299";
@@ -36,7 +36,7 @@ import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./g
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=30";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=24";
 import { PhotoRealPost } from "./gfx/postfx.js?v=47";
-import { RallyRush } from "./gameplay/rally-rush.js?v=8";
+import { RallyRush } from "./gameplay/rally-rush.js?v=9";
 import {
   createWebTsr,
   createMobilePresent,
@@ -76,7 +76,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=257";
+} from "./config.js?v=258";
 
 /**
  * First-drive clock ease. Grip, assist and rival ease used to be set here too,
@@ -4332,6 +4332,7 @@ export class RallyGame {
           player: this.player,
           opponents: this.opponents,
           offRoad,
+          steer: this.input ? this.input.steer : 0,
         });
         this.player.rushHeat = dump.heat;
         this.player.rushDrive = dump.accel;

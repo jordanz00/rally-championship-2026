@@ -16,14 +16,19 @@ const EARN_PASS = 0.42;
 const EARN_DRAFT = 0.46;
 const EARN_GO = 0.95;
 const SPEND = 0.16;
-const ACCEL = 18.5;
-const FIRE_ACCEL = 24;
-const VMAX = 86;
+/** Dump shove — fun, but not a sideways rocket into every apex. */
+const ACCEL = 14.5;
+const FIRE_ACCEL = 18.5;
+const VMAX = 82;
 const PASS_NEAR = 8.4;
 const PASS_HIT = 1.85;
 const PASS_COOL = 0.85;
 const DRAFT_NEAR = 14;
 const DRAFT_FAR = 3.4;
+
+function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
 
 /**
  * Arcade rush tank — On Fire is a state, not a second resource.
@@ -66,7 +71,8 @@ export class RallyRush {
    *   player: {position:{x:number,z:number}, yaw:number, speed:number, throttle:number, driftAngle?:number, onGround?:boolean, velY?:number, lastImpact?:number, lastAirTime?:number, hitWall?:number, handbrake?:number},
    *   opponents?: Array<{vehicle?:{position:{x:number,z:number},speed?:number}, position?:{x:number,z:number}}>,
    *   go?: boolean,
-   *   offRoad?: boolean
+   *   offRoad?: boolean,
+   *   steer?: number
    * }} ctx
    * @returns {{accel:number,heat:number,justPass:boolean,justDump:boolean,justFire:boolean,meter:number,combo:number,fire:number}}
    */
@@ -179,9 +185,14 @@ export class RallyRush {
       if (!this._wasDump) justDump = true;
       const spend = Math.min(this.meter, SPEND * t * (this.fire > 0.45 ? 0.72 : 1));
       this.meter -= spend;
-      const fade = speed > 70 ? Math.max(0.28, 1 - (speed - 70) / 18) : 1;
+      const fade = speed > 68 ? Math.max(0.28, 1 - (speed - 68) / 16) : 1;
       const peak = this.fire > 0.45 ? FIRE_ACCEL : ACCEL;
-      accel = peak * fade * Math.min(1, this.meter + spend + 0.35 + this.fire * 0.25);
+      // Cornering mute — hard steer / slide dumps less shove so apexes stick.
+      const steerAmt = Math.abs(
+        ctx.steer != null ? ctx.steer : p._steerIn != null ? p._steerIn : 0
+      );
+      const cornerMute = 1 - clamp01(Math.max(steerAmt * 0.55, drift * 1.8)) * 0.42;
+      accel = peak * fade * cornerMute * Math.min(1, this.meter + spend + 0.35 + this.fire * 0.25);
       this.heat += (1 - this.heat) * (1 - Math.exp(-14 * t));
     } else {
       this.heat *= Math.exp(-2.6 * t);

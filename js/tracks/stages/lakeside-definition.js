@@ -3,7 +3,7 @@
  * Tarmac ribbon, jumps, twin hairpins, tight hooks, a cobble rush.
  */
 
-import { COLORS } from "../../config.js?v=257";
+import { COLORS } from "../../config.js?v=258";
 
 /** Slide ribbon — catchable hooks along the water. */
 const W = 15.0;

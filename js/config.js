@@ -1536,13 +1536,13 @@ const CHASSIS = {
   damperRebound: 4800,
   antiRollFront: 7800,
   antiRollRear: 5600,
-  maxSteer: 0.4,
-  /** Slower rack — road-holding first; hairpins still turn, not whip. */
-  steerSpeed: 88,
-  steerReturn: 124,
-  /** High-speed mute — stronger push so sweepers stay on the ribbon. */
-  steerFalloff: 0.016,
-  yawGain: 0.98,
+  maxSteer: 0.44,
+  /** Balanced rack — hairpins turn; high speed still mutes. */
+  steerSpeed: 98,
+  steerReturn: 116,
+  /** High-speed mute — sweeper push without hovercraft understeer. */
+  steerFalloff: 0.013,
+  yawGain: 1.06,
   /**
    * GTA analog: m_fTractionBias (Wh). 0.5 = equal axles. Lower = more rear
    * grip = planted Sultan 4WD. Higher = more front grip = Comet oversteer.

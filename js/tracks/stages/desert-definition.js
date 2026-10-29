@@ -8,7 +8,7 @@
  * Built for easy power slides — hard hooks with room to catch.
  */
 
-import { COLORS } from "../../config.js?v=257";
+import { COLORS } from "../../config.js?v=258";
 
 /** Slide ribbon — narrow enough to hang attitude, wide enough to catch. */
 const W = {

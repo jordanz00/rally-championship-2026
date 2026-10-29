@@ -5,7 +5,7 @@
  * QA gates: cobble open, exactly 3 CPs, hairpin + tight_corner, no tunnel.
  */
 
-import { COLORS } from "../../config.js?v=257";
+import { COLORS } from "../../config.js?v=258";
 
 /** Slide ribbon — tighter than the old speed highway, still catchable. */
 const W = {

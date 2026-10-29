@@ -1,5 +1,26 @@
 # QA report — quality-control pass
 
+## Physics / driving mechanics audit + v10 feel (2026-10-29)
+
+**Audit (post–road-holding pass)**
+| Issue | Evidence | Verdict |
+|---|---|---|
+| Drift initiation over-gated | `easySlideHardSteer` 0.42 + hard speed 16 | FAIL — power slides needed near full lock |
+| Attitude mush | `powerSlidePitch` 1.85, `maxSlideVel` 16, hang 0.48 | FAIL — HB-only drifts, no Saturn hang |
+| Rack dull at hairpins | `maxSteer` 0.40 / snap 1.12 | WARN — opened corners but turn-in felt soft |
+| Rush dump throws apexes | ACCEL 18.5 with no corner mute | FAIL — boost + steer = runoff |
+| Catch window | recoveryAssist OK | PASS — keep |
+
+**Shipped (`burnout-drive` v10 · `rally-rush` v9 · CELICA rack)**
+- Learnable initiation: hard-steer ~0.18–0.26 @ 12 m/s; pitch 2.55; slide ceiling 20/26; hang 0.62
+- Rack 0.44 / speed 98 / snap 1.28 / yawGain 1.06
+- Rush dump 14.5 (fire 18.5), Vmax 82; **corner mute** cuts shove under steer/slide
+- Assist catch slightly stronger; counterAuthority 3.15
+
+**Proof:** `node tools/qa-rally-rush.mjs` · syntax check. Boot `main.js?v=1222`.
+
+**Player verbs restored:** throttle steers the slide · HB still snaps · straights drain Rush · apex dump no longer rockets you off.
+
 ## CEO audit — remaining items closed (2026-10-29)
 
 **Closed this pass (were open after Rush sprint)**
