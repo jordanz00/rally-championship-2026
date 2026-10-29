@@ -32,6 +32,40 @@ const CAPTURED = new Set([
   "e",
 ]);
 
+/** Default key lists per action. Both e.key and e.code names, lowercase. */
+const DEFAULT_KEYS = {
+  gas: ["w", "keyw", "arrowup"],
+  brake: ["s", "keys", "arrowdown"],
+  left: ["a", "keya", "arrowleft"],
+  right: ["d", "keyd", "arrowright"],
+  handbrake: [" ", "space", "spacebar"],
+  shiftUp: ["e", "keye", "shift"],
+  shiftDown: ["q", "keyq", "control"],
+  camera: ["c", "v"],
+  reset: ["r"],
+  trans: ["t"],
+};
+/** Arrows always work for the four driving keys, so a bad rebind cannot lock you out. */
+const ALWAYS_KEYS = { gas: ["arrowup"], brake: ["arrowdown"], left: ["arrowleft"], right: ["arrowright"] };
+/** Never rebindable: pause / back / confirm live here. */
+const RESERVED_KEYS = new Set(["escape", "enter", "tab", "p", "backspace"]);
+const KEYMAP_STORE = "rally-keymap";
+
+/** @returns {Record<string,string>} action -> single custom key (lowercase e.key) */
+function loadKeymap() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEYMAP_STORE) || "{}");
+    const out = {};
+    for (const a of Object.keys(DEFAULT_KEYS)) {
+      const k = o && typeof o[a] === "string" ? o[a].toLowerCase() : "";
+      if (k && k.length <= 12 && !RESERVED_KEYS.has(k)) out[a] = k;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /** Analog stick dead zone. Below this the stick reads as centred. */
 const STICK_DEAD = 0.08;
 /** Trigger threshold. Below this a trigger reads as released. */
@@ -93,6 +127,8 @@ export class Input {
     this._padBackEdge = false;
     this._padPauseEdge = false;
     this._touch = null;
+    /** Custom single-key bindings. Empty = defaults. */
+    this.keymap = loadKeymap();
 
     window.addEventListener("keydown", (e) => this._onKey(e, true));
     window.addEventListener("keyup", (e) => this._onKey(e, false));
@@ -138,7 +174,7 @@ export class Input {
     if (!k && !code) return;
     const tag = e.target && e.target.tagName;
     const onField = tag === "INPUT" || tag === "TEXTAREA";
-    if (!onField && (CAPTURED.has(k) || code === "space")) e.preventDefault();
+    if (!onField && (CAPTURED.has(k) || code === "space" || Object.values(this.keymap).includes(k))) e.preventDefault();
     if (down) {
       if (k && !this._keys.has(k)) this._edge.add(k);
       if (code && !this._keys.has(code)) this._edge.add(code);
@@ -154,12 +190,76 @@ export class Input {
     return this._keys.has(name);
   }
 
+  /** Keys that fire `action`: the custom key if set, else the defaults, plus arrows for driving. */
+  _keysFor(action) {
+    const custom = this.keymap[action];
+    const base = custom ? [custom] : DEFAULT_KEYS[action] || [];
+    return ALWAYS_KEYS[action] ? base.concat(ALWAYS_KEYS[action]) : base;
+  }
+
+  _anyHeld(action) {
+    for (const k of this._keysFor(action)) if (this._keys.has(k)) return true;
+    return false;
+  }
+
+  _anyPressed(action) {
+    for (const k of this._keysFor(action)) if (this._edge.has(k)) return true;
+    return false;
+  }
+
+  /**
+   * Bind one key to an action. A key already used by another action is taken from it.
+   * @param {string} action key of DEFAULT_KEYS
+   * @param {string} key e.key
+   * @returns {boolean} false if rejected
+   */
+  setKey(action, key) {
+    const k = typeof key === "string" ? key.toLowerCase() : "";
+    if (!DEFAULT_KEYS[action] || !k || k.length > 12 || RESERVED_KEYS.has(k)) return false;
+    // Arrows belong to the four driving actions.
+    for (const [owner, list] of Object.entries(ALWAYS_KEYS)) {
+      if (list.includes(k) && owner !== action) return false;
+    }
+    // Swap: the action that held this key gets the key this action gave up.
+    const prev = this._keysFor(action)[0];
+    for (const other of Object.keys(DEFAULT_KEYS)) {
+      if (other !== action && DEFAULT_KEYS[other].concat(this.keymap[other] || []).includes(k)) {
+        if (prev && !RESERVED_KEYS.has(prev)) this.keymap[other] = prev;
+        else delete this.keymap[other];
+      }
+    }
+    this.keymap[action] = k;
+    this._saveKeymap();
+    return true;
+  }
+
+  resetKeys() {
+    this.keymap = {};
+    this._saveKeymap();
+  }
+
+  /** Short on-screen name for the key bound to `action`. */
+  keyLabel(action) {
+    const k = this._keysFor(action)[0] || "";
+    if (k === " " || k === "space") return "SPACE";
+    if (k.startsWith("key")) return k.slice(3).toUpperCase();
+    return k.toUpperCase();
+  }
+
+  _saveKeymap() {
+    try {
+      localStorage.setItem(KEYMAP_STORE, JSON.stringify(this.keymap));
+    } catch {
+      /* private mode */
+    }
+  }
+
   _gasHeld() {
-    return this._held("w") || this._held("keyw") || this._held("arrowup");
+    return this._anyHeld("gas");
   }
 
   _brakeHeld() {
-    return this._held("s") || this._held("keys") || this._held("arrowdown");
+    return this._anyHeld("brake");
   }
 
   _pressed(name) {
@@ -175,8 +275,8 @@ export class Input {
     const dt = bounded(raw, 0.008, 0.05, 0.016);
     this._lastPoll = Number.isFinite(now) ? now : this._lastPoll + dt * 1000;
 
-    const left = this._held("a") || this._held("keya") || this._held("arrowleft");
-    const right = this._held("d") || this._held("keyd") || this._held("arrowright");
+    const left = this._anyHeld("left");
+    const right = this._anyHeld("right");
     // +steer yaws the chassis right. A / left stick must therefore be +1.
     let keyTarget = 0;
     if (left && !right) keyTarget = 1;
@@ -197,20 +297,19 @@ export class Input {
     const keyBrake = this._brakeHeld();
     this.throttle = bounded(keyGas ? 1 : this._padThrottle, 0, 1);
     this.brake = bounded(keyBrake ? 1 : this._padBrake, 0, 1);
-    const keyHand = this._held(" ") || this._held("space") || this._held("spacebar");
+    const keyHand = this._anyHeld("handbrake");
     this.handbrake = bounded(keyHand ? 1 : this._padHandbrake, 0, 1);
 
     // Q / E are the documented gear keys; Shift / Ctrl stay as legacy aliases.
-    this.shiftUp = this._pressed("e") || this._pressed("keye") || this._pressed("shift") || this._padUpEdge;
-    this.shiftDown =
-      this._pressed("q") || this._pressed("keyq") || this._pressed("control") || this._padDownEdge;
-    this.camera = this._pressed("c") || this._pressed("v") || this._padCamEdge;
+    this.shiftUp = this._anyPressed("shiftUp") || this._padUpEdge;
+    this.shiftDown = this._anyPressed("shiftDown") || this._padDownEdge;
+    this.camera = this._anyPressed("camera") || this._padCamEdge;
     this.pause = this._pressed("p") || this._pressed("escape") || this._padPauseEdge;
-    this.transToggle = this._pressed("t");
+    this.transToggle = this._anyPressed("trans");
     this.confirm =
       this._pressed("enter") || this._pressed(" ") || this._pressed("space") || this._padConfirmEdge;
     this.back = this._pressed("escape") || this._pressed("backspace") || this._padBackEdge;
-    this.reset = this._pressed("r");
+    this.reset = this._anyPressed("reset");
 
     const usingKeys = keyTarget !== 0 || keyGas || keyBrake || keyHand;
     const usingPad =

@@ -8,7 +8,7 @@
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=253";
+import { COLORS } from "../../config.js?v=257";
 
 /**
  * Forest ribbon scale vs the Saturn-narrow authoring (11.6–13.2 m).
@@ -56,8 +56,8 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 36,
-      angle: 96,
+      radius: 54,
+      angle: 74,
       surface: "dirt",
       width: forestWidth(12.6),
       purpose: "Tight right — pitch in, hang dirt attitude",
@@ -169,8 +169,8 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 34,
-      angle: 100,
+      radius: 54,
+      angle: 76,
       surface: "dirt",
       width: forestWidth(13.4),
       purpose: "Tight left — hang it, trees on the outside",
@@ -196,8 +196,8 @@ export const FOREST_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 30,
-      angle: 142,
+      radius: 66,
+      angle: 96,
       surface: "dirt",
       width: forestWidth(14.0),
       landmark: true,
@@ -208,8 +208,8 @@ export const FOREST_DEFINITION = {
     {
       kind: "hairpin",
       direction: "left",
-      radius: 28,
-      angle: 136,
+      radius: 66,
+      angle: 96,
       surface: "dirt",
       width: forestWidth(13.8),
       bank: 0.06,
@@ -231,12 +231,13 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 36,
-      angle: 88,
+      radius: 52,
+      angle: 70,
       surface: "dirt",
       width: forestWidth(13.6),
       purpose: "Tight right — punch out",
     },
+    { kind: "straight", length: 48, surface: "dirt", width: forestWidth(13.6), purpose: "Settle — finish left coming" },
     {
       kind: "medium_corner",
       direction: "left",

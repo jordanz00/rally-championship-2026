@@ -1,5 +1,197 @@
 # QA report — quality-control pass
 
+## CEO audit — remaining items closed (2026-10-29)
+
+**Closed this pass (were open after Rush sprint)**
+1. **Grid progress snap** — `_restoreLastValidTransform` skips stage rewind in the first 90 m when a rival bump would yank progress back (`checkpoint-recover-skipped`).
+2. **Stage load plate** — props + gallery/crowd/extras warm in **parallel**; compile drain 140→70 ms budget frames.
+3. **Off-road teaching** — flash `OFF ROAD — find the ribbon` (6 s cooldown) when lateral leaves the paint; Rush already refuses off-ribbon earn.
+
+**Already shipped earlier in the CEO wave:** Rush drain + HUD + Controls · rival speed · clocks · Desert 3 CPs · Physics Lab retail gate · Easy pack speed · config `?v=257` · steer/drift soften · open corners · mobile iOS/Android parity.
+
+**Deferred (not friend-test blockers):** photoreal hands; POV white wedge cosmetics; headed Chrome FPS retune (IDE 13 fps untrusted).
+
+**Boot:** `main.js?v=1221` · `vehicle.js?v=218`.
+
+## Mobile parity — iPhone + Android (2026-10-29)
+
+**Player moment:** Drive on Android Chrome or iPhone Safari with two thumbs — GAS stays on while STEER moves. Pedals clear the Chrome URL bar. Same fill-rate budget on both OSes.
+
+**Root cause (Android):** `lostpointercapture` on pedals cleared GAS whenever the steer pad captured the other pointer. WebViews without Pointer Events had no touch fallback. Android also got a weaker pixel budget than iOS.
+
+**Shipped**
+- `touch-controls.js` v7: pointer-id holds, no lostpointercapture kill, touchstart/move/end fallback, visualViewport chrome inset, audio unlock on race gesture, shared tilt path.
+- Larger steer / pedals; `#touch-hud` z-index above race chrome; `html.touch-driving` locks overscroll.
+- Shared phone GFX: 640k pixels, 0.7 DPR cap, 0.62 scale, 256 shadows — Android = iOS.
+- QA gates updated for shared budget + multi-touch contracts.
+
+**Proof:** `node tools/qa-mobile-boot.mjs` · `node tools/qa-mobile-controls.mjs` PASS.
+
+**Boot:** `main.js?v=1220` · `touch-controls.js?v=7` · `game.css?v=83`.
+
+**Still needs human:** physical Pixel + iPhone race drive (emulation cannot prove multi-touch feel).
+
+## CEO sprint — Rush economy + contest + teaching (2026-10-29)
+
+**Org:** Gameplay + Fun + UI + Lead Eng. Parallel audits ranked P0; this sprint ships the top coherent package (friend-test blockers). Load-time overhaul deferred (needs headed Chrome probe).
+
+**Player moments fixed**
+1. **Rush is a tank again** — pace earn 0.07/s, no earn while dumping, no earn off-ribbon. Straight dump drains (~0.58 from 0.9 in probe). `rally-rush.js` v8.
+2. **Pack fights back** — AI `peakPowerMul` 6.4, `maxSpeedMul` 1.85; Easy no longer slows rivals to 1.25.
+3. **Clock bites** — Desert 82 s + 28 s CP (was 130+34). Forest/Mountain/Lakeside tightened.
+4. **Rush taught** — HUD bar visible + fills; Controls line for RUSH; tip for off-ribbon.
+5. **Physics Lab retail-safe** — `?debug=1` no longer opens the overlay (still `?physlab=1` / F8).
+6. **Desert checkpoints** — 3 authored CPs (was 1).
+7. **Config cache** — unified `config.js?v=257` across importers (static audit version FAIL closed).
+
+**Proof:** `node tools/qa-rally-rush.mjs` PASS (incl. pace drain + visible bar). Desert validate PASS, 3 CPs. Boot `main.js?v=1219`.
+
+**Still open (next sprints):** stage load 45–120 s; IDE fps probe on Chrome; POV white wedge / rival liveries; grid checkpoint-recover snap; hands photoreal.
+
+## Stage / turn audit + open corners (2026-10-29)
+
+**Method:** Compiled all four championship courses; merged elevation-split curve chunks into logical turns; scored vs Rush approach pace (~28 m/s comfort floor on dirt µ).
+
+**Audit (before fix)**
+| Stage | Logical turns | Worst issues |
+|---|---|---|
+| Desert | 11 | 2 hairpins r43–58 / 122–124° (comfort ~17–20 m/s); tight hooks r52–62 |
+| Forest | 18 | Twin hairpins same; **finish FLIP gap 0** (tight right −70° then medium left +46° with no straight) |
+| Mountain | 13 | Twin hairpins + 3 tight hooks under Rush pace |
+| Lakeside | 10 | Twin hairpins + 3 tights under Rush pace |
+
+Root cause: authoring targeted Saturn-tight hooks (hairpin r28–30 / 136–144°) while Rush lands the player at 40–60 m/s. Play-lane ease opened them some, but not enough. Long sweepers are split into micro-arcs by `sculptRoadElevation` (not a player “bad turn” — continuous bend).
+
+**Shipped**
+- All stage hairpins → authored r66 / 96° (play ~r80–106 / ~73–84°)
+- All tight corners opened (~r54 / 70–78°)
+- Forest finish: 48 m settle straight between opposite corners (FLIP gone)
+- `track-definition` defaults + `easePlayAngle` / tight radius multipliers opened
+- Gates: `validateCourseData` PASS all four
+
+**Kept on purpose:** Hairpins still ask for a lift vs flat-out Rush (comfort ~23–27 m/s) — they are corners, not sweepers. Mediums/sweepers/S-bends unchanged in rhythm.
+
+**Boot:** `main.js?v=1218` · `courses.js?v=106` · stage defs desert18 / forest21 / mountain17 / lakeside14 · `track-definition.js?v=13`.
+
+**Proof:** `node` compile + validate PASS; re-score flips=0; no SHARP_HOOK / HAIRPIN_TIGHT left.
+
+## Controllable steer / drift (2026-10-29)
+
+**Player moment:** Full lock + speed threw the car into a sideways slide on every corner; staying on the ribbon felt like fighting the chassis. Accel punch stays; turn-in and slide initiation slow down.
+
+**Changes**
+- `burnout-drive.js` v9: hard-steer slide needs ~16 m/s + ~0.28–0.42 steer (was ~7 m/s + 0.06–0.10); `powerSlidePitch` 1.85 (was 4.85); `maxSlideVel` 16 (was 30); faster lateral bleed; mild `speedUndersteer`; rack snap 1.12 (was 1.92); yawAssist no longer floored to 0.72.
+- `CELICA`: `maxSteer` 0.40, `steerSpeed` 88, `yawGain` 0.98, stronger high-speed falloff.
+- `vehicle` rack: softer snap curve + tighter steer limit at speed.
+- Desert sand: higher µ, lower `driftEase` / `slideHold`, snappier catch.
+
+**Kept on purpose:** launch boost + Rush torque mul (fun accel). Handbrake still starts a slide when you ask for it.
+
+**Boot:** `main.js?v=1216` · `vehicle.js?v=217` · `burnout-drive.js?v=9` · `config.js?v=254`.
+
+**Proof:** syntax `node --check` on burnout/vehicle/config. Human drive: corners should hold with partial steer; e-brake still rotates.
+
+## Game-mechanics audit (2026-10-28, live Desert, no code changed)
+
+**Method:** drove the live game with `_qaDrive`, timed on the sim clock (`raceTime`). Chrome-driven QA tools were skipped (they need CDP). Jump launch/landing was not probed.
+
+**Measured**
+- Rush ON, full throttle from standstill: 21 m/s at 1 s, 56 at 3 s, 75 m/s (268 km/h) at 5 s. 0-100 km/h in about 1.3-2.1 s. Rush tank stayed 0.84-1.0 the whole run.
+- Rush forced to 0: 4.6 m/s at 1 s, 13 m/s at 3 s. About 4.5 m/s2, 0-100 km/h would take ~6 s.
+- Brake from 60.7 m/s: 3.6 s, 67 m, 17 m/s2.
+- Steering works (steer 1 gives yaw rate about 1.0-1.2 rad/s at 15 m/s). Full lock and half lock were not distinguishable in the first probe because the car was already in a wall or soft off-road at about 18 m/s.
+- Rivals run 20-40 m/s. The player runs 60-75.
+- Track 3847 m. Flat out at 60 m/s is about 65-70 s. Clock is 130 s (game.js copy) plus 1 checkpoint (+34 s).
+
+**Findings**
+1. Rush is the engine, not a reward. It earns about 0.12-0.34/s at speed (pace earn) and spends 0.16/s, so on a straight it never drains. Rush adds 18.5 m/s2 on top of about 4.5 m/s2, so the boosted car accelerates roughly 5x harder than the same car without it, and tops out near 2x any rival. `rally-rush.js` lines 97-99 and 172-181.
+2. Rivals cannot compete. They never get rush, so the 14-car pack is always slower than a player who stays on the road. "Beat the pack" is a given, not a contest.
+3. The stage clock is slack. About 65 s of driving against 130 s + 34 s. Time pressure only appears after repeated crashes.
+4. Only 1 checkpoint on 3.8 km. A time-extend that arrives once is not a mechanic.
+5. Off-road is a wall of mud: speed caps near 18 m/s, rush still refills. Falling off costs 40+ m/s. Fun cost is high, teaching cost is none (no on-screen hint).
+6. Rush has no key and no HUD explanation in Controls. A player cannot learn what refills it or why they are suddenly fast.
+7. Auto-recover: progress snapped back about 26 m once while rival-blocked on the grid.
+8. First-run Easy softens rivals further (maxSpeedMul 1.25), which widens the gap in item 2.
+
+**Not touched on purpose:** feel is tuned in Physics Lab (`?physlab=1`); no code edits without a lab pass. Suggested order: (a) cap rush earn at pace so it drains (about 0.07/s), (b) give rivals a matching bump, (c) set stage clock from a measured clean lap plus 15%, (d) 3 checkpoints per stage, (e) Controls and HUD text for rush.
+
+## Menus never fade to black (2026-10-28)
+
+**Player moment:** Every menu click used to fade to black (0.28 s out, hold, 0.42 s in), about 0.75 s per click. `showScreen` now swaps in the same frame. The new panel lifts in over 0.14 s with opacity only. Reduced-motion skips even that.
+
+**Proof:** in browser, Start → Controls → Back → Championship → Back. Curtain opacity peaked at 0 across the run (0 black frames); each swap landed within 40 ms.
+
+**Kept on purpose:** the one boot reveal in `index.html`, the loading plate, and the result-screen replay fade (`broadcast-fade`), which is not a menu click.
+
+**Boot:** `main.js?v=1215` · `hud.js?v=56`.
+
+## Game-experience audit (2026-10-28, IDE browser, 1920x1080)
+
+**Open, player-visible:**
+1. Load: this run took over 120 s from car pick to countdown with rAF near 0.3 fps while loading (earlier runs 45-70 s). The countdown now waits for props, gallery, dressing and shader compile, so the wait sits on the load plate but is long. Needs a headed Chrome measurement. Candidate: stream gallery/dressing during the loading plate in parallel instead of in series.
+2. Race frame rate: 13 fps in this browser (DPR 2, render scale 1.28, TSR on). Likely software or throttled GPU here; confirm in headed Chrome before tuning.
+3. Physics Lab panel covers the right side of every screen. Left in place on request; it should hide for players.
+4. POV: bright white wedge top-left, pale beige roof band, white stripes on the road near the start line, flat white rival cars without liveries.
+5. Console: `HD prop missing: rock_tallA`; `BufferAttribute.updateRange` deprecated (removed in r169); `clearcoatEnvMapIntensity` is not a MeshPhysicalMaterial property (x5). No errors.
+6. `qa-static-audit`: 1 FAIL, config.js version split (253/255/256), already known.
+
+## CEO audit — all items shipped (2026-10-28)
+
+**Closed:**
+1. Dead assist code: the "first drive" grip/rival lines in `game.js` edited a config copy physics never reads. Removed. Easy in Driving Help now sets the live physics, sand grip and rival speed. First run starts on Easy; a saved choice wins.
+2. Driving Help Easy / Standard / Pro.
+3. Calm Camera (default on for reduced-motion systems), Big HUD, High Contrast, focus ring.
+4. Colour vision: red-green safe and blue-yellow safe matrices on HUD and menus.
+5. Navigator Text: large caption for every co-driver call, shown even with voice off.
+6. Auto Gas (brake still works) and Smart Speed (lift and light brake in hard corners at speed).
+7. Remappable keys: 10 actions, swap on conflict, arrows always kept for driving, Esc/P/Enter/Tab reserved, Reset Keys. Saved.
+8. Dialog focus trap on pause, result and menus: focus moves in, Tab wraps, focus returns on close.
+9. POV hands: knuckles face the driver, real size, fists at 9 and 3, sleeves below.
+
+**Proof (in browser, fresh storage):** Easy sets yaw assist 0.9 and rival speed 1.25. Smart Speed turns steer 0.9 at 40 m/s into throttle 0.35 plus brake 0.22. Auto Gas gives throttle 1. Rebinding handbrake to J: input.handbrake = 1 on J, stored `{"handbrake":"j"}`. Tab on the last pause control wraps inside the dialog. No page errors. Unit test of swap: camera takes J, handbrake gets C; Escape and arrows rejected.
+
+**Open:** hands are still stylised, not photoreal (CC0 MakeHuman mesh, flat skin). No gamepad remap. Colour filters do not cover the 3D world, only HUD and menus.
+
+**Boot:** `main.js?v=1214` · `play-options.js?v=3` · `input.js?v=44`.
+
+## POV hands — smaller grip, cuff tucked (2026-10-28)
+
+**Log:** Wrist disc faced the seat. Yaw 180 shows knuckles. Hands were cut off at the bottom of the picture, so the grip sits higher on the rim (toward 10 and 2) at 0.82 of the rim fit. Boot `main.js?v=1209`.
+
+## POV hands — knuckles toward the driver (2026-10-28)
+
+**Player moment:** Cockpit hands were a huge flat wrist disc with a thumb spike. The grip was already in the mesh, but the open cuff faced the seat.
+
+**Shipped:** The grip yaws 180° on the rim so the knuckles and wrapped fingers face the driver. Sleeves stay on the driver side of the rim. Boot `main.js?v=1206`.
+
+## POV hands — baked wheel grip (2026-10-28)
+
+**Player moment:** In cockpit view the old hands bent their fingers the wrong way. The replacements are the CC0 MakeHuman hands posed once into a closed grip, thumbs across the rim, and then left alone.
+
+**Shipped:** New `hand-grip-l.glb` / `hand-grip-r.glb`. Runtime no longer curls bones. Boot `main.js?v=1205`.
+
+## Forest trees — leaf cutout and bark (2026-10-28)
+
+**Player moment:** Stage 2 crowns were black rectangles between the leaves, and the wood read as flat grey. The packed photos are JPEG, so the gaps had no transparency, and the roughness photo was being used as metal.
+
+**Shipped:** Each hero canopy gets its Poly Haven leaf mask before the count starts. Branches keep their own bark. Crowns are non-metal and alpha-tested. Boot `main.js?v=1204`.
+
+## Countdown waits for the stage (2026-10-28)
+
+**Player moment:** 3-2-1-GO does not hitch, skip a number, or pause while trees and props finish loading. That work stays on the loading plate.
+
+**Shipped:** The race awaits stage props, the crowd kit, and the extra gallery models, then dresses and compiles shaders, and only then starts the count.
+
+**Boot:** `main.js?v=1203`
+
+## Verge lift, jump spin, soft picture (2026-10-28)
+
+**Player moment:** Leaving the paint no longer pops the car up. A jump that clips the lip no longer yaws the nose backwards, so the wheel does not steer the wrong way after the landing. The picture is sharp again instead of soft and trailed.
+
+**Shipped:** Off-road height stays on the deck and can only rise a few centimetres per metre. Jump edge-roll and the landing yaw kick are smaller, and a nose that ends up facing backwards is put back with the direction of travel. Land tiles are dense again, ground and road maps are full size, Forest trees are the full meshes, and temporal history is short so the world does not smear.
+
+**Boot:** `main.js?v=1202` · `track.js?v=484` · `vehicle.js?v=216`
+
 ## Stage load cut (2026-10-27)
 
 **Player moment:** The course is on screen much sooner. Desert’s road-and-land build went from 5.4 s to 0.76 s. Mountain went from 9.1 s to 1.0 s. Forest’s ribbon, which had sat for about 43 s, now finishes with the course in about 3.4 s. Most of that Forest time is the tunnel bore.

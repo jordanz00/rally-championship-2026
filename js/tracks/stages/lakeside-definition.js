@@ -3,7 +3,7 @@
  * Tarmac ribbon, jumps, twin hairpins, tight hooks, a cobble rush.
  */
 
-import { COLORS } from "../../config.js?v=253";
+import { COLORS } from "../../config.js?v=257";
 
 /** Slide ribbon — catchable hooks along the water. */
 const W = 15.0;
@@ -51,8 +51,8 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 34,
-      angle: 98,
+      radius: 54,
+      angle: 76,
       surface: "tarmac",
       width: W,
       purpose: "Tight right — pitch in, power out",
@@ -90,8 +90,8 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 28,
-      angle: 140,
+      radius: 66,
+      angle: 96,
       surface: "cobble",
       width: W,
       bank: 0.07,
@@ -101,8 +101,8 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 32,
-      angle: 100,
+      radius: 54,
+      angle: 76,
       surface: "cobble",
       width: W,
       purpose: "Tight left back toward tarmac",
@@ -132,8 +132,8 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "hairpin",
       direction: "left",
-      radius: 30,
-      angle: 136,
+      radius: 66,
+      angle: 96,
       surface: "tarmac",
       width: W,
       bank: 0.06,
@@ -144,8 +144,8 @@ export const LAKESIDE_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 36,
-      angle: 90,
+      radius: 54,
+      angle: 72,
       surface: "tarmac",
       width: W,
       purpose: "Tight right onto the vista",

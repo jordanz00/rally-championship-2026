@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=253";
+import { VISUAL } from "../config.js?v=257";
 import { RENDER_CAPS } from "./render-caps.js?v=1";
 import { NeuralShade, nshadeWanted } from "./neural-shade.js?v=6";
 import { burnoutLookFor } from "./burnout-look.js?v=6";

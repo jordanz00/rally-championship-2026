@@ -47,7 +47,8 @@ check("On Fire callout is off", !/flashMessage\("ON FIRE"\)/.test(game) && /rush
 check("burnout-drive overlay is live", /burnout-drive\.js\?v=\d+/.test(vehicle) && /easySlide/.test(vehicle));
 check("HUD has a RUSH bar", /hud-rush/.test(html) && /hud-rush-fill/.test(hud));
 check("burnout callouts stay off the HUD", !/flashMessage\("RUSH"\)/.test(game) && !/flashMessage\(n >= 4 \? "UNREAL"/.test(game));
-check("rush bar is hidden", /#hud-rush \{\s*display:\s*none/.test(read("css/game.css")));
+check("rush bar is visible", /#hud-rush \{\s*display:\s*block/.test(read("css/game.css")) && /s\.rush/.test(hud));
+check("Controls teach RUSH", /RUSH/.test(html) && /slides/.test(html));
 check("practice packs the grid", /Math\.max\(10, CHAMPIONSHIP\.practiceOpponents/.test(game));
 check("tail fire does not emit", /emit\(_car, _heat, _fire = 0\) \{\}/.test(effects));
 const rushLook = burnoutLookFor("desert", { speed: 40, rush: 1, fire: 1 });
@@ -65,9 +66,9 @@ check("tarmac easy-slide still needs more steer", /easySlideTarmacSteer/.test(ve
 check("AI holds the door", /PLAYER_RESPECT = 1\.05/.test(read("js/ai.js")) && /Keep rolling next to the player/.test(read("js/ai.js")));
 
 applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
-check("easy cool slide", HANDLING.easySlide && HANDLING.outrunHang >= 0.72 && HANDLING.slideSpeedConvert >= 1.55, `hang=${HANDLING.outrunHang} conv=${HANDLING.slideSpeedConvert}`);
-check("slide initiate pitch", HANDLING.powerSlidePitch >= 4.1, `pitch=${HANDLING.powerSlidePitch}`);
-check("fire torque is hotter than dump", rushTorqueMul(1, 1) > rushTorqueMul(1, 0) && rushTorqueMul(1, 1) >= 2.3, `mul=${rushTorqueMul(1, 1).toFixed(2)}`);
+check("easy cool slide", HANDLING.easySlide && HANDLING.outrunHang >= 0.4 && HANDLING.slideSpeedConvert >= 1.2, `hang=${HANDLING.outrunHang} conv=${HANDLING.slideSpeedConvert}`);
+check("slide initiate pitch controllable", HANDLING.powerSlidePitch >= 1.5 && HANDLING.powerSlidePitch <= 3.5, `pitch=${HANDLING.powerSlidePitch}`);
+check("fire torque is hotter than dump", rushTorqueMul(1, 1) > rushTorqueMul(1, 0) && rushTorqueMul(1, 1) >= 1.6, `mul=${rushTorqueMul(1, 1).toFixed(2)}`);
 
 const rush = new RallyRush();
 const player = {
@@ -91,6 +92,12 @@ check(
   dump.accel > 8 && rush.meter < before - 0.02,
   `accel=${dump.accel.toFixed(2)} meter=${rush.meter.toFixed(3)}`
 );
+
+const pace = new RallyRush();
+pace.meter = 0.9;
+const paceCar = { ...player, driftAngle: 0, throttle: 0.95, speed: 40 };
+for (let i = 0; i < 40; i++) pace.step(0.05, { player: paceCar, opponents: [] });
+check("pace dump drains the tank", pace.meter < 0.75, `meter=${pace.meter.toFixed(3)}`);
 
 const pass = new RallyRush();
 const tagged = pass.step(0.05, {

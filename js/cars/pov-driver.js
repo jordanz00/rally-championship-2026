@@ -2,9 +2,11 @@
  * POV driver — rigged human hands on the steering wheel.
  *
  * WHO THIS IS FOR: cockpit / POV camera only (layer 1 overlay).
- * WHAT IT DOES: loads a CC0 skinned hand (MakeHuman mesh, 26-bone rig),
- *   seats large grips at 9 and 3 with fingers curled onto the leather.
- *   Knuckles face the driver. Hands ride steer-spin with the wheel.
+ * WHAT IT DOES: loads a CC0 skinned hand (MakeHuman mesh, 26-bone rig)
+ *   already posed as a closed wheel grip. Fingers stay in that pose.
+ *   seatGrip yaws the mesh 180° so the knuckles face the driver.
+ *   The raw GLB shows the wrist cuff on that side — that is the fat disc.
+ *   Hands ride steer-spin with the wheel.
  *   Two-bone sleeves hang from the wrist empties.
  * HOW IT CONNECTS: celica.js attachPovDriverArms → cockpit-anim IK each frame.
  *   Models: assets/driver/hand-grip-l.glb, hand-grip-r.glb (see ATTRIBUTION.txt).
@@ -27,20 +29,17 @@ let SKIN_MAP = null;
 let SKIN_BUMP = null;
 
 const _v = new THREE.Vector3();
-const _corner = new THREE.Vector3();
 
 /** 9/3 plus a few degrees toward 10/2 — planted, thumbs on the crown. */
 const CLOCK_9_3 = 0.14;
 /**
- * Final display scale after tube fit. The export is a small MakeHuman hand —
- * POV needs a readable adult grip without floating off the leather.
+ * Radius of the hole the grip was baked around, in metres.
+ * The live rim tube scales the whole hand so the pads stay on the leather.
  */
-const HAND_DISPLAY = 1.52;
-/** Extra squeeze into the tube after scale (fraction of tubeR). */
-const HAND_PRESS = 0.72;
+const GRIP_HOLE = 0.016;
 
-const HAND_L_URL = new URL("../../assets/driver/hand-grip-l.glb", import.meta.url).href;
-const HAND_R_URL = new URL("../../assets/driver/hand-grip-r.glb", import.meta.url).href;
+const HAND_L_URL = new URL("../../assets/driver/hand-grip-l.glb?v=4", import.meta.url).href;
+const HAND_R_URL = new URL("../../assets/driver/hand-grip-r.glb?v=4", import.meta.url).href;
 
 /** @type {Promise<{scene: THREE.Group}[]>|null} */
 let HAND_LOAD = null;
@@ -121,14 +120,14 @@ function ensureMats() {
   SKIN_MAT = new THREE.MeshStandardMaterial({
     map: SKIN_MAP,
     bumpMap: SKIN_BUMP,
-    bumpScale: 0.42,
+    bumpScale: 0.08,
     color: 0xd4a088,
     roughness: 0.78,
     metalness: 0.0,
     envMapIntensity: 0.22,
     emissive: 0xb88870,
     emissiveMap: SKIN_MAP,
-    emissiveIntensity: 0.48,
+    emissiveIntensity: 0.22,
     toneMapped: false,
   });
   SKIN_MAT.userData.shared = true;
@@ -285,9 +284,10 @@ function makeMount(side, rimR, tubeR) {
   const mount = new THREE.Group();
   mount.name = side > 0 ? "hand-L" : "hand-R";
   const clock = side > 0 ? CLOCK_9_3 : Math.PI - CLOCK_9_3;
-  mount.userData.clock = clock;
-  mount.position.set(Math.cos(clock) * rimR, Math.sin(clock) * rimR, 0);
-  mount.rotation.z = clock;
+  const gripClock = clock + (side > 0 ? 0 : 0);
+  mount.userData.clock = gripClock;
+  mount.position.set(Math.cos(gripClock) * rimR, Math.sin(gripClock) * rimR, 0);
+  mount.rotation.z = gripClock;
   // Fit comes from seatGrip once the GLB tip radius is known.
   mount.scale.setScalar(1);
   const wrist = new THREE.Object3D();
@@ -302,7 +302,7 @@ function makeMount(side, rimR, tubeR) {
 
 /**
  * Paint the skinned mesh and remember the wrist the sleeves track.
- * Finger bones stay in the baked grip. Names like Index_Proximal_L are the rig.
+ * The grip is baked. Do not rotate finger bones here.
  * @param {THREE.Object3D} mount
  * @param {THREE.Object3D} rig
  * @param {number} tubeR
@@ -310,7 +310,7 @@ function makeMount(side, rimR, tubeR) {
 function seatRig(mount, rig, tubeR) {
   rig.name = mount.name === "hand-L" ? "rig-L" : "rig-R";
   const side = mount.name === "hand-L" ? 1 : -1;
-  seatGrip(rig, side, tubeR, mount.scale.x);
+  seatGrip(rig, tubeR);
   rig.traverse((o) => {
     if (!o.isMesh) return;
     o.material = SKIN_MAT;
@@ -320,146 +320,28 @@ function seatRig(mount, rig, tubeR) {
     o.userData.povDriver = true;
   });
   mount.add(rig);
-  const wrist = rig.getObjectByName("wrist");
-  if (wrist) mount.userData.wrist = wrist;
+  // Keep the driver-side wrist placeholder. The right-hand bone sits on the
+  // cuff, and after the yaw that cuff is through the rim. Sleeves must not follow it.
   mount.userData.tris = countTris(mount);
   const proximal = rig.getObjectByName(side > 0 ? "Index_Proximal_L" : "Index_Proximal_R");
   mount.userData.gripBone = proximal ? proximal.name : "";
 }
 
 /**
- * Park the baked grip on the rim tube.
- *
- * Tip bones stick out past the flesh — seating on them floats the mesh off the
- * leather. Sample skinned verts in the curl plane (XZ, tube along +Y), scale
- * up to a readable adult hand, then curl fingers onto the leather.
- *
+ * Park the baked grip on the rim. The mesh already wraps a tube of GRIP_HOLE.
+ * The bake stores the knuckle side on local +Z and the open wrist cuff on −Z.
+ * Spin −Z points at the driver, so a half-turn on Y shows the fingers, not the cuff.
+ * Scaling to the live tube keeps the pads on the leather. Do not curl bones here.
  * @param {THREE.Object3D} rig
- * @param {number} side +1 left / −1 right
  * @param {number} tubeR tube radius in steer-spin space
- * @param {number} _handScale unused (mount stays at 1; fit is on the rig)
  */
-function seatGrip(rig, side, tubeR, _handScale) {
-  // Knuckles / palm toward the driver (−Z). Fingers curl over the tube.
+function seatGrip(rig, tubeR) {
   rig.quaternion.identity();
   rig.position.set(0, 0, 0);
-  rig.scale.setScalar(1);
-  rig.updateMatrixWorld(true);
-
-  let skin = null;
-  rig.traverse((o) => {
-    if (o.isSkinnedMesh && !skin) skin = o;
-  });
-  if (!skin || !skin.geometry) return;
-
-  const pos = skin.geometry.attributes.position;
-  if (!pos) return;
-  // Sample real verts — AABB corners sit inside the C and fake contact.
-  const step = Math.max(1, (pos.count / 800) | 0);
-  let cx = 0;
-  let cy = 0;
-  let cz = 0;
-  let n = 0;
-  let rMin = Infinity;
-  let nearX = 0;
-  let nearZ = 0;
-  for (let i = 0; i < pos.count; i += step) {
-    _corner.fromBufferAttribute(pos, i);
-    skin.localToWorld(_corner);
-    rig.worldToLocal(_corner);
-    cx += _corner.x;
-    cy += _corner.y;
-    cz += _corner.z;
-    n += 1;
-    const r = Math.hypot(_corner.x, _corner.z);
-    if (r < rMin) {
-      rMin = r;
-      nearX = _corner.x;
-      nearZ = _corner.z;
-    }
-  }
-  if (n < 8 || !(rMin < Infinity) || rMin < 1e-4) return;
-  cx /= n;
-  cy /= n;
-  cz /= n;
-
-  // Fit the crook to the tube, then boost to an adult POV hand.
-  const target = tubeR * 0.9;
-  const baseFit = THREE.MathUtils.clamp(target / rMin, 0.4, 1.05);
-  const fit = baseFit * HAND_DISPLAY;
-  const radial = Math.hypot(nearX, nearZ) || Math.hypot(cx, cz) || 1;
-  const dirX = nearX / radial;
-  const dirZ = nearZ / radial;
+  rig.rotation.set(0, Math.PI, 0);
+  const fit = THREE.MathUtils.clamp((tubeR / GRIP_HOLE) * 0.82, 0.68, 0.9);
   rig.scale.setScalar(fit);
-  // Closest flesh on the leather; Y centered on the palm mass.
-  const contact = target - fit * rMin;
-  rig.position.set(dirX * contact, -cy * fit, dirZ * contact);
-  // Squeeze so the rim sits in the finger crook — pads wrap, not hover.
-  rig.position.x -= dirX * tubeR * HAND_PRESS;
-  rig.position.z -= dirZ * tubeR * HAND_PRESS;
-  curlFingers(rig, side);
-  tuckThumb(rig, side);
   rig.updateMatrixWorld(true);
-}
-
-/**
- * Close the four fingers onto the far side of the rim.
- * Small local bends only — big curls tear MakeHuman weights.
- * @param {THREE.Object3D} rig
- * @param {number} side
- */
-function curlFingers(rig, side) {
-  const tag = side > 0 ? "L" : "R";
-  const digits = ["Index", "Middle", "Ring", "Pinky"];
-  // Stronger curl on pinky/ring; index stays a touch more open (natural wheel grip).
-  const curl = [0.42, 0.5, 0.58, 0.64];
-  const s = side > 0 ? 1 : -1;
-  for (let i = 0; i < digits.length; i++) {
-    const name = digits[i];
-    const prox = rig.getObjectByName(`${name}_Proximal_${tag}`);
-    const mid = rig.getObjectByName(`${name}_Intermediate_${tag}`);
-    const dist = rig.getObjectByName(`${name}_Distal_${tag}`);
-    const k = curl[i];
-    if (prox) {
-      prox.rotateX(k * 0.55);
-      prox.rotateZ(s * k * 0.08);
-    }
-    if (mid) mid.rotateX(k * 0.72);
-    if (dist) dist.rotateX(k * 0.55);
-  }
-}
-
-/**
- * Oppose the thumb across the near rim face — closed 9/3 power grip.
- * Tiny local bends only; big curls tear the baked weights.
- * @param {THREE.Object3D} rig
- * @param {number} side
- */
-function tuckThumb(rig, side) {
-  const tag = side > 0 ? "L" : "R";
-  const meta = rig.getObjectByName(`Thumb_Metacarpal_${tag}`);
-  const prox = rig.getObjectByName(`Thumb_Proximal_${tag}`);
-  const dist = rig.getObjectByName(`Thumb_Distal_${tag}`);
-  if (!meta) return;
-  if (side > 0) {
-    meta.rotateY(-0.48);
-    meta.rotateZ(0.38);
-    meta.rotateX(0.22);
-    if (prox) {
-      prox.rotateZ(-0.28);
-      prox.rotateX(0.2);
-    }
-    if (dist) dist.rotateZ(-0.22);
-  } else {
-    meta.rotateY(0.48);
-    meta.rotateZ(-0.38);
-    meta.rotateX(0.22);
-    if (prox) {
-      prox.rotateZ(0.28);
-      prox.rotateX(0.2);
-    }
-    if (dist) dist.rotateZ(0.22);
-  }
 }
 
 /**
@@ -611,8 +493,6 @@ export function attachPovDriverArms(root, hooks) {
       if (root.userData.povDriver !== driver) return;
       seatRig(handL, cloneRig(left.scene), tubeR);
       seatRig(handR, cloneRig(right.scene), tubeR);
-      driver.wristL = handL.userData.wrist;
-      driver.wristR = handR.userData.wrist;
       driver.trisL = handL.userData.tris;
       driver.trisR = handR.userData.tris;
       hooks.markSteerPovLayer(grips);

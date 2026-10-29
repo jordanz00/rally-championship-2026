@@ -17,9 +17,9 @@
 
 import * as THREE from "../vendor/three.module.js";
 import { getSurface } from "./physics/surfaces.js?v=59";
-import { VISUAL } from "./config.js?v=253";
+import { VISUAL } from "./config.js?v=257";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
-import { isPhonePlay } from "./ui/touch-controls.js?v=6";
+import { isPhonePlay } from "./ui/touch-controls.js?v=7";
 
 /**
  * Soft irregular puff so points read as dust volume, not hard discs.

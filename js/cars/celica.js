@@ -19,10 +19,10 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=253";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=257";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=67";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=20";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=27";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };

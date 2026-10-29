@@ -8,7 +8,7 @@
  * Built for easy power slides — hard hooks with room to catch.
  */
 
-import { COLORS } from "../../config.js?v=253";
+import { COLORS } from "../../config.js?v=257";
 
 /** Slide ribbon — narrow enough to hang attitude, wide enough to catch. */
 const W = {
@@ -63,12 +63,19 @@ export const DESERT_DEFINITION = {
       width: W.drift,
       purpose: "Medium left — throttle steers the exit",
     },
-    { kind: "straight", length: 40, surface: "sand", width: W.drift, purpose: "Tight right coming" },
+    {
+      kind: "straight",
+      length: 40,
+      surface: "sand",
+      width: W.drift,
+      checkpoint: true,
+      purpose: "First checkpoint — tight right coming",
+    },
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 34,
-      angle: 98,
+      radius: 54,
+      angle: 76,
       surface: "sand",
       width: W.tight,
       purpose: "Tight right — handbrake flick, power out",
@@ -90,8 +97,8 @@ export const DESERT_DEFINITION = {
     {
       kind: "hairpin",
       direction: "left",
-      radius: 28,
-      angle: 136,
+      radius: 66,
+      angle: 96,
       surface: "sand",
       width: W.drift,
       bank: 0.06,
@@ -156,8 +163,8 @@ export const DESERT_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 32,
-      angle: 102,
+      radius: 54,
+      angle: 78,
       surface: "sand",
       width: W.tight,
       purpose: "Tight left — rotate, catch, floor it",
@@ -177,8 +184,8 @@ export const DESERT_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 30,
-      angle: 138,
+      radius: 66,
+      angle: 96,
       surface: "sand",
       width: W.drift,
       bank: 0.07,
@@ -191,7 +198,8 @@ export const DESERT_DEFINITION = {
       length: 200,
       surface: "sand",
       width: W.open,
-      purpose: "Open sand vista — horizon dunes, build speed for VLER Maybe",
+      checkpoint: true,
+      purpose: "Third checkpoint — dunes, build speed for VLER Maybe",
       visual: "dune_vista",
       landmark: true,
     },

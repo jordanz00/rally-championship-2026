@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=253";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=257";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=59";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
-import { JumpModel } from "./jump.js?v=41";
-import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=8";
+import { JumpModel } from "./jump.js?v=42";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=9";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
 
@@ -1186,9 +1186,9 @@ export class Vehicle {
     let r = this.yawRate;
     this.speed = Math.hypot(vx, vy);
 
-    const falloff = (s.steerFalloff != null ? s.steerFalloff : 0.011) * 0.42;
-    // Tighter lock — wide maxSteer mute made sweepers undriftable.
-    const steerLimit = (s.maxSteer * 1.48) / (1 + Math.abs(vx) * falloff);
+    const falloff = (s.steerFalloff != null ? s.steerFalloff : 0.011) * 0.72;
+    // Controllable lock — full rack still turns; high speed mutes harder.
+    const steerLimit = (s.maxSteer * 1.18) / (1 + Math.abs(vx) * falloff);
     const steerTarget = steerIn * steerLimit;
     // Weighted rack — hairpins stay quick. Speed still adds mass, but the
     // wheel has to reach lock in time to throw a sweeper. Self-align is
@@ -1203,7 +1203,7 @@ export class Vehicle {
         (Math.abs(this.steer) > 0.04 && Math.sign(steerIn) !== Math.sign(this.steer)));
     const snapRack =
       (s.steerSpeed || 96) *
-      lerp(1.78, 0.88, speed01 * speed01) *
+      lerp(1.35, 0.72, speed01 * speed01) *
       BURNOUT_STEER_SNAP *
       (slideSwing
         ? (HANDLING.driftSwingSteerMul != null ? HANDLING.driftSwingSteerMul : DRIFT_SWING_STEER)
@@ -1283,6 +1283,7 @@ export class Vehicle {
     this._gripUsed = clamp(this.slip * 0.72 + this._slidePct * 0.38, 0, 1);
 
     this.yaw += this.yawRate * dt;
+    this._unstickReversedNose();
     const sin2 = Math.sin(this.yaw);
     const cos2 = Math.cos(this.yaw);
     this.velocity.set(sin2 * vx + cos2 * vy, 0, cos2 * vx - sin2 * vy);
@@ -2048,15 +2049,14 @@ export class Vehicle {
     if (res.upsetYaw > 0.01) {
       // Which way the car snaps is the road, not a dice roll: the cambered side
       // of the landing pad and whatever lock you were holding decide it.
+      // A full-size kick used to yaw the nose past backwards, so the wheel
+      // then steered the wrong way down the road.
       const side =
         Math.abs(this.steer) > 0.03
           ? Math.sign(this.steer)
           : bumpSideAt(this.progress, (this._q && this._q.lateral) || 0);
-      this.yawRate = clamp(
-        this.yawRate + side * res.upsetYaw,
-        -MAX_YAW_HANDBRAKE,
-        MAX_YAW_HANDBRAKE
-      );
+      const kick = clamp(side * res.upsetYaw, -0.55, 0.55);
+      this.yawRate = clamp(this.yawRate + kick, -MAX_YAW_RATE, MAX_YAW_RATE);
     }
     // Landing assist — damp residual spin after a planted touchdown (not a
     // glue pad; upset landings still kick).
@@ -2432,9 +2432,19 @@ export class Vehicle {
       if (track) this.spawn(track, Math.max(4, this.progress || 8), 0);
       return;
     }
+    const from = this.progress || 0;
+    const to = this._goodProgress;
+    // Start-grid: rival bumps used to snap progress ~26 m backward on GO.
+    // In the first 90 m, prefer lifting onto paint over rewinding the stage.
+    if (from < 90 && to < from - 2 && from - to < 50 && (this.speed || 0) < 22) {
+      this._noteGlitch("checkpoint-recover-skipped", { from, to });
+      if (this._liftOntoPaintedDeck(track)) return;
+      this.velY = Math.min(0, this.velY || 0);
+      return;
+    }
     this._noteGlitch("checkpoint-recover", {
-      from: this.progress,
-      to: this._goodProgress,
+      from,
+      to,
     });
     this.position.set(this._goodX, this._goodY, this._goodZ);
     this.yaw = this._goodYaw;
@@ -3596,6 +3606,24 @@ export class Vehicle {
    * @param {number} [dt]
    * @returns {number}
    */
+  /**
+   * A landing yaw past ~140° leaves the nose facing backwards while the
+   * car is still travelling down the road. Steer and throttle then feel
+   * reversed. Put the nose back with the direction of travel.
+   */
+  _unstickReversedNose() {
+    if (!this.onGround) return;
+    const spd = this.speed || 0;
+    if (spd < 8) return;
+    const travel = Math.atan2(this.velocity.x, this.velocity.z);
+    let delta = travel - this.yaw;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    if (Math.abs(delta) < 2.35) return;
+    this.yaw = travel;
+    this.yawRate *= 0.15;
+  }
+
   _offRoadRiseCap(dt) {
     const q = this._q;
     if (!q || q.onRoad !== false || q.tunnel) return Infinity;

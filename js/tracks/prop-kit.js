@@ -18,7 +18,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { VISUAL } from "../config.js?v=253";
+import { VISUAL } from "../config.js?v=257";
 
 /**
  * Every prop kind the kit knows about. Missing GLBs are skipped at load time
@@ -321,6 +321,22 @@ const FOREST_HERO_TREE_FILES = Object.freeze({
 function forestHeroLod1File(file) {
   return file.replace(/\.glb$/, "_lod1.glb");
 }
+
+/**
+ * Real Poly Haven cutouts. The packed GLBs keep the leaf photo as JPEG, which
+ * has no alpha, so the gaps between leaves drew as black rectangles.
+ * Island b/c share island a's leaf photo, so they share this mask.
+ */
+const FOREST_LEAF_ALPHA = Object.freeze({
+  forest_tree_a: "assets/props/forest-leaf/island_tree_01_leaves_alpha_1k.png",
+  forest_tree_b: "assets/props/forest-leaf/island_tree_01_leaves_alpha_1k.png",
+  forest_tree_c: "assets/props/forest-leaf/island_tree_01_leaves_alpha_1k.png",
+  forest_tree_d: "assets/props/forest-leaf/fir_sapling_medium_twigs_alpha_1k.png",
+  forest_tree_e: "assets/props/forest-leaf/tree_small_02_leaves_alpha_1k.png",
+  forest_tree_f: "assets/props/forest-leaf/fir_sapling_twigs_alpha_1k.png",
+  forest_tree_g: "assets/props/forest-leaf/pine_sapling_small_twig_alpha_1k.png",
+  forest_tree_h: "assets/props/forest-leaf/searsia_lucida_alpha_1k.png",
+});
 const FOREST_LOD1_OFF =
   typeof location !== "undefined" && /[?&]lod1=0(?:&|$)/.test(location.search || "");
 
@@ -1005,6 +1021,98 @@ export function loadTitleRocks() {
 }
 
 /**
+ * Paint the real leaf mask into the canopy photo. JPEG has no alpha, so
+ * without this the gaps between leaves stay solid black.
+ * @param {THREE.Material|null|undefined} mat
+ * @param {string|undefined} alphaUrl
+ * @returns {Promise<void>}
+ */
+function applyForestLeafCutout(mat, alphaUrl) {
+  const src = mat && mat.map;
+  const image = src && src.image;
+  if (!src || !image || !alphaUrl || typeof document === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    const mask = new Image();
+    mask.onload = () => {
+      const w = image.width || mask.width;
+      const h = image.height || mask.height;
+      if (!w || !h) {
+        resolve();
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        resolve();
+        return;
+      }
+      ctx.drawImage(image, 0, 0, w, h);
+      const color = ctx.getImageData(0, 0, w, h);
+      const scratch = document.createElement("canvas");
+      scratch.width = w;
+      scratch.height = h;
+      const sctx = scratch.getContext("2d");
+      if (!sctx) {
+        resolve();
+        return;
+      }
+      sctx.drawImage(mask, 0, 0, w, h);
+      const alpha = sctx.getImageData(0, 0, w, h).data;
+      const px = color.data;
+      for (let i = 0; i < px.length; i += 4) {
+        px[i + 3] = alpha[i];
+      }
+      ctx.putImageData(color, 0, 0);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = src.flipY;
+      tex.wrapS = src.wrapS;
+      tex.wrapT = src.wrapT;
+      tex.repeat.copy(src.repeat);
+      tex.offset.copy(src.offset);
+      tex.anisotropy = 8;
+      tex.generateMipmaps = true;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      resolve();
+    };
+    mask.onerror = () => resolve();
+    mask.src = alphaUrl;
+  });
+}
+
+/**
+ * Leaf cards were sampling the roughness photo as metal, so the crown read
+ * as grey plastic. Bark stays rough and non-metal. Cutout stays alpha-tested.
+ * @param {THREE.Material|null|undefined} mat
+ * @param {boolean} cutout
+ */
+function pinForestTreeMat(mat, cutout) {
+  if (!mat) return;
+  mat.color.setHex(0xffffff);
+  mat.metalness = 0;
+  mat.metalnessMap = null;
+  mat.envMapIntensity = 0.22;
+  mat.transparent = false;
+  mat.depthWrite = true;
+  if (cutout) {
+    mat.alphaTest = 0.45;
+    mat.side = THREE.DoubleSide;
+    mat.roughness = Math.max(mat.roughness || 0, 0.74);
+  } else {
+    mat.alphaTest = 0;
+    mat.side = THREE.FrontSide;
+    mat.roughness = Math.max(mat.roughness || 0, 0.86);
+  }
+  mat.needsUpdate = true;
+}
+
+/**
  * Load Poly Haven CC0 hero trees (1k PBR, ~30k tris). Close/medium Forest
  * canopy. The Sketchfab pack stays as far-LOD cards only.
  *
@@ -1017,23 +1125,9 @@ async function loadForestHeroTrees(loader, assetV) {
   await Promise.all(
     kinds.map(async (kind) => {
         const file = FOREST_HERO_TREE_FILES[kind];
-        // LOD1 is ~1 MB. The full hero is 5–8 MB and was most of Forest load.
-        const lodFile = forestHeroLod1File(file);
-        const url = `assets/props/${FOREST_LOD1_OFF ? file : lodFile}?v=${assetV}`;
+        const url = `assets/props/${file}?v=${assetV}`;
         try {
-          let gltf = null;
-          if (!FOREST_LOD1_OFF) {
-            try {
-              const res = await fetch(url, { mode: "cors", credentials: "same-origin" });
-              if (res && res.ok) {
-                const buf = await res.arrayBuffer();
-                gltf = await new Promise((resolve, reject) => loader.parse(buf, "", resolve, reject));
-              }
-            } catch {
-              gltf = null;
-            }
-          }
-          if (!gltf) gltf = await loader.loadAsync(`assets/props/${file}?v=${assetV}`);
+          const gltf = await loader.loadAsync(url);
         const root = gltf.scene || gltf.scenes[0];
         if (!root) {
           console.warn(`[prop-kit] empty hero tree: ${url}`);
@@ -1045,12 +1139,16 @@ async function loadForestHeroTrees(loader, assetV) {
           console.warn(`[prop-kit] hero tree split failed: ${kind}`);
           return;
         }
+        await applyForestLeafCutout(parts.canopyMat, FOREST_LEAF_ALPHA[kind]);
+        pinForestTreeMat(parts.canopyMat, true);
+        pinForestTreeMat(parts.trunkMat, false);
+        pinForestTreeMat(parts.branchMat, false);
         FOREST_PARTS[kind] = parts;
         CACHE[kind] = parts.canopy;
         MAT_CACHE[kind] = parts.canopyMat;
         MAT_CACHE[`${kind}_trunk`] = parts.trunkMat;
-        // LOD1 is the mid-distance copy. The full mesh is already race-ready.
-        // Primary mesh is already LOD1. Don't fetch it again.
+        if (parts.branchMat) MAT_CACHE[`${kind}_branch`] = parts.branchMat;
+        if (!FOREST_LOD1_OFF) await attachHeroTreeLod1(loader, kind, parts, assetV);
       } catch (err) {
         console.warn(`[prop-kit] hero tree failed: ${url}`, err);
       }
@@ -1090,7 +1188,8 @@ async function attachHeroTreeLod1(loader, kind, parts, assetV) {
     root.updateMatrixWorld(true);
     const lod = buildHeroTreeParts(kind, root, 11.5, parts.fit);
     if (!lod) return;
-    for (const geo of [lod.trunk, lod.canopy]) {
+    for (const geo of [lod.trunk, lod.canopy, lod.branch]) {
+      if (!geo) continue;
       // weldPropGeometry hangs a coarse farLod on big meshes — unused here.
       if (geo.userData.farLod) {
         geo.userData.farLod.dispose?.();
@@ -1102,11 +1201,14 @@ async function attachHeroTreeLod1(loader, kind, parts, assetV) {
     }
     lod.trunkMat?.dispose?.();
     lod.canopyMat?.dispose?.();
+    lod.branchMat?.dispose?.();
     parts.trunkLod1 = lod.trunk;
     parts.canopyLod1 = lod.canopy;
+    parts.branchLod1 = lod.branch || null;
   } catch {
     parts.trunkLod1 = null;
     parts.canopyLod1 = null;
+    parts.branchLod1 = null;
   }
 }
 
@@ -1120,7 +1222,7 @@ function heroTreeMatRole(meshName, mat) {
   const n = `${meshName || ""} ${mat && mat.name ? mat.name : ""}`.toLowerCase();
   if (/leaf|leaves|twig|needle|foliage|canopy/.test(n)) return "canopy";
   if (/trunk|bark/.test(n)) return "trunk";
-  if (/branch/.test(n)) return "trunk";
+  if (/branch/.test(n)) return "branch";
   if (mat && (mat.transparent || mat.alphaTest > 0 || mat.alphaMap)) return "canopy";
   return "trunk";
 }
@@ -1190,15 +1292,23 @@ function buildHeroTreeParts(kind, root, targetH, fit) {
   /** @type {THREE.Mesh[]} */
   const trunkMeshes = [];
   /** @type {THREE.Mesh[]} */
+  const branchMeshes = [];
+  /** @type {THREE.Mesh[]} */
   const canopyMeshes = [];
   root.traverse((o) => {
     if (!o.isMesh) return;
     const pieces = splitHeroTreeMesh(o);
     for (let i = 0; i < pieces.length; i++) {
-      if (pieces[i].role === "canopy") canopyMeshes.push(pieces[i].mesh);
+      const role = pieces[i].role;
+      if (role === "canopy") canopyMeshes.push(pieces[i].mesh);
+      else if (role === "branch") branchMeshes.push(pieces[i].mesh);
       else trunkMeshes.push(pieces[i].mesh);
     }
   });
+  if (!trunkMeshes.length && branchMeshes.length) {
+    trunkMeshes.push(...branchMeshes);
+    branchMeshes.length = 0;
+  }
   if (!canopyMeshes.length && trunkMeshes.length) {
     canopyMeshes.push(...trunkMeshes);
   }
@@ -1206,7 +1316,7 @@ function buildHeroTreeParts(kind, root, targetH, fit) {
     trunkMeshes.push(canopyMeshes[0]);
   }
   if (!trunkMeshes.length || !canopyMeshes.length) return null;
-  const parts = buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit);
+  const parts = buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit, branchMeshes);
   if (!parts) return null;
   if (parts.canopyMat) {
     parts.canopyMat.alphaTest = 0.38;
@@ -1406,7 +1516,7 @@ function branchMatKey(key) {
  * @param {THREE.Mesh[]} canopyMeshes
  * @param {number} targetH
  */
-function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit) {
+function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit, branchMeshes) {
   const trunk = mergeMeshList(trunkMeshes, kind, "bark");
   const canopy = mergeMeshList(canopyMeshes, kind, "canopy");
   if (!trunk || !canopy) return null;
@@ -1449,6 +1559,16 @@ function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit) {
   }
   trunk.translate(-cx, -floor, -cz);
   canopy.translate(-cx, -floor, -cz);
+  let branch = null;
+  if (branchMeshes && branchMeshes.length) {
+    branch = mergeMeshList(branchMeshes, kind, "bark");
+    if (branch) {
+      branch.scale(s, s, s);
+      branch.translate(-cx, -floor, -cz);
+      branch.computeBoundingBox();
+      branch.computeBoundingSphere();
+    }
+  }
   trunk.computeBoundingBox();
   canopy.computeBoundingBox();
   trunk.computeBoundingSphere();
@@ -1462,7 +1582,13 @@ function buildForestTreeParts(kind, trunkMeshes, canopyMeshes, targetH, fit) {
     alphaTest: 0.38,
     doubleSide: true,
   });
-  return { trunk, canopy, trunkMat, canopyMat, fit: { s, cx, floor, cz } };
+  const branchMat = branch
+    ? adoptPackMaterial(branchMeshes[0].material, `${kind}_branch`, {
+        alphaTest: 0,
+        doubleSide: false,
+      })
+    : null;
+  return { trunk, canopy, trunkMat, canopyMat, branch, branchMat, fit: { s, cx, floor, cz } };
 }
 
 /**

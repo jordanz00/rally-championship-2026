@@ -17,7 +17,7 @@
  * (speed × grade × technique × lateral × surface), proven by qa-jump-physics-fun.
  */
 
-import { JUMP } from "../config.js?v=253";
+import { JUMP } from "../config.js?v=257";
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -161,17 +161,17 @@ export class JumpModel {
     const rollMax = (JUMP.airRollMax != null ? JUMP.airRollMax : 0.28) * (1 + side * 1.7);
     this.roll = clamp(
       (Number(body.roll) || 0) * 0.78 +
-        lat * (0.032 + spd * 0.00028) +
-        sideSign * side * (0.42 + Math.min(0.38, spd * 0.009)),
+        lat * (0.02 + spd * 0.00016) +
+        sideSign * side * (0.1 + Math.min(0.1, spd * 0.002)),
       -rollMax,
       rollMax
     );
-    const rateCap = 1.4 + side * 2.4;
+    const rateCap = 1.1 + side * 0.6;
     this.rollRate = clamp(
       (Number(body.rollRate) || 0) * 0.55 +
-        lat * spd * 0.01 * jumpLip +
-        grain * 0.4 * jumpLip +
-        sideSign * side * (1.7 + spd * 0.03),
+        lat * spd * 0.004 * jumpLip +
+        grain * 0.2 * jumpLip +
+        sideSign * side * (0.35 + spd * 0.006),
       -rateCap,
       rateCap
     );
@@ -309,7 +309,7 @@ export class JumpModel {
     const scrub = lerp(scrubBase, scrubBase * 0.9, clamp(landMod - 1, 0, 0.4));
     return {
       scrub,
-      upsetYaw: upset * JUMP.landUpsetYaw + this.roll * 0.95,
+      upsetYaw: upset * JUMP.landUpsetYaw * 0.45 + this.roll * 0.22,
       upset,
       bounce: Math.min(3.2 * dropMod, bounce),
       axleBias: this._landAxleBias,

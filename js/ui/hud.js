@@ -101,7 +101,18 @@ export class Hud {
       this.speed.textContent = speedTxt;
     }
     this.speed.dataset.fast = "0";
-    if (this.rush) this.rush.hidden = true;
+    if (this.rush && this.rushFill) {
+      const meter = Math.max(0, Math.min(1, s.rush != null ? s.rush : 0));
+      const heat = s.rushHeat != null ? s.rushHeat : 0;
+      const fire = s.rushFire != null ? s.rushFire : 0;
+      this.rush.hidden = false;
+      this.rushFill.style.transform = `scaleX(${meter.toFixed(3)})`;
+      this.rush.dataset.hot = heat > 0.35 ? "1" : "0";
+      this.rush.dataset.fire = fire > 0.45 ? "1" : "0";
+      if (this.rushLabel) {
+        this.rushLabel.textContent = fire > 0.45 ? "ON FIRE" : "RUSH";
+      }
+    }
     const gearTxt = s.gear === 0 ? "N" : String(s.gear);
     if (this._gearTxt !== gearTxt) {
       this._gearTxt = gearTxt;
@@ -685,50 +696,29 @@ const FADE_IN_MS = 420;
 const FADE_HOLD_MS = 48;
 
 /**
- * Swap menus through black. `instant: true` skips the curtain (pause resume,
- * reduced-motion). Default path fades out → swap → fade in.
+ * Swap menus with no black frame. The new screen's panel pops in with a short
+ * opacity-only lift (CSS .screen-enter), so a click never dips to black or waits.
+ * Reduced-motion and `instant` skip the lift too.
  * @param {string} id
- * @param {{ instant?: boolean, outMs?: number, inMs?: number, holdMs?: number }} [opts]
+ * @param {{ instant?: boolean }} [opts] other fields (outMs/inMs/holdMs) are ignored
  * @returns {Promise<void>}
  */
 export function showScreen(id, opts = {}) {
   const current = document.querySelector(".screen.active");
   if (current && current.id === id) return Promise.resolve();
-  const instant = opts.instant === true || prefersReducedMotion();
-  if (instant) {
-    const curtain = curtainEl();
-    if (curtain) curtain.classList.remove("is-on");
-    applyScreen(id);
-    return Promise.resolve();
-  }
-  const outMs = opts.outMs != null ? opts.outMs : FADE_OUT_MS;
-  const inMs = opts.inMs != null ? opts.inMs : FADE_IN_MS;
-  const holdMs = opts.holdMs != null ? opts.holdMs : FADE_HOLD_MS;
-  curtainQueue = curtainQueue.then(() => fadeThroughBlack(id, outMs, inMs, holdMs));
-  return curtainQueue;
-}
-
-/**
- * Fade to black, swap the active screen, then fade in.
- * @param {string} id
- * @param {number} outMs
- * @param {number} inMs
- * @param {number} holdMs
- */
-async function fadeThroughBlack(id, outMs, inMs, holdMs) {
-  const el = curtainEl();
-  if (!el) {
-    applyScreen(id);
-    return;
-  }
-  el.classList.add("is-on");
-  // Retrigger CSS transition if the curtain was already mid-fade.
-  void el.offsetWidth;
-  await waitMs(outMs);
+  const curtain = curtainEl();
+  if (curtain) curtain.classList.remove("is-on");
   applyScreen(id);
-  if (holdMs > 0) await waitMs(holdMs);
-  el.classList.remove("is-on");
-  await waitMs(inMs);
+  if (opts.instant !== true && !prefersReducedMotion()) {
+    const next = document.getElementById(id);
+    if (next) {
+      next.classList.remove("screen-enter");
+      void next.offsetWidth;
+      next.classList.add("screen-enter");
+      setTimeout(() => next.classList.remove("screen-enter"), 200);
+    }
+  }
+  return Promise.resolve();
 }
 
 const loadUi = {

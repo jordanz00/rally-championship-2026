@@ -112,9 +112,9 @@ check(
 );
 
 check(
-  "phone starts on low quality tier",
-  /if \(isPhonePlay\(\)\) \{/.test(game) && /return "low"/.test(game) && /return "min"/.test(game),
-  "phones low; weak Android must open on min"
+  "phone starts on min quality tier",
+  /if \(isPhonePlay\(\)\) \{/.test(game) && /return "min"/.test(game) && /Always min on handsets/.test(game),
+  "iPhone and Android open on min so GO stays alive"
 );
 
 check(
@@ -124,17 +124,18 @@ check(
 );
 
 check(
-  "Android fill-rate caps armed at boot",
+  "phone fill-rate caps armed at boot",
   /GFX\.maxPixels = Math\.min\(GFX\.maxPixels/.test(game) &&
-    /android \? 720000/.test(game) &&
-    /GFX\.preferLock30 = true/.test(game),
-  "Android must cap pixels and prefer lock-30 before first setSize"
+    /640000/.test(game) &&
+    /GFX\.preferLock30 = true/.test(game) &&
+    /Shared phone budget/.test(game),
+  "phones must cap pixels and prefer lock-30 before first setSize"
 );
 
 check(
   "phones never stream 2k ground maps",
   /export function wantHiMaps/.test(read("js/tracks/pbr-stream.js")) &&
-    /Android\|iPhone\|iPod\|Mobile/.test(read("js/tracks/pbr-stream.js")),
+    /Android\|iPhone\|iPod\|iPad\|Mobile/.test(read("js/tracks/pbr-stream.js")),
   "2k mipmap uploads hitch Adreno/Mali mid-race"
 );
 
@@ -193,6 +194,24 @@ check(
   "iOS audio unlock path exists",
   /audio\.unlock\(\)/.test(game) && /webkitAudioContext|AudioContext/.test(read("js/audio/engine.js")),
   "Safari needs gesture unlock before engine/nav VO"
+);
+
+check(
+  "multi-touch pedals ignore lostpointercapture",
+  /Do NOT clear on lostpointercapture/.test(touch) && /_holdPtr/.test(touch),
+  "Android used to kill GAS when the other thumb steered"
+);
+
+check(
+  "Android touch event fallback on pedals",
+  /touchstart/.test(touch) && /touchend/.test(touch) && /changedTouches/.test(touch),
+  "WebViews without Pointer Events still drive"
+);
+
+check(
+  "visualViewport chrome inset for pedals",
+  /--touch-chrome-inset/.test(touch) && /--touch-chrome-inset/.test(css),
+  "Android URL bar must not cover GAS/BRAKE"
 );
 
 if (fail) {

@@ -10,7 +10,7 @@
  * Lightweight read-only: ?physdebug=1 / ?debug=1 (no dials)
  */
 
-import { ARCADE_ASSIST, HANDLING } from "../config.js?v=253";
+import { ARCADE_ASSIST, HANDLING } from "../config.js?v=257";
 
 /** @typedef {{ key: string, label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void }} LabDial */
 
@@ -37,10 +37,10 @@ function wantsPhysLab() {
 }
 
 function wantsPhysDebug() {
+  // Retail: lab only via ?physlab=1 / F8 / PHYS LAB course — not ?debug=1.
   return (
     wantsPhysLab() ||
     searchFlag(/[?&]physdebug=1(?:&|$)/) ||
-    searchFlag(/[?&]debug=1(?:&|$)/) ||
     storageFlag("rally-physdebug")
   );
 }

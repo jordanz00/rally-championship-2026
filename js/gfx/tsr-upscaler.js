@@ -36,8 +36,8 @@ import * as THREE from "../../vendor/three.module.js";
 export const TSR_MODES = Object.freeze({
   off: 0,
   dlaa: 1.0,
-  /** Shade less, reconstruct more — holds 60 on Retina without mush. */
-  quality: 0.86,
+  /** Native shade. 0.86 reconstruct read as a soft picture with history smear. */
+  quality: 1.0,
   balanced: 0.78,
   performance: 0.64,
 });
@@ -56,10 +56,10 @@ export const TSR_DEFAULT_MODE = "quality";
  */
 export const TSR_HISTORY_SAMPLES = Object.freeze({
   off: 0,
-  dlaa: 8,
-  quality: 16,
-  balanced: 12,
-  performance: 8,
+  dlaa: 3,
+  quality: 4,
+  balanced: 3,
+  performance: 2,
 });
 
 /** Epic r.TSR.Velocity.WeightClampingSampleCount — rally wants sharp cars. */

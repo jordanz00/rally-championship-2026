@@ -127,12 +127,12 @@ check(
 );
 
 check(
-  "Android fill-rate caps tightened",
-  /android \? 560000/.test(game) &&
-    /android \? 0\.65/.test(game) &&
-    /android \? 256/.test(game) &&
-    /GFX\.preferLock30 = true/.test(game),
-  "mid-range Android must not keep cinema pixel / shadow budgets"
+  "shared phone fill-rate caps",
+  /Shared phone budget/.test(game) &&
+    /GFX\.maxPixels = Math\.min\(GFX\.maxPixels \|\| 1800000, 640000\)/.test(game) &&
+    /GFX\.preferLock30 = true/.test(game) &&
+    /GFX\.shadowMap = Math\.min\(GFX\.shadowMap \|\| 1536, 256\)/.test(game),
+  "iPhone and Android share the same phone pixel / shadow budget"
 );
 check(
   "phones skip full-stage attract on title",
@@ -202,9 +202,10 @@ check(
 );
 check("boot cache-bust main ≥1107", mainV >= 1107, `main.js?v=${mainV}`);
 check(
-  "Android fill caps tight",
-  /android \? 560000/.test(game) && /android \? 0\.65/.test(game),
-  "Adreno fill-rate budget"
+  "phone fill caps live",
+  /GFX\.maxPixelRatio = Math\.min\(GFX\.maxPixelRatio \|\| 1\.15, 0\.7\)/.test(game) &&
+    /_perfDprScale = 0\.62/.test(game),
+  "equal phone DPR path for Android + iOS"
 );
 check("boot cache-bust css", cssV >= 71, `index loads game.css?v=${cssV} (>=71)`);
 check("gfx policy cache-bust", policyV >= 982 && mobileV >= 982 && sdkV >= 989, `policy ${policyV} / mobile ${mobileV} / sdk ${sdkV}`);

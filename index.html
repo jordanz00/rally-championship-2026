@@ -30,7 +30,7 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=82" />
+    <link rel="stylesheet" href="css/game.css?v=83" />
     <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
@@ -241,6 +241,10 @@
     </script>
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+      <filter id="cb-rg" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0  -0.4375 1.4375 0 0 0  0.2625 -0.5625 1.3 0 0  0 0 0 1 0"/></filter>
+      <filter id="cb-by" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1.05 -0.3825 0.3325 0 0  0 1.2345 -0.2345 0 0  0 0 1 0 0  0 0 0 1 0"/></filter>
+    </svg>
     <noscript>Rally Championship 2026 needs JavaScript. Enable it, then reload. Use Chrome or Safari — not an in-app browser.</noscript>
     <div id="crt" class="is-title">
       <div id="game-view"></div>
@@ -445,10 +449,11 @@
             <li><kbd>T</kbd> <span>Auto / Manual</span></li>
             <li><kbd>C</kbd> <span>Camera POV · Medium · Far</span></li>
             <li><kbd>R</kbd> <span>Reset</span> · <kbd>P</kbd> <span>Pause</span></li>
+            <li><span class="ui-ctrl-label">RUSH</span> <span>Fill from slides, drafts, clean passes — throttle dumps it; walls and off-road drain it</span></li>
             <li><span class="ui-ctrl-label">Gamepad</span> <span>Stick + triggers</span></li>
             <li><span class="ui-ctrl-label">Phone</span> <span>Gas / brake / HB · steer pad or tilt</span></li>
           </ul>
-          <p class="hint ui-tip">Ease the wheel on opposite lock. Trail-brake into corners. Lift before crests, then nose-down in the air.</p>
+          <p class="hint ui-tip">Ease the wheel on opposite lock. Trail-brake into corners. Lift before crests. Off the ribbon you slow hard — get back on the paint.</p>
           <div class="ui-actions">
             <button type="button" data-menu="back" class="ghost ui-ghost">← BACK</button>
           </div>
@@ -470,15 +475,15 @@
             <strong id="hud-course">DESERT</strong>
           </div>
         </div>
-        <canvas id="minimap" width="140" height="100"></canvas>
+        <canvas id="minimap" role="img" aria-label="Track minimap" width="140" height="100"></canvas>
         <div id="hud-flash"></div>
-        <div id="hud-rush" hidden>
+        <div id="hud-rush">
           <span class="label">RUSH</span>
           <div class="rush-bar"><div id="hud-rush-fill"></div></div>
         </div>
         <div id="hud-pace" hidden></div>
         <div id="cluster" hidden>
-          <canvas id="gauge-mph" width="280" height="280"></canvas>
+          <canvas id="gauge-mph" role="img" aria-label="Speedometer" width="280" height="280"></canvas>
           <div class="cluster-hub">
             <span class="cluster-gear" id="cluster-gear">1</span>
             <small id="cluster-trans">AT</small>
@@ -493,7 +498,7 @@
             </div>
             <span class="cluster-slide" id="cluster-slide" hidden>SLIDE</span>
           </div>
-          <canvas id="gauge-rpm" width="280" height="280"></canvas>
+          <canvas id="gauge-rpm" role="img" aria-label="Tachometer" width="280" height="280"></canvas>
         </div>
         <div class="hud-distance" id="hud-distance" aria-live="polite" hidden>
           <span class="label">DIST</span>
@@ -541,7 +546,7 @@
         </div>
       </div>
 
-      <section id="screen-paused" class="screen screen-ui">
+      <section id="screen-paused" class="screen screen-ui" role="dialog" aria-modal="true" aria-label="Paused">
         <div class="ui-panel ui-panel-arcade ui-panel-front">
           <div class="ui-brand">
             <span class="ui-live">HOLD</span>
@@ -583,7 +588,52 @@
               <span>LOOK <strong id="opt-appear-val">ON</strong></span>
               <input id="opt-appear" type="checkbox" checked aria-label="3D appearance residual" />
             </label>
+            <details class="play-opts" id="play-opts">
+              <summary>PLAY OPTIONS · help · camera · HUD</summary>
+            <label class="vol-row">
+              <span>DRIVING HELP</span>
+              <select id="opt-help" aria-label="Driving help level">
+                <option value="easy">Easy · more grip, slower rivals</option>
+                <option value="standard" selected>Standard</option>
+                <option value="pro">Pro · less help</option>
+              </select>
+            </label>
+            <label class="vol-row vol-row-check" for="opt-calm">
+              <span>CALM CAMERA <strong id="opt-calm-val">OFF</strong></span>
+              <input id="opt-calm" type="checkbox" aria-label="Calm camera, no shake" />
+            </label>
+            <label class="vol-row vol-row-check" for="opt-bighud">
+              <span>BIG HUD <strong id="opt-bighud-val">OFF</strong></span>
+              <input id="opt-bighud" type="checkbox" aria-label="Larger race HUD" />
+            </label>
+            <label class="vol-row vol-row-check" for="opt-contrast">
+              <span>HIGH CONTRAST <strong id="opt-contrast-val">OFF</strong></span>
+              <input id="opt-contrast" type="checkbox" aria-label="High contrast HUD" />
+            </label>
+            <label class="vol-row">
+              <span>COLOUR VISION</span>
+              <select id="opt-cb" aria-label="Colour-blind palette">
+                <option value="off" selected>Standard</option>
+                <option value="rg">Red-green safe</option>
+                <option value="by">Blue-yellow safe</option>
+              </select>
+            </label>
+            <label class="vol-row vol-row-check" for="opt-subs">
+              <span>NAVIGATOR TEXT <strong id="opt-subs-val">OFF</strong></span>
+              <input id="opt-subs" type="checkbox" aria-label="Show co-driver calls as large text" />
+            </label>
+            <label class="vol-row vol-row-check" for="opt-autogas">
+              <span>AUTO GAS <strong id="opt-autogas-val">OFF</strong></span>
+              <input id="opt-autogas" type="checkbox" aria-label="Throttle held for you. Brake still works." />
+            </label>
+            <label class="vol-row vol-row-check" for="opt-smart">
+              <span>SMART SPEED <strong id="opt-smart-val">OFF</strong></span>
+              <input id="opt-smart" type="checkbox" aria-label="Lifts the gas and brakes lightly in hard corners" />
+            </label>
+            <div class="key-grid" id="key-grid" role="group" aria-label="Key bindings"></div>
+            </details>
           </div>
+          <p id="sr-live" class="sr-only" role="status" aria-live="polite"></p>
           <div class="ui-cards ui-cards-compact" role="list">
             <button type="button" class="ui-card ui-card-hero" data-menu="resume">
               <span class="ui-card-title">RESUME</span>
@@ -601,7 +651,7 @@
         </div>
       </section>
 
-      <section id="screen-result" class="screen screen-ui screen-result-broadcast">
+      <section id="screen-result" class="screen screen-ui screen-result-broadcast" role="dialog" aria-label="Stage result">
         <div id="broadcast-fade" class="broadcast-fade" aria-hidden="true"></div>
         <div id="broadcast-bug" class="broadcast-bug" hidden>
           <span class="broadcast-live">REPLAY</span>
@@ -655,6 +705,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1201" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1221" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

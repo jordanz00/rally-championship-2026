@@ -165,11 +165,11 @@ export function compileSegment(seg, ctx) {
   ) {
     const defaults = {
       fast_sweeper: { radius: 120, angle: 70, sweep: true },
-      medium_corner: { radius: 48, angle: 58 },
-      tight_corner: { radius: 28, angle: 95 },
-      hairpin: { radius: 18, angle: 155 },
-      banked_corner: { radius: 52, angle: 72, bank: 0.12 },
-      off_camber_corner: { radius: 40, angle: 64, bank: -0.08 },
+      medium_corner: { radius: 56, angle: 54 },
+      tight_corner: { radius: 52, angle: 74 },
+      hairpin: { radius: 50, angle: 108 },
+      banked_corner: { radius: 64, angle: 64, bank: 0.12 },
+      off_camber_corner: { radius: 52, angle: 58, bank: -0.08 },
     };
     const d = defaults[kind] || { radius: 50, angle: 60 };
     const radius = seg.radius ?? d.radius;
@@ -324,12 +324,13 @@ export function compileSegment(seg, ctx) {
 /** Wider lane + opened corners — easy power-slide championship ribbon. */
 /** Slide ribbon: narrow enough to hang attitude, wide enough to catch. */
 const PLAY_WIDTH = 1.48;
-const PLAY_TIGHT_RADIUS = 1.52;
-const PLAY_MEDIUM_RADIUS = 1.28;
+const PLAY_TIGHT_RADIUS = 1.68;
+const PLAY_MEDIUM_RADIUS = 1.34;
 const PLAY_SWEEP_RADIUS = 1.22;
-const PLAY_SPEED_TIGHT = 1.28;
+const PLAY_SPEED_TIGHT = 1.32;
 const PLAY_SPEED_SWEEP = 1.2;
-const PLAY_HAIRPIN_ANGLE = 0.9;
+/** Open hairpin hooks — was 0.9 / floor 112 and still felt like a wall. */
+const PLAY_HAIRPIN_ANGLE = 0.82;
 const PLAY_WIDTH_MIN = 7.5;
 const PLAY_WIDTH_MAX = 40;
 const PLAY_TUNNEL_EXTRA = 2.8;
@@ -373,21 +374,21 @@ export function easePlayRadius(r, speedLane = false) {
 export function easePlayAngle(angle, radius, speedLane = false) {
   if (!Number.isFinite(angle)) return angle;
   const a = Math.abs(angle);
-  // Hairpins stay a hook, but open enough to slide through — not a park.
-  if (a >= 130) {
-    const eased = Math.max(112, a * PLAY_HAIRPIN_ANGLE);
+  // Hairpins stay a hook, but open enough to hold at championship pace.
+  if (a >= 100) {
+    const eased = Math.max(92, a * PLAY_HAIRPIN_ANGLE);
     return angle < 0 ? -eased : eased;
   }
   if (speedLane && radius < 70 && a > 52) {
+    const eased = Math.max(40, a * 0.76);
+    return angle < 0 ? -eased : eased;
+  }
+  if (radius < 60 && a > 55) {
     const eased = Math.max(42, a * 0.8);
     return angle < 0 ? -eased : eased;
   }
-  if (radius < 55 && a > 58) {
-    const eased = Math.max(44, a * 0.86);
-    return angle < 0 ? -eased : eased;
-  }
-  if (a > 70) {
-    const eased = Math.max(52, a * 0.92);
+  if (a > 68) {
+    const eased = Math.max(48, a * 0.88);
     return angle < 0 ? -eased : eased;
   }
   return angle;

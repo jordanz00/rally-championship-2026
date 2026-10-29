@@ -1,8 +1,9 @@
 /**
- * Burnout-rally drive overlay — easy, cool, fun.
+ * Burnout-rally drive overlay — fun accel, controllable dirt.
  *
  * WHO THIS IS FOR: vehicle.js (player + AI share HANDLING).
- * WHAT IT DOES: Steer bites, slide starts on hard turn / gas+steer, hang holds, exit pays.
+ * WHAT IT DOES: Launch/exit punch stays arcade; slide initiation and rack
+ *   snap are dialed for road-holding (player feedback 2026-10-29).
  * HOW IT CONNECTS: docs/SEGA_RALLY_DRIVING_MODEL.md · BURNOUT_RALLY_DIRECTION.md
  */
 
@@ -11,7 +12,7 @@
  * @param {object} [A] ARCADE_ASSIST
  */
 export function applyBurnoutDriveTuning(H, A) {
-  if (!H || H._burnoutDriveV8) return;
+  if (!H || H._burnoutDriveV9) return;
   H._burnoutDrive = true;
   H._burnoutDriveV2 = true;
   H._burnoutDriveV3 = true;
@@ -20,57 +21,58 @@ export function applyBurnoutDriveTuning(H, A) {
   H._burnoutDriveV6 = true;
   H._burnoutDriveV7 = true;
   H._burnoutDriveV8 = true;
+  H._burnoutDriveV9 = true;
   H.easySlide = true;
-  // Pendulum L↔R: keep attitude through center; catch only when letting off.
-  if (H.driftSwingSteerMul == null || H.driftSwingSteerMul < 1.72) H.driftSwingSteerMul = 1.78;
-  if (H.driftSwingVyKeep == null || H.driftSwingVyKeep < 0.86) H.driftSwingVyKeep = 0.9;
-  // Hard turn alone lights the rear — tournament initiation, not handbrake-only.
-  if (H.easySlideHardSteer == null || H.easySlideHardSteer > 0.1) H.easySlideHardSteer = 0.095;
-  if (H.easySlideHardSteerLoose == null || H.easySlideHardSteerLoose > 0.07) {
-    H.easySlideHardSteerLoose = 0.062;
-  }
-  if (H.easySlideHardSpeed == null || H.easySlideHardSpeed > 8.5) H.easySlideHardSpeed = 7.2;
-  // AM3 lesson: tarmac still needs more steer; mud slides first — but both drift.
-  if (H.easySlideTarmacSteer == null || H.easySlideTarmacSteer > 0.032) H.easySlideTarmacSteer = 0.028;
-  if (H.easySlideTarmacThrottle == null || H.easySlideTarmacThrottle > 0.045) {
-    H.easySlideTarmacThrottle = 0.028;
-  }
-  if (H.easySlideTarmacSpeed == null || H.easySlideTarmacSpeed > 4.2) H.easySlideTarmacSpeed = 3.6;
-  // Launch punch shared by player + pack — keep arcade snap without
-  // letting a full-throttle hero walk away from every rival at GO.
-  if (H.launchBoost < 1.92) H.launchBoost = 1.92;
+  // Pendulum L↔R — keep attitude, but do not whip through center.
+  H.driftSwingSteerMul = 1.28;
+  H.driftSwingVyKeep = 0.72;
+  // Hard-steer slide needs real commit — was lighting at parking-lot speeds.
+  H.easySlideHardSteer = 0.42;
+  H.easySlideHardSteerLoose = 0.28;
+  H.easySlideHardSpeed = 16;
+  H.easySlideTarmacSteer = 0.22;
+  H.easySlideTarmacThrottle = 0.35;
+  H.easySlideTarmacSpeed = 14;
+  // Launch punch — keep the fun GO snap.
+  if (H.launchBoost < 1.85) H.launchBoost = 1.9;
   if (H.launchBoost > 2.05) H.launchBoost = 1.95;
   if (H.launchFadeKmh < 118) H.launchFadeKmh = 118;
   if (H.launchFadeKmh > 140) H.launchFadeKmh = 128;
-  if (H.slideExitBoost < 2.45) H.slideExitBoost = 2.45;
-  if (H.slideExitBoost > 2.85) H.slideExitBoost = 2.55;
+  // Exit boost still pays a clean catch — slightly softer so runoff stays rare.
+  H.slideExitBoost = 2.05;
   if (H.slideExitFadeKmh < 210) H.slideExitFadeKmh = 210;
-  if (H.slideDriveKeep < 1.72) H.slideDriveKeep = 1.72;
-  if (H.slideDriveKeep > 2.05) H.slideDriveKeep = 1.85;
-  if (H.slideSpeedConvert < 1.55) H.slideSpeedConvert = 1.55;
+  H.slideDriveKeep = 1.35;
+  H.slideSpeedConvert = 1.28;
   if (H.slideAeroCut == null || H.slideAeroCut > 0.12) H.slideAeroCut = 0.12;
-  if (H.powerSlidePitch < 4.85) H.powerSlidePitch = 4.85;
-  if (H.maxSlideVel < 30) H.maxSlideVel = 30;
-  if (H.driftBleedMul == null || H.driftBleedMul > 0.0065) H.driftBleedMul = 0.0065;
-  if (H.outrunHang == null || H.outrunHang < 0.76) H.outrunHang = 0.76;
-  if (H.counterAuthority < 4.25) H.counterAuthority = 4.25;
-  // Tighter turn-in — wide understeer made corners undriftable.
-  if (H.speedUndersteer == null || H.speedUndersteer > 0.00078) H.speedUndersteer = 0.00072;
-  if (H.yawAssistBoost == null) H.yawAssistBoost = 1.22;
+  // Power + steer pitch-in — was 4.85 and threw the car sideways on every corner.
+  H.powerSlidePitch = 1.85;
+  H.maxSlideVel = 16;
+  H.maxSlideVelHandbrake = 22;
+  // Bleed lateral slip faster so the car settles on the ribbon.
+  H.driftBleedMul = 0.014;
+  H.outrunHang = 0.48;
+  H.counterAuthority = 2.85;
+  // Mild bicycle push at speed — was near-zero and felt like a hovercraft.
+  H.speedUndersteer = 0.0024;
+  H.yawAssistBoost = 0.92;
+  H.handbrakeYawKick = 2.15;
+  H.handbrakePowerMul = 1.85;
+  H.throttleSlide = 1.65;
   if (A) {
-    if (A.yawAssist < 0.72) A.yawAssist = 0.72;
-    if (A.recoveryAssist < 1.62) A.recoveryAssist = 1.62;
-    if (A.tireSlideSoft < 4.35) A.tireSlideSoft = 4.35;
-    if (A.driftStability != null && A.driftStability < 0.48) A.driftStability = 0.48;
-    if (A.recoverableSlide != null && A.recoverableSlide < 15) A.recoverableSlide = 15;
+    // Do not force hyper turn-in; play-options Easy may still raise these.
+    if (A.yawAssist == null || A.yawAssist > 0.55) A.yawAssist = 0.4;
+    if (A.recoveryAssist == null || A.recoveryAssist < 1.35) A.recoveryAssist = 1.45;
+    if (A.tireSlideSoft == null || A.tireSlideSoft > 3.6) A.tireSlideSoft = 3.2;
+    if (A.driftStability == null || A.driftStability < 0.82) A.driftStability = 0.88;
+    if (A.recoverableSlide == null || A.recoverableSlide < 12) A.recoverableSlide = 12;
   }
 }
 
-/** Quick rack into lock — hairpins must rotate before the apex. */
-export const BURNOUT_STEER_SNAP = 1.92;
+/** Rack into lock — was 1.92 (hairpin whip); slower for road control. */
+export const BURNOUT_STEER_SNAP = 1.12;
 
-/** Extra rack speed when swinging lock→lock mid-slide (centerline must not sticky). */
-export const DRIFT_SWING_STEER = 1.85;
+/** Extra rack when swinging lock→lock mid-slide. */
+export const DRIFT_SWING_STEER = 1.22;
 
 /**
  * @param {number} heat 0–1

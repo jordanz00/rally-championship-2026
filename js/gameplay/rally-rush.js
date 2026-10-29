@@ -8,7 +8,8 @@
  */
 
 const EARN_SLIDE = 0.78;
-const EARN_PACE = 0.22;
+/** Pace earn must lose to SPEND on a clean straight — Rush is a tank, not nitro. */
+const EARN_PACE = 0.07;
 const EARN_AIR = 0.32;
 const EARN_LAND = 0.38;
 const EARN_PASS = 0.42;
@@ -64,7 +65,8 @@ export class RallyRush {
    * @param {{
    *   player: {position:{x:number,z:number}, yaw:number, speed:number, throttle:number, driftAngle?:number, onGround?:boolean, velY?:number, lastImpact?:number, lastAirTime?:number, hitWall?:number, handbrake?:number},
    *   opponents?: Array<{vehicle?:{position:{x:number,z:number},speed?:number}, position?:{x:number,z:number}}>,
-   *   go?: boolean
+   *   go?: boolean,
+   *   offRoad?: boolean
    * }} ctx
    * @returns {{accel:number,heat:number,justPass:boolean,justDump:boolean,justFire:boolean,meter:number,combo:number,fire:number}}
    */
@@ -94,10 +96,13 @@ export class RallyRush {
     const fx = Math.sin(p.yaw || 0);
     const fz = Math.cos(p.yaw || 0);
     const sliding = drift > 0.08 && speed > 9;
-    if (speed > 22 && throttle > 0.45 && !sliding) {
+    const dumping = this.meter > 0.04 && throttle > 0.32 && speed < VMAX;
+    const onRibbon = !ctx.offRoad;
+    // Pace earn only while not dumping and on the ribbon — straights drain.
+    if (onRibbon && !dumping && speed > 22 && throttle > 0.45 && !sliding) {
       this.meter += EARN_PACE * t * (0.55 + Math.min(1, (speed - 22) / 28));
     }
-    if (sliding) {
+    if (onRibbon && sliding) {
       this._slideT += t;
       this.combo = Math.min(2.1, 1 + this._slideT * 0.38 + this.passStreak * 0.12);
       this.meter += EARN_SLIDE * t * Math.min(1.7, drift * 4.1) * this.combo;
@@ -107,7 +112,7 @@ export class RallyRush {
       this.combo += (1 - this.combo) * (1 - Math.exp(-1.4 * t));
     }
 
-    if (!p.onGround && speed > 10) this.meter += EARN_AIR * t * this.combo;
+    if (onRibbon && !p.onGround && speed > 10) this.meter += EARN_AIR * t * this.combo;
 
     const landed = this._wasAir && !!p.onGround;
     this._wasAir = !p.onGround;
@@ -169,7 +174,6 @@ export class RallyRush {
     if (this.fire < 0.04) this.fire = 0;
 
     let accel = 0;
-    const dumping = this.meter > 0.04 && throttle > 0.32 && speed < VMAX;
     let justDump = false;
     if (dumping) {
       if (!this._wasDump) justDump = true;

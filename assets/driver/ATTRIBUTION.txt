@@ -9,5 +9,6 @@ Godot XR Tools publishes these hand models under CC0 1.0 Universal.
 https://github.com/GodotVR/godot-xr-tools/blob/master/addons/godot-xr-tools/hands/License.md
 https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md
 
-This game uses a subdivided, grip-posed export of those rigs (26 bones, skinned).
-You can copy, modify, and ship them, including in a commercial build.
+This game uses a grip-posed export of those rigs. The fingers are closed
+around a steering rim in the mesh itself. The race does not bend the bones
+again. You can copy, modify, and ship them, including in a commercial build.

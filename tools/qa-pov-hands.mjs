@@ -39,8 +39,8 @@ const attr = read("assets/driver/ATTRIBUTION.txt");
 const glbL = path.join(ROOT, "assets/driver/hand-grip-l.glb");
 const glbR = path.join(ROOT, "assets/driver/hand-grip-r.glb");
 
-check("left grip GLB is on disk", fs.existsSync(glbL) && fs.statSync(glbL).size > 500000);
-check("right grip GLB is on disk", fs.existsSync(glbR) && fs.statSync(glbR).size > 500000);
+check("left grip GLB is on disk", fs.existsSync(glbL) && fs.statSync(glbL).size > 400000);
+check("right grip GLB is on disk", fs.existsSync(glbR) && fs.statSync(glbR).size > 400000);
 check(
   "hands load the rigged GLBs",
   /hand-grip-l\.glb/.test(driver) && /hand-grip-r\.glb/.test(driver) && /GLTFLoader/.test(driver) && /cloneRig/.test(driver)
@@ -67,7 +67,7 @@ check(
 check("grips sit at 9 and 3", /CLOCK_9_3 = 0\.14/.test(driver) && /clock = side > 0 \? CLOCK_9_3/.test(driver));
 check("license is CC0 and attributed", /CC0/.test(attr) && /MakeHuman/.test(attr) && /godot-xr-tools/.test(attr));
 check("celica imports pov-driver.js?v=20+", Number((car.match(/pov-driver\.js\?v=(\d+)/) || [])[1]) >= 20);
-check("adult hand display scale", /HAND_DISPLAY = 1\.5/.test(driver) && /curlFingers/.test(driver));
+check("adult grip is baked, not twisted at runtime", /GRIP_HOLE = 0\.016/.test(driver) && !/function curlFingers/.test(driver) && !/function tuckThumb/.test(driver));
 check(
   "celica split still resolves rival-livery if imported",
   !/rival-livery\.js/.test(car) || fs.existsSync(path.join(ROOT, "js/cars/rival-livery.js"))
@@ -77,15 +77,11 @@ check("game imports celica.js?v=240+", Number((game.match(/celica\.js\?v=(\d+)/)
 check("boot cache is 1057+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check("index boots main.js?v=1057+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check(
-  "grip faces the driver and keeps the exported curl",
+  "grip is the baked pose seated on the tube",
   /function seatGrip/.test(driver) &&
+    /tubeR \/ GRIP_HOLE/.test(driver) &&
     /rig\.quaternion\.identity\(\)/.test(driver) &&
-    !/bone\.rotation\.set\(0, 0, 0\)/.test(driver) &&
-    !/setFromAxisAngle\(new THREE\.Vector3\(0, 1, 0\), Math\.PI\)/.test(driver)
-);
-check(
-  "grip seats mesh verts onto the tube",
-  /fromBufferAttribute/.test(driver) && /rMin/.test(driver) && /tuckThumb/.test(driver) && /target - fit \* rMin/.test(driver)
+    !/rotateX\(/.test(driver)
 );
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "rigged hands grip the rim"}`);

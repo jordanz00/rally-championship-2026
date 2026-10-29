@@ -5,7 +5,7 @@
  * QA gates: cobble open, exactly 3 CPs, hairpin + tight_corner, no tunnel.
  */
 
-import { COLORS } from "../../config.js?v=253";
+import { COLORS } from "../../config.js?v=257";
 
 /** Slide ribbon — tighter than the old speed highway, still catchable. */
 const W = {
@@ -108,8 +108,8 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 34,
-      angle: 98,
+      radius: 54,
+      angle: 76,
       surface: "tarmac",
       width: W.tight,
       purpose: "Tight left — rotate, catch, floor it",
@@ -119,8 +119,8 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "hairpin",
       direction: "right",
-      radius: 28,
-      angle: 144,
+      radius: 66,
+      angle: 96,
       surface: "tarmac",
       width: W.drift,
       landmark: true,
@@ -145,8 +145,8 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 32,
-      angle: 102,
+      radius: 54,
+      angle: 78,
       surface: "tarmac",
       width: W.tight,
       purpose: "Tight right — hang attitude, punch out",
@@ -162,8 +162,8 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "hairpin",
       direction: "left",
-      radius: 30,
-      angle: 138,
+      radius: 66,
+      angle: 96,
       surface: "tarmac",
       width: W.drift,
       bank: 0.07,
@@ -193,8 +193,8 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 34,
-      angle: 94,
+      radius: 54,
+      angle: 72,
       surface: "tarmac",
       width: W.tight,
       purpose: "Last tight left — slide it, then floor it",

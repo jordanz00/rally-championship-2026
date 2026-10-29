@@ -10,7 +10,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=253";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=257";
 import { roadMicroHeight } from "./road-micro.js?v=14";
 import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
 import { shoulderPadForScenery } from "./track-clearance.js?v=3";
@@ -46,13 +46,8 @@ function terrainTileSegs() {
   } catch {
     /* ignore */
   }
-  const authored =
-    wantCinema && STREAM.terrainTileSegsCinema
-      ? STREAM.terrainTileSegsCinema
-      : STREAM.terrainTileSegs;
-  // Cinema 28 queried the ribbon once per vertex on 256 m tiles (~2.5 s).
-  // 8 keeps each triangle inside the trench, so the deck stays buried.
-  return Math.min(authored || 8, 8);
+  if (wantCinema && STREAM.terrainTileSegsCinema) return STREAM.terrainTileSegsCinema;
+  return STREAM.terrainTileSegs;
 }
 
 /**
@@ -72,7 +67,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=24";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=67";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=70";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -105,7 +100,7 @@ import {
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
 } from "./forest-tunnel.js?v=28";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=53";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=56";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
 import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=16";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
@@ -421,8 +416,8 @@ export class Track {
     this._tunnelVolumes = buildTunnelVolumes(this.points);
     this._deferredDressingPending = envExtrasEnabled() && !phoneLite;
 
-    // Road and land are ready. Props keep parsing — the bar used to sit on
-    // multi-MB GLBs after the course was already drivable.
+    // Props overlap the rest of the load bar. The race awaits this promise
+    // before 3-2-1 so a GLB parse cannot hitch the countdown.
     report(1, "Course ready");
     this._propPromise = this._mountStreamedProps(def, kitP, phoneLite);
     await tick();
@@ -1896,7 +1891,7 @@ export class Track {
     const key = `${scenery}|${tileSize}`;
     const hit = this._landMatCache.get(key);
     if (hit) return hit;
-    const skipDetail = this._fastLandBuild && !desert;
+    const skipDetail = false;
     const landNs =
       desert ? 2.35 : scenery === "mountain" ? 1.45 : scenery === "lakeside" ? 1.15 : 1.42;
     const mat = worldTerrainMaterial({
@@ -4106,6 +4101,14 @@ export class Track {
           poses,
           Object.assign({}, hiOpts, { lod1Geo: forestParts.canopyLod1 || null })
         );
+        if (forestParts.branch && forestParts.branchMat) {
+          this._addInstances(
+            forestParts.branch,
+            forestParts.branchMat,
+            poses,
+            Object.assign({}, hiOpts, { lod1Geo: forestParts.branchLod1 || null })
+          );
+        }
       } else {
         const geo = this._propGeo(glbKind);
         if (!geo) return false;
@@ -12254,6 +12257,13 @@ export class Track {
       let landH = this._groundHeight(x, z, scenery, nearHint);
       if (!Number.isFinite(landH)) landH = roadH;
       height = this._shoulderPlantHeight(roadH, clearance, landH, scenery, distAlong, lateral);
+      // A bank beside the paint must not become a ramp. Coarse land was
+      // lifting the chassis as soon as a tire left the ribbon, and that
+      // same rise kicked jump lips into a sideways launch.
+      const onLip = jumpKind === "ramp" || jumpKind === "crest" || jump;
+      const riseRoom = onLip ? 0 : Math.max(0, clearance - 0.45) * 0.03;
+      const ceil = roadH + riseRoom;
+      if (height > ceil) height = ceil;
     }
     if (jumpKind !== "gap" && !tunnel) {
       const runoff = this._easeRunoff(x, z, hintDist, height, distAlong);
@@ -14286,8 +14296,8 @@ async function ensureProceduralLand(scenery) {
   const aKey = `albedo|${tier}|${kind}`;
   if (PRIMED_LAND.has(aKey)) return;
   // 96px once. A 512px cinema paint, one yield per 16 rows, was the Mountain mesh.
-  const w = 96;
-  const h = 96;
+  const w = 384;
+  const h = 384;
   const albedo = paintLandCanvas(kind, w, h);
   if (albedo) PRIMED_LAND.set(aKey, primedCanvasTexture(albedo.canvas, true));
   const nKey = `normal|${tier}|${kind}`;
@@ -14315,7 +14325,7 @@ function landAlbedoMap(scenery, span) {
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   // Cap ~2k cinema canvases. Mountain has no photo land, and a full paint
   // blocked the result screen for ~36s after Forest.
-  const scale = Math.min((VISUAL.textureScale || 1) * 2, 96 / 384);
+  const scale = Math.min((VISUAL.textureScale || 1) * 2, 1);
   const tier = VISUAL.tier || 1;
   const primedAlbedo = PRIMED_LAND.get(`albedo|${tier}|${kind}`);
   if (primedAlbedo) {
@@ -15094,7 +15104,7 @@ function landNormalMap(scenery, span) {
   const kind = scenery === "desert" || scenery === "mountain" || scenery === "lakeside" ? scenery : "forest";
   // Cap ~2k cinema canvases. Mountain has no photo land, and a full paint
   // blocked the result screen for ~36s after Forest.
-  const scale = Math.min((VISUAL.textureScale || 1) * 2, 96 / 384);
+  const scale = Math.min((VISUAL.textureScale || 1) * 2, 1);
   const tier = VISUAL.tier || 1;
   const primedNorm = PRIMED_LAND.get(`normal|${tier}|${kind}`);
   if (primedNorm) {
@@ -15216,7 +15226,7 @@ function roadNormalFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSurface(key, ww, hh, data), w, h);
@@ -15234,7 +15244,7 @@ function roadTextureFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -15289,7 +15299,7 @@ function skirtTextureFor(scenery) {
   const cacheKey = `skirt|v8|t${tier}|${kind}`;
   const hit = SKIRT_TEX.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = 128 * texScale;
   const h = 128 * texScale;
   const c = document.createElement("canvas");
@@ -15326,7 +15336,7 @@ function skirtNormalFor(scenery) {
   const cacheKey = `skirtN|v6|t${tier}|${kind}`;
   const hit = SKIRT_NORM.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = 128 * texScale;
   const h = 128 * texScale;
   const tex = canvasNormalFromPaint((g, ww, hh, data) => paintSkirtGrain(kind, ww, hh, data), w, h);
@@ -15389,7 +15399,7 @@ function roadAoFor(id) {
   const cacheKey = `v8|t${tier}|${key}`;
   const hit = ROAD_AO.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = 128 * texScale;
   const h = 256 * texScale;
   const c = document.createElement("canvas");
@@ -15432,7 +15442,7 @@ function roadRoughFor(id) {
   const cacheKey = `rough|v6|t${tier}|${key}`;
   const hit = ROAD_ROUGH.get(cacheKey);
   if (hit) return hit;
-  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 2);
+  const texScale = Math.min((VISUAL.textureScale || 1) * 2, 3.5);
   const w = Math.max(64, Math.round(128 * texScale));
   const h = Math.max(128, Math.round(256 * texScale));
   const c = document.createElement("canvas");

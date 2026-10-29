@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=215";
+import { Vehicle } from "./physics/vehicle.js?v=218";
 import { getSurface } from "./physics/surfaces.js?v=59";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=104";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=292";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=107";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=299";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=483";
+import { Track } from "./tracks/track.js?v=486";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=12";
-import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=67";
-import { Opponent } from "./ai.js?v=274";
+import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=70";
+import { Opponent } from "./ai.js?v=282";
 import { RallyAudio } from "./audio/engine.js?v=83";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=48";
@@ -27,7 +27,8 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=55";
+} from "./ui/hud.js?v=57";
+import { initPlayOptions } from "./ui/play-options.js?v=4";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=104";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=52";
@@ -35,7 +36,7 @@ import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./g
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=30";
 import { updateCameraFade, updatePackSeeThrough, paintPackSeeThrough } from "./gfx/occlusion-fade.js?v=24";
 import { PhotoRealPost } from "./gfx/postfx.js?v=47";
-import { RallyRush } from "./gameplay/rally-rush.js?v=7";
+import { RallyRush } from "./gameplay/rally-rush.js?v=8";
 import {
   createWebTsr,
   createMobilePresent,
@@ -47,7 +48,7 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=1036";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1037";
 import { createPerfTier } from "./gfx/perf-tier.js?v=57";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=8";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -55,7 +56,7 @@ import { QualityManager } from "./gfx/quality-manager.js?v=6";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { Spring1, Spring3, criticalDamp } from "./camera/camera-spring.js?v=1";
 import { createPerformanceMonitor } from "./debug/performance-monitor.js?v=4";
-import { createPhysicsDebug } from "./debug/physics-debug.js?v=10";
+import { createPhysicsDebug } from "./debug/physics-debug.js?v=12";
 import {
   FIXED_DT,
   MAX_SUBSTEPS,
@@ -75,44 +76,20 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=255";
+} from "./config.js?v=257";
 
 /**
- * First-drive ease. The slide is still the tool. A miss on Desert comes back,
- * bumps do not throw the car away, the pack is beatable, and a messy lap
- * still makes the clock. These objects are the live config every module shares.
+ * First-drive clock ease. Grip, assist and rival ease used to be set here too,
+ * but this module's config.js copy is not the one physics or the AI read, so
+ * those lines did nothing. They live in ui/play-options.js now (Driving Help).
  */
 function easeFirstDrive() {
-  ARCADE_ASSIST.yawAssist = 0.38;
-  ARCADE_ASSIST.recoveryAssist = 1.35;
-  ARCADE_ASSIST.recoverableSlide = 20;
-  ARCADE_ASSIST.driftStability = 0.85;
-  ARCADE_ASSIST.landingAssist = 0.86;
-  ARCADE_ASSIST.tireSlideSoft = 4.2;
-  ARCADE_ASSIST.tirePeakHold = 1.2;
-  ARCADE_ASSIST.tireRecoverFloor = 0.56;
-  ARCADE_ASSIST.tirePeakBoost = 1.14;
-  HANDLING.bumpSteerAmplify = 1.08;
-  HANDLING.bumpYawGain = 0.016;
-  if (SURFACES.sand) {
-    SURFACES.sand.muPeak = 0.9;
-    SURFACES.sand.gripSnap = 1.48;
-  }
-  AI.skillFloor = 0.64;
-  AI.skillCeiling = 0.82;
-  AI.cornerMargin = 0.86;
-  AI.rubberBand = 0.05;
-  if (AI.skillByCourse) {
-    AI.skillByCourse.desert = 0;
-    AI.skillByCourse.forest = 0.02;
-    AI.skillByCourse.mountain = 0.04;
-    AI.skillByCourse.lakeside = 0.06;
-  }
-  CHAMPIONSHIP.checkpointBonus = 34;
-  CHAMPIONSHIP.stageTime.desert = 130;
-  CHAMPIONSHIP.stageTime.forest = 114;
-  CHAMPIONSHIP.stageTime.mountain = 108;
-  CHAMPIONSHIP.stageTime.lakeside = 74;
+  /** Clean Rush lap ~65–70 s Desert → clock ≈ lap × 1.15 + CP slack. */
+  CHAMPIONSHIP.checkpointBonus = 28;
+  CHAMPIONSHIP.stageTime.desert = 82;
+  CHAMPIONSHIP.stageTime.forest = 88;
+  CHAMPIONSHIP.stageTime.mountain = 92;
+  CHAMPIONSHIP.stageTime.lakeside = 58;
 }
 easeFirstDrive();
 
@@ -153,12 +130,12 @@ function raceTunnelLighting(courseId) {
   }
   return Object.assign({}, TC, heads);
 }
-import { Input } from "./input.js?v=43";
+import { Input } from "./input.js?v=44";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=48";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=51";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
-import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=6";
+import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=7";
 import {
   applyStageLights,
   applyDaylightLook,
@@ -345,10 +322,10 @@ function armStreamBudget() {
   const high = !phone && raceStartTier() === "high";
   STREAM.prefetchChunks = phone ? 1 : high ? 3 : 2;
   STREAM.lookaheadSeconds = phone ? 1.0 : high ? 3.2 : 2.4;
-  STREAM.settleLookaheadMeters = android ? 160 : phone ? 180 : high ? 720 : 480;
-  STREAM.countdownLoadRadius = android ? 160 : phone ? 180 : high ? 820 : 520;
-  STREAM.loadRadius = android ? 220 : phone ? 240 : high ? 900 : 640;
-  STREAM.unloadRadius = android ? 300 : phone ? 320 : high ? 980 : 780;
+  STREAM.settleLookaheadMeters = phone ? 180 : high ? 720 : 480;
+  STREAM.countdownLoadRadius = phone ? 180 : high ? 820 : 520;
+  STREAM.loadRadius = phone ? 240 : high ? 900 : 640;
+  STREAM.unloadRadius = phone ? 320 : high ? 980 : 780;
   STREAM.minLoadRadius = phone ? 120 : high ? 280 : 220;
   if (phone) {
     STREAM.terrainTileSegs = 12;
@@ -755,18 +732,14 @@ export class RallyGame {
     // Phone / Android fill-rate budget before the first setSize. Desktop
     // lockRaceQuality keeps cinema look; phones must actually shrink pixels.
     if (isPhonePlay()) {
-      const android = /Android/i.test(navigator.userAgent || "");
-      // iPhone 13 = 4 GB; Safari ~1.2 GB tab. Keep pixels under half a meg.
-      const ios = /iPhone|iPod|iPad/i.test(navigator.userAgent || "") ||
-        (!!window.__rallyPhoneLite && !android);
+      // Shared phone budget — Android Chrome and iPhone Safari equal quality.
       GFX.preferLock30 = true;
-      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, android ? 0.65 : ios ? 0.55 : 0.75);
-      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, android ? 560000 : ios ? 480000 : 720000);
-      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, android ? 420000 : ios ? 360000 : 560000);
-      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, android ? 256 : 256);
-      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, android ? 192 : 256);
-      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, android ? 256 : 256);
-      // Cap ahead-of-car stream work — Android GC during prefetch hitches GO.
+      GFX.maxPixelRatio = Math.min(GFX.maxPixelRatio || 1.15, 0.7);
+      GFX.maxPixels = Math.min(GFX.maxPixels || 1800000, 640000);
+      GFX.titleMaxPixels = Math.min(GFX.titleMaxPixels || 1200000, 480000);
+      GFX.integratedShadowMap = Math.min(GFX.integratedShadowMap || 1024, 256);
+      GFX.titleShadowMap = Math.min(GFX.titleShadowMap || 1024, 256);
+      GFX.shadowMap = Math.min(GFX.shadowMap || 1536, 256);
       if ((STREAM.prefetchChunks | 0) > 1) STREAM.prefetchChunks = 1;
       armStreamBudget();
     } else {
@@ -877,6 +850,7 @@ export class RallyGame {
     // warms after the first title frame; phones take the FXAA present.
     this._bindTsrControl();
     this._syncTsrPresentSharp();
+    initPlayOptions(() => this).catch((err) => console.warn("[options]", err));
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x4a7ab8);
@@ -888,7 +862,7 @@ export class RallyGame {
     this._onResize = this._onResize.bind(this);
     window.addEventListener("resize", this._onResize);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", this._onResize);
-    if (isPhonePlay()) this._perfDprScale = /Android/i.test(navigator.userAgent || "") ? 0.55 : 0.62;
+    if (isPhonePlay()) this._perfDprScale = 0.62;
     this._onResize();
     // Rearview RT is race/POV only — allocating it on splash hitchs the first paint.
     if (this.state !== "title" && this.state !== "menu") this._initMirror();
@@ -3509,29 +3483,36 @@ export class RallyGame {
     await this._settleRacePresent();
     if (loadGen !== this._loadGen) return;
     // Finish deferred scenery UNDER the load plate — never during 3-2-1.
-    // Running warmDesertExtras / finishDeferredDressing after Ready used to
-    // hitch the countdown (hung "3", skipped beeps, glitchy GO).
-    if (!isPhonePlay()) {
-      setLoadingProgress(0.992, "Dressing stage…");
-      try {
-        // These GLBs are the rest of the gallery. Waiting here held Ready
-        // after the road was already built. They stream during countdown.
-        void Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]);
-        if (loadGen !== this._loadGen) return;
+    // Props + gallery/crowd/extras run in parallel so the plate is shorter.
+    const propP =
+      this.track && this.track._propPromise
+        ? this.track._propPromise.catch((err) => console.warn("[warm] stage props", err))
+        : Promise.resolve();
+    const dressP = !isPhonePlay()
+      ? Promise.all([warmCrowdKit(), warmFullTracksideKit(), warmDesertExtras()]).catch((err) => {
+          console.warn("[warm] deferred dressing", err);
+        })
+      : Promise.resolve();
+    if (this.track && this.track._propPromise) setLoadingProgress(0.991, "Planting stage…");
+    else if (!isPhonePlay()) setLoadingProgress(0.992, "Dressing stage…");
+    try {
+      await Promise.all([propP, dressP]);
+      if (loadGen !== this._loadGen) return;
+      if (!isPhonePlay()) {
         if (this.track && typeof this.track.finishDeferredDressing === "function") {
           this.track.finishDeferredDressing();
         }
         await yieldFrame();
-        // New geometry must compile before HUD paints "3".
         if (this.track && this.track.prewarmAround && this.player && this.player.position) {
           const r = STREAM.countdownLoadRadius || 720;
           this.track.prewarmAround(this.player.position, this.camera.position, r);
         }
         this._syncWorldStream(true);
-        await this._drainStreamCompileUnderOverlay(140);
-      } catch (err) {
-        console.warn("[warm] deferred dressing", err);
+        // Shorter compile drain — parallel warm already paid most of the cost.
+        await this._drainStreamCompileUnderOverlay(70);
       }
+    } catch (err) {
+      console.warn("[warm] stage finish", err);
     }
     setLoadingProgress(1, "Ready");
     await waitLoadingBarSettled(20);
@@ -3996,6 +3977,7 @@ export class RallyGame {
           if (this.state === "countdown") this.countdown = 0;
         }
         this.input.poll();
+        if (this._assistHook && this.state === "race") this._assistHook(this.input, this.player);
         // A human touching the controls retires the QA override permanently.
         // Without this the block below would re-apply _qaDrive straight onto
         // this.input every frame and undo the release input.js just made.
@@ -4343,9 +4325,13 @@ export class RallyGame {
     while (this._physAccum >= FIXED_DT) {
       this._physAccum -= FIXED_DT;
       if (this.rush && this.player) {
+        const q = this.player._q;
+        const half = ((q && q.width) || 10) * 0.5;
+        const offRoad = !!(q && Number.isFinite(q.lateral) && Math.abs(q.lateral) > half + 1.2);
         const dump = this.rush.step(FIXED_DT, {
           player: this.player,
           opponents: this.opponents,
+          offRoad,
         });
         this.player.rushHeat = dump.heat;
         this.player.rushDrive = dump.accel;
@@ -4454,7 +4440,8 @@ export class RallyGame {
     );
     const note = this.track.noteAt(this.player.progress, look);
     const pace = this.codriver.update(note, dt, this.audio, this.player.progress, this.player.speed);
-    if (pace.spoken) this.paceLine = pace.display;
+    if (this._subtitles) this.paceLine = pace.display || "";
+    else if (pace.spoken) this.paceLine = pace.display;
 
     if (this.player.progress > (this.track.finishDist || this.track.length - 12) && this.raceTime > 8) {
       if (this.mode === "practice" && this.lap < CHAMPIONSHIP.practiceLaps) {
@@ -4571,6 +4558,19 @@ export class RallyGame {
     h.rushCombo = this.rush ? this.rush.combo : 1;
     h.progressM = this.player.progress;
     h.dt = dt;
+    const qHud = this.player._q;
+    const halfHud = ((qHud && qHud.width) || 10) * 0.5;
+    const offRibbon =
+      !!(qHud && Number.isFinite(qHud.lateral) && Math.abs(qHud.lateral) > halfHud + 1.5) &&
+      this.player.onGround;
+    h.offRoad = offRibbon;
+    if (offRibbon && this.state === "race") {
+      const now = this.raceTime || 0;
+      if (!(this._offRoadTipAt >= 0) || now - this._offRoadTipAt > 6) {
+        this._offRoadTipAt = now;
+        this.hud.flashMessage("OFF ROAD — find the ribbon");
+      }
+    }
     this.hud.update(h);
     this.ghostRecorder.tick(dt, this.player);
     this.replayTape.tick(dt, this.player, this.opponents);
@@ -5566,6 +5566,7 @@ export class RallyGame {
     }
     this._camKickY *= Math.exp(-6.4 * dt);
     if (this._camKickY < 0.002) this._camKickY = 0;
+    if (this._calmCam) this._camKickY *= 0.25;
     // Surface chatter: gravel reads through the chassis; tarmac stays almost still.
     // Land / wall impulses keep a floor so medium chase still feels the hit.
     const surfId = p.surfaceId || "";
@@ -5575,7 +5576,7 @@ export class RallyGame {
         : surfId === "gravel" || surfId === "dirt" || surfId === "sand"
           ? 0.6
           : 0.7;
-    if (shakeMul <= 0) this._shake = 0;
+    if (shakeMul <= 0 || this._calmCam) this._shake = 0;
     else {
       const chatterCap = 0.08 * shakeMul * surfShake;
       const goImpulse = this._goFeel > 0 ? Math.min(0.14, 0.05 + this._goFeel * 0.07) : 0;
@@ -6846,7 +6847,7 @@ export class RallyGame {
       onTitle ? titlePr : capPr,
       capPr
     );
-    if (isPhonePlay()) pr = Math.min(pr, /Android/i.test(navigator.userAgent || "") ? 0.75 : 1.0);
+    if (isPhonePlay()) pr = Math.min(pr, 0.85);
     if (!onTitle && this._perfDprScale != null && this._perfDprScale < 1) {
       pr *= this._perfDprScale;
     }

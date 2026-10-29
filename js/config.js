@@ -946,25 +946,25 @@ export const SURFACES = {
   sand: {
     id: "sand",
     label: "SAND",
-    muPeak: 0.76,
-    muSlide: 0.46,
+    muPeak: 0.88,
+    muSlide: 0.55,
     slipPeak: 0.188,
     /**
      * Desert headline (AM3): brake late → rotate → hold → catch on throttle.
      * Soft brakeHold keeps the stop from becoming a parking brake; gripSnap
      * is the catch switch so long slideHold is not runoff.
      */
-    brakeHold: 0.12,
-    brakeYaw: 1.28,
-    slideHold: 2.55,
-    gripSnap: 1.38,
-    bumpSteer: 0.78,
+    brakeHold: 0.18,
+    brakeYaw: 1.05,
+    slideHold: 1.85,
+    gripSnap: 1.52,
+    bumpSteer: 0.62,
     roll: 0.058,
     sink: 0.088,
     bump: 0.024,
     dust: 1.55,
     speedScale: 0.88,
-    driftEase: 2.12,
+    driftEase: 1.48,
     pacejkaB: 3.1,
     pacejkaC: 1.22,
     pacejkaE: 0.17,
@@ -1536,13 +1536,13 @@ const CHASSIS = {
   damperRebound: 4800,
   antiRollFront: 7800,
   antiRollRear: 5600,
-  maxSteer: 0.52,
-  /** AM3 novice rack — quick into hairpins, still muted at top speed. */
-  steerSpeed: 126,
-  steerReturn: 108,
-  /** High-speed mute — mild push above 180 km/h, not a rail fight. */
-  steerFalloff: 0.009,
-  yawGain: 1.28,
+  maxSteer: 0.4,
+  /** Slower rack — road-holding first; hairpins still turn, not whip. */
+  steerSpeed: 88,
+  steerReturn: 124,
+  /** High-speed mute — stronger push so sweepers stay on the ribbon. */
+  steerFalloff: 0.016,
+  yawGain: 0.98,
   /**
    * GTA analog: m_fTractionBias (Wh). 0.5 = equal axles. Lower = more rear
    * grip = planted Sultan 4WD. Higher = more front grip = Comet oversteer.
@@ -1916,12 +1916,13 @@ export const AI = {
    * Rival engine scale vs shared CARS.*.peakPowerKw (player template).
    * Player stays at 84 kW. Pack accel is +50% over the prior 3.45 mul.
    */
-  peakPowerMul: 5.175,
+  /** Pack must contest Rush dumps — was 5.175 and still lost every straight. */
+  peakPowerMul: 6.4,
   /**
-   * Rival soft top-speed scale vs CARS.*.maxSpeedKmh. +50% so the pack
-   * pulls away on straights unless the player hangs a clean stage.
+   * Rival soft top-speed scale vs CARS.*.maxSpeedKmh.
+   * Tuned so a clean Rush lap still passes, but the pack is in the fight.
    */
-  maxSpeedMul: 1.5,
+  maxSpeedMul: 1.85,
   /**
    * Desktop race: how many grid slots clone the hero GLB (rest stay LOD).
    * Near pack reads like the player car without 14× hero cost.
