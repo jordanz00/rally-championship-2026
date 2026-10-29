@@ -62,7 +62,7 @@ check(
 );
 check("vehicle uses JUMP damp", /JUMP\.landSettleDamp/.test(vehicle) && /JUMP\.landSettleDampEnd/.test(vehicle));
 
-check("mountain bed tuck ~0.28 m", /scenery === "mountain" \? 0\.28/.test(track) && /drop = mountain \? 0\.28/.test(track));
+check("mountain bed tuck ~0.62 m", /MOUNTAIN_BED_DROP = 0\.62/.test(track) && /bedDropFor\(scenery\)/.test(track));
 check("mountain closed underside", /inUnderpass \|\| scenery === "mountain"/.test(track));
 check("mountain skirt reach extended", /scenery === "mountain" \? 5\.4/.test(track));
 check("mountain shallow skirtDrop", /scenery === "mountain"[\s\S]*?edgeY - 0\.42/.test(track));

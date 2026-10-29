@@ -261,17 +261,18 @@ export function compileSegment(seg, ctx) {
   }
 
   if (kind === "bridge") {
-    // No separate bridge mesh (Sprint 524 cut floating bridges). Authored as
-    // an elevated open section the terrain skirts under.
+    // Elevated open span — Lakeside hangs suspension structure on this visual.
+    // `dy: 0` keeps a level deck after approach ramps (do not coerce with ||).
     out.push({
       type: "straight",
       length: seg.length ?? 42,
       surface,
       width: width * 1.05,
-      dy: dy || 2.5,
+      dy: seg.dy != null ? seg.dy : dy != null ? dy : 2.5,
       landmark: true,
       purpose: purpose || "bridge",
       visual: seg.visual || "bridge_span",
+      bridge: true,
     });
     return out;
   }
@@ -325,10 +326,11 @@ export function compileSegment(seg, ctx) {
 /** Slide ribbon: narrow enough to hang attitude, wide enough to catch. */
 const PLAY_WIDTH = 1.48;
 const PLAY_TIGHT_RADIUS = 1.68;
-const PLAY_MEDIUM_RADIUS = 1.34;
+/** Keep mediums tight enough that throttle still hangs a slide. */
+const PLAY_MEDIUM_RADIUS = 1.22;
 const PLAY_SWEEP_RADIUS = 1.22;
-const PLAY_SPEED_TIGHT = 1.32;
-const PLAY_SPEED_SWEEP = 1.2;
+const PLAY_SPEED_TIGHT = 1.28;
+const PLAY_SPEED_SWEEP = 1.18;
 /** Open hairpin hooks — was 0.9 / floor 112 and still felt like a wall. */
 const PLAY_HAIRPIN_ANGLE = 0.82;
 const PLAY_WIDTH_MIN = 7.5;
@@ -379,16 +381,17 @@ export function easePlayAngle(angle, radius, speedLane = false) {
     const eased = Math.max(92, a * PLAY_HAIRPIN_ANGLE);
     return angle < 0 ? -eased : eased;
   }
+  // Speed lane still opens walls, but keep enough angle that mediums demand a slide.
   if (speedLane && radius < 70 && a > 52) {
-    const eased = Math.max(40, a * 0.76);
+    const eased = Math.max(50, a * 0.9);
     return angle < 0 ? -eased : eased;
   }
   if (radius < 60 && a > 55) {
-    const eased = Math.max(42, a * 0.8);
+    const eased = Math.max(48, a * 0.88);
     return angle < 0 ? -eased : eased;
   }
   if (a > 68) {
-    const eased = Math.max(48, a * 0.88);
+    const eased = Math.max(52, a * 0.92);
     return angle < 0 ? -eased : eased;
   }
   return angle;
@@ -469,7 +472,7 @@ export function easePlayCourse(course) {
 }
 
 /** Metres per hill chord — short enough that a crest is not sliced off flat. */
-const HILL_CHUNK_M = 32;
+const HILL_CHUNK_M = 24;
 
 /**
  * Rolling grade per stage. Cap stays under the 7.4 m flyover gap so a later
@@ -479,55 +482,55 @@ const HILL_CHUNK_M = 32;
 const HILL_PROFILE = {
   desert: {
     cap: 3.25,
-    fade: 72,
+    fade: 88,
     startQuiet: 24,
     jumpPre: 34,
     jumpPost: 92,
     trend: 0.7,
     waves: [
-      { amp: 2.45, k: 84, phase: 0.35 },
-      { amp: 1.4, k: 36, phase: 1.65 },
-      { amp: 0.85, k: 18, phase: 0.55 },
+      { amp: 2.45, k: 92, phase: 0.35 },
+      { amp: 1.25, k: 44, phase: 1.65 },
+      { amp: 0.45, k: 26, phase: 0.55 },
     ],
   },
   forest: {
     cap: 3.15,
-    fade: 80,
+    fade: 96,
     startQuiet: 28,
     jumpPre: 30,
     jumpPost: 64,
     trend: 0.4,
     deck: { from: 3180, to: 3900, keep: 0.38, fade: 110 },
     waves: [
-      { amp: 2.3, k: 78, phase: 0.55 },
-      { amp: 1.25, k: 34, phase: 2.05 },
-      { amp: 0.8, k: 17.5, phase: 0.2 },
+      { amp: 2.3, k: 86, phase: 0.55 },
+      { amp: 1.1, k: 42, phase: 2.05 },
+      { amp: 0.42, k: 26, phase: 0.2 },
     ],
   },
   mountain: {
     cap: 3.35,
-    fade: 70,
+    fade: 86,
     startQuiet: 22,
     jumpPre: 30,
     jumpPost: 52,
     trend: 1.5,
     waves: [
-      { amp: 2.55, k: 70, phase: 0.2 },
-      { amp: 1.45, k: 32, phase: 1.35 },
-      { amp: 0.9, k: 16.5, phase: 2.4 },
+      { amp: 2.55, k: 78, phase: 0.2 },
+      { amp: 1.3, k: 40, phase: 1.35 },
+      { amp: 0.48, k: 24, phase: 2.4 },
     ],
   },
   lakeside: {
     cap: 3.0,
-    fade: 74,
+    fade: 90,
     startQuiet: 26,
     jumpPre: 32,
     jumpPost: 70,
     trend: 0.55,
     waves: [
-      { amp: 2.15, k: 76, phase: 0.8 },
-      { amp: 1.2, k: 31, phase: 2.2 },
-      { amp: 0.78, k: 16, phase: 0.15 },
+      { amp: 2.15, k: 84, phase: 0.8 },
+      { amp: 1.05, k: 38, phase: 2.2 },
+      { amp: 0.4, k: 24, phase: 0.15 },
     ],
   },
 };
@@ -606,7 +609,16 @@ function splitDrivePiece(piece) {
     }
     if (i > 0) {
       chunk.landmark = false;
-      delete chunk.visual;
+      // Keep bridge span / approach / exit tags on every chunk — deck tagging
+      // and suspension mesh need the full run, not only the first metres.
+      if (
+        !piece.bridge &&
+        piece.visual !== "bridge_span" &&
+        piece.visual !== "bridge_approach" &&
+        piece.visual !== "bridge_exit"
+      ) {
+        delete chunk.visual;
+      }
     }
     if (!isLast) chunk.checkpoint = false;
     out.push(chunk);
@@ -700,7 +712,15 @@ export function sculptRoadElevation(course) {
     const p = pieces[i];
     const s1 = s + run;
     if (p.type !== "jump" && run > 0) {
-      p.dy = (p.dy || 0) + (stageHill(s1, spec, zones, total) - stageHill(s, spec, zones, total));
+      // Keep authored bridge climb / level span / exit — hill sculpt would kink the deck.
+      const bridgePiece =
+        !!p.bridge ||
+        p.visual === "bridge_span" ||
+        p.visual === "bridge_approach" ||
+        p.visual === "bridge_exit";
+      if (!bridgePiece) {
+        p.dy = (p.dy || 0) + (stageHill(s1, spec, zones, total) - stageHill(s, spec, zones, total));
+      }
     }
     s = s1;
   }

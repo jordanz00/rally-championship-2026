@@ -48,9 +48,9 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=258";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=260";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=59";
-import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=61";
+import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=62";
 import { JumpModel } from "./jump.js?v=42";
 import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=10";
 /** Fallback if an older burnout-drive cache lacks the named export. */
@@ -3630,8 +3630,10 @@ export class Vehicle {
     const kind = q.jumpKind || "";
     if (kind === "gap" || kind === "ramp" || kind === "crest") return Infinity;
     if (!this.onGround) return Infinity;
-    const step = Number.isFinite(dt) && dt > 0 ? dt : FIXED_DT;
-    return 0.035 + (this.speed || 0) * step * 0.3;
+    // Off paint: almost no upward plant. Speed-scaled caps used to levitate
+    // the pack when a far-left query briefly latched a higher deck.
+    void dt;
+    return 0.004;
   }
 
   _wantPlantedDeck() {
@@ -4209,9 +4211,10 @@ export class Vehicle {
     const kR = (k * (tF * tF + tR * tR)) / 2 + (s.antiRollFront || 0) + (s.antiRollRear || 0);
     const Ir = Math.max(280, s.rollInertia || 640);
     const ay = ground && Math.abs(this.speed) > 1.2 ? this._ay : 0;
-    const rollMul = (HANDLING.bodyRollMul != null ? HANDLING.bodyRollMul : 1.85) * 1.1;
-    const rollMax = HANDLING.bodyRollMax != null ? HANDLING.bodyRollMax : 0.125;
-    const mR = m * ay * (h - 0.1) * rollMul * 1.3;
+    const rollMul = HANDLING.bodyRollMul != null ? HANDLING.bodyRollMul : 1.12;
+    const rollMax = HANDLING.bodyRollMax != null ? HANDLING.bodyRollMax : 0.068;
+    // Physical roll moment only — no extra 1.1×/1.3× readability juice (that was the weeble).
+    const mR = m * ay * (h - 0.1) * rollMul;
     {
       const v = this._suspRollRate;
       const cR = ((v * this._suspRoll > 0 ? cBump : cReb) * (tF * tF + tR * tR)) / 2;
@@ -4219,10 +4222,10 @@ export class Vehicle {
       this._suspRollRate = v + acc * dt;
       this._suspRoll = clamp(this._suspRoll + this._suspRollRate * dt, -rollMax, rollMax);
     }
-    // Drifts stay leaned, not rocking. Extra roll damp kills the bounce read.
+    // Drifts stay leaned, not rocking. Stronger roll damp kills left/right wobble.
     if (ground) {
       this._suspPitchRate *= Math.exp(-7 * dt);
-      this._suspRollRate *= Math.exp(-7 * dt);
+      this._suspRollRate *= Math.exp(-14 * dt);
     }
     // Throttle squat is one sit, not a hop. Yaw / slide stay on the tires.
     if (ground && this._wantPlantedDeck()) {

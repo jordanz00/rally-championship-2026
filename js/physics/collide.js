@@ -90,12 +90,13 @@ const PLAYER_YAW_CAP = 0.09;
 /**
  * Off-road bands past the painted edge (metres).
  * Shoulder: light bank. Runoff: free driving with a soft pull. Recover: stronger
- * Recover: stronger guide. Extreme: haul toward the lane — never teleport.
+ * guide. Extreme: haul toward the lane — never teleport.
+ * Wide grace so a cut across the left verge stays driveable before recover/reset.
  */
-const OFF_SHOULDER = 1.6;
-const OFF_RUNOFF = 10;
-const OFF_RECOVER = 17;
-const OFF_RESET = 24;
+const OFF_SHOULDER = 3.2;
+const OFF_RUNOFF = 18;
+const OFF_RECOVER = 30;
+const OFF_RESET = 42;
 /** Player shoulder: soft berm — bleed outward speed into along-track scrape. */
 const PLAYER_SHOULDER_OUT = 0.14;
 /** Fraction of killed outward speed fed back along the ribbon (scrape, not inward bounce). */
@@ -860,16 +861,19 @@ export function holdVisualGround(v, track) {
   // so the car stopped forever on Desert and Forest.
   if (q && q.onRoad) return;
   if (q && Number.isFinite(q.lateral) && Number.isFinite(q.width)) {
-    if (Math.abs(q.lateral) <= q.width * 0.5 + 3.5) return;
+    if (Math.abs(q.lateral) <= q.width * 0.5 + 6.5) return;
   }
   const scenery = track.scenery || "desert";
   const gy = track._groundHeight(v.position.x, v.position.z, scenery);
   if (!Number.isFinite(gy)) return;
-  // Far off the paint, sit the tires on a low bank. Do not climb a face
-  // and do not take speed away — the lane must stay drivable.
-  if (gy > v.position.y + 0.06) {
-    const bury = gy - v.position.y;
-    if (bury < 0.4) v.position.y += bury;
+  // Plant target is the shoulder query (road lip), never a dune / flyover
+  // face above the deck — that was the spontaneous off-road elevate.
+  let ceil = Number.isFinite(q && q.height) ? q.height : v.position.y;
+  if (Number.isFinite(q && q.baseHeight)) ceil = Math.min(ceil, q.baseHeight);
+  const target = Math.min(gy, ceil);
+  if (target > v.position.y + 0.06) {
+    const bury = Math.min(0.12, target - v.position.y);
+    if (bury > 0) v.position.y += bury;
   }
 }
 

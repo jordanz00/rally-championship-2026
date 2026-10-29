@@ -35,14 +35,14 @@ export const GFX = {
    * free-running below that.
    */
   /**
-   * Cinema desktop — Retina-sharp race present. Cap below raw 3× so fill-rate
-   * stays holdable at 60; quality ladder may still scale down under load.
+   * Cinema desktop — Retina-sharp race present. Soft scale / lock-30 still
+   * protect 60 under load; do not permanently crush the framebuffer.
    */
-  maxPixelRatio: 1.75,
-  maxPixels: 3200000,
+  maxPixelRatio: 2,
+  maxPixels: 4800000,
   /** Title / SELECT MODE — LOD car, soft fill-rate so menus stay clickable. */
-  titleMaxPixelRatio: 1.15,
-  titleMaxPixels: 1600000,
+  titleMaxPixelRatio: 1.35,
+  titleMaxPixels: 2200000,
   /** Title sun atlas — pad runs without live shadows; size kept for race settle. */
   titleShadowMap: 1024,
   /** AM3 criterion 1 — cap presentation at 60 Hz; physics stays fixed-step. */
@@ -1117,9 +1117,9 @@ export const HANDLING = {
   liftOffYaw: 0.92,
   /** Extra yaw past the grip cap that still arrives (mushy breakaway, not a rail). */
   limitMush: 0.58,
-  /** Visible chassis lean from lateral g — readable weight, not a cabinet tip. */
-  bodyRollMul: 2.05,
-  bodyRollMax: 0.138,
+  /** Visible chassis lean from lateral g — subtle Group A tip, not a weeble. */
+  bodyRollMul: 1.12,
+  bodyRollMax: 0.068,
   /**
    * Phase 1 — readable longitudinal weight transfer on the mesh (radians toward
    * nose-down when braking). Kept modest so Sprint 542 planted stance remains.
@@ -1534,8 +1534,8 @@ const CHASSIS = {
   damper: 5800,
   damperBump: 7200,
   damperRebound: 4800,
-  antiRollFront: 7800,
-  antiRollRear: 5600,
+  antiRollFront: 9800,
+  antiRollRear: 7200,
   maxSteer: 0.44,
   /** Balanced rack — hairpins turn; high speed still mutes. */
   steerSpeed: 98,
@@ -1687,7 +1687,7 @@ export const CAMERA = {
   brakePitchMul: 0.085,
   accelPitchMul: 0.062,
   /** World-up lean from chassis roll — a hint, not a horizon swing. */
-  rollFollow: 0.14,
+  rollFollow: 0.07,
   /** How hard chase yaw tracks the car — medium view overrides softer. */
   yawStiffness: 22,
   /**
@@ -1803,7 +1803,7 @@ export const CAMERA = {
       slideCamOut: 0.03,
       slideLookAhead: 1.65,
       slideKickMax: 0.008,
-      rollFollow: 0.1,
+      rollFollow: 0.055,
       /** Aim along the ribbon, not a side orbit. */
       roadLookBlend: 0.2,
       /** Readable mass: brake nose-down / accel squat on the look target. */

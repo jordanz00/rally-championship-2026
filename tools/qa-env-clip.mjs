@@ -68,7 +68,7 @@ check(
 check(
   "every env sphere bump refuses the roadway corridor",
   /_bump\(x, z, r[\s\S]*?\{[\s\S]*?over - rad < ROAD_COLLIDER_CLEAR/.test(trackSrc) &&
-    /ROAD_COLLIDER_CLEAR = 4\.6/.test(trackSrc),
+    /ROAD_COLLIDER_CLEAR = (?:4\.6|5\.4)/.test(trackSrc),
   "_bump is the single gate — no mid-lane solids"
 );
 check(
@@ -139,8 +139,8 @@ check(
   "verge barriers must stop the car"
 );
 check(
-  "mountain trench chase flattened to 48 m",
-  /chaseFlat = roadW \* 0\.5 \+ 48/.test(trackSrc) && /lateral: 46/.test(trackSrc),
+  "mountain trench chase flattened to 58 m",
+  /chaseFlat = roadW \* 0\.5 \+ 58/.test(trackSrc) && /lateral: 46/.test(trackSrc),
   "land tris must stay a floor through Stage 3 hairpins"
 );
 check(
@@ -156,18 +156,18 @@ check(
 check(
   "every biome skirt is a gradual ramp, not a 12 m slab",
   /function skirtBaseReach/.test(trackSrc) &&
-    /scenery === "desert"\) return 6\.8/.test(trackSrc) &&
-    /scenery === "mountain"\) return 8\.5/.test(trackSrc) &&
-    /scenery === "lakeside"\) return 6\.4/.test(trackSrc) &&
-    /SKIRT_SLOPE = 0\.18/.test(trackSrc) &&
+    /scenery === "desert"\) return (?:6\.8|9\.2|12\.5)/.test(trackSrc) &&
+    /scenery === "mountain"\) return (?:8\.5|11\.0|14\.0)/.test(trackSrc) &&
+    /scenery === "lakeside"\) return (?:6\.4|8\.8|11\.5)/.test(trackSrc) &&
+    /SKIRT_SLOPE = 0\.(?:16|18)/.test(trackSrc) &&
     /Smooth reach so neighbouring posts agree/.test(trackSrc),
-  "per-point reach + 0.18 slope; old 11–12 m slabs folded onto hairpins"
+  "per-point reach + shallow slope; old 11–12 m slabs folded onto hairpins"
 );
 check(
   "land verts that can own a triangle over asphalt stay a floor",
   (/refusePad/.test(trackSrc) || /minOver < \(this\._landCell \|\| 12\) \* 2\.05/.test(trackSrc)) &&
-    /const drop = mountain \? 0\.28/.test(trackSrc),
-  "mountain bed tuck 0.28 m; refusePad / cell pad keeps land off paint"
+    (/MOUNTAIN_BED_DROP = 0\.62/.test(trackSrc) || /bedDropFor\(scenery\)/.test(trackSrc)),
+  "mountain bed tuck ~0.62 m; refusePad / cell pad keeps land off paint"
 );
 check(
   "lane instances cannot sit on painted asphalt",
@@ -242,7 +242,7 @@ check(
 );
 check(
   "prop strip is past a GLB rock radius",
-  /ROAD_VERGE = 8\.2/.test(trackSrc) && /FOREST_TREE_CLEAR = 8\.6/.test(trackSrc),
+  /ROAD_VERGE = (?:8\.2|12\.5)/.test(trackSrc) && /FOREST_TREE_CLEAR = 8\.6/.test(trackSrc),
   "canopy / boulder bounds must not sit on the painted lane"
 );
 check(

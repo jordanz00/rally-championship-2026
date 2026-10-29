@@ -7,12 +7,12 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=219";
+import { Vehicle } from "./physics/vehicle.js?v=221";
 import { getSurface } from "./physics/surfaces.js?v=59";
-import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=107";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=299";
+import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=111";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=301";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=486";
+import { Track } from "./tracks/track.js?v=491";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=12";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=70";
 import { Opponent } from "./ai.js?v=282";
@@ -27,10 +27,10 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=57";
+} from "./ui/hud.js?v=58";
 import { initPlayOptions } from "./ui/play-options.js?v=4";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=104";
-import { resolveVehicleCollisions } from "./physics/collide.js?v=61";
+import { resolveVehicleCollisions } from "./physics/collide.js?v=62";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=52";
 import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./gfx/pbr.js?v=67";
 import { StageWeather, courseWantsRain } from "./weather/rain.js?v=30";
@@ -48,7 +48,7 @@ import {
   persistAppearEnabled,
   wantsHeavyWebTsr,
   wantsMobilePresent,
-} from "./gfx/browser-reconstruct-sdk/index.js?v=1037";
+} from "./gfx/browser-reconstruct-sdk/index.js?v=1038";
 import { createPerfTier } from "./gfx/perf-tier.js?v=57";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=8";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
@@ -76,7 +76,7 @@ import {
   ARCADE_ASSIST,
   AI,
   SURFACES,
-} from "./config.js?v=258";
+} from "./config.js?v=260";
 
 /**
  * First-drive clock ease. Grip, assist and rival ease used to be set here too,
@@ -132,7 +132,7 @@ function raceTunnelLighting(courseId) {
 }
 import { Input } from "./input.js?v=44";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
-import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=9";
+import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=10";
 import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=51";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=7";
@@ -752,22 +752,22 @@ export class RallyGame {
       GFX.targetFps = 60;
       GFX.lockRenderFps = true;
       // Soft scale may shed fill-rate to hold 60 — never lock desktop to 30.
-      GFX.softScaleMin = 0.78;
+      // Floor stays high enough that spikes do not mush the whole stage soft.
+      GFX.softScaleMin = 0.86;
       if (isMacDesktopPlay()) {
-        // Retina clarity under a hard 60 Hz budget. 1.75× + 3.4M stays sharp
-        // on 14" MBP; soft scale covers spikes without a 30 Hz lock.
-        GFX.maxPixelRatio = 1.75;
-        GFX.maxPixels = 3400000;
-        GFX.titleMaxPixelRatio = 1.35;
-        GFX.titleMaxPixels = 1800000;
+        // Retina-native race present. Soft scale covers spikes without a 30 Hz lock.
+        GFX.maxPixelRatio = 2;
+        GFX.maxPixels = 5200000;
+        GFX.titleMaxPixelRatio = 1.5;
+        GFX.titleMaxPixels = 2400000;
         GFX.shadowMap = Math.max(GFX.shadowMap || 1536, 1536);
         if (TITLE_SHOWROOM) {
-          TITLE_SHOWROOM.maxPixelRatio = 1.35;
-          TITLE_SHOWROOM.maxPixels = 1800000;
+          TITLE_SHOWROOM.maxPixelRatio = 1.5;
+          TITLE_SHOWROOM.maxPixels = 2400000;
         }
       } else {
-        GFX.maxPixelRatio = 1.5;
-        GFX.maxPixels = 2800000;
+        GFX.maxPixelRatio = 1.85;
+        GFX.maxPixels = 4200000;
       }
       if (this.qualityMgr) {
         this.qualityMgr.configure({
@@ -4327,7 +4327,7 @@ export class RallyGame {
       if (this.rush && this.player) {
         const q = this.player._q;
         const half = ((q && q.width) || 10) * 0.5;
-        const offRoad = !!(q && Number.isFinite(q.lateral) && Math.abs(q.lateral) > half + 1.2);
+        const offRoad = !!(q && Number.isFinite(q.lateral) && Math.abs(q.lateral) > half + 3.5);
         const dump = this.rush.step(FIXED_DT, {
           player: this.player,
           opponents: this.opponents,
@@ -4562,12 +4562,12 @@ export class RallyGame {
     const qHud = this.player._q;
     const halfHud = ((qHud && qHud.width) || 10) * 0.5;
     const offRibbon =
-      !!(qHud && Number.isFinite(qHud.lateral) && Math.abs(qHud.lateral) > halfHud + 1.5) &&
+      !!(qHud && Number.isFinite(qHud.lateral) && Math.abs(qHud.lateral) > halfHud + 3.5) &&
       this.player.onGround;
     h.offRoad = offRibbon;
     if (offRibbon && this.state === "race") {
       const now = this.raceTime || 0;
-      if (!(this._offRoadTipAt >= 0) || now - this._offRoadTipAt > 6) {
+      if (!(this._offRoadTipAt >= 0) || now - this._offRoadTipAt > 10) {
         this._offRoadTipAt = now;
         this.hud.flashMessage("OFF ROAD — find the ribbon");
       }
@@ -5449,11 +5449,15 @@ export class RallyGame {
       this._cockpitLive = true;
       this._povHudFade = 1;
       if (this.camera) this.camera.layers.enable(POV_HUD_LAYER);
-      // Mirror RT is pre-warmed; never allocate or capture here on the C press.
+      // Bind the live rearview. Repair a missing RT without a full warm hitch.
+      this._ensureMirrorRT();
       if (this._mirrorRT) {
         setCockpitMirrorMap(this.playerMesh, this._mirrorRT.texture);
         this._mirrorTick = 0;
-        this._mirrorDefer = Math.max(2, CAMERA.mirrorDeferFrames | 0);
+        // Fresh seat: show last warm frame immediately; catch up next present.
+        this._mirrorDefer = this._mirrorHasImage
+          ? Math.max(0, CAMERA.mirrorDeferFrames | 0)
+          : 0;
       }
     } else if (this._cockpitLive) {
       setCockpitView(this.playerMesh, false, this.camera, this.renderer);
@@ -7108,8 +7112,9 @@ export class RallyGame {
    * Fixed small size (not the main framebuffer) so C never reallocates it.
    */
   _mirrorSize() {
-    const w = Math.max(256, Math.min(GFX.mirrorW || 384, 384));
-    const h = Math.max(80, Math.min(GFX.mirrorH || 120, 120));
+    // Readable cabin glass — config defaults 512×160; cap keeps phones safe if ever enabled.
+    const w = Math.max(256, Math.min(GFX.mirrorW || 512, 512));
+    const h = Math.max(80, Math.min(GFX.mirrorH || 160, 160));
     return { w, h };
   }
 
@@ -7225,7 +7230,7 @@ export class RallyGame {
     const key = `${this.courseId || ""}|${this.carId || ""}|${mesh.uuid}|${mesh.userData.titleLod ? "lod" : "hero"}|glb${mesh.userData.hasGlbCabin ? 1 : 0}`;
     const cabinReady =
       !!mesh.userData._povHideReady &&
-      mesh.userData._povHideVer === 8 &&
+      mesh.userData._povHideVer === 9 &&
       !!mesh.userData._povClipPrepared &&
       !!mesh.userData.povDriver;
     if (!force && this._povWarmKey === key && cabinReady) {

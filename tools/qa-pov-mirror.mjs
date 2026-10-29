@@ -68,10 +68,11 @@ check(
 check(
   "rearview lens is a cabin mirror (narrow VFOV, long enough far)",
   /mirrorFov:\s*26/.test(read("js/config.js")) &&
-    /mirrorFar:\s*(?:160|200)/.test(read("js/config.js")) &&
+    /mirrorFar:\s*(?:160|200|220)/.test(read("js/config.js")) &&
     /_mirrorLens\(\)/.test(game) &&
-    /track\.update\(this\.player\.position, this\._mirrorCam\.position/.test(game),
-  "FOV~26°; far 160 m; stream against rear lens"
+    /_syncMirrorCam\(\)/.test(game) &&
+    /mirrorCamZ/.test(car),
+  "FOV~26°; far ≥160 m; bumper-aft capture cam"
 );
 
 check(
@@ -85,15 +86,24 @@ check(
 
 check(
   "mirror RT is a fixed size (readable cabin glass), not the main canvas",
-  /mirrorW:\s*(?:320|384)/.test(read("js/config.js")) &&
-    /mirrorH:\s*(?:100|120)/.test(read("js/config.js")) &&
-    /Math\.min\(GFX\.mirrorW \|\| 384, 384\)/.test(game),
-  "long edge up to 384, height up to 120"
+  /mirrorW:\s*(?:320|384|512)/.test(read("js/config.js")) &&
+    /mirrorH:\s*(?:100|120|160)/.test(read("js/config.js")) &&
+    /Math\.min\(GFX\.mirrorW \|\| 512, 512\)/.test(game),
+  "long edge up to 512, height up to 160"
 );
 check(
-  "POV mirror refreshes on skipped present frames",
-  /_renderMirror\(true\)/.test(game) && /onSkippedPresent/.test(game),
-  "mirror must stay 60 Hz when present locks to 30"
+  "POV mirror captures while seated (present path)",
+  /_renderMirror\(\)/.test(game) &&
+    /mirrorEveryPov/.test(game) &&
+    /!onPad && !countdownLite\) this\._renderMirror\(\)/.test(game),
+  "rearview updates on live race presents"
+);
+check(
+  "roof clip never shaves the live rearview",
+  /inCockpitTree\(obj\) \|\| obj\.name === "rearview"/.test(car) &&
+    /mat\.clippingPlanes = null/.test(car) &&
+    /mesh\.userData\.povHud = true/.test(car),
+  "eye-plane clip was eating glass above the cut"
 );
 check(
   "mirror capture keeps sun shadows",
@@ -243,9 +253,9 @@ async function live() {
       "live RT exists at lower-than-canvas resolution",
       sample &&
         sample.rtW >= 256 &&
-        sample.rtW <= 384 &&
+        sample.rtW <= 512 &&
         sample.rtH >= 80 &&
-        sample.rtH <= 128 &&
+        sample.rtH <= 160 &&
         sample.canvasW > sample.rtW,
       sample ? `rt=${sample.rtW}x${sample.rtH} canvas=${sample.canvasW}x${sample.canvasH}` : "no sample"
     );

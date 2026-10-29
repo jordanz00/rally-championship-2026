@@ -17,6 +17,7 @@ import {
   SHOT_HOLD,
   HOLD_MIN,
   HOLD_MAX,
+  shuffleShots,
   composeBroadcastShot,
   playerInBroadcastFrame,
   lookTargetsPlayer,
@@ -120,6 +121,19 @@ const dir = new BroadcastDirector(track, tape, { reducedMotion: false });
 check("director ready", dir.ready);
 dir.snapTo(mid);
 check("camera finite", Number.isFinite(dir.eyeX) && Number.isFinite(dir.lookY));
+check("opening kind is a known shot", BROADCAST_SHOTS.includes(dir.kind));
+check("opening marks picked", dir._openingPicked === true);
+{
+  const shuffled = shuffleShots(BROADCAST_SHOTS);
+  check("shuffleShots keeps all kinds", shuffled.length === BROADCAST_SHOTS.length && BROADCAST_SHOTS.every((k) => shuffled.includes(k)));
+  const opens = new Set();
+  for (let n = 0; n < 48; n++) {
+    const d = new BroadcastDirector(track, tape, { reducedMotion: false });
+    d.snapTo(mid);
+    opens.add(d.kind);
+  }
+  check("opening cut varies across replays", opens.size >= 3);
+}
 let faded = false;
 let kinds = new Set([dir.kind]);
 for (let i = 0; i < 240; i++) {
@@ -203,7 +217,7 @@ const dir2 = new BroadcastDirector(track, tape, { reducedMotion: false, aspect: 
 dir2.snapTo(mid);
 let lost = 0;
 const seen = new Set();
-for (let i = 0; i < 360; i++) {
+for (let i = 0; i < 720; i++) {
   const pose = tape.poseAt((i * 0.05) % tape.duration());
   dir2.update(0.05, pose);
   seen.add(dir2.kind);
@@ -284,7 +298,8 @@ check("marks can forget stamps without wipe", /forgetStamps\(\)/.test(fxSrc));
 check("rival LOD mesh gets replay pose", /applyReplayPose\(pose, dt, spin\)/.test(aiSrc));
 check("rival replay keeps mesh visible", /this\.mesh\.visible = true/.test(aiSrc));
 check("attract reel import stays put", /attract-reel\.js\?v=\d+/.test(gameSrc));
-check("broadcast module cache-bust is v9+", Number((gameSrc.match(/broadcast-replay\.js\?v=(\d+)/) || [])[1] || 0) >= 9);
+check("broadcast module cache-bust is v10+", Number((gameSrc.match(/broadcast-replay\.js\?v=(\d+)/) || [])[1] || 0) >= 10);
+check("director rolls a random opening cut", /_pickOpeningKind/.test(fs.readFileSync(path.join(ROOT, "js/cinema/broadcast-replay.js"), "utf8")) && /shuffleShots/.test(fs.readFileSync(path.join(ROOT, "js/cinema/broadcast-replay.js"), "utf8")));
 check("replay cut resets TSR history", /_onBroadcastCut\(/.test(gameSrc) && /shot\.didCut/.test(gameSrc) && /this\.tsr\.reset/.test(gameSrc));
 check("replay cut re-poses pack at dt 0", /_onBroadcastCut\([\s\S]*?_poseReplayPack\(pose, 0\)/.test(gameSrc));
 check("hard cut has no camera blend leftover", !/BLEND_SEC/.test(fs.readFileSync(path.join(ROOT, "js/cinema/broadcast-replay.js"), "utf8")));

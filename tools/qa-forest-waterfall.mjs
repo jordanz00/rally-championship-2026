@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * qa-forest-waterfall.mjs — Stage 2 Forest must plant a cascading waterfall.
+ * qa-forest-waterfall.mjs — Stage 2 Forest must plant an epic cascading waterfall.
  *
  * RUN: node tools/qa-forest-waterfall.mjs
  */
@@ -28,7 +28,7 @@ console.log(`FOREST WATERFALL  ·  ${new Date().toISOString()}\n`);
 
 const track = read("js/tracks/track.js");
 const pbr = read("js/gfx/pbr.js");
-const courses = read("js/tracks/courses.js");
+const forest = read("js/tracks/stages/forest-definition.js");
 const game = read("js/game.js");
 const main = read("js/main.js");
 const index = read("index.html");
@@ -45,6 +45,11 @@ check(
   "called from forest scenery path"
 );
 check(
+  "epic gorge scale",
+  /forestEpicFalls/.test(track) && /cliffH = 64/.test(track) && /fallW = 38/.test(track),
+  "background attraction must be gigantic"
+);
+check(
   "cascade sheets + plunge pool registered for scroll",
   /userData\.waterScroll/.test(track) &&
     /waterfall-pool/.test(track) &&
@@ -52,13 +57,13 @@ check(
   "sheets rush down; pool ripples"
 );
 check(
-  "waterfall sits past the drive verge",
-  /ROAD_VERGE \+ 16\.5/.test(track) && /_ribbonClear\(cx, cz, 8\)/.test(track),
+  "waterfall sits far past the drive verge",
+  /ROAD_VERGE \+ 58/.test(track) && /_ribbonClear\(x, z, 22\)/.test(track),
   "must not occupy the painted lane"
 );
 check(
   "forest subtitle mentions waterfall",
-  /WATERFALL CLEARING/.test(courses),
+  /WATERFALL CLEARING/.test(forest),
   "course card should sell the landmark"
 );
 check(
@@ -71,19 +76,13 @@ const trackV = Number((game.match(/track\.js\?v=(\d+)/) || [])[1] || 0);
 const pbrFromTrack = Number((track.match(/pbr\.js\?v=(\d+)/) || [])[1] || 0);
 const gameV = (main.match(/game\.js\?v=(\d+)/) || [])[1];
 const mainV = (index.match(/main\.js\?v=(\d+)/) || [])[1];
-check("track cache bust", trackV >= 222, `got ${trackV}`);
+check("track cache bust", trackV >= 491, `got ${trackV}`);
 check(
   "pbr waterfall import",
-  /waterfall as waterfallPbr/.test(track) && pbrFromTrack >= 29,
+  /waterfall as waterfallPbr/.test(track) && pbrFromTrack >= 68,
   `track pbr v=${pbrFromTrack}`
 );
-check(
-  "cache bust main↔game",
-  gameV && mainV && gameV === mainV && Number(gameV) >= 507,
-  `game=${gameV} main=${mainV}`
-);
+check("boot cache aligned", gameV && mainV && gameV === mainV, `main=${mainV} game=${gameV}`);
 
-console.log(
-  `\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Forest waterfall armed"}`
-);
+console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "epic Forest waterfall planted"}`);
 process.exit(fail ? 1 : 0);

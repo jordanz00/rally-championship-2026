@@ -1,5 +1,147 @@
 # QA report — quality-control pass
 
+## Stage 2 epic gorge waterfall (2026-10-29)
+
+**Player moment:** Forest glade approach — a gigantic cliff cascade hangs in the background. Braided sheets, mist plume, plunge pool. Off the paint; tunnel gorge fall still a second beat.
+
+**Shipped:** `_addForestWaterfall` rebuilt as ~64 m cliff / 38 m wide / 8 sheets + mist · planted ~58 m+ past verge at `forest_glade` · keepOut · waterfall PBR v2 · subtitle WATERFALL CLEARING
+
+**Boot:** `main.js?v=1233` · `track.js?v=491` · `pbr.js?v=68` · `forest-definition.js?v=23`
+
+**Proof:** `node tools/qa-forest-waterfall.mjs` · human: Forest → glade — epic fall in the background.
+
+## Subtle body roll — less weeble on turn-in (2026-10-29)
+
+**Player moment:** Left/right turn-in — chassis tips a little with weight, does not rock like a cabinet. Camera horizon stays steadier.
+
+**Cause:** `bodyRollMul` 2.05 plus extra ×1.1×1.3 visual juice and `bodyRollMax` 0.138 (~8°) made every steer a lean-wobble.
+
+**Shipped:** bodyRollMul 1.12 · max 0.068 · drop extra juice · stronger roll damp · stiffer anti-roll · camera `rollFollow` halved.
+
+**Boot:** `main.js?v=1232` · `vehicle.js?v=221` · `config.js?v=260`
+
+**Proof:** Hard-refresh, medium chase, weave left/right at speed — lean readable, not woozy.
+
+## Sharper race present — still aimed at 60 (2026-10-29)
+
+**Player moment:** Stage reads clearer on Retina / desktop — less soft mush on trees, road edge, car paint. Target remains 60 Hz; soft scale / cadence still shed under load.
+
+**Cause:** `maxPixels` crushed effective DPR to ~1.5× on common laptop CSS sizes. Soft scale floor 0.78 and mild TSR RCAS kept the picture soft.
+
+**Shipped**
+- Desktop: maxPixelRatio 2 / ~1.85 · maxPixels 5.2M (Mac) / 4.2M · softScaleMin 0.86
+- TSR RCAS sharpness 0.5 → 0.68
+- Phones unchanged (fill-rate budget stays)
+
+**Boot:** `main.js?v=1231` · `config.js?v=259` · `tsr-upscaler.js?v=993`
+
+**Proof:** Hard-refresh desktop race — HUD FPS / present should hold ~60; image denser. If GPU struggles, soft scale steps down before lock-30.
+
+## Realistic speedo / tach numbers (2026-10-29)
+
+**Player moment:** Cluster and digital speed no longer read ~145–160 mph on a Stage Celica. WOT tops near ~118 mph on the face; dial is a 140 mph rally cluster. Tach stays on road RPM (not wheelspin).
+
+**Cause:** Arcade Vmax (~255 km/h) converted 1:1 to mph (~158). Honest, but unbelievable for the car on screen. Face was scaled to 180 mph.
+
+**Shipped:** `gauge-units.js` calibrates readout (255 km/h → 118 mph). Chase + POV dials max 140 / red 120. Tach face 0–8k. Physics unchanged.
+
+**Boot:** `main.js?v=1230` · `hud.js?v=58` · `celica.js?v=301`
+
+**Proof:** `node --check` · at true 145 mph → gauge ~108 · at Vmax → ~118
+
+## Drift-dense courses — more medium-hard turns (2026-10-29)
+
+**Player moment:** Every stage asks for slides more often — linked medium hooks, tighter tunnel bends (Forest), dune / ridge / shore pairs. Straights still exist for spectacle; corners carry the rhythm.
+
+**Shipped**
+- Desert / Forest / Mountain / Lakeside: +medium_corner density (8 / 7 / 9 / 9 authored)
+- EasePlay: medium radius / angle keep more bite (`PLAY_MEDIUM_RADIUS` 1.22, speed-lane angle ×0.9)
+- Forest tunnel bends → medium slide arcs (r70–78)
+
+**Boot:** `main.js?v=1229` · `courses.js?v=110` · defs desert20 / forest22 / mountain18 / lakeside16 · `track-definition.js?v=16`
+
+**Proof:** Compiled drift-worthy curves up (Desert 10 / Forest 13 / Mountain 12 / Lakeside 12) · `qa-stage-beauty` medium≥6 · `qa-stage-flow` / `qa-stage-length` PASS
+
+## Smooth roadway elevation (2026-10-29)
+
+**Player moment:** Hills and climbs read as continuous grades — no faceted kinks every ~30 m. Lakeside bridge climb / deck / exit ease cleanly.
+
+**Cause:** Hill sculpt stored constant slope per chord; adjacent chords met with discontinuous grade. Short hill waves made it worse.
+
+**Shipped**
+- `_smoothPlayElevation` — 5-tap Y blend (jumps locked)
+- `_reshapeBridgeGrades` — level deck + smoothstep approach/exit
+- Longer / quieter hill waves · 24 m chords · wider quiet fade
+
+**Boot:** `main.js?v=1228` · `track.js?v=490` · `track-definition.js?v=15` · `courses.js?v=109`
+
+**Proof:** Non-jump max Δgrade dropped ~0.08–0.11 → ≤0.009 · `qa-stage-flow` / `qa-stage-beauty` PASS · `qa-desert-1654` / `qa-jump-land` / `qa-play-lane`
+
+## Stage 4 Lakeside — drive the suspension bridge (2026-10-29)
+
+**Player moment:** Stage 4 opens onto a climb, then you drive the painted ribbon across the suspension span over the lake. Towers / cables / rails frame the deck; water and land stay in the basin underneath.
+
+**Cause:** Bridge mesh used to hang beside the course. Span was not an elevated drive piece, so the player never crossed it.
+
+**Shipped**
+- Authored `bridge_approach` (+6.4) → `bridge` span (level) → `bridge_exit` (−6.4) in `lakeside-definition`
+- Hill sculpt / piece-split keep bridge tags + authored dy
+- Deck tagged `bridge` / `bridgeBaseY` (shore height before climb); land/water under deck; structure on the ribbon
+
+**Boot:** `main.js?v=1227` · `track.js?v=489` · `courses.js?v=108` · `lakeside-definition.js?v=15` · `track-definition.js?v=14`
+
+**Proof:** `node --check` on track / definition · courses compile shows ~480 m level bridge run at elevated y · `node tools/qa-stage-beauty.mjs` · human: pick Lakeside, climb, cross span.
+
+## Stage 3 Mountain — land under asphalt + bright deck (2026-10-29)
+
+
+**Player moment:** Mountain chase — rock/scrub textures stay under the tarmac (no z-fight / no land through paint). Road reads pale alpine asphalt, not charcoal.
+
+**Cause:** Bed drop was only 0.28 m; grade chords lifted land albedo through the ribbon. Vertex + material tints stayed dark.
+
+**Shipped:** `MOUNTAIN_BED_DROP` 0.62 · wider chase floor (58 m, zero bank leak) · stronger land/road polygonOffset · pale `roadTintHex` / organic / material lift for mountain only.
+
+**Boot:** `main.js?v=1226` · `track.js?v=488`
+
+**Proof:** `node tools/qa-env-clip.mjs` (mountain bed / chaseFlat gates)
+
+## Post-race replay — random opening camera (2026-10-29)
+
+**Player moment:** Finish a stage. Replay does not always open on HELICOPTER — first cut rolls bumper / chase / fly-by / heli / nose / three-quarter / crane / hero (whatever still frames the car). Later cuts stay variable.
+
+**Shipped:** `BroadcastDirector._pickOpeningKind` + `shuffleShots` on first `snapTo`; cycle cuts pick a random step. Boot `main.js?v=1225` · `broadcast-replay.js?v=10`.
+
+**Proof:** `node tools/qa-broadcast-replay.mjs`
+
+## Off-road plant — no spontaneous elevate (2026-10-29)
+
+**Player moment:** Far left (or right) of the ribbon — player and pack stay on the verge / land. No floating up off the roadway.
+
+**Cause:** Off-paint height could sit above the driven deck (`riseRoom` + dune `_groundHeight` climb via `holdVisualGround`). `_offRoadRiseCap` also scaled with speed (~0.18 m/tick), so a brief high query levitated cars.
+
+**Shipped**
+- Query off-paint ceiling = road deck (no rise above paint)
+- Stronger `_easeRunoff` pin; rise cap fixed at 4 mm/tick off paint
+- `holdVisualGround` never climbs above shoulder query / baseHeight
+- Wider verge: `ROAD_VERGE` 12.5 · skirt reach max 18.5 · OFF bands 3.2 / 18 / 30 / 42
+- Rush / tip off-road gate half+3.5 · tip cooldown 10 s
+
+**Boot:** `main.js?v=1224` · `track.js?v=487` · `vehicle.js?v=220` · `collide.js?v=62`
+
+## POV rearview restored — live RT (2026-10-29)
+
+**Player moment:** C into cabin. Center rearview shows the road / pack behind you in realtime — not a black bar or missing glass.
+
+**Cause:** POV roof clip cut everything above the eye plane. The procedural rearview sits ~0.11 m above the eye, so glass + rim were shaved. HUD mark only set `material.userData.hud`, so clip skipped nothing. `_warmPov` also waited on hide-ver 8 while cache ships ver 9.
+
+**Shipped**
+- `markPovHudMesh` sets `mesh.userData.povHud`; rearview group/rim on HUD layer; cabin v6 rebuild
+- Roof clip skips cockpit tree / `rearview`; `setCockpitMirrorMap` clears clippingPlanes
+- RT size up to 512×160; bind RT on C; hide-ver warm gate → 9
+- Boot `main.js?v=1223` · `celica.js?v=300`
+
+**Proof:** `node tools/qa-pov-mirror.mjs` — all static gates PASS. Headed live RT probe: Chrome CDP flaky in this agent env (timeout / SIGSEGV); human C-key seat check required.
+
 ## Physics / driving mechanics audit + v10 feel (2026-10-29)
 
 **Audit (post–road-holding pass)**

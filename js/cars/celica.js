@@ -24,6 +24,11 @@ import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=67";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=27";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
+import {
+  gaugeMph,
+  GAUGE_DIAL_MAX_MPH,
+  GAUGE_DIAL_RED_MPH,
+} from "../ui/gauge-units.js?v=1";
 
 export { bindCarDirt, updateCarDirt, resetCarDirt };
 export { RIVAL_LIVERIES, aiLiveryForIndex };
@@ -3167,6 +3172,8 @@ function hideHeavyInterior(root) {
   let found = false;
   root.traverse((obj) => {
     if (obj.userData && obj.userData.povHud) return;
+    // Live cabin rearview + gauges live under cockpit — never treat as GLB chrome.
+    if (inCockpitTree(obj) || obj.name === "rearview") return;
     const n = (obj.name || "").toLowerCase();
     // Keep modeled STEER_HR / SteeringWheel meshes; bindGlbSteeringWheel
     // reparents them for POV. Hiding the parent cockpit still strips seats.
@@ -5786,10 +5793,10 @@ const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
 /** In-car analog dials (~110 mm) so the needles read at seated FOV. */
 const POV_GAUGE_R = 0.055;
-/** Same mph scale as the chase HUD (180 mph covers the garage Vmax). */
-const POV_SPEED_MAX_MPH = 180;
+/** Same face as the chase HUD — calibrated Stage Celica cluster. */
+const POV_SPEED_MAX_MPH = GAUGE_DIAL_MAX_MPH;
 /** Rearview overlay — 25% smaller than the original 0.32 × 0.082 glass. */
-const POV_MIRROR_SCALE = 0.75;
+const POV_MIRROR_SCALE = 0.88;
 /** Three.js layer for camera-locked POV HUD (rendered after post, ungraded). */
 export const POV_HUD_LAYER = 1;
 
@@ -6647,6 +6654,8 @@ function markPovHudMesh(mesh, order, opts) {
   mesh.layers.set(POV_HUD_LAYER);
   mesh.frustumCulled = false;
   mesh.renderOrder = order != null ? order : 20;
+  // Mesh flag — setPovRoofClip / hideHeavyInterior key off this, not material.hud.
+  mesh.userData.povHud = true;
   const wantDepth = !!(opts && opts.depthTest);
   const wantWrite = !!(opts && opts.depthWrite);
   const list = [].concat(mesh.material || []);
@@ -6801,7 +6810,7 @@ function makeDial(kind, maxVal, redFrom) {
  * @param {THREE.Object3D} root
  */
 function attachCockpit(root) {
-  const CABIN_VER = 5;
+  const CABIN_VER = 6;
   if (root.userData.cockpit && root.userData._cabinVer === CABIN_VER) {
     bindGlbSteeringWheel(root);
     return;
@@ -6816,8 +6825,8 @@ function attachCockpit(root) {
   ensurePovHead(root, rig);
   const spec = CARS[root.userData.carId] || CARS.celica;
   /** Match chase AnalogDial max (9) so C-key does not change the tach scale. */
-  const rpmMax = 9;
-  const rpmRed = Math.max(6, (spec.redline || 7500) / 1000);
+  const rpmMax = 8;
+  const rpmRed = Math.max(6.5, Math.min(7.5, (spec.redline || 7500) / 1000));
   const hull = rig.hull || localHull(root);
   // Hero GT4 already has COCKPIT_HR / seats / dials — keep a dark occlusion
   // shell under the GLB so POV never reads as an empty windshield.
@@ -6918,7 +6927,7 @@ function attachCockpit(root) {
 
   const cluster = new THREE.Group();
   cluster.name = "gauge-cluster";
-  const speedDial = makeDial("speed", POV_SPEED_MAX_MPH, 150);
+  const speedDial = makeDial("speed", POV_SPEED_MAX_MPH, GAUGE_DIAL_RED_MPH);
   const rpmDial = makeDial("rpm", rpmMax, rpmRed);
   // Tach left, speedo right — ST205 / chase HUD layout.
   rpmDial.group.position.set(-POV_GAUGE_R * 1.28, 0, 0);
@@ -7457,6 +7466,9 @@ function makeSeat(x, y, z, mat) {
 function makeRearviewMirror() {
   const g = new THREE.Group();
   g.name = "rearview";
+  // Keep the whole unit off the roof clip — glass sits above the eye cut.
+  g.userData.povHud = true;
+  g.userData.cabinFill = true;
   const plastic = cabinMat(0x1a1a20, 0.55, 0.2);
   const gw = 0.32 * POV_MIRROR_SCALE;
   const gh = 0.082 * POV_MIRROR_SCALE;
@@ -7493,6 +7505,15 @@ function makeRearviewMirror() {
   );
   stem.position.set(0, gh * 0.5 + rim + 0.014, 0);
   g.add(top, bot, left, right, glass, stem);
+  // Rim + stem share the HUD overlay so the frame survives the roof clip
+  // and draws with the live RT glass after post.
+  [top, bot, left, right, stem].forEach((mesh) => {
+    mesh.userData.povHud = true;
+    mesh.userData.cabinFill = true;
+    mesh.layers.set(POV_HUD_LAYER);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 29;
+  });
   g.frustumCulled = false;
   g.userData.glass = glass;
   return g;
@@ -7542,8 +7563,11 @@ export function setPovRoofClip(root, on, renderer) {
     root.traverse((obj) => {
       if (!obj.isMesh || !obj.material) return;
       if (obj.userData.povHud || obj.userData.cabinFill) return;
-      // Shave only the headliner. Dash, wheel, and doors stay below the eyes.
+      // Cabin tree (gauges / live rearview) sits above the eye — never shave it.
+      if (inCockpitTree(obj) || obj.name === "rearview") return;
       const path = cabinNamePath(obj);
+      if (/rearview|mirror_glass/.test(path)) return;
+      // Shave only the headliner. Dash, wheel, and doors stay below the eyes.
       if (obj.userData.glbCabin && !/rollcage|visor|headliner|sunshade/.test(path)) {
         const center = new THREE.Vector3();
         new THREE.Box3().setFromObject(obj).getCenter(center);
@@ -7729,6 +7753,14 @@ export function setCockpitMirrorMap(root, texture) {
   mat.depthTest = false;
   mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
+  // Roof-clip planes must never stay on the RT glass (black / empty mirror).
+  mat.clippingPlanes = null;
+  mat.clipShadows = false;
+  glass.userData.povHud = true;
+  glass.layers.set(POV_HUD_LAYER);
+  const mir = root.userData.mirror;
+  if (mir) mir.userData.povHud = true;
+  // Visibility stays with setCockpitView / flip — do not force-show in chase.
   if (mat.map) {
     mat.map.minFilter = THREE.LinearFilter;
     mat.map.magFilter = THREE.LinearFilter;
@@ -7755,9 +7787,10 @@ export function updateCockpit(root, state) {
   if (!root || !root.userData.speedNeedle) return;
   const dt = Math.max(0.001, Math.min(0.05, state.dt || 1 / 60));
   const vmax = root.userData.gaugeVmax || POV_SPEED_MAX_MPH;
-  const rpmMax = root.userData.gaugeRpmMax || 9;
-  const mph = Math.max(0, state.speedMph || 0);
-  const rpmN = Math.max(0, (state.rpm || 0) / 1000);
+  const rpmMax = root.userData.gaugeRpmMax || 8;
+  const mph = gaugeMph(Math.max(0, state.speedMph || 0));
+  const redline = state.redline || 7600;
+  const rpmN = Math.max(0, Math.min(redline, state.rpm || 0)) / 1000;
   const spdT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1, mph / vmax)));
   const rpmT = -(GAUGE_START + GAUGE_SWEEP * Math.max(0, Math.min(1.04, rpmN / rpmMax)));
   if (root.userData.speedNeedle) {

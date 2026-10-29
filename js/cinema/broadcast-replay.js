@@ -5,6 +5,7 @@
  * WHAT IT DOES: records the live pack at 20 Hz (player + every rival), plays
  *   it back exactly, and cuts a player-centric director (bumper / chase /
  *   fly-by / heli / nose-on / three-quarter / crane / tunnel-crest hero).
+ *   Opening shot is rolled at random among framed setups; later cuts cycle.
  *   Every locked shot keeps the hero hull in the frustum and holds 2–3 s.
  *   Cuts snap the lens (no blend). Does not step Vehicle physics.
  * HOW IT CONNECTS: game.js records during race, ticks the director on result.
@@ -32,7 +33,7 @@ export const HERO_NDC_Y = 0.52;
 export const LOOK_PLAYER_M = 7.5;
 
 /**
- * Eight cinematic setups. Fly-by may lead; the rest are hero-centered.
+ * Eight cinematic setups. Opening cut rolls among these; later cuts cycle.
  * @type {readonly string[]}
  */
 export const BROADCAST_SHOTS = Object.freeze([
@@ -45,6 +46,22 @@ export const BROADCAST_SHOTS = Object.freeze([
   "crane",
   "hero",
 ]);
+
+/**
+ * Fisher–Yates shuffle into a new array (opening cut order).
+ * @param {readonly string[]} list
+ * @returns {string[]}
+ */
+export function shuffleShots(list) {
+  const out = list.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
+}
 
 export const HERO_SHOTS = new Set(["bumper", "chase", "heli", "nose", "threeq", "crane", "hero"]);
 
@@ -594,15 +611,17 @@ export class BroadcastDirector {
     this.towers = buildBroadcastTowers(track);
     this.reduced = !!(opts && opts.reducedMotion);
     this.aspect = opts && opts.aspect > 0.2 ? opts.aspect : DEFAULT_ASPECT;
-    this.kind = "heli";
+    // Kind is chosen on first snapTo — never hard-start on heli every race.
+    this.kind = "chase";
     this.shotT = 0;
-    this.hold = SHOT_HOLD.heli;
+    this.hold = SHOT_HOLD.chase;
     this.fade = 0;
     this.phase = "in";
     this.phaseT = 0;
     this.didCut = false;
     this._cutLock = HOLD_MIN;
     this._rescued = false;
+    this._openingPicked = false;
     this._road = {};
     this._side = 1;
     this._flyEye = null;
@@ -656,8 +675,14 @@ export class BroadcastDirector {
    * @param {ReplaySample} pose
    */
   snapTo(pose) {
-    if (!this._shotOk(this.kind, pose)) {
+    if (!this._openingPicked) {
+      this.kind = this._pickOpeningKind(pose);
+      this._openingPicked = true;
+      this.hold = rollShotHold(this.kind);
+      this.shotT = 0;
+    } else if (!this._shotOk(this.kind, pose)) {
       this.kind = this._pickKind(pose);
+      this.hold = rollShotHold(this.kind);
     }
     this._compose(this.kind, pose);
     this._snapEye();
@@ -766,6 +791,32 @@ export class BroadcastDirector {
   }
 
   /**
+   * Random first cut among setups that keep the hero in frame.
+   * @param {ReplaySample} pose
+   * @returns {string}
+   */
+  _pickOpeningKind(pose) {
+    const road = this.track && this.track.sample
+      ? this.track.sample(pose.progress, this._road)
+      : null;
+    const tunnel = !!(road && road.tunnel);
+    const jump = !!(road && road.jump);
+    let pool = shuffleShots(BROADCAST_SHOTS);
+    if (tunnel) {
+      pool = ["hero", "bumper", "chase", ...pool.filter((k) => k !== "hero" && k !== "bumper" && k !== "chase")];
+    } else if (jump) {
+      pool = ["crane", "hero", "threeq", ...pool.filter((k) => k !== "crane" && k !== "hero" && k !== "threeq")];
+    }
+    for (let i = 0; i < pool.length; i++) {
+      const next = pool[i];
+      this._side = shotSide(next, pose);
+      if (this._shotOk(next, pose, true)) return next;
+    }
+    this._side = shotSide("chase", pose);
+    return "chase";
+  }
+
+  /**
    * First candidate that keeps the player in frame wins.
    * @param {ReplaySample} pose
    * @returns {string}
@@ -783,8 +834,9 @@ export class BroadcastDirector {
     else if (Math.abs(pose.yawRate || 0) > 0.62) prefs.push("crane", "flyby", "threeq");
     else {
       const i = SHOT_CYCLE.indexOf(prev);
-      const start = i >= 0 ? (i + 1) % SHOT_CYCLE.length : 0;
-      const skip = Math.random() < 0.22 ? 1 : 0;
+      // Random step into the cycle so post-race cuts do not rhyme every race.
+      const start = i >= 0 ? (i + 1 + ((Math.random() * 3) | 0)) % SHOT_CYCLE.length : (Math.random() * SHOT_CYCLE.length) | 0;
+      const skip = Math.random() < 0.35 ? 1 : 0;
       for (let k = 0; k < SHOT_CYCLE.length; k++) {
         prefs.push(SHOT_CYCLE[(start + skip + k) % SHOT_CYCLE.length]);
       }
@@ -796,6 +848,7 @@ export class BroadcastDirector {
     for (let i = 0; i < prefs.length; i++) {
       const next = prefs[i];
       if (next === prev && prefs.length > 1) continue;
+      this._side = shotSide(next, pose);
       if (this._shotOk(next, pose, true)) return next;
     }
     return "chase";

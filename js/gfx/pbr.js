@@ -354,38 +354,42 @@ export function water() {
  */
 export function waterfall() {
   const map = paintedTexture(
-    "waterfall-cascade",
+    "waterfall-cascade-v2",
     (g, w, h) => {
-      g.fillStyle = "#3a6a7c";
+      g.fillStyle = "#2f5a6e";
       g.fillRect(0, 0, w, h);
       for (let x = 0; x < w; x++) {
-        const band = 0.55 + 0.45 * Math.sin(x * 0.38) * Math.sin(x * 0.11 + 1.3);
-        const r = Math.round(70 + band * 90);
-        const grn = Math.round(130 + band * 90);
-        const b = Math.round(150 + band * 80);
-        g.fillStyle = `rgba(${r},${grn},${b},${0.55 + band * 0.35})`;
+        const band = 0.5 + 0.5 * Math.sin(x * 0.42) * Math.sin(x * 0.09 + 1.1);
+        const r = Math.round(55 + band * 110);
+        const grn = Math.round(120 + band * 100);
+        const b = Math.round(145 + band * 95);
+        g.fillStyle = `rgba(${r},${grn},${b},${0.5 + band * 0.42})`;
         g.fillRect(x, 0, 1, h);
       }
-      g.fillStyle = "rgba(230,245,255,0.55)";
-      for (let i = 0; i < 22; i++) {
-        const x = ((i * 37) % (w - 6)) + 2;
-        const tw = 1 + (i % 3);
-        g.fillRect(x, 0, tw, h);
+      // Dense white veils — reads as volume from far chase.
+      g.fillStyle = "rgba(236,248,255,0.62)";
+      for (let i = 0; i < 48; i++) {
+        const x = ((i * 41) % (w - 8)) + 2;
+        g.fillRect(x, 0, 1 + (i % 4), h);
       }
-      g.fillStyle = "rgba(255,255,255,0.28)";
-      for (let i = 0; i < 40; i++) {
-        const x = (i * 53) % w;
-        const y = (i * 29) % h;
-        g.fillRect(x, y, 2, 8 + (i % 5));
+      g.fillStyle = "rgba(255,255,255,0.34)";
+      for (let i = 0; i < 90; i++) {
+        const x = (i * 59) % w;
+        const y = (i * 37) % h;
+        g.fillRect(x, y, 2, 10 + (i % 7));
       }
-      // Soft foam at the “top” of the UV (source lip).
-      const grad = g.createLinearGradient(0, 0, 0, h * 0.22);
-      grad.addColorStop(0, "rgba(255,255,255,0.75)");
-      grad.addColorStop(1, "rgba(255,255,255,0)");
-      g.fillStyle = grad;
-      g.fillRect(0, 0, w, h * 0.22);
+      const top = g.createLinearGradient(0, 0, 0, h * 0.18);
+      top.addColorStop(0, "rgba(255,255,255,0.88)");
+      top.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = top;
+      g.fillRect(0, 0, w, h * 0.18);
+      const toe = g.createLinearGradient(0, h * 0.78, 0, h);
+      toe.addColorStop(0, "rgba(255,255,255,0)");
+      toe.addColorStop(1, "rgba(230,245,255,0.55)");
+      g.fillStyle = toe;
+      g.fillRect(0, h * 0.78, w, h * 0.22);
     },
-    { w: 192, h: 384, repeat: [2.8, 2.0], aniso: 16 }
+    { w: 256, h: 512, repeat: [3.4, 2.4], aniso: 16 }
   );
   if (map) {
     map.wrapS = THREE.RepeatWrapping;

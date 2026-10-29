@@ -714,8 +714,8 @@ export class TsrUpscaler {
     this.mode = "off";
     this.scale = 0;
     this.debug = new Set(opts.debug || []);
-    /** @type {number} RCAS sharpness 0..1. 0.5 reads on foliage without a hard ring. */
-    this.sharpness = 0.5;
+    /** @type {number} RCAS sharpness 0..1. Slightly hot — race read soft at 0.5. */
+    this.sharpness = 0.68;
     this.maxHistory = 12;
     this.kernelSigma = 0.47;
     this.clipGamma = 1.0;

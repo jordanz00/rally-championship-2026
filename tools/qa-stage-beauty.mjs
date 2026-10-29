@@ -59,6 +59,22 @@ check("desert dune vista", /dune_vista/.test(desert) && /landmark: true/.test(de
 check("forest glade vista", /forest_glade/.test(forest));
 check("mountain alpine vista", /alpine_vista/.test(mountain));
 check("lakeside lake vista", /lake_vista/.test(lakeside));
+check(
+  "lakeside driveable bridge",
+  /bridge_span/.test(lakeside) && /kind:\s*"bridge"/.test(lakeside) && /bridge_approach/.test(lakeside)
+);
+function countKind(src, kind) {
+  return (src.match(new RegExp(`kind:\\s*"${kind}"`, "g")) || []).length;
+}
+for (const [id, src, floor] of [
+  ["desert", desert, 6],
+  ["forest", forest, 6],
+  ["mountain", mountain, 6],
+  ["lakeside", lakeside, 6],
+]) {
+  const med = countKind(src, "medium_corner");
+  check(`${id} medium-hard drift corners ≥ ${floor}`, med >= floor, `medium=${med}`);
+}
 
 const main = read("js/main.js");
 const index = read("index.html");

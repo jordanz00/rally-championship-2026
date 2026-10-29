@@ -6,11 +6,11 @@
  *   mph / RPM gauges in medium and far camera views (same units as digital HUD).
  */
 
+import { gaugeMph, gaugeMphFromKmh, GAUGE_DIAL_MAX_MPH, GAUGE_DIAL_RED_MPH } from "./gauge-units.js?v=1";
+
 /** Sweep from 7:30 to 4:30 (canvas radians, 0 = 3 o’clock). */
 const GAUGE_START = Math.PI * 0.75;
 const GAUGE_SWEEP = Math.PI * 1.5;
-/** Face scale — 180 mph covers a ~290 km/h Vmax without pegging early. */
-const SPEED_DIAL_MAX_MPH = 180;
 
 export class Hud {
   constructor() {
@@ -61,18 +61,18 @@ export class Hud {
     this._chase = false;
     this.mphDial = new AnalogDial(document.getElementById("gauge-mph"), {
       label: "MPH",
-      max: SPEED_DIAL_MAX_MPH,
+      max: GAUGE_DIAL_MAX_MPH,
       major: 20,
       minor: 10,
-      redFrom: 150,
+      redFrom: GAUGE_DIAL_RED_MPH,
     });
     this.rpmDial = new AnalogDial(document.getElementById("gauge-rpm"), {
       label: "×1000",
       sub: "RPM",
-      max: 9,
+      max: 8,
       major: 1,
       minor: 1,
-      redFrom: 7.2,
+      redFrom: 7.0,
     });
   }
 
@@ -92,9 +92,12 @@ export class Hud {
    * @param {number} [s.dt] frame delta seconds — needle lerp is dt-scaled
    */
   update(s) {
-    const mph = s.speedMph != null ? s.speedMph : (s.speedKmh || 0) * 0.621371;
-    const rpm = s.rpm || 0;
+    // Calibrated cluster mph — arcade chassis is hotter than a Stage Celica reads.
+    const mph =
+      s.speedMph != null ? gaugeMph(s.speedMph) : gaugeMphFromKmh(s.speedKmh || 0);
+    // Road RPM only (caller should pass roadRpm) — clamp to redline for the face.
     const redline = s.redline || 7500;
+    const rpm = Math.max(0, Math.min(redline, s.rpm || 0));
     const speedTxt = String(Math.round(mph)).padStart(3, "0");
     if (this._speedTxt !== speedTxt) {
       this._speedTxt = speedTxt;

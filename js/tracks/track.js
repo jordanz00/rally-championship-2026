@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=67";
+} from "../gfx/pbr.js?v=68";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -180,13 +180,13 @@ const LIFT_GRADE_MAX = 0.18;
 const STREAM_FAR = 1200;
 
 /** Minimum clear strip beyond the painted edge — no props on the driven line. */
-const ROAD_VERGE = 8.2;
+const ROAD_VERGE = 12.5;
 /**
  * Collision-safe corridor past the painted edge (m). Car half-width (~0.95) +
  * nose/tail / mirror slack so no env solid can sit where the chassis drives.
  * Visual props may still dress the outer verge; physics spheres must clear THIS.
  */
-const ROAD_COLLIDER_CLEAR = 4.6;
+const ROAD_COLLIDER_CLEAR = 5.4;
 /** Footprint refuse vs painted asphalt — car half-width + kerb slack (m). */
 const ROAD_PAINT_FOOT = 1.1;
 /** Extra clearance for tall forest pack trees (canopy radius at scale). */
@@ -195,24 +195,42 @@ const FOREST_TREE_CLEAR = 8.6;
 /**
  * Visual + plant shoulder skirt. A steep 0.38 drop made the verge a wall the
  * chassis punched through; keep a shallow grade over a longer run.
- * Contract: SKIRT_SLOPE 0.18 + biome base ~6.4–8.5 m (max 13.5) — not 11–12 m slabs.
+ * Wide reach so far-left / far-right runoff stays a planted bank, not air.
  */
-const SKIRT_SLOPE = 0.18;
-const SKIRT_REACH_MAX = 13.5;
+const SKIRT_SLOPE = 0.16;
+const SKIRT_REACH_MAX = 18.5;
 const SKIRT_MID_U = 0.55;
 const SKIRT_MID_DROP = 0.22;
 const SKIRT_PLANT_BIAS = 0.04;
+
+/**
+ * Land bed below the ribbon (metres). Mountain was 0.28 — hills chorded land
+ * tris through Stage 3 asphalt. Deeper tuck keeps rock/scrub under the deck.
+ */
+const MOUNTAIN_BED_DROP = 0.62;
+
+/**
+ * @param {string} scenery
+ * @returns {number}
+ */
+function bedDropFor(scenery) {
+  if (scenery === "mountain") return MOUNTAIN_BED_DROP;
+  if (scenery === "forest") return 0.38;
+  if (scenery === "desert") return 0.95;
+  if (scenery === "lakeside") return 0.55;
+  return 0.55;
+}
 
 /**
  * @param {string} scenery
  * @returns {number}
  */
 function skirtBaseReach(scenery) {
-  if (scenery === "desert") return 9.2;
-  if (scenery === "mountain") return 11.0;
-  if (scenery === "forest") return 10.2;
-  if (scenery === "lakeside") return 8.8;
-  return 6.8;
+  if (scenery === "desert") return 12.5;
+  if (scenery === "mountain") return 14.0;
+  if (scenery === "forest") return 13.2;
+  if (scenery === "lakeside") return 11.5;
+  return 9.5;
 }
 
 /**
@@ -564,6 +582,8 @@ export class Track {
             x, y, z, heading, width, surface, dist,
             tunnel: !!piece.tunnel,
             jump: !!piece.jump,
+            landmark: !!piece.landmark,
+            bridge: !!piece.bridge || piece.visual === "bridge_span",
             visual: piece.visual || "",
           });
         }
@@ -667,6 +687,7 @@ export class Track {
     }
 
     this._smoothPlayRibbon(raw);
+    this._smoothPlayElevation(raw);
     this._smoothJumpLandExits(raw);
 
     this.points = raw.map((p) => {
@@ -689,6 +710,7 @@ export class Track {
     // Later ribbon over a bore (Forest finish-left @ 3485) — one flat deck,
     // not stacked 18% flyover hills through the tunnel walls.
     this._separateTunnelOverpasses();
+    this._tagLakesideBridgeDeck();
 
     // Tunnel runs must be known before the land plane: Desert raises a ridge
     // around them so the tube is not a gate in empty sand.
@@ -730,6 +752,92 @@ export class Track {
     for (let i = 0; i < n; i++) {
       if (raw[i].jump || raw[i].jumpKind) continue;
       raw[i].width = Math.round(w[i] * 10) / 10;
+    }
+  }
+
+  /**
+   * Soften piecewise-linear grade kinks from hill chords / authored dy steps.
+   * Jump throws stay locked. Bridge climb / deck / exit are reshaped after.
+   * @param {Array<{y:number,jump?:boolean,jumpKind?:string,bridge?:boolean,visual?:string}>} raw
+   */
+  _smoothPlayElevation(raw) {
+    const n = raw.length;
+    if (n < 8) return;
+    const locked = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = raw[i];
+      if (p.jump || p.jumpKind) locked[i] = 1;
+    }
+    // Keep one sample each side of a jump so the lip / land pad is not eaten.
+    const hold = Uint8Array.from(locked);
+    for (let i = 0; i < n; i++) {
+      if (!locked[i]) continue;
+      if (i > 0) hold[i - 1] = 1;
+      if (i < n - 1) hold[i + 1] = 1;
+    }
+    const y = new Float64Array(n);
+    for (let i = 0; i < n; i++) y[i] = raw[i].y;
+    for (let pass = 0; pass < 16; pass++) {
+      const c = Float64Array.from(y);
+      for (let i = 2; i < n - 2; i++) {
+        if (hold[i]) continue;
+        y[i] = c[i - 2] * 0.1 + c[i - 1] * 0.2 + c[i] * 0.4 + c[i + 1] * 0.2 + c[i + 2] * 0.1;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (!hold[i]) raw[i].y = y[i];
+    }
+    this._reshapeBridgeGrades(raw);
+  }
+
+  /**
+   * Level bridge deck + smoothstep climb / drop so the span does not kink.
+   * @param {Array<{y:number,dist:number,bridge?:boolean,visual?:string}>} raw
+   */
+  _reshapeBridgeGrades(raw) {
+    const n = raw.length;
+    if (n < 8) return;
+    let i0 = -1;
+    let i1 = -1;
+    for (let i = 0; i < n; i++) {
+      const p = raw[i];
+      if (p.bridge || p.visual === "bridge_span") {
+        if (i0 < 0) i0 = i;
+        i1 = i;
+      }
+    }
+    if (i0 < 0 || i1 <= i0) return;
+    let a0 = i0;
+    while (a0 > 0 && raw[a0 - 1].visual === "bridge_approach") a0 -= 1;
+    let e1 = i1;
+    while (e1 < n - 1 && raw[e1 + 1].visual === "bridge_exit") e1 += 1;
+    let deck = 0;
+    let count = 0;
+    for (let i = i0; i <= i1; i++) {
+      deck += raw[i].y;
+      count += 1;
+    }
+    deck /= Math.max(1, count);
+    const ease = (t) => {
+      const x = t < 0 ? 0 : t > 1 ? 1 : t;
+      return x * x * (3 - 2 * x);
+    };
+    if (a0 < i0) {
+      const y0 = raw[a0].y;
+      const span = Math.max(0.01, raw[i0].dist - raw[a0].dist);
+      for (let i = a0; i < i0; i++) {
+        const t = (raw[i].dist - raw[a0].dist) / span;
+        raw[i].y = y0 + (deck - y0) * ease(t);
+      }
+    }
+    for (let i = i0; i <= i1; i++) raw[i].y = deck;
+    if (e1 > i1) {
+      const y1 = raw[e1].y;
+      const span = Math.max(0.01, raw[e1].dist - raw[i1].dist);
+      for (let i = i1 + 1; i <= e1; i++) {
+        const t = (raw[i].dist - raw[i1].dist) / span;
+        raw[i].y = deck + (y1 - deck) * ease(t);
+      }
     }
   }
 
@@ -963,6 +1071,57 @@ export class Track {
         dist1: pts[b].dist + 36,
       });
     }
+  }
+
+  /**
+   * Lakeside suspension span: mark the elevated ribbon as a bridge deck so
+   * land / water stay in the basin underneath (not climbing with the paint).
+   */
+  _tagLakesideBridgeDeck() {
+    if ((this.scenery || "") !== "lakeside") return;
+    const pts = this.points;
+    if (!pts || pts.length < 8) return;
+    let i0 = -1;
+    let i1 = -1;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (p.bridge || p.visual === "bridge_span") {
+        if (i0 < 0) i0 = i;
+        i1 = i;
+      }
+    }
+    if (i0 < 0 || i1 <= i0) return;
+    // Shore height = last centreline sample before the climb / span, so the
+    // basin sits under the deck instead of hitching to mid-ramp elevation.
+    let baseIdx = i0;
+    for (let i = i0 - 1; i >= 0; i--) {
+      const v = pts[i].visual || "";
+      if (v === "bridge_approach" || v === "bridge_span" || pts[i].bridge) {
+        baseIdx = i;
+        continue;
+      }
+      baseIdx = i;
+      break;
+    }
+    const baseY = pts[Math.max(0, baseIdx)].y;
+    for (let i = i0; i <= i1; i++) {
+      pts[i].bridge = true;
+      pts[i].flyover = true;
+      pts[i].bridgeBaseY = baseY;
+      if (!pts[i].visual) pts[i].visual = "bridge_span";
+    }
+    // Soft aprons so land does not spike at the tower feet.
+    for (let i = Math.max(0, i0 - 6); i < i0; i++) {
+      pts[i].bridge = true;
+      pts[i].flyover = true;
+      pts[i].bridgeBaseY = baseY;
+    }
+    for (let i = i1 + 1; i <= Math.min(pts.length - 1, i1 + 6); i++) {
+      pts[i].bridge = true;
+      pts[i].flyover = true;
+      pts[i].bridgeBaseY = baseY;
+    }
+    this._lakesideBridge = { i0, i1, baseY, dist0: pts[i0].dist, dist1: pts[i1].dist };
   }
 
   /**
@@ -1656,8 +1815,7 @@ export class Track {
   _landSurfaceY(x, z, scenery, nearHint) {
     const near = nearHint || this._nearestRoad(x, z);
     const desert = scenery === "desert";
-    const bedDrop =
-      scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : desert ? 0.95 : 0.55;
+    const bedDrop = bedDropFor(scenery);
     const over0 = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
     // Underpass / mouth floors win first — then paint corridor is a hard floor
     // so jump banks / dunes never lift land through the driven lane.
@@ -1685,10 +1843,10 @@ export class Track {
     } else if (near.dist < this._trenchWidth(near.roadW)) {
       h = Math.min(h, near.roadY - bedDrop);
     } else if (scenery === "mountain") {
-      const chase = near.roadW * 0.5 + 48;
+      const chase = near.roadW * 0.5 + 58;
       if (near.dist < chase) {
         const bed = near.roadY - bedDrop;
-        h = Math.min(h, bed + Math.max(0, near.dist - this._trenchWidth(near.roadW)) * 0.015);
+        h = Math.min(h, bed + Math.max(0, near.dist - this._trenchWidth(near.roadW)) * 0.008);
       }
       const vol =
         this._tunnelVolumes && this._tunnelVolumes.length
@@ -1905,8 +2063,14 @@ export class Track {
     });
     if (scenery === "lakeside" && mat.color) mat.color.setRGB(1.35, 2.05, 1.15);
     mat.polygonOffset = true;
-    mat.polygonOffsetFactor = 2;
-    mat.polygonOffsetUnits = 2;
+    // Mountain: push land further behind asphalt so ridge textures cannot z-fight the deck.
+    if (scenery === "mountain") {
+      mat.polygonOffsetFactor = 6;
+      mat.polygonOffsetUnits = 8;
+    } else {
+      mat.polygonOffsetFactor = 2;
+      mat.polygonOffsetUnits = 2;
+    }
     this._landMatCache.set(key, mat);
     return mat;
   }
@@ -1984,10 +2148,11 @@ export class Track {
         // Per-vertex over only — whole-tile onTrench + _landSurfaceY washed
         // every bank on 384 m tiles into a flat under-deck trench.
         const over = near.minOver != null ? near.minOver : near.dist - near.roadW * 0.5;
-        const bedDrop = desert ? 0.95 : scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : 0.55;
+        const bedDrop = bedDropFor(scenery);
         // Straight edges still sit above a grade kink. Tuck past the bed so
-        // the chord stays under the deck.
-        const chordTuck = 0.1;
+        // the chord stays under the deck. Mountain needs more — alpine grade
+        // kinks were lifting rock albedo through the tarmac.
+        const chordTuck = scenery === "mountain" ? 0.22 : 0.1;
         // On-road / car corridor — hard floor only (no dune / bank lift).
         if (over < ROAD_COLLIDER_CLEAR + 0.45) {
           const bed = near.roadY - bedDrop - chordTuck;
@@ -2219,8 +2384,7 @@ export class Track {
    */
   _groundHeight(x, z, scenery, nearHint) {
     const near = nearHint || this._nearestRoad(x, z);
-    const drop =
-      scenery === "mountain" ? 0.28 : scenery === "forest" ? 0.38 : scenery === "lakeside" ? 0.55 : scenery === "desert" ? 0.95 : 0.55;
+    const drop = bedDropFor(scenery);
     const raw = this._groundHeightRaw(x, z, scenery, near);
     return this._raiseJumpBank(raw, x, z, drop);
   }
@@ -2232,7 +2396,23 @@ export class Track {
     const desert = scenery === "desert";
     const mountain = scenery === "mountain";
     const forest = scenery === "forest";
-    const drop = mountain ? 0.28 : forest ? 0.38 : scenery === "lakeside" ? 0.55 : desert ? 0.95 : 0.55;
+    const drop = bedDropFor(scenery);
+    // Suspension span: basin stays at shore height under the elevated paint.
+    if (scenery === "lakeside" && this._lakesideBridge) {
+      const br = this._lakesideBridge;
+      const alongHere = along != null ? along : near.along;
+      if (
+        Number.isFinite(alongHere) &&
+        alongHere >= br.dist0 - 28 &&
+        alongHere <= br.dist1 + 28 &&
+        Number.isFinite(br.baseY)
+      ) {
+        const clearance = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+        if (clearance < roadW * 0.5 + 52) {
+          return br.baseY - drop;
+        }
+      }
+    }
     // On the paint of a lower ribbon, the floor is that ribbon. The nearest
     // centreline may be a flyover; using it built a wall in the lane
     // (Desert ~280 m, and the same crossing shape on every stage).
@@ -2413,13 +2593,13 @@ export class Track {
     if (mountain) {
       // Ridges follow the climbing ribbon so hairpins are not a sky-bridge.
       // Trench width must match _addLandPlane clamp so heightmap and mesh agree.
-      const trench = Math.max(this._trenchWidth(roadW), roadW * 0.5 + 22);
-      const chaseFlat = roadW * 0.5 + 48;
-      const rise = Math.max(40, (this._landCell || 48) * 1.15);
+      const trench = Math.max(this._trenchWidth(roadW), roadW * 0.5 + 28);
+      const chaseFlat = roadW * 0.5 + 58;
+      const rise = Math.max(44, (this._landCell || 48) * 1.2);
       const bed = roadY - drop;
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + ROAD_VERGE + 1.2) return bed;
+      if (dist < roadW * 0.5 + ROAD_VERGE + 1.8) return bed;
       const ridge =
         Math.abs(Math.sin(x * 0.008 + z * 0.006)) * 8.5 +
         Math.sin(x * 0.02 - z * 0.016) * 2.8 +
@@ -2439,9 +2619,8 @@ export class Track {
       }
       if (dist < trench) return bed;
       if (dist < chaseFlat) {
-        // Near-zero bank in the drive corridor — ridges start past chase cam.
-        const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
-        return bed + bank * t * 0.02;
+        // Hard floor through the chase corridor — zero bank leak into asphalt.
+        return bed;
       }
       if (dist < trench + rise) {
         // V4: mid-rise readable from chase without invading the flatten corridor.
@@ -3689,7 +3868,7 @@ export class Track {
       // Thin sand soffit. The old 0.48 m deck lived in the road material, so
       // downward normals rendered as a black blade across whatever road sat
       // underneath a flyover. Own bucket, road-colored, lit even in shadow.
-      const yDown = scenery === "mountain" ? 0.16 : scenery === "forest" ? 0.18 : 0.16;
+      const yDown = scenery === "mountain" ? 0.22 : scenery === "forest" ? 0.18 : 0.16;
       const ub = plainBucket(under, chunk);
       const underHex = mixHex(tintP, desert ? 0xd2b07a : 0x8a7560, 0.35);
       const underHexQ = mixHex(tintQ, desert ? 0xd2b07a : 0x8a7560, 0.35);
@@ -3855,6 +4034,14 @@ export class Track {
             mat.color.setRGB(b.id === "tarmac" ? 2.1 : 1.7, b.id === "tarmac" ? 2.15 : 1.65, b.id === "tarmac" ? 2.28 : 1.55);
             mat.userData.dryColor = mat.color.clone();
           }
+          if (scenery === "mountain" && mat.color) {
+            // Bright alpine asphalt / cobble — Stage 3 was reading charcoal.
+            if (b.id === "tarmac") mat.color.setRGB(1.92, 1.9, 1.86);
+            else if (b.id === "cobble") mat.color.setRGB(1.72, 1.68, 1.58);
+            else mat.color.setRGB(1.55, 1.5, 1.4);
+            if (mat.aoMapIntensity != null) mat.aoMapIntensity = Math.min(mat.aoMapIntensity || 1, 0.35);
+            mat.userData.dryColor = mat.color.clone();
+          }
         }
         roadMats.set(b.id, mat);
         const painted = yieldMesh();
@@ -3864,8 +4051,14 @@ export class Track {
       mesh.receiveShadow = true;
       mesh.renderOrder = 2;
       mat.polygonOffset = true;
-      mat.polygonOffsetFactor = -4;
-      mat.polygonOffsetUnits = -8;
+      // Pull ribbon in front of land — mountain needs a stronger bias (was z-fighting).
+      if (scenery === "mountain") {
+        mat.polygonOffsetFactor = -8;
+        mat.polygonOffsetUnits = -16;
+      } else {
+        mat.polygonOffsetFactor = -4;
+        mat.polygonOffsetUnits = -8;
+      }
       this._registerChunk(mesh, b.chunk);
       group.add(mesh);
       await afterMesh();
@@ -3900,6 +4093,14 @@ export class Track {
     const skirtRough = landRoughnessMap(scenery, tileSize);
     const skirtAo = landAoMap(scenery, tileSize);
     const skirtMat = worldSkirtMaterial(skirtAlbedo, skirtNorm, skirtRough, skirtAo);
+    skirtMat.polygonOffset = true;
+    if (scenery === "mountain") {
+      skirtMat.polygonOffsetFactor = 3;
+      skirtMat.polygonOffsetUnits = 4;
+    } else {
+      skirtMat.polygonOffsetFactor = 1;
+      skirtMat.polygonOffsetUnits = 1;
+    }
     const kerbMat = worldKerbMaterial();
     for (const [chunk, b] of skirt) {
       if (!b.n) continue;
@@ -6648,8 +6849,16 @@ export class Track {
       }
     }
     if (def.scenery === "lakeside") {
+      const br = this._lakesideBridge;
+      const span0 = br && this.length > 1 ? br.dist0 / this.length : 0.08;
+      const span1 = br && this.length > 1 ? br.dist1 / this.length : 0.28;
       const lakes = [
-        { from: 0.12, to: 0.5, side: 1 },
+        // Basin under / beside the driveable suspension span.
+        {
+          from: Math.max(0.02, span0 - 0.05),
+          to: Math.min(0.52, span1 + 0.08),
+          side: 1,
+        },
         { from: 0.58, to: 0.86, side: -1 },
       ];
       this._lakes = lakes;
@@ -7945,31 +8154,64 @@ export class Track {
   }
 
   /**
-   * Forest waterfall — cliff cascade + pool outside the Glade Bowl hairpin.
-   * Vertical sheets scroll downward; pool uses the lake water material.
-   * Planted clear of the drive corridor so it never clips the car.
+   * First authored sample tagged with `visual` (e.g. forest_glade).
+   * @param {string} visual
+   * @returns {{i:number, inside:number, dist:number, width:number}|null}
+   */
+  _findVisualPin(visual) {
+    if (!visual || !this.points) return null;
+    for (let i = 0; i < this.points.length; i++) {
+      if (this.points[i].visual !== visual) continue;
+      const p = this.points[i];
+      const prev = this.points[Math.max(0, i - 10)];
+      let dh = p.heading - prev.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      const inside = dh > 0 ? 1 : -1;
+      return { i, inside, dist: p.dist, width: p.width };
+    }
+    return null;
+  }
+
+  /**
+   * Stage 2 epic — gigantic gorge waterfall in the background environment.
+   * Far off the paint so chase / medium cam hold a Nordic-scale cascade
+   * while the car stays on the ribbon. Tunnel gorge fall stays a second beat.
    */
   _addForestWaterfall() {
-    const pin = this._landmark || this._findFirstLandmark();
+    const pin =
+      this._findVisualPin("forest_glade") ||
+      this._findVisualPin("forest_glade_sweep") ||
+      this._landmark ||
+      this._findFirstLandmark() ||
+      this._findHairpin();
     if (!pin) return;
     const p = this.points[pin.i];
     const outside = -pin.inside;
-    // Sit past the verge so chase cam / car never clip the cliff.
-    const off = p.width * 0.5 + ROAD_VERGE + 16.5;
-    const cx = p.x + p.nx * outside * off;
-    const cz = p.z + p.nz * outside * off;
-    if (!this._ribbonClear(cx, cz, 8)) return;
+    // Background attraction — well past the verge / trees, still in frame.
+    let spot = null;
+    for (let n = 0; n < 4 && !spot; n++) {
+      const off = p.width * 0.5 + ROAD_VERGE + 58 + n * 14;
+      const x = p.x + p.nx * outside * off;
+      const z = p.z + p.nz * outside * off;
+      if (!this._ribbonClear(x, z, 22)) continue;
+      spot = { x, z, off };
+    }
+    if (!spot) return;
+    const cx = spot.x;
+    const cz = spot.z;
     const gy = this._visualLandY(cx, cz);
+    const roadY = p.y || gy;
     const chunk = this._chunkOfDist(p.dist);
-    const cliffH = 14.5;
-    const fallW = 7.2;
-    const fallH = 12.8;
-    const poolY = gy - 0.35;
-    const lipY = gy + cliffH - 0.8;
+    // Gigantic cliff — reads from hundreds of metres on the glade approach.
+    const cliffH = 64;
+    const fallW = 38;
+    const fallH = 56;
+    const poolY = Math.min(gy, roadY) - 1.2;
+    const lipY = poolY + fallH + 2.4;
     const yaw = p.heading + (outside > 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
     const cosY = Math.cos(yaw);
     const sinY = Math.sin(yaw);
-    /** Land Y under a local cliff offset (avoids floating wings on a slope). */
     const localGy = (lx, lz) => {
       const wx = cx + cosY * lx + sinY * lz;
       const wz = cz - sinY * lx + cosY * lz;
@@ -7978,144 +8220,178 @@ export class Track {
 
     const g = new THREE.Group();
     g.name = "forest-waterfall";
+    g.userData.forestEpicFalls = true;
     g.position.set(cx, 0, cz);
-    // Face the cascade toward the ribbon so the driver sees the sheet.
     g.rotation.y = yaw;
 
-    const rock = new THREE.MeshStandardMaterial({
-      color: 0x6a6558,
-      roughness: 0.94,
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x6a6458,
+      roughness: 0.93,
       metalness: 0.02,
-      flatShading: true,
+      vertexColors: true,
     });
     const rockDark = new THREE.MeshStandardMaterial({
-      color: 0x3e3a32,
+      color: 0x3a3832,
       roughness: 0.96,
       metalness: 0.01,
       flatShading: true,
     });
     const moss = new THREE.MeshStandardMaterial({
       color: 0x3a5a38,
-      roughness: 0.92,
+      roughness: 0.9,
       metalness: 0,
-      flatShading: true,
     });
 
-    // Cliff mass behind the fall — toes bury into local land, not a single sample.
-    const backH = cliffH + 2.4;
-    const back = new THREE.Mesh(new THREE.BoxGeometry(fallW + 10, backH, 6.5), rock);
-    back.position.set(0, this._plantBoxY(localGy(0, -2.8), backH, 0.85), -2.8);
-    back.castShadow = true;
-    back.receiveShadow = true;
-    g.add(back);
-    const wingH = cliffH + 1.2;
-    const leftWing = new THREE.Mesh(new THREE.BoxGeometry(4.2, wingH, 5.5), rockDark);
-    const leftX = -(fallW * 0.5 + 2.6);
-    leftWing.position.set(leftX, this._plantBoxY(localGy(leftX, -1.2), wingH, 0.75), -1.2);
+    // Carved gorge wall — channel behind the main sheet.
+    const wall = new THREE.Mesh(gorgeWallGeometry(fallW + 28, cliffH + 8), rockMat);
+    wall.position.set(0, poolY + (cliffH + 8) * 0.5, -4.5);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    g.add(wall);
+    const wingGeo = gorgeWallGeometry(14, cliffH * 0.95);
+    const leftWing = new THREE.Mesh(wingGeo, rockMat);
+    leftWing.position.set(-(fallW * 0.5 + 12), poolY + cliffH * 0.48, -2.2);
+    leftWing.rotation.y = 0.38;
     leftWing.castShadow = true;
     g.add(leftWing);
-    const rightWing = leftWing.clone();
-    const rightX = fallW * 0.5 + 2.6;
-    rightWing.position.set(rightX, this._plantBoxY(localGy(rightX, -1.2), wingH, 0.75), -1.2);
+    const rightWing = new THREE.Mesh(wingGeo, rockMat);
+    rightWing.position.set(fallW * 0.5 + 12, poolY + cliffH * 0.48, -2.2);
+    rightWing.rotation.y = -0.38;
+    rightWing.castShadow = true;
     g.add(rightWing);
-    // Cap / source ledge.
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(fallW + 3.5, 1.4, 4.2), moss);
-    lip.position.set(0, lipY + 0.4, -1.6);
+    // Upper plateau / source lip.
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(fallW + 10, 2.2, 9), moss);
+    lip.position.set(0, lipY + 0.6, -3.2);
     lip.receiveShadow = true;
     g.add(lip);
+    // Mid ledge so the fall breaks like a real multi-drop cascade.
+    const midLedge = new THREE.Mesh(new THREE.BoxGeometry(fallW * 0.72, 1.4, 5.5), rockDark);
+    midLedge.position.set(1.2, poolY + fallH * 0.42, 1.1);
+    midLedge.castShadow = true;
+    g.add(midLedge);
 
     const cascadeMat = waterfallPbr();
     const sheets = [
-      { w: fallW, h: fallH, z: 0.15, op: 0.78, scroll: { u: 0.015, v: -0.55 } },
-      { w: fallW * 0.82, h: fallH * 0.96, z: 0.55, op: 0.55, scroll: { u: -0.02, v: -0.72 } },
-      { w: fallW * 0.55, h: fallH * 0.88, z: 0.95, op: 0.4, scroll: { u: 0.03, v: -0.95 } },
+      { w: fallW, h: fallH, x: 0, z: 0.4, op: 0.88, scroll: { u: 0.012, v: -0.48 } },
+      { w: fallW * 0.9, h: fallH * 0.98, x: 1.2, z: 1.1, op: 0.7, scroll: { u: -0.018, v: -0.62 } },
+      { w: fallW * 0.72, h: fallH * 0.94, x: -2.4, z: 1.8, op: 0.55, scroll: { u: 0.025, v: -0.78 } },
+      { w: fallW * 0.48, h: fallH * 0.88, x: 4.5, z: 2.4, op: 0.48, scroll: { u: -0.03, v: -0.95 } },
+      { w: fallW * 0.38, h: fallH * 0.82, x: -6.2, z: 2.1, op: 0.42, scroll: { u: 0.02, v: -0.7 } },
+      { w: 9.5, h: fallH * 0.55, x: 8.5, z: 3.2, op: 0.62, scroll: { u: 0.015, v: -0.55 } },
+      { w: 7.2, h: fallH * 0.48, x: -10.5, z: 2.8, op: 0.5, scroll: { u: -0.02, v: -0.5 } },
+      { w: fallW * 0.55, h: fallH * 0.4, x: 0.8, z: 3.8, op: 0.35, scroll: { u: 0.01, v: -1.1 } },
     ];
+    if (!this._waterMeshes) this._waterMeshes = [];
     for (let i = 0; i < sheets.length; i++) {
       const s = sheets[i];
       const mat = cascadeMat.clone();
       mat.opacity = s.op;
       if (mat.map) mat.map = mat.map.clone();
-      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h, 1, 8), mat);
-      sheet.position.set(0, poolY + s.h * 0.5 + 0.2, s.z);
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h, 2, 14), mat);
+      sheet.position.set(s.x, poolY + s.h * 0.5 + 0.35, s.z);
       sheet.name = "waterfall";
       sheet.castShadow = false;
       sheet.receiveShadow = false;
       sheet.userData.waterScroll = s.scroll;
-      sheet.userData.cameraFade = true;
       g.add(sheet);
-      if (!this._waterMeshes) this._waterMeshes = [];
       this._waterMeshes.push(sheet);
     }
 
-    // Plunge pool — rippling lake material at the toe.
     const poolMat = waterPbr();
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(5.8, 28), poolMat);
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(22, 40), poolMat);
     pool.rotation.x = -Math.PI / 2;
-    pool.position.set(0, poolY + 0.04, 3.2);
+    pool.position.set(0, poolY + 0.06, 14);
     pool.name = "waterfall-pool";
-    pool.userData.waterScroll = { u: 0.05, v: 0.04 };
+    pool.userData.waterScroll = { u: 0.045, v: 0.032 };
     pool.receiveShadow = false;
     g.add(pool);
-    if (!this._waterMeshes) this._waterMeshes = [];
     this._waterMeshes.push(pool);
 
-    // Foam ring at impact.
+    const stream = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 36), poolMat.clone());
+    stream.rotation.x = -Math.PI / 2;
+    stream.position.set(2.5, poolY + 0.04, 36);
+    stream.userData.waterScroll = { u: 0.018, v: 0.14 };
+    g.add(stream);
+    this._waterMeshes.push(stream);
+
     const foam = new THREE.Mesh(
-      new THREE.RingGeometry(1.4, 4.6, 24),
+      new THREE.RingGeometry(4.5, 16.5, 36),
       new THREE.MeshBasicMaterial({
-        color: 0xe8f6ff,
+        color: 0xf2faff,
         transparent: true,
-        opacity: 0.45,
+        opacity: 0.52,
         side: THREE.DoubleSide,
         depthWrite: false,
       })
     );
     foam.rotation.x = -Math.PI / 2;
-    foam.position.set(0, poolY + 0.08, 3.2);
+    foam.position.set(0, poolY + 0.12, 14);
     g.add(foam);
 
-    // Soft mist cards rising from the plunge.
+    // Mist plume — sells the scale from the racing line.
     const mistMat = new THREE.MeshBasicMaterial({
-      color: 0xdfeef6,
+      color: 0xe8f4fb,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.2,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    for (let i = 0; i < 4; i++) {
-      const mist = new THREE.Mesh(new THREE.PlaneGeometry(3.2 + i * 0.6, 2.4 + i * 0.4), mistMat);
-      mist.position.set((i - 1.5) * 1.1, poolY + 1.4 + i * 0.55, 2.4 + i * 0.35);
-      mist.rotation.y = (i - 1.5) * 0.18;
+    for (let i = 0; i < 14; i++) {
+      const mist = new THREE.Mesh(
+        new THREE.PlaneGeometry(10 + i * 1.4, 6 + i * 0.85),
+        mistMat
+      );
+      mist.position.set(
+        (i - 6.5) * 2.1,
+        poolY + 3.5 + i * 1.35,
+        8 + (i % 4) * 1.8
+      );
+      mist.rotation.y = (i - 6.5) * 0.08;
       g.add(mist);
     }
+    // Upper spray near the lip.
+    for (let i = 0; i < 5; i++) {
+      const spray = new THREE.Mesh(new THREE.PlaneGeometry(14 + i * 2, 5 + i), mistMat);
+      spray.position.set((i - 2) * 3.5, lipY - 4 - i * 1.2, -0.5 + i * 0.4);
+      spray.rotation.x = -0.35;
+      g.add(spray);
+    }
 
-    // Talus / boulders at the pool rim — planted on ground.
     const rocks = [];
     const boulder = cliffShardGeometry();
-    for (let i = 0; i < 10; i++) {
-      const ang = (i / 10) * Math.PI * 2;
-      const rad = 4.2 + (i % 3) * 0.7;
+    for (let i = 0; i < 22; i++) {
+      const ang = (i / 22) * Math.PI * 2;
+      const rad = 14 + (i % 5) * 1.6;
       const lx = Math.cos(ang) * rad;
-      const lz = 3.2 + Math.sin(ang) * rad * 0.65;
-      const wx = cx + Math.cos(g.rotation.y) * lx + Math.sin(g.rotation.y) * lz;
-      const wz = cz - Math.sin(g.rotation.y) * lx + Math.cos(g.rotation.y) * lz;
-      if (!this._ribbonClear(wx, wz, 1.6)) continue;
-      const rgy = this._visualLandY(wx, wz);
+      const lz = 14 + Math.sin(ang) * rad * 0.7;
+      const wx = cx + cosY * lx + sinY * lz;
+      const wz = cz - sinY * lx + cosY * lz;
+      if (!this._ribbonClear(wx, wz, 2.4)) continue;
       rocks.push({
         c: chunk,
         x: wx,
-        y: rgy + 0.18,
+        y: this._visualLandY(wx, wz) + 0.35,
         z: wz,
-        s: 0.7 + (i % 4) * 0.22,
-        rx: i * 0.4,
+        s: 1.4 + (i % 5) * 0.55,
+        rx: i * 0.35,
         ry: i * 0.7,
-        rz: i * 0.25,
+        rz: i * 0.22,
       });
     }
+
+    // Keep scenery / pack out of the gorge bowl.
+    this._keepOut.push({
+      dist0: p.dist - 80,
+      dist1: p.dist + 120,
+      side: outside > 0 ? 1 : -1,
+      minOff: Math.max(28, spot.off - 18),
+      maxH: 4.5,
+    });
+
     this._registerChunk(g, chunk);
     this.group.add(g);
     if (rocks.length) {
-      this._addInstances(boulder, rockDark, rocks, { castShadow: true, cameraFade: true });
+      this._addInstances(boulder, rockDark, rocks, { castShadow: true });
       this._bumpPoses(rocks, 0.55);
     }
   }
@@ -9152,13 +9428,16 @@ export class Track {
         const p = pts[i];
         const t = (i - start) / span;
         const bend = Math.sin(t * Math.PI) * 32;
-        const inner = p.width * 0.5 + 4.2;
-        const outer = inner + 98 + bend;
+        const onBridge = !!(p.bridge || p.visual === "bridge_span");
+        // Under the span the water goes under the paint; elsewhere it hugs the verge.
+        const inner = onBridge ? 0.6 : p.width * 0.5 + 4.2;
+        const outer = onBridge ? p.width * 0.5 + 110 + bend : inner + 98 + bend;
         const ix = p.x + p.nx * run.side * inner;
         const iz = p.z + p.nz * run.side * inner;
         const ox = p.x + p.nx * run.side * outer;
         const oz = p.z + p.nz * run.side * outer;
-        const y = p.y - 0.78;
+        const basin = Number.isFinite(p.bridgeBaseY) ? p.bridgeBaseY : p.y;
+        const y = basin - (onBridge ? 1.05 : 0.78);
         const a = vert(ix, y, iz, 0.08);
         const b = vert(ox, y - 0.72, oz, 0.82);
         ring.push({ a, b, p, ix, iz, ox, oz, i, t });
@@ -9225,46 +9504,55 @@ export class Track {
   }
 
   /**
-   * Long suspension span over the first lake. Scenic only — off the paint.
-   * Two towers, a catenary pair, hangers, and a deck that follows the shore.
+   * Suspension structure ON the authored bridge_span — drive the paint across.
+   * Towers / cables / rails frame the ribbon; soffit hangs under the deck.
+   * Land and water stay at bridgeBaseY (basin), not the elevated roadY.
    */
   _addLakesideSuspensionBridge() {
     const pts = this.points;
     if (!pts || pts.length < 24) return;
-    const lake = (this._lakes && this._lakes[0]) || { from: 0.16, to: 0.46, side: 1 };
-    const from = lake.from + 0.025;
-    const to = Math.min(lake.to - 0.02, from + 0.26);
-    const side = lake.side || 1;
-    const i0 = Math.max(2, (pts.length * from) | 0);
-    const i1 = Math.min(pts.length - 3, (pts.length * to) | 0);
-    if (i1 - i0 < 16) return;
-    const step = Math.max(1, ((i1 - i0) / 52) | 0);
-    /** @type {Array<{x:number,z:number,y:number,nx:number,nz:number,dist:number}>} */
+    let i0 = -1;
+    let i1 = -1;
+    for (let i = 0; i < pts.length; i++) {
+      if (pts[i].bridge || pts[i].visual === "bridge_span") {
+        if (i0 < 0) i0 = i;
+        i1 = i;
+      }
+    }
+    if (i0 < 0 || i1 - i0 < 12) {
+      // Fallback: first lake fraction still elevated if authoring missed tags.
+      const br = this._lakesideBridge;
+      if (br) {
+        i0 = br.i0;
+        i1 = br.i1;
+      } else return;
+    }
+    if (i1 - i0 < 12) return;
+    const step = Math.max(1, ((i1 - i0) / 56) | 0);
+    /** @type {Array<{x:number,z:number,y:number,nx:number,nz:number,dist:number,half:number,baseY:number}>} */
     const samples = [];
     for (let i = i0; i <= i1; i += step) {
       const p = pts[i];
-      const off = p.width * 0.5 + 64;
-      const nx = p.nx * side;
-      const nz = p.nz * side;
       samples.push({
-        x: p.x + nx * off,
-        z: p.z + nz * off,
-        y: p.y + 7.2,
-        nx,
-        nz,
+        x: p.x,
+        z: p.z,
+        y: p.y + ROAD_DECK,
+        nx: p.nx,
+        nz: p.nz,
         dist: p.dist,
+        half: Math.max(5.2, (p.width || 14) * 0.5 + 0.35),
+        baseY: Number.isFinite(p.bridgeBaseY) ? p.bridgeBaseY : p.y - 6.4,
       });
     }
     if (samples.length < 8) return;
 
     const n = samples.length;
-    const ia = Math.max(2, (n * 0.16) | 0);
-    const ib = Math.min(n - 3, (n * 0.84) | 0);
-    const deckHalf = 4.6;
-    const towerH = 34;
+    const ia = Math.max(2, (n * 0.14) | 0);
+    const ib = Math.min(n - 3, (n * 0.86) | 0);
+    const towerH = 28;
     const chordLen = Math.hypot(samples[ib].x - samples[ia].x, samples[ib].z - samples[ia].z);
-    const mainSag = Math.max(9, chordLen * 0.08);
-    const sideSag = Math.max(3.2, mainSag * 0.38);
+    const mainSag = Math.max(7.5, chordLen * 0.07);
+    const sideSag = Math.max(2.8, mainSag * 0.36);
     const yawAt = (i) => {
       const a = samples[Math.max(0, i - 1)];
       const b = samples[Math.min(n - 1, i + 1)];
@@ -9273,15 +9561,13 @@ export class Track {
     const cableY = (i) => {
       const sideSpan = (i0s, i1s, sag) => {
         const t = (i - i0s) / Math.max(1, i1s - i0s);
-        const y0 = samples[i0s].y + (i0s === 0 || i0s === n - 1 ? 2.4 : towerH);
-        const y1 = samples[i1s].y + (i1s === 0 || i1s === n - 1 ? 2.4 : towerH);
+        const y0 = samples[i0s].y + (i0s === 0 || i0s === n - 1 ? 2.2 : towerH);
+        const y1 = samples[i1s].y + (i1s === 0 || i1s === n - 1 ? 2.2 : towerH);
         return y0 + (y1 - y0) * t - sag * 4 * t * (1 - t);
       };
-      let y;
-      if (i <= ia) y = sideSpan(0, ia, sideSag);
-      else if (i >= ib) y = sideSpan(ib, n - 1, sideSag);
-      else y = sideSpan(ia, ib, mainSag);
-      return y;
+      if (i <= ia) return sideSpan(0, ia, sideSag);
+      if (i >= ib) return sideSpan(ib, n - 1, sideSag);
+      return sideSpan(ia, ib, mainSag);
     };
 
     const concrete = worldPropMaterial(0xe7e2d6, 0.7);
@@ -9290,8 +9576,8 @@ export class Track {
     const cableMat = worldPropMaterial(0x1a1e24, 0.46);
     if (cableMat.metalness != null) cableMat.metalness = 0.72;
 
-    const deckPos = [];
-    const deckIdx = [];
+    const railPos = [];
+    const railIdx = [];
     const steelPos = [];
     const steelIdx = [];
     const cablePos = [];
@@ -9300,34 +9586,30 @@ export class Track {
       buf.push(x, y, z);
       return buf.length / 3 - 1;
     };
-    const L = [];
-    const R = [];
-    const chordL = [];
-    const chordR = [];
+    const soffitL = [];
+    const soffitR = [];
     for (let i = 0; i < n; i++) {
       const s = samples[i];
-      L.push(push(deckPos, s.x + s.nx * deckHalf, s.y, s.z + s.nz * deckHalf));
-      R.push(push(deckPos, s.x - s.nx * deckHalf, s.y, s.z - s.nz * deckHalf));
-      chordL.push(push(steelPos, s.x + s.nx * 3.1, s.y - 1.45, s.z + s.nz * 3.1));
-      chordR.push(push(steelPos, s.x - s.nx * 3.1, s.y - 1.45, s.z - s.nz * 3.1));
+      const half = s.half;
+      // Soffit under the paint — not a second drive deck on top of asphalt.
+      soffitL.push(push(steelPos, s.x + s.nx * (half - 0.4), s.y - 1.35, s.z + s.nz * (half - 0.4)));
+      soffitR.push(push(steelPos, s.x - s.nx * (half - 0.4), s.y - 1.35, s.z - s.nz * (half - 0.4)));
     }
     for (let i = 0; i < n - 1; i++) {
-      deckIdx.push(L[i], R[i], L[i + 1], R[i], R[i + 1], L[i + 1]);
-      steelIdx.push(chordL[i], chordR[i], chordL[i + 1], chordR[i], chordR[i + 1], chordL[i + 1]);
+      steelIdx.push(soffitL[i], soffitR[i], soffitL[i + 1], soffitR[i], soffitR[i + 1], soffitL[i + 1]);
       const s = samples[i];
-      const rail = 1.15;
-      const inset = deckHalf - 0.2;
-      const a = push(deckPos, s.x + s.nx * inset, s.y + 0.08, s.z + s.nz * inset);
-      const b = push(deckPos, s.x + s.nx * inset, s.y + rail, s.z + s.nz * inset);
       const sn = samples[i + 1];
-      const c = push(deckPos, sn.x + sn.nx * inset, sn.y + 0.08, sn.z + sn.nz * inset);
-      const d = push(deckPos, sn.x + sn.nx * inset, sn.y + rail, sn.z + sn.nz * inset);
-      deckIdx.push(a, c, b, c, d, b);
-      const e = push(deckPos, s.x - s.nx * inset, s.y + 0.08, s.z - s.nz * inset);
-      const f = push(deckPos, s.x - s.nx * inset, s.y + rail, s.z - s.nz * inset);
-      const g = push(deckPos, sn.x - sn.nx * inset, sn.y + 0.08, sn.z - sn.nz * inset);
-      const h = push(deckPos, sn.x - sn.nx * inset, sn.y + rail, sn.z - sn.nz * inset);
-      deckIdx.push(e, f, g, f, h, g);
+      const rail = 1.05;
+      for (const lane of [1, -1]) {
+        const o = s.half - 0.15;
+        const on = sn.half - 0.15;
+        const a = push(railPos, s.x + s.nx * lane * o, s.y + 0.04, s.z + s.nz * lane * o);
+        const b = push(railPos, s.x + s.nx * lane * o, s.y + rail, s.z + s.nz * lane * o);
+        const c = push(railPos, sn.x + sn.nx * lane * on, sn.y + 0.04, sn.z + sn.nz * lane * on);
+        const d = push(railPos, sn.x + sn.nx * lane * on, sn.y + rail, sn.z + sn.nz * lane * on);
+        if (lane > 0) railIdx.push(a, c, b, c, d, b);
+        else railIdx.push(a, b, c, b, d, c);
+      }
     }
 
     const addCable = (lane) => {
@@ -9335,9 +9617,9 @@ export class Track {
       for (let i = 0; i < n; i++) {
         const s = samples[i];
         const y = cableY(i);
-        const o = deckHalf - 0.55;
+        const o = s.half - 0.35;
         ids.push(push(cablePos, s.x + s.nx * lane * o, y, s.z + s.nz * lane * o));
-        ids.push(push(cablePos, s.x + s.nx * lane * o, y - 0.28, s.z + s.nz * lane * o));
+        ids.push(push(cablePos, s.x + s.nx * lane * o, y - 0.26, s.z + s.nz * lane * o));
       }
       for (let i = 0; i < n - 1; i++) {
         const a = ids[i * 2];
@@ -9365,8 +9647,8 @@ export class Track {
     const plantTower = (i) => {
       const s = samples[i];
       const yaw = yawAt(i);
-      const legX = deckHalf + 0.7;
-      const base = s.y - 8.2;
+      const legX = s.half + 1.1;
+      const base = Math.min(s.baseY - 1.2, s.y - 7.5);
       const top = s.y + towerH;
       const legH = top - base;
       for (const lane of [1, -1]) {
@@ -9375,28 +9657,29 @@ export class Track {
           s.x + s.nx * lane * legX,
           base + legH * 0.5,
           s.z + s.nz * lane * legX,
-          1.7,
+          1.85,
           legH,
-          2.1,
+          2.2,
           yaw
         );
       }
-      addBox(towerBoxes, s.x, s.y + towerH * 0.62, s.z, legX * 2 + 1.2, 1.15, 1.5, yaw);
-      addBox(towerBoxes, s.x, top - 0.7, s.z, legX * 2 + 1.6, 1.35, 1.8, yaw);
-      addBox(towerBoxes, s.x, base + 1.1, s.z, deckHalf * 2 + 2.4, 2.2, 3.4, yaw);
+      addBox(towerBoxes, s.x, s.y + towerH * 0.55, s.z, legX * 2 + 1.4, 1.2, 1.6, yaw);
+      addBox(towerBoxes, s.x, top - 0.65, s.z, legX * 2 + 1.8, 1.35, 1.9, yaw);
+      addBox(towerBoxes, s.x, base + 1.2, s.z, s.half * 2 + 3.2, 2.4, 3.8, yaw);
     };
     plantTower(ia);
     plantTower(ib);
     for (const end of [0, n - 1]) {
       const s = samples[end];
-      addBox(towerBoxes, s.x, s.y - 3.2, s.z, deckHalf * 2 + 1.4, 8.4, 3.6, yawAt(end));
+      const base = Math.min(s.baseY - 0.6, s.y - 4.5);
+      addBox(towerBoxes, s.x, (s.y + base) * 0.5, s.z, s.half * 2 + 1.6, Math.max(4, s.y - base), 3.4, yawAt(end));
     }
     for (let i = ia + 1; i < ib; i += 1) {
       const s = samples[i];
       const y = cableY(i);
-      const h = Math.max(0.4, y - s.y);
+      const h = Math.max(0.35, y - s.y);
       for (const lane of [1, -1]) {
-        const o = deckHalf - 0.55;
+        const o = s.half - 0.35;
         addBox(
           hangerBoxes,
           s.x + s.nx * lane * o,
@@ -9411,13 +9694,13 @@ export class Track {
     }
 
     const makeMesh = (pos, indices, mat, name) => {
+      if (!pos.length || !indices.length) return null;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
       geo.setIndex(indices);
       geo.computeVertexNormals();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = name;
-      // One mesh spans the whole lake. A sun shadow from it blacks out the road.
       mesh.castShadow = false;
       mesh.receiveShadow = true;
       return mesh;
@@ -9425,9 +9708,12 @@ export class Track {
     const root = new THREE.Group();
     root.name = "lakeside-suspension-bridge";
     root.userData.lakesideBridge = true;
-    root.add(makeMesh(deckPos, deckIdx, concrete, "bridge-deck"));
-    root.add(makeMesh(steelPos, steelIdx, steel, "bridge-chord"));
-    root.add(makeMesh(cablePos, cableIdx, cableMat, "bridge-cables"));
+    const rails = makeMesh(railPos, railIdx, concrete, "bridge-rails");
+    if (rails) root.add(rails);
+    const soffit = makeMesh(steelPos, steelIdx, steel, "bridge-soffit");
+    if (soffit) root.add(soffit);
+    const cables = makeMesh(cablePos, cableIdx, cableMat, "bridge-cables");
+    if (cables) root.add(cables);
     const addMerged = (parts, mat, name) => {
       if (!parts.length) return;
       const merged = mergeGeometries(parts, false);
@@ -9435,7 +9721,7 @@ export class Track {
       if (!merged) return;
       const mesh = new THREE.Mesh(merged, mat);
       mesh.name = name;
-      mesh.castShadow = true;
+      mesh.castShadow = false;
       mesh.receiveShadow = true;
       root.add(mesh);
     };
@@ -12147,13 +12433,14 @@ export class Track {
     if (!(off > 0.02)) return null;
     const hintH = (hint.y || 0) + ROAD_DECK;
     const rise = height - hintH;
-    if (!(rise > 0.04)) return null;
+    if (!(rise > 0.02)) return null;
     let along = Math.abs((chosenDist || 0) - (hint.dist != null ? hint.dist : hintDist));
     const span = this.length || 0;
     if (span > 80 && along > span * 0.5) along = span - along;
     // Same ribbon, a few metres ahead: that rise is the grade. Leave it.
-    if (along < 14) return null;
-    const cap = off * 0.08;
+    // Foreign / hairpin arms pop sooner — pin hard so the left verge cannot lift.
+    if (along < 8) return null;
+    const cap = Math.min(0.06, off * 0.035);
     if (!(rise > cap)) return null;
     const hit = this._runoffHit || (this._runoffHit = { height: 0, pinDist: null });
     hit.height = hintH + cap;
@@ -12257,13 +12544,10 @@ export class Track {
       let landH = this._groundHeight(x, z, scenery, nearHint);
       if (!Number.isFinite(landH)) landH = roadH;
       height = this._shoulderPlantHeight(roadH, clearance, landH, scenery, distAlong, lateral);
-      // A bank beside the paint must not become a ramp. Coarse land was
-      // lifting the chassis as soon as a tire left the ribbon, and that
-      // same rise kicked jump lips into a sideways launch.
-      const onLip = jumpKind === "ramp" || jumpKind === "crest" || jump;
-      const riseRoom = onLip ? 0 : Math.max(0, clearance - 0.45) * 0.03;
-      const ceil = roadH + riseRoom;
-      if (height > ceil) height = ceil;
+      // Banks drop from the lip — they never lift the car above the paint.
+      // Rise-room used to elevate packs on the far left when land / a foreign
+      // arm sat higher than the driven deck.
+      if (height > roadH) height = roadH;
     }
     if (jumpKind !== "gap" && !tunnel) {
       const runoff = this._easeRunoff(x, z, hintDist, height, distAlong);
@@ -12769,6 +13053,8 @@ function liftForestPhotoTint(c) {
 function roadTintHex(from, to, mix, scenery) {
   let surfaceBlend = mixHex(surfaceRibbonHex(from), surfaceRibbonHex(to), mix);
   if (scenery === "lakeside") return mixHex(surfaceBlend, 0xe7eef6, 0.78);
+  // Stage 3 alpine tarmac — bright pale deck so paint reads in fog / rain.
+  if (scenery === "mountain") return mixHex(surfaceBlend, 0xf0ece4, 0.78);
   // Transition band — slight darkening so gravel↔dirt swaps read in chase.
   if (from !== to && mix > 0.18 && mix < 0.82) {
     surfaceBlend = mixHex(surfaceBlend, 0x2a2218, 0.14);
@@ -12802,6 +13088,12 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
   const n5 = texHash((x * 0.38) | 0, (z * 0.38) | 0, 47);
   if (scenery === "lakeside") {
     _organicTint.multiplyScalar(0.94 + n * 0.1);
+    return _organicTint.getHex();
+  }
+  if (scenery === "mountain") {
+    // Keep blotches soft — no dark mul that undoes the pale alpine lift.
+    _organicTint.multiplyScalar(1.05 + n * 0.08 + (n2 - 0.5) * 0.04);
+    if (n3 > 0.88) _organicTint.multiplyScalar(0.94);
     return _organicTint.getHex();
   }
   // Photo stages still need world-space soil blotches — maps alone tile too evenly.
