@@ -229,7 +229,7 @@ check(
 check(
   "on-road land is a hard floor (no bank lift through paint)",
   /over0 < ROAD_COLLIDER_CLEAR \+ 0\.45/.test(trackSrc) &&
-    /return near\.roadY - bedDrop/.test(trackSrc) &&
+    /vergeApronY\(near\.roadY/.test(trackSrc) &&
     /On-road \/ car corridor — hard floor/.test(trackSrc),
   "jump banks must not raise dunes through the driven lane"
 );

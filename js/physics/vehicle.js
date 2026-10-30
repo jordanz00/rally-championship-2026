@@ -1830,6 +1830,7 @@ export class Vehicle {
       const offSide =
         q2 && q2.onRoad === false && !q2.tunnel && q2.jumpKind !== "gap" && q2.jumpKind !== "ramp";
       const riseCap = this._offRoadRiseCap(dt);
+      const dropCap = this._offRoadDropCap(dt);
       if (
         !offSide &&
         Number.isFinite(solidY) &&
@@ -1838,6 +1839,8 @@ export class Vehicle {
         plantDeck = solidY;
       } else if (offSide && Number.isFinite(plantDeck) && plantDeck > prevY + riseCap) {
         plantDeck = prevY + riseCap;
+      } else if (offSide && Number.isFinite(plantDeck) && plantDeck < prevY - dropCap) {
+        plantDeck = prevY - dropCap;
       }
       if (!Number.isFinite(plantDeck)) plantDeck = prevY;
       // A slide used to ride the deck filter. The filter hangs above a
@@ -2328,8 +2331,9 @@ export class Vehicle {
     if (this.position.y < floor - slack) {
       const gap = floor - slack - this.position.y;
       const riseCap = this._offRoadRiseCap(FIXED_DT);
-      // A small curb off the paint is a slope. A deep fall still snaps.
-      if (Number.isFinite(riseCap) && gap < 0.55) this.position.y += Math.min(gap, riseCap);
+      // Off the paint: never snap a metre up — that was the bounce out of the ditch.
+      if (Number.isFinite(riseCap)) this.position.y += Math.min(gap, riseCap);
+      else if (gap < 0.55) this.position.y += gap;
       else this.position.y = floor - slack;
     }
     // Hover cap only on the road we are actually on. A stale pit floor
@@ -2342,7 +2346,20 @@ export class Vehicle {
       this._q.jumpKind !== "gap";
     if (this.onGround && onSolid && this.position.y > floor + GROUND_HOVER_MAX) {
       const cap = tightDeckPlant(kind, this._landLock) ? GROUND_HOVER_MAX : DECK_FOLLOW_SLACK;
-      if (this.position.y > floor + cap) this.position.y = floor + cap;
+      if (this.position.y > floor + cap) {
+        const offSide =
+          this._q &&
+          this._q.onRoad === false &&
+          !this._q.tunnel &&
+          this._q.jumpKind !== "gap" &&
+          this._q.jumpKind !== "ramp";
+        if (offSide) {
+          const dropCap = this._offRoadDropCap(FIXED_DT);
+          this.position.y = Math.max(floor + cap, this.position.y - dropCap);
+        } else {
+          this.position.y = floor + cap;
+        }
+      }
     }
   }
 
@@ -3649,6 +3666,22 @@ export class Vehicle {
     // the pack when a far-left query briefly latched a higher deck.
     void dt;
     return 0.004;
+  }
+
+  /**
+   * Off the paint, do not slam a metre down in one tick (the bounce into the
+   * old verge trench). 0.08 m/tick ≈ 4.8 m/s still follows a 12 % apron at speed.
+   * @param {number} [dt]
+   * @returns {number}
+   */
+  _offRoadDropCap(dt) {
+    const q = this._q;
+    if (!q || q.onRoad !== false || q.tunnel) return Infinity;
+    const kind = q.jumpKind || "";
+    if (kind === "gap" || kind === "ramp" || kind === "crest") return Infinity;
+    if (!this.onGround) return Infinity;
+    void dt;
+    return 0.08;
   }
 
   _wantPlantedDeck() {

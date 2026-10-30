@@ -218,8 +218,12 @@ const FOREST_TREE_CLEAR = 8.6;
 const SKIRT_SLOPE = 0.16;
 const SKIRT_REACH_MAX = 18.5;
 const SKIRT_MID_U = 0.55;
-const SKIRT_MID_DROP = 0.22;
+const SKIRT_MID_DROP = 0.48;
 const SKIRT_PLANT_BIAS = 0.04;
+/** Metres past the painted edge that stay at kerb height (two wheels off ≠ a cliff). */
+const VERGE_HOLD_M = 1.6;
+/** Metres over which the apron then eases into the tucked bed. */
+const VERGE_RUN_M = 14;
 
 /**
  * Land bed below the ribbon (metres). Mountain was 0.28 — hills chorded land
@@ -277,21 +281,40 @@ function skirtReachFromDrop(base, dropAmt) {
 function skirtYAlong(clearance, reach, kerbY, outerY, roadH) {
   if (clearance <= 0.02) return roadH;
   if (!(reach > 0.35)) return roadH;
-  if (clearance >= reach) return Math.max(outerY, kerbY - reach * SKIRT_SLOPE) + SKIRT_PLANT_BIAS;
-  const midSpan = reach * SKIRT_MID_U;
-  const midY = kerbY + (outerY - kerbY) * SKIRT_MID_DROP;
-  let y;
-  if (clearance < midSpan) {
-    const t0 = clearance / Math.max(1e-4, midSpan);
-    // Smoothstep — no hard kink at the kerb / mid ring.
+  const endY = Math.max(outerY, kerbY - reach * SKIRT_SLOPE);
+  if (clearance >= reach) return endY + SKIRT_PLANT_BIAS;
+  const hold = Math.min(VERGE_HOLD_M, reach * 0.22);
+  if (clearance <= hold) {
+    const t0 = clearance / Math.max(1e-4, hold);
     const t = t0 * t0 * (3 - 2 * t0);
-    y = kerbY + (midY - kerbY) * t;
-  } else {
-    const t0 = (clearance - midSpan) / Math.max(1e-4, reach - midSpan);
-    const t = t0 * t0 * (3 - 2 * t0);
-    y = midY + (outerY - midY) * t;
+    const y = roadH + (kerbY - roadH) * t + SKIRT_PLANT_BIAS;
+    return Math.min(roadH, y);
   }
-  return y + SKIRT_PLANT_BIAS;
+  const t0 = (clearance - hold) / Math.max(1e-4, reach - hold);
+  const t = t0 * t0 * (3 - 2 * t0);
+  return kerbY + (endY - kerbY) * t + SKIRT_PLANT_BIAS;
+}
+
+/**
+ * Land / plant Y beside the ribbon.
+ * On the paint: tucked bed so land tris cannot pierce the deck.
+ * Just off the kerb: meets the road. Then a shallow ramp into the biome bed.
+ * Never above the kerb. Never a ditch below the bed.
+ * @param {number} roadY spline Y (no ROAD_DECK)
+ * @param {number} over metres past the painted edge (negative = on paint)
+ * @param {number} bedDrop
+ * @returns {number}
+ */
+function vergeApronY(roadY, over, bedDrop) {
+  const bed = roadY - bedDrop;
+  if (!(over > 0.02)) return bed;
+  const lip = roadY - 0.04;
+  if (over <= VERGE_HOLD_M) return lip;
+  const t = Math.min(1, (over - VERGE_HOLD_M) / VERGE_RUN_M);
+  const s = t * t * (3 - 2 * t);
+  const want = lip + (bed - lip) * s;
+  const maxDrop = (over - VERGE_HOLD_M) * SKIRT_SLOPE;
+  return Math.max(bed, Math.max(want, lip - maxDrop));
 }
 
 /** How often each surface texture tiles along the ribbon (1 / meters per repeat). */
@@ -1939,14 +1962,14 @@ export class Track {
       return mouth != null ? mouth : near.roadY - bedDrop;
     }
     if (over0 < ROAD_COLLIDER_CLEAR + 0.45) {
-      return near.roadY - bedDrop;
+      return vergeApronY(near.roadY, over0, bedDrop);
     }
     let h = this._groundHeight(x, z, scenery, near);
     const bank = this._jumpBankTargetY(x, z, bedDrop);
     if (bank != null) h = Math.max(h, bank);
     const fly = this._flyoverBankTargetY(x, z, bedDrop);
     if (fly != null) h = Math.max(h, fly);
-    if (over0 < ROAD_VERGE + 2.4) h = Math.min(h, near.roadY - bedDrop);
+    if (over0 < ROAD_VERGE + 2.4) h = Math.min(h, vergeApronY(near.roadY, over0, bedDrop) + 0.02);
     if (desert && this._inTunnelCutAt(x, z)) {
       // Authored tunnel ridge stays. Flattening it left the portal floating.
     } else if (this._inLandmarkFlat(near.along, near.dist, near.roadW)) {
@@ -2266,18 +2289,12 @@ export class Track {
         const chordTuck = scenery === "mountain" ? 0.22 : 0.1;
         // On-road / car corridor — hard floor only (no dune / bank lift).
         if (over < ROAD_COLLIDER_CLEAR + 0.45) {
-          const bed = near.roadY - bedDrop - chordTuck;
           // Under the ribbon the bed stays low so sand cannot rise through
-          // the deck. Just off the paint, ease from the lip down to that bed
-          // so the verge meets the road instead of a step.
-          if (over <= 0.2) {
-            h = bed;
-          } else {
-            const lip = near.roadY - 0.05;
-            const t = Math.min(1, (over - 0.2) / 8);
-            const s = t * t * (3 - 2 * t);
-            h = lip + (Math.min(bed, lip) - lip) * s;
-          }
+          // the deck. Just off the paint, the apron meets the kerb then eases
+          // into that bed — no 0.9 m cliff at 20 cm past the edge.
+          h = over <= 0
+            ? near.roadY - bedDrop - chordTuck
+            : vergeApronY(near.roadY, over, bedDrop);
         } else if (over < ROAD_VERGE + 2.4 || near.dist < this._trenchWidth(near.roadW)) {
           h = this._groundHeightRaw(x, z, scenery, near);
           h = Math.min(h, near.roadY - bedDrop - chordTuck);
@@ -2497,7 +2514,19 @@ export class Track {
     const near = nearHint || this._nearestRoad(x, z);
     const drop = bedDropFor(scenery);
     const raw = this._groundHeightRaw(x, z, scenery, near);
-    return this._raiseJumpBank(raw, x, z, drop);
+    const raised = this._raiseJumpBank(raw, x, z, drop);
+    const over = near.minOver != null ? near.minOver : near.dist - (near.roadW || 12) * 0.5;
+    if (
+      over > 0.02 &&
+      over < VERGE_HOLD_M + VERGE_RUN_M &&
+      !near.tunnel &&
+      near.jumpKind !== "gap" &&
+      near.roadY - raised < 2.4
+    ) {
+      const apron = vergeApronY(near.roadY, over, drop);
+      return Math.min(near.roadY - 0.05, Math.max(raised, apron));
+    }
+    return raised;
   }
 
   _groundHeightRaw(x, z, scenery, nearHint) {
@@ -2585,7 +2614,7 @@ export class Track {
           ) {
             return overlapBed - drop;
           }
-          return roadY - drop;
+          return vergeApronY(roadY, clearanceDeck, drop);
         }
       }
       // Portal mouths first — a folded lower arm must not own the hillside
@@ -2671,20 +2700,15 @@ export class Track {
       }
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      // Paint stays a floor. Just off the edge, an easy ditch falls away and
-      // joins the banks — the ribbon is not a plank on a flat shelf.
-      if (dist < roadW * 0.5 + 1.6) return bed;
+      // Paint stays a floor. The apron meets the kerb then eases to the bed —
+      // no extra ditch beside the road.
+      const overF = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      if (overF < ROAD_VERGE + 2) return vergeApronY(roadY, overF, drop);
       const bank = clamp(dune - 2.6, -1.2, 7.2);
-      const shoulder1 = roadW * 0.5 + 18;
-      if (dist < shoulder1) {
-        const t = sm((dist - (roadW * 0.5 + 1.6)) / Math.max(1, shoulder1 - roadW * 0.5 - 1.6));
-        return bed - 0.9 * t;
-      }
-      const ditch = bed - 0.9;
-      if (dist < trench) return ditch;
+      if (dist < trench) return bed;
       if (dist < chaseFlat) {
         const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
-        return ditch + (bed + bank * 0.2 - ditch) * t;
+        return bed + bank * 0.2 * t;
       }
       if (dist < trench + rise) return bed + bank * sm((dist - trench) / rise);
       // Far forest hills under the treeline rings (Visual Pass V4 — taller mounds).
@@ -2704,7 +2728,8 @@ export class Track {
       const bed = roadY - drop;
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + ROAD_VERGE + 1.8) return bed;
+      const overM = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      if (overM < ROAD_VERGE + 1.8) return vergeApronY(roadY, overM, drop);
       const ridge =
         Math.abs(Math.sin(x * 0.008 + z * 0.006)) * 8.5 +
         Math.sin(x * 0.02 - z * 0.016) * 2.8 +
@@ -2758,17 +2783,12 @@ export class Track {
       const bank = Math.max(hill, clamp(dune - bed, -0.4, 7.2));
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + 1.6) return bed;
-      const shoulder1 = roadW * 0.5 + 18;
-      if (dist < shoulder1) {
-        const t = sm((dist - (roadW * 0.5 + 1.6)) / Math.max(1, shoulder1 - roadW * 0.5 - 1.6));
-        return bed - 1.15 * t;
-      }
-      const ditch = bed - 1.15;
-      if (dist < trench) return ditch;
+      const overD = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      if (overD < ROAD_VERGE + 2) return vergeApronY(roadY, overD, drop);
+      if (dist < trench) return bed;
       if (dist < chaseFlat) {
         const t = sm((dist - trench) / Math.max(1, chaseFlat - trench));
-        return ditch + (bed + bank * 0.25 - ditch) * t;
+        return bed + bank * 0.25 * t;
       }
       if (dist < chaseFlat + rise) {
         const t = sm((dist - chaseFlat) / rise);
@@ -2797,7 +2817,8 @@ export class Track {
       const bank = clamp(dune * 0.28, -0.4, 2.6);
       const washed = flatBed(bed);
       if (washed != null) return washed;
-      if (dist < roadW * 0.5 + ROAD_VERGE + 1.2) return bed;
+      const overL = near.minOver != null ? near.minOver : dist - roadW * 0.5;
+      if (overL < ROAD_VERGE + 1.2) return vergeApronY(roadY, overL, drop);
       const alongT = this.length > 1 ? (along || 0) / this.length : 0;
       // Shore basins follow the same runs the water mesh uses (this._lakes).
       let lake = false;
@@ -3903,7 +3924,9 @@ export class Track {
         if (p.tunnel || p.underpass || p.jumpKind === "gap") return edgeY - 0.14;
         if (fastSkirt) {
           const cap = Math.max(0.22, (reach > 0 ? reach : 0.4) * SKIRT_SLOPE);
-          return edgeY - Math.min(cap, p.jump || p.jumpWash ? 0.16 : 0.22);
+          const bed = bedDropFor(scenery);
+          const drop = p.jump || p.jumpWash ? Math.min(0.16, bed) : bed;
+          return edgeY - Math.min(cap, Math.max(0.22, drop));
         }
         if (p.jump || p.jumpWash) {
           const gy = this._groundHeight(lx, lz, scenery);

@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Road-edge apron — no verge cliff / bounce (2026-10-30)
+
+**Player moment:** Put a wheel off the paint. The dirt meets the road. The car does not fall into a ditch and bounce back up.
+
+**Cause:** Land under the ribbon sat 0.4–0.95 m below the deck (so dunes cannot pierce the asphalt). Fast skirts only dropped 22 cm, then the land dropped another metre. Forest/Desert also dug an extra 0.9–1.15 m ditch. Query followed that hole; `_clampToRoadDeck` slammed the chassis down, then snapped it up on the way back.
+
+**Shipped:** Shared `vergeApronY` — first 1.6 m off the kerb stays at lip height, then a ≤16 % ramp into the tucked bed. Skirt, land mesh, and `_groundHeight` use it. Fast skirts seat on the bed. Off-road plant caps how fast Y can fall or rise.
+
+**Boot:** `main.js?v=1247` · `game.js?v=1247` · `track.js?v=500` · `vehicle.js?v=224`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-verge-apron.mjs` PASS (all four stages: first 1.6 m drop ≤ 7 cm, lateral step ≤ 4 cm, grade ≤ 16 %). `qa-static-audit` PASS. `qa-env-clip` static PASS.
+
 ## Desert boot crash — missing floor-guard methods (2026-10-30)
 
 **Player moment:** Championship / Desert start died on the loading plate: `TypeError: this._resetFloorGuard is not a function` at `_settleRacePresent`. Stage never reached 3-2-1.
