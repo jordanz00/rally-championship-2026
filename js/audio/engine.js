@@ -14,7 +14,7 @@ import { CdSoundtrack } from "./soundtrack.js?v=354";
 import { PowertrainVoice } from "./powertrain.js?v=34";
 import { SkidVoice } from "./skid.js?v=10";
 import { loadSample, playHit, playClip } from "./bank.js?v=3";
-import { CrowdVoice } from "./crowd.js?v=6";
+import { CrowdVoice } from "./crowd.js?v=57";
 import { ReverbZones, zoneFromSample } from "./reverb-zones.js?v=1";
 
 /** Default SFX bus level (slider at 100%). */
@@ -673,6 +673,106 @@ export class RallyAudio {
         rpm: s.rpm,
       });
     }
+  }
+
+  /**
+   * Lakeside bridge ambience: wind over open water + slow lap, ramps with the
+   * span weight. Nodes are built on first use, then only gain is retargeted.
+   * @param {number} w 0..1
+   */
+  setBridge(w) {
+    const amt = w > 0 ? (w < 1 ? w : 1) : 0;
+    if (Math.abs(amt - (this._bridgeLast || 0)) < 0.012 && !(amt === 0 && this._bridgeLast)) return;
+    this._bridgeLast = amt;
+    if (!this.ready || this._workMute || !this.ctx || !this._sfxIn) return;
+    if (!this._bridgeAmbGain) {
+      if (amt < 0.03) return;
+      const ctx = this.ctx;
+      const len = Math.floor(ctx.sampleRate * 1.6);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      let acc = 0;
+      for (let i = 0; i < len; i++) {
+        acc = acc * 0.86 + (Math.random() * 2 - 1) * 0.14;
+        data[i] = acc * 3.2;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 640;
+      lp.Q.value = 0.6;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      // Slow swell — water slap and gusts through the cables.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.31;
+      const lfoAmt = ctx.createGain();
+      lfoAmt.gain.value = 0.35;
+      const swell = ctx.createGain();
+      swell.gain.value = 0.65;
+      lfo.connect(lfoAmt);
+      lfoAmt.connect(swell.gain);
+      src.connect(lp);
+      lp.connect(swell);
+      swell.connect(g);
+      g.connect(this._sfxIn);
+      src.start();
+      lfo.start();
+      this._bridgeAmbGain = g;
+    }
+    this._bridgeAmbGain.gain.setTargetAtTime(amt * 0.075 * this.sfxVol, this.ctx.currentTime, 0.5);
+  }
+
+  /**
+   * Expansion-joint "ba-dum": front axle, then rear axle a wheelbase later.
+   * @param {number} speed m/s
+   */
+  bridgeJoint(speed) {
+    if (!this.ready || this._workMute || this.sfxVol <= 0.001 || !this._hits.thump) return;
+    const now = this.ctx.currentTime;
+    if (now - (this._bridgeJointAt || 0) < 0.12) return;
+    this._bridgeJointAt = now;
+    const dest = this._impactIn || this._sfxIn;
+    const sp = Math.max(8, speed || 0);
+    const k = Math.min(1, sp / 46);
+    const gap = Math.min(0.15, Math.max(0.034, 2.55 / sp));
+    playHit(this.ctx, dest, this._hits.thump, {
+      gain: 0.09 + 0.1 * k,
+      rate: 0.52,
+      dur: 0.12,
+      attack: 0.003,
+      lp: 560,
+      hp: 52,
+      when: now,
+    });
+    playHit(this.ctx, dest, this._hits.thump, {
+      gain: 0.13 + 0.13 * k,
+      rate: 0.4,
+      dur: 0.17,
+      attack: 0.003,
+      lp: 440,
+      hp: 46,
+      when: now + gap,
+    });
+  }
+
+  /**
+   * Tower-pass whoosh — wind sheet as the car threads the portal.
+   * @param {number} speed m/s
+   */
+  bridgeTower(speed) {
+    if (!this.ready || this._workMute || this.sfxVol <= 0.001 || !this._hits.noise) return;
+    const k = Math.min(1, (speed || 0) / 46);
+    playHit(this.ctx, this._sfxIn, this._hits.noise, {
+      gain: 0.07 + 0.1 * k,
+      rate: 0.62,
+      dur: 0.85,
+      attack: 0.16,
+      hp: 380,
+      lp: 3400,
+    });
   }
 
   /**

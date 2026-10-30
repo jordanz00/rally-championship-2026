@@ -19,8 +19,8 @@
 import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
-import { COLORS, TUNNEL, CARS } from "../config.js?v=258";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=67";
+import { COLORS, TUNNEL, CARS } from "../config.js?v=260";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=69";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=27";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
@@ -416,61 +416,19 @@ export function createCelica(tint = {}) {
  * @returns {THREE.Group}
  */
 /**
- * Tiny chase-cam shell when rival LOD fails on phones — never throw / abort stage.
+ * Empty marker for "no GLB loaded yet". NEVER draws geometry — a primitive
+ * box car in the pack is a ship-blocker. Callers (Opponent, ghost, attract)
+ * treat `userData.missingCar` as "skip this car" and retry after the garage warms.
  * @param {string} id
  * @returns {THREE.Group}
  */
-function softPhoneCar(id) {
+function missingCarMarker(id) {
   const root = new THREE.Group();
-  root.name = `soft-${id}`;
-  const paint = new THREE.MeshStandardMaterial({
-    color: 0xc4121a,
-    roughness: 0.28,
-    metalness: 0.14,
-  });
-  paint.userData.kind = "paint";
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 3.95), paint);
-  body.name = "soft-body";
-  body.position.y = 0.52;
-  body.castShadow = false;
-  body.receiveShadow = false;
-  root.add(body);
-  const glassMat = new THREE.MeshStandardMaterial({
-    color: 0x152028,
-    roughness: 0.08,
-    metalness: 0.2,
-    transparent: true,
-    opacity: 0.55,
-  });
-  glassMat.userData.kind = "glass";
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.48, 1.65), glassMat);
-  cabin.name = "soft-cabin";
-  cabin.position.set(0, 1.02, -0.2);
-  cabin.castShadow = false;
-  root.add(cabin);
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.92, metalness: 0.05 });
-  rubber.userData.kind = "rubber";
-  const wheels = [];
-  const hubs = [
-    [-0.78, 0.32, 1.18],
-    [0.78, 0.32, 1.18],
-    [-0.78, 0.32, -1.22],
-    [0.78, 0.32, -1.22],
-  ];
-  for (let i = 0; i < hubs.length; i++) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 12), rubber);
-    w.rotation.z = Math.PI / 2;
-    w.position.set(hubs[i][0], hubs[i][1], hubs[i][2]);
-    w.name = `soft-wheel-${i}`;
-    w.castShadow = false;
-    root.add(w);
-    wheels.push(w);
-  }
-  root.userData.wheels = wheels;
-  root.userData.body = root;
+  root.name = "rival-placeholder";
+  root.userData.missingCar = true;
   root.userData.carId = id;
-  root.userData.phoneLod = true;
-  root.userData.softCar = true;
+  root.userData.wheels = [];
+  root.userData.body = root;
   return root;
 }
 
@@ -482,7 +440,6 @@ function cloneCar(id, tint = {}) {
   const lod = rivalTemplates[requested] || rivalTemplates.celica;
   const src = hero || lod;
   if (!src) {
-    if (garagePhoneLite()) return softPhoneCar(requested);
     requireCarModel(requested, "player car");
   }
   const clone = (src || templates[requested]).clone(true);
@@ -1900,13 +1857,8 @@ export function createRivalCar(tint = {}, variant = 0, chassisId = null, heroShe
         "[garage] no GLB loaded for the AI pack — load celica.glb and/or delta integrale.glb"
       );
     }
-    // Soft coupe — never abort the stage with an empty Group.
-    const soft = softPhoneCar(chassis);
-    const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
-    dressRivalCar(soft, livery, variant, isRivalBodyMaterial);
-    soft.userData.carId = chassis;
-    soft.userData.softCar = true;
-    return soft;
+    // No GLB yet: return an invisible marker. Never a primitive box car.
+    return missingCarMarker(chassis);
   }
   const livery = tint && tint.id && tint.body != null ? tint : aiLiveryForIndex(variant);
   const root = enableCarShadows(cloneRival(template, livery, variant));
@@ -3470,6 +3422,22 @@ const _wheelPose = new THREE.Quaternion();
 const ACKERMANN = 0.12;
 
 /**
+ * Wheel-hub travel contract (metres, parent-local, relative to the authored
+ * rest pose). Hubs ride the hull; no road sample may pull them past these.
+ * `airHang` is the unloaded pose in flight. `maxDown` / `maxUp` are the hard
+ * stroke limits. `reachSlack` is how far past one shock stroke the road may
+ * be before the tire counts as unsupported and the hub hangs again.
+ * Gated by tools/qa-air-parts-attached.mjs.
+ */
+export const WHEEL_TRAVEL_LIMITS = Object.freeze({
+  airHang: 0.05,
+  maxDown: 0.16,
+  maxUp: 0.1,
+  maxAlongAxle: 0.05,
+  reachSlack: 0.06,
+});
+
+/**
  * Drive wheel spin and front steer. Steering yaws the knuckle around chassis
  * UP; spin stays on the inner hub around the axle. Never Euler-compose both
  * on one object.
@@ -3575,7 +3543,7 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     !Number.isFinite(cornerY[3]);
   const inAir = !!airborne || !!probedAir;
   /** Unloaded hang (m). Still inside the arch. */
-  const AIR_HANG = 0.05;
+  const AIR_HANG = WHEEL_TRAVEL_LIMITS.airHang;
   const roll = Number.isFinite(chassisRoll) ? chassisRoll : 0;
   const rollClamped = Math.max(-0.45, Math.min(0.45, roll));
   const tanRoll = Math.tan(rollClamped);
@@ -3621,12 +3589,17 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
       // Shocks tuck the hub into the arch (travel −). Extension (travel +)
       // only drops onto the verge — never through the painted slab.
       const tuck = planted * -Math.min(0, travelRaw);
-      const canDrop = planted > 0.5 && !!(dropOk && dropOk[i]);
-      const drop = canDrop ? Math.min(0.16, Math.max(0, travelRaw)) : 0;
+      // A hub only extends toward a road that exists: a NaN probe under it
+      // (pit, wall, hull in the air) means nothing to drop onto.
+      const slotY = cornerY && cornerY.length >= 4 ? cornerY[probeCornerSlot(data, i)] : 0;
+      const canDrop = planted > 0.5 && !!(dropOk && dropOk[i]) && Number.isFinite(slotY);
+      const drop = canDrop ? Math.min(WHEEL_TRAVEL_LIMITS.maxDown, Math.max(0, travelRaw)) : 0;
       const attitude = data.restPosY + (inAir ? 0 : lift * planted) + pitchPlant - rollPlant;
-      let y = inAir ? data.restPosY - AIR_HANG : attitude + tuck - drop;
-      if (!inAir && !canDrop) y = Math.max(attitude, y);
-      y = data.restPosY + Math.max(-0.16, Math.min(0.1, y - data.restPosY));
+      // No road under this hub (probe NaN) while others have one: it hangs.
+      const noRoad = !inAir && !!cornerY && cornerY.length >= 4 && !Number.isFinite(slotY);
+      let y = inAir || noRoad ? data.restPosY - AIR_HANG : attitude + tuck - drop;
+      if (!inAir && !noRoad && !canDrop) y = Math.max(attitude, y);
+      y = data.restPosY + Math.max(-WHEEL_TRAVEL_LIMITS.maxDown, Math.min(WHEEL_TRAVEL_LIMITS.maxUp, y - data.restPosY));
       data._flight = flight;
       // Rest X/Z every frame. The shock may ride a parent axis that is not Y
       // (scaled LOD hubs), and that offset must not accumulate.
@@ -3666,7 +3639,7 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     // the rest pose left the rubber inside the deck after the hub turned.
     const slot = probeCornerSlot(data, i);
     const chasing = (data._flight || 0) < 0.35;
-    const roadY = chasing && cornerY && slot >= 0 ? cornerY[slot] : NaN;
+    const roadY = cornerY && slot >= 0 ? cornerY[slot] : NaN;
     if (!Number.isFinite(roadY) || !w.parent || data._poseY == null) continue;
     const bottom = hubWorldBottom(w);
     if (!Number.isFinite(bottom)) continue;
@@ -3675,6 +3648,22 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     // One shock stroke. Chasing the road under a jump pulled the hubs out.
     const bump = 0.1;
     const droop = data._canDrop ? 0.14 : 0.08;
+    // Road farther below than one stroke (+ slack): the tire is not touching
+    // it. Crest / lip / replay frames can still say onGround while the hull
+    // is already flying — hang the hub like flight instead of dangling it.
+    // Reach is measured from the REST hub, not the already-extended one: a
+    // hub dropped 0.16 m by travel would otherwise "reach" a road 0.36 m away.
+    const sag = data.restPosY != null ? data.restPosY - w.position.y : 0;
+    const beyond = -(delta - sag) - droop;
+    if (beyond > 0 && data.restPosY != null) {
+      // Blend over `reachSlack` so takeoff never pops; fully hung past it.
+      const k = Math.min(1, beyond / WHEEL_TRAVEL_LIMITS.reachSlack);
+      const hang = data.restPosY - WHEEL_TRAVEL_LIMITS.airHang;
+      w.position.y += (hang - w.position.y) * k;
+      continue;
+    }
+    // Pitched / rolled flight attitude: the shell owns the pose, no chase.
+    if (!chasing) continue;
     if (delta > 0.001) delta = Math.min(bump, delta);
     else if (delta < -0.002) delta = Math.max(-droop, delta);
     else delta = 0;
@@ -3684,13 +3673,13 @@ export function applyWheelPose(wheels, spinArr, steer, chassisRoll = 0, wheelY =
     else if (ride.axis === "z") w.position.z += ride.step;
     else w.position.y += ride.step;
     // The hub stays in the well. A jump must not leave a wheel behind.
-    const hold = ride.axis === "y" ? 0.16 : 0.05;
+    const hold = ride.axis === "y" ? WHEEL_TRAVEL_LIMITS.maxDown : WHEEL_TRAVEL_LIMITS.maxAlongAxle;
     if (ride.axis === "x" && data.restPosX != null) {
       w.position.x = Math.max(data.restPosX - hold, Math.min(data.restPosX + hold, w.position.x));
     } else if (ride.axis === "z" && data.restPosZ != null) {
       w.position.z = Math.max(data.restPosZ - hold, Math.min(data.restPosZ + hold, w.position.z));
     } else if (data.restPosY != null) {
-      w.position.y = Math.max(data.restPosY - hold, Math.min(data.restPosY + 0.1, w.position.y));
+      w.position.y = Math.max(data.restPosY - hold, Math.min(data.restPosY + WHEEL_TRAVEL_LIMITS.maxUp, w.position.y));
     }
   }
 }
@@ -3786,16 +3775,6 @@ function box(w, h, d, color, x, y, z, rx = 0) {
   return mesh;
 }
 
-function cyl(rTop, rBot, h, color, x, y, z, rx = 0, rz = 0, segs = 8) {
-  const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(rTop, rBot, h, segs),
-    paint(color)
-  );
-  mesh.position.set(x, y, z);
-  mesh.rotation.x = rx;
-  mesh.rotation.z = rz;
-  return mesh;
-}
 
 function makeWheel(rimHex, hubHex, rubberHex) {
   return makeRallyWheel(rimHex, hubHex, rubberHex, true, 1);
@@ -4038,711 +4017,7 @@ function lampGeometry() {
   return LAMP_GEO;
 }
 
-/** @type {THREE.Material|null} */
-let RIVAL_GLASS = null;
-/** @type {THREE.Material|null} */
-let RIVAL_DARK = null;
-/** @type {THREE.Material|null} */
-let RIVAL_TRIM = null;
 
-/** Tinted rival glass. One material for the whole grid. */
-function rivalGlass() {
-  if (!RIVAL_GLASS) {
-    RIVAL_GLASS = glass(0x1c2a33, { opacity: 0.4 });
-    RIVAL_GLASS.userData.shared = true;
-  }
-  return RIVAL_GLASS;
-}
-
-/** Rubber and plastic trim — lips, grilles, mirror housings. */
-function rivalDark() {
-  if (!RIVAL_DARK) {
-    RIVAL_DARK = rubber(0x161618);
-    RIVAL_DARK.userData.shared = true;
-  }
-  return RIVAL_DARK;
-}
-
-/** Bright bits — mirror faces, exhaust tip. */
-function rivalTrim() {
-  if (!RIVAL_TRIM) {
-    RIVAL_TRIM = chrome(0xb0b4bc);
-    RIVAL_TRIM.userData.shared = true;
-  }
-  return RIVAL_TRIM;
-}
-
-const _partMatrix = new THREE.Matrix4();
-const _partQuat = new THREE.Quaternion();
-const _partEuler = new THREE.Euler();
-const _partPos = new THREE.Vector3();
-const _partScale = new THREE.Vector3();
-
-/**
- * Bake a set of rigidly-placed parts into a single mesh.
- *
- * Every part is cloned, transformed into car space, stripped down to position
- * and normal (nothing here is textured), and merged. If the merge fails for
- * any reason the parts are added individually instead, so a car is never
- * missing its bumper because BufferGeometryUtils disagreed about attributes.
- *
- * @param {THREE.Object3D} parent
- * @param {THREE.Material} mat
- * @param {Array<{geo: THREE.BufferGeometry, x?:number, y?:number, z?:number, rx?:number, ry?:number, rz?:number, sx?:number, sy?:number, sz?:number}>} parts
- * @param {{name?: string, userData?: object}} [extra]
- */
-function addMergedRole(parent, mat, parts, extra) {
-  if (!parts.length) return;
-  try {
-    const prepared = [];
-    for (const part of parts) {
-      _partEuler.set(part.rx || 0, part.ry || 0, part.rz || 0);
-      _partQuat.setFromEuler(_partEuler);
-      _partPos.set(part.x || 0, part.y || 0, part.z || 0);
-      _partScale.set(part.sx != null ? part.sx : 1, part.sy != null ? part.sy : 1, part.sz != null ? part.sz : 1);
-      _partMatrix.compose(_partPos, _partQuat, _partScale);
-      const g = part.geo.clone().toNonIndexed();
-      for (const key of Object.keys(g.attributes)) {
-        if (key !== "position" && key !== "normal") g.deleteAttribute(key);
-      }
-      if (!g.attributes.normal) g.computeVertexNormals();
-      g.applyMatrix4(_partMatrix);
-      // A negative scale flips winding; recomputing normals keeps the mirrored
-      // side glass lit the same way as its twin.
-      if (_partScale.x * _partScale.y * _partScale.z < 0) g.computeVertexNormals();
-      prepared.push(g);
-    }
-    const merged = mergeGeometries(prepared, false);
-    if (!merged) throw new Error("mergeGeometries returned null");
-    merged.computeBoundingSphere();
-    parent.add(stampCabinGlass(new THREE.Mesh(merged, mat), extra));
-    return;
-  } catch (err) {
-    console.warn("Rival part merge failed; falling back to loose meshes", err);
-  }
-  for (const part of parts) {
-    const mesh = new THREE.Mesh(part.geo, mat);
-    mesh.position.set(part.x || 0, part.y || 0, part.z || 0);
-    mesh.rotation.set(part.rx || 0, part.ry || 0, part.rz || 0);
-    mesh.scale.set(part.sx != null ? part.sx : 1, part.sy != null ? part.sy : 1, part.sz != null ? part.sz : 1);
-    parent.add(stampCabinGlass(mesh, extra));
-  }
-}
-
-/**
- * @param {THREE.Mesh} mesh
- * @param {{name?: string, userData?: object}|null} extra
- */
-function stampCabinGlass(mesh, extra) {
-  if (!extra) return mesh;
-  if (extra.name) mesh.name = extra.name;
-  if (extra.userData) Object.assign(mesh.userData, extra.userData);
-  return mesh;
-}
-
-/** Shared rival buffers — 15 clones, one upload. */
-let rivalShare = null;
-
-function getRivalShare() {
-  if (rivalShare) return rivalShare;
-  rivalShare = {
-    hull: makeRivalHullGeo(),
-    hatch: makeHatchHullGeo(),
-    wedge: makeWedgeHullGeo(),
-    roof: makeRivalRoofGeo(),
-    roofHatch: makeHatchRoofGeo(),
-    roofWedge: makeWedgeRoofGeo(),
-    glassF: makeQuadGeo(
-      [-0.62, 0.68, 0.48],
-      [0.62, 0.68, 0.48],
-      [0.52, 1.22, 0.08],
-      [-0.52, 1.22, 0.08]
-    ),
-    glassR: makeQuadGeo(
-      [0.58, 0.66, -1.08],
-      [-0.58, 0.66, -1.08],
-      [-0.5, 1.16, -0.88],
-      [0.5, 1.16, -0.88]
-    ),
-    glassS: makeQuadGeo(
-      [0, 0.66, 0.28],
-      [0, 0.66, -0.92],
-      [0, 1.16, -0.82],
-      [0, 1.2, 0.08]
-    ),
-    lip: new THREE.BoxGeometry(1.62, 0.08, 0.16),
-    grille: new THREE.BoxGeometry(0.72, 0.16, 0.06),
-    mirror: new THREE.BoxGeometry(0.16, 0.09, 0.07),
-    mirrorGlass: new THREE.PlaneGeometry(0.1, 0.07),
-    spoiler: new THREE.BoxGeometry(1.32, 0.04, 0.24),
-    skirt: new THREE.BoxGeometry(0.07, 0.09, 1.55),
-    plate: new THREE.BoxGeometry(0.36, 0.1, 0.03),
-    bumper: new THREE.BoxGeometry(1.72, 0.14, 0.2),
-    pillar: new THREE.BoxGeometry(0.05, 0.64, 0.08),
-    exhaust: new THREE.CylinderGeometry(0.035, 0.04, 0.18, 10),
-  };
-  return rivalShare;
-}
-
-/**
- * Closed loft from right-half cross-sections. +Z is the nose.
- * @param {{z:number, half:number[][]}[]} stations
- */
-function makeLoftGeo(stations) {
-  const rings = stations.map((s) => ringFromHalf(s.z, s.half));
-  const n = rings[0].length;
-  const pos = [];
-  for (let r = 0; r < rings.length; r++) {
-    for (let i = 0; i < n; i++) {
-      const p = rings[r][i];
-      pos.push(p[0], p[1], p[2]);
-    }
-  }
-  const idx = [];
-  for (let r = 0; r < rings.length - 1; r++) {
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const a = r * n + i;
-      const b = r * n + j;
-      const c = (r + 1) * n + j;
-      const d = (r + 1) * n + i;
-      idx.push(a, d, c, a, c, b);
-    }
-  }
-  capRing(idx, 0, n, false);
-  capRing(idx, (rings.length - 1) * n, n, true);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function ringFromHalf(z, half) {
-  const ring = [];
-  for (let i = 0; i < half.length; i++) ring.push([half[i][0], half[i][1], z]);
-  for (let i = half.length - 2; i >= 1; i--) ring.push([-half[i][0], half[i][1], z]);
-  return ring;
-}
-
-function capRing(idx, start, n, reverse) {
-  for (let i = 1; i < n - 1; i++) {
-    if (reverse) idx.push(start, start + i + 1, start + i);
-    else idx.push(start, start + i, start + i + 1);
-  }
-}
-
-function makeQuadGeo(a, b, c, d) {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...d], 3)
-  );
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function makeRivalHullGeo() {
-  const h = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.05, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.05, crownY],
-  ];
-  return makeLoftGeo([
-    { z: 2.1, half: h(0.15, 0.52, 0.15, 0.68, 0.28, 0.66, 0.42, 0.36, 0.48, 0.48) },
-    { z: 1.88, half: h(0.14, 0.76, 0.14, 0.86, 0.34, 0.84, 0.52, 0.44, 0.58, 0.58) },
-    { z: 1.52, half: h(0.15, 0.58, 0.15, 0.9, 0.38, 0.86, 0.56, 0.5, 0.62, 0.62) },
-    { z: 1.28, half: h(0.16, 0.48, 0.16, 0.94, 0.42, 0.88, 0.58, 0.52, 0.64, 0.64) },
-    { z: 0.72, half: h(0.16, 0.82, 0.16, 0.9, 0.4, 0.86, 0.62, 0.7, 0.66, 0.66) },
-    { z: 0.12, half: h(0.16, 0.84, 0.16, 0.9, 0.4, 0.86, 0.62, 0.8, 0.62, 0.62) },
-    { z: -0.72, half: h(0.16, 0.84, 0.16, 0.9, 0.4, 0.86, 0.62, 0.8, 0.62, 0.62) },
-    { z: -1.28, half: h(0.16, 0.5, 0.16, 0.94, 0.42, 0.9, 0.58, 0.68, 0.62, 0.62) },
-    { z: -1.7, half: h(0.17, 0.78, 0.17, 0.86, 0.36, 0.82, 0.54, 0.58, 0.58, 0.58) },
-    { z: -2.06, half: h(0.18, 0.6, 0.18, 0.74, 0.3, 0.72, 0.48, 0.48, 0.52, 0.52) },
-  ]);
-}
-
-function makeRivalRoofGeo() {
-  return makeLoftGeo([
-    { z: 0.12, half: [[0.06, 1.18], [0.52, 1.18], [0.54, 1.24], [0.06, 1.26]] },
-    { z: -0.4, half: [[0.06, 1.18], [0.56, 1.18], [0.58, 1.24], [0.06, 1.26]] },
-    { z: -0.9, half: [[0.06, 1.14], [0.5, 1.14], [0.52, 1.2], [0.06, 1.22]] },
-  ]);
-}
-
-function makeHatchHullGeo() {
-  const h = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.05, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.05, crownY],
-  ];
-  return makeLoftGeo([
-    { z: 1.92, half: h(0.18, 0.58, 0.18, 0.72, 0.34, 0.7, 0.52, 0.4, 0.58, 0.58) },
-    { z: 1.55, half: h(0.16, 0.78, 0.16, 0.88, 0.4, 0.84, 0.6, 0.5, 0.68, 0.68) },
-    { z: 1.18, half: h(0.16, 0.48, 0.16, 0.94, 0.46, 0.9, 0.64, 0.72, 0.74, 0.74) },
-    { z: 0.45, half: h(0.16, 0.84, 0.16, 0.92, 0.44, 0.88, 0.7, 0.8, 0.78, 0.78) },
-    { z: -0.35, half: h(0.16, 0.84, 0.16, 0.92, 0.44, 0.88, 0.7, 0.8, 0.78, 0.78) },
-    { z: -1.12, half: h(0.16, 0.5, 0.16, 0.94, 0.48, 0.9, 0.66, 0.74, 0.76, 0.76) },
-    { z: -1.55, half: h(0.18, 0.8, 0.18, 0.88, 0.42, 0.84, 0.7, 0.7, 0.82, 0.82) },
-    { z: -1.92, half: h(0.2, 0.7, 0.2, 0.78, 0.38, 0.74, 0.68, 0.58, 0.78, 0.78) },
-  ]);
-}
-
-function makeHatchRoofGeo() {
-  return makeLoftGeo([
-    { z: 0.18, half: [[0.06, 1.22], [0.58, 1.22], [0.6, 1.3], [0.06, 1.32]] },
-    { z: -0.55, half: [[0.06, 1.24], [0.6, 1.24], [0.62, 1.32], [0.06, 1.34]] },
-    { z: -1.15, half: [[0.06, 1.18], [0.56, 1.18], [0.58, 1.28], [0.06, 1.3]] },
-  ]);
-}
-
-function makeWedgeHullGeo() {
-  const h = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.05, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.05, crownY],
-  ];
-  return makeLoftGeo([
-    { z: 2.05, half: h(0.14, 0.42, 0.14, 0.58, 0.26, 0.56, 0.38, 0.22, 0.42, 0.42) },
-    { z: 1.55, half: h(0.14, 0.72, 0.14, 0.86, 0.32, 0.82, 0.48, 0.36, 0.52, 0.52) },
-    { z: 1.05, half: h(0.15, 0.46, 0.15, 0.92, 0.38, 0.86, 0.52, 0.42, 0.56, 0.56) },
-    { z: 0.2, half: h(0.16, 0.82, 0.16, 0.9, 0.4, 0.86, 0.58, 0.55, 0.62, 0.62) },
-    { z: -0.55, half: h(0.16, 0.84, 0.16, 0.92, 0.42, 0.88, 0.7, 0.7, 0.78, 0.8) },
-    { z: -1.2, half: h(0.16, 0.5, 0.16, 0.94, 0.44, 0.9, 0.72, 0.62, 0.82, 0.84) },
-    { z: -1.78, half: h(0.18, 0.78, 0.18, 0.88, 0.4, 0.84, 0.62, 0.5, 0.68, 0.7) },
-    { z: -2.08, half: h(0.2, 0.55, 0.2, 0.68, 0.32, 0.64, 0.48, 0.36, 0.52, 0.52) },
-  ]);
-}
-
-function makeWedgeRoofGeo() {
-  return makeLoftGeo([
-    { z: -0.15, half: [[0.06, 1.05], [0.48, 1.05], [0.5, 1.12], [0.06, 1.14]] },
-    { z: -0.7, half: [[0.06, 1.2], [0.58, 1.2], [0.6, 1.28], [0.06, 1.3]] },
-    { z: -1.15, half: [[0.06, 1.16], [0.52, 1.16], [0.54, 1.24], [0.06, 1.26]] },
-  ]);
-}
-
-function lambert(color, extra = {}) {
-  return paint(color, extra);
-}
-
-function makeRivalWheel(geos, rimHex, hubHex, rubberHex) {
-  return makeRallyWheel(rimHex, hubHex, rubberHex, false);
-}
-
-/**
- * Pack cars — coupe / hatch / wedge so the grid is not 14 clones.
- * @param {{body?:number, stripe?:number, accent?:number}} tint
- * @param {number} [variant]
- */
-function buildGenericRival(tint = {}, variant = 0) {
-  const geos = getRivalShare();
-  const kind = variant % 3;
-  const bodyHex = tint.body ?? 0xb42028;
-  const stripeHex = tint.stripe ?? 0xf4f4f0;
-  const accentHex = tint.accent ?? 0x222222;
-  // sharedPaint keys on the colour, so fourteen rivals across eight liveries
-  // upload eight paint materials instead of forty-two.
-  const bodyMat = sharedPaint(bodyHex);
-  const stripeMat = sharedPaint(stripeHex);
-  const accentMat = sharedPaint(accentHex);
-  const glassMat = rivalGlass();
-  const darkMat = rivalDark();
-  const trimMat = rivalTrim();
-
-  const g = new THREE.Group();
-  const hullGeo = kind === 1 ? geos.hatch : kind === 2 ? geos.wedge : geos.hull;
-  const roofGeo = kind === 1 ? geos.roofHatch : kind === 2 ? geos.roofWedge : geos.roof;
-
-  const bumperFz = kind === 1 ? 1.9 : 2.08;
-  const bumperRz = kind === 1 ? -1.9 : -2.04;
-  const pillarZ = kind === 2 ? -0.05 : 0.28;
-  const pillarRx = kind === 2 ? -0.2 : -0.52;
-
-  // Everything below is bolted rigidly to the shell, so it is baked into one
-  // geometry per paint role at build time. Before this a rival was ~29 meshes;
-  // fourteen of them meant ~460 draw calls of nothing but trim.
-  const roof = new THREE.Mesh(roofGeo, kind === 2 ? bodyMat : stripeMat);
-  roof.name = "roof";
-  roof.userData.interior = true;
-  g.add(roof);
-
-  addMergedRole(g, bodyMat, [
-    { geo: hullGeo },
-    { geo: geos.bumper, y: 0.26, z: bumperFz },
-    { geo: geos.bumper, y: 0.26, z: bumperRz },
-    { geo: geos.pillar, x: 0.68, y: 0.92, z: pillarZ, rx: pillarRx },
-    { geo: geos.pillar, x: -0.68, y: 0.92, z: pillarZ, rx: pillarRx },
-    { geo: geos.spoiler, y: kind === 1 ? 1.22 : 1.08, z: kind === 1 ? -1.88 : -1.98 },
-  ]);
-  addMergedRole(g, stripeMat, [{ geo: geos.plate, y: 0.36, z: bumperRz - 0.12 }]);
-  addMergedRole(g, accentMat, [
-    { geo: geos.skirt, x: 0.88, y: 0.22 },
-    { geo: geos.skirt, x: -0.88, y: 0.22 },
-  ]);
-  addMergedRole(g, darkMat, [
-    { geo: geos.lip, y: 0.17, z: bumperFz + 0.06 },
-    { geo: geos.grille, y: 0.38, z: bumperFz + 0.04 },
-    { geo: geos.mirror, x: 0.92, y: 0.78, z: 0.38 },
-    { geo: geos.mirror, x: -0.92, y: 0.78, z: 0.38 },
-  ]);
-  addMergedRole(g, trimMat, [
-    { geo: geos.mirrorGlass, x: 0.93, y: 0.78, z: 0.42 },
-    { geo: geos.mirrorGlass, x: -0.91, y: 0.78, z: 0.42 },
-    { geo: geos.exhaust, x: 0.42, y: 0.2, z: bumperRz - 0.08, rx: Math.PI / 2 },
-  ]);
-
-  // Glass stays split: the windscreen is looked up by name elsewhere, and the
-  // rest is one transparent mesh so the sort order stays predictable.
-  const windscreen = new THREE.Mesh(geos.glassF, glassMat);
-  windscreen.name = "windshield";
-  windscreen.userData.windshield = true;
-  if (kind === 2) windscreen.position.z = -0.35;
-  g.add(windscreen);
-  addMergedRole(
-    g,
-    glassMat,
-    [
-      { geo: geos.glassR, z: kind === 1 ? -0.18 : 0 },
-      { geo: geos.glassS, x: 0.835 },
-      { geo: geos.glassS, x: -0.835, sx: -1 },
-    ],
-    { name: "cabin-glass", userData: { windshield: true } }
-  );
-
-  const noseZ = bumperFz + 0.04;
-  const tailZ0 = bumperRz;
-  attachHeadlights(g, [
-    { x: 0.5, y: 0.46, z: noseZ, w: 0.24, h: 0.13, d: 0.1 },
-    { x: -0.5, y: 0.46, z: noseZ, w: 0.24, h: 0.13, d: 0.1 },
-  ]);
-  const tailZ = tailZ0 - 0.06;
-  attachBrakeLights(g, [
-    { x: 0.52, y: 0.6, z: tailZ, w: 0.28, h: 0.1, d: 0.05 },
-    { x: -0.52, y: 0.6, z: tailZ, w: 0.28, h: 0.1, d: 0.05 },
-  ]);
-
-  const wheels = [];
-  const wheelZ = kind === 1 ? 1.18 : 1.28;
-  for (const [wx, wy, wz] of [
-    [0.8, 0.32, wheelZ],
-    [-0.8, 0.32, wheelZ],
-    [0.8, 0.32, -wheelZ],
-    [-0.8, 0.32, -wheelZ],
-  ]) {
-    const wh = makeRallyWheel(stripeHex, accentHex, 0x111111, false, wx > 0 ? 1 : -1);
-    wh.position.set(wx, wy, wz);
-    wh.userData.front = wz > 0;
-    wh.userData.side = wx >= 0 ? 1 : -1;
-    g.add(wh);
-    wheels.push(wh);
-  }
-  g.userData.wheels = wheels;
-  return g;
-}
-
-/**
- * Low-poly rally cars in the white Castrol / red Integrale / wedge Stratos liveries.
- */
-function buildSaturnCar(kind = "celica") {
-  throw new Error(
-    `[garage] ${kind}: procedural car stand-ins are disabled — load the GLB under assets/${kind}/`
-  );
-}
-
-function buildSaturnDelta(tint = {}) {
-  const g = assembleLoftCar({
-    hull: deltaHullStations(),
-    roof: deltaRoofStations(),
-    body: tint.body ?? 0xb42028,
-    roofPaint: tint.stripe ?? 0xf4f4f0,
-    accent: tint.accent ?? 0x1a1a1a,
-    glass: 0x1a2830,
-    rim: 0xf4f4f0,
-    hub: 0xd4121a,
-    noseZ: 1.95,
-    tailZ: -1.98,
-    wheelZ: 1.18,
-    spoilerY: 1.28,
-    cabin: "hatch",
-  });
-  g.add(box(1.05, 0.04, 0.22, tint.stripe ?? 0xf4f4f0, 0, 1.34, -0.2));
-  return g;
-}
-
-function buildSaturnStratos(tint = {}) {
-  return assembleLoftCar({
-    hull: stratosHullStations(),
-    roof: stratosRoofStations(),
-    body: tint.body ?? 0xb42028,
-    roofPaint: tint.body ?? 0xb42028,
-    accent: tint.accent ?? 0x111111,
-    glass: 0x223038,
-    rim: tint.stripe ?? 0xeee8dc,
-    hub: 0xb42028,
-    noseZ: 2.02,
-    tailZ: -2.05,
-    wheelZ: 1.12,
-    spoilerY: 1.05,
-    cabin: "wedge",
-    hoodDark: true,
-  });
-}
-
-function buildSaturnCelica(tint = {}) {
-  const white = tint.stripe ?? 0xf4f1ea;
-  const green = tint.body && tint.body !== COLORS.castrolGreen ? tint.body : 0x1f7a3a;
-  const red = tint.accent ?? 0xd0121a;
-  const g = assembleLoftCar({
-    hull: celicaHullStations(),
-    roof: celicaRoofStations(),
-    body: white,
-    roofPaint: green,
-    accent: red,
-    glass: 0x223040,
-    rim: white,
-    hub: COLORS.castrolYellow,
-    noseZ: 2.14,
-    tailZ: -2.12,
-    wheelZ: 1.3,
-    spoilerY: 1.16,
-    cabin: "coupe",
-  });
-  const hoodMark = makeLiveryTexture(green, red, COLORS.castrolYellow);
-  const hood = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.05, 1.28),
-    paint(0xffffff, { map: hoodMark, transparent: true, roughness: 0.38, metalness: 0.1 })
-  );
-  hood.rotation.x = -Math.PI / 2;
-  hood.position.set(0, 0.695, 1.12);
-  g.add(hood);
-  g.add(box(0.18, 0.1, 1.7, green, 0.72, 0.52, 0.05));
-  g.add(box(0.18, 0.1, 1.7, green, -0.72, 0.52, 0.05));
-  g.add(box(0.08, 0.07, 1.7, red, 0.58, 0.51, 0.05));
-  g.add(box(0.08, 0.07, 1.7, red, -0.58, 0.51, 0.05));
-  return g;
-}
-
-/**
- * Shared lofted rally car: hull + greenhouse + lights + detailed wheels.
- * @param {object} spec
- */
-function assembleLoftCar(spec) {
-  const g = new THREE.Group();
-  const bodyMat = paint(spec.body);
-  const roofMat = paint(spec.roofPaint);
-  const accentMat = paint(spec.accent);
-  const darkMat = rubber(0x161618);
-  const glassMat = glass(spec.glass);
-
-  g.add(new THREE.Mesh(makeLoftGeo(spec.hull), bodyMat));
-  const roof = new THREE.Mesh(makeLoftGeo(spec.roof), roofMat);
-  roof.name = "roof";
-  roof.userData.interior = true;
-  g.add(roof);
-
-  const zShift = spec.cabin === "wedge" ? -0.32 : spec.cabin === "hatch" ? -0.08 : 0;
-  const windscreen = new THREE.Mesh(
-    makeQuadGeo(
-      [-0.64, 0.7, 0.52 + zShift],
-      [0.64, 0.7, 0.52 + zShift],
-      [0.5, 1.24, 0.06 + zShift],
-      [-0.5, 1.24, 0.06 + zShift]
-    ),
-    glassMat
-  );
-  windscreen.name = "windshield";
-  windscreen.userData.windshield = true;
-  g.add(windscreen);
-  const rearGlass = new THREE.Mesh(
-    makeQuadGeo(
-      [0.6, 0.68, -1.02 + zShift],
-      [-0.6, 0.68, -1.02 + zShift],
-      [-0.48, 1.2, -0.82 + zShift],
-      [0.48, 1.2, -0.82 + zShift]
-    ),
-    glassMat
-  );
-  rearGlass.userData.windshield = true;
-  g.add(rearGlass);
-  const side = makeQuadGeo(
-    [0, 0.68, 0.32 + zShift],
-    [0, 0.68, -0.88 + zShift],
-    [0, 1.18, -0.76 + zShift],
-    [0, 1.22, 0.1 + zShift]
-  );
-  const sideR = new THREE.Mesh(side, glassMat);
-  sideR.position.x = 0.84;
-  sideR.userData.windshield = true;
-  // Mirror verts into a new geo — scale.x = -1 flips winding and looks like
-  // inverted window panes once glass is FrontSide-only.
-  const sideLGeo = side.clone();
-  sideLGeo.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1));
-  sideLGeo.computeVertexNormals();
-  const sideL = new THREE.Mesh(sideLGeo, glassMat);
-  sideL.position.x = -0.84;
-  sideL.userData.windshield = true;
-  g.add(sideR, sideL);
-
-  if (spec.hoodDark) {
-    const hood = box(1.35, 0.03, 1.15, 0x161618, 0, 0.62, 1.05);
-    g.add(hood);
-  }
-
-  g.add(box(1.68, 0.13, 0.22, spec.body, 0, 0.24, spec.noseZ));
-  g.add(box(1.68, 0.13, 0.22, spec.body, 0, 0.24, spec.tailZ));
-  g.add(box(0.78, 0.15, 0.06, 0x1a1a1c, 0, 0.4, spec.noseZ + 0.04));
-  g.add(box(0.07, 0.09, 1.5, spec.accent, 0.88, 0.22, 0));
-  g.add(box(0.07, 0.09, 1.5, spec.accent, -0.88, 0.22, 0));
-  g.add(box(1.3, 0.04, 0.26, spec.body, 0, spec.spoilerY, spec.tailZ + 0.08));
-  g.add(box(0.05, 0.22, 0.16, spec.body, 0.58, spec.spoilerY - 0.12, spec.tailZ + 0.1));
-  g.add(box(0.05, 0.22, 0.16, spec.body, -0.58, spec.spoilerY - 0.12, spec.tailZ + 0.1));
-
-  const mirR = box(0.16, 0.09, 0.08, 0x1a1a1c, 0.94, 0.8, 0.42);
-  const glassM = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.07), chrome(0xb0c8d8));
-  glassM.position.z = 0.045;
-  mirR.add(glassM);
-  const mirL = mirR.clone();
-  mirL.position.x = -0.94;
-  g.add(mirR, mirL);
-
-  const wiper = box(0.4125, 0.009, 0.009, 0x222226, 0.12, 0.72, 0.5 + zShift);
-  wiper.rotation.z = 0.18;
-  g.add(wiper);
-
-  const exhaust = cyl(0.035, 0.04, 0.2, 0xb8b8bc, 0.38, 0.2, spec.tailZ - 0.1, Math.PI / 2, 0, 12);
-  exhaust.material = chrome(0xb8b8bc);
-  g.add(exhaust);
-  g.add(box(0.34, 0.1, 0.03, spec.roofPaint, 0, 0.36, spec.tailZ - 0.12));
-
-  attachHeadlights(g, [
-    { x: 0.5, y: 0.48, z: spec.noseZ + 0.05, w: 0.26, h: 0.14, d: 0.12 },
-    { x: -0.5, y: 0.48, z: spec.noseZ + 0.05, w: 0.26, h: 0.14, d: 0.12 },
-  ]);
-  attachBrakeLights(g, [
-    { x: 0.58, y: 0.54, z: spec.tailZ - 0.04, w: 0.3, h: 0.12, d: 0.04 },
-    { x: -0.58, y: 0.54, z: spec.tailZ - 0.04, w: 0.3, h: 0.12, d: 0.04 },
-    { x: 0.78, y: 0.54, z: spec.tailZ + 0.1, w: 0.04, h: 0.12, d: 0.18 },
-    { x: -0.78, y: 0.54, z: spec.tailZ + 0.1, w: 0.04, h: 0.12, d: 0.18 },
-  ]);
-
-  const wheels = [];
-  for (const [wx, wy, wz] of [
-    [0.8, 0.33, spec.wheelZ],
-    [-0.8, 0.33, spec.wheelZ],
-    [0.8, 0.33, -spec.wheelZ],
-    [-0.8, 0.33, -spec.wheelZ],
-  ]) {
-    const wh = makeRallyWheel(spec.rim, spec.hub, 0x111111, true, wx > 0 ? 1 : -1);
-    wh.position.set(wx, wy, wz);
-    wh.userData.front = wz > 0;
-    wh.userData.side = wx >= 0 ? 1 : -1;
-    g.add(wh);
-    wheels.push(wh);
-  }
-  g.userData.wheels = wheels;
-  void accentMat;
-  void darkMat;
-  return g;
-}
-
-function celicaHullStations() {
-  const p = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.04, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.04, crownY],
-  ];
-  return [
-    { z: 2.18, half: p(0.18, 0.4, 0.18, 0.52, 0.32, 0.5, 0.48, 0.28, 0.55, 0.55) },
-    { z: 1.92, half: p(0.16, 0.68, 0.16, 0.82, 0.36, 0.8, 0.54, 0.42, 0.63, 0.63) },
-    { z: 1.52, half: p(0.16, 0.74, 0.16, 0.9, 0.4, 0.86, 0.58, 0.5, 0.67, 0.67) },
-    { z: 1.28, half: p(0.18, 0.44, 0.18, 0.96, 0.44, 0.9, 0.6, 0.52, 0.68, 0.68) },
-    { z: 0.72, half: p(0.16, 0.8, 0.16, 0.9, 0.42, 0.86, 0.64, 0.74, 0.7, 0.7) },
-    { z: 0.12, half: p(0.16, 0.84, 0.16, 0.9, 0.42, 0.86, 0.64, 0.8, 0.7, 0.7) },
-    { z: -0.7, half: p(0.16, 0.84, 0.16, 0.9, 0.42, 0.86, 0.62, 0.78, 0.68, 0.68) },
-    { z: -1.28, half: p(0.18, 0.46, 0.18, 0.96, 0.44, 0.9, 0.6, 0.64, 0.64, 0.64) },
-    { z: -1.72, half: p(0.18, 0.76, 0.18, 0.86, 0.38, 0.82, 0.56, 0.55, 0.6, 0.6) },
-    { z: -2.12, half: p(0.2, 0.55, 0.2, 0.7, 0.34, 0.66, 0.5, 0.4, 0.54, 0.54) },
-  ];
-}
-
-function celicaRoofStations() {
-  return [
-    { z: 0.18, half: [[0.05, 1.16], [0.52, 1.16], [0.54, 1.24], [0.05, 1.26]] },
-    { z: -0.42, half: [[0.05, 1.18], [0.56, 1.18], [0.58, 1.26], [0.05, 1.28]] },
-    { z: -0.95, half: [[0.05, 1.12], [0.5, 1.12], [0.52, 1.2], [0.05, 1.22]] },
-  ];
-}
-
-function deltaHullStations() {
-  const p = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.04, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.04, crownY],
-  ];
-  return [
-    { z: 1.98, half: p(0.2, 0.55, 0.2, 0.7, 0.36, 0.68, 0.54, 0.42, 0.64, 0.64) },
-    { z: 1.55, half: p(0.16, 0.78, 0.16, 0.88, 0.42, 0.84, 0.62, 0.55, 0.72, 0.72) },
-    { z: 1.18, half: p(0.16, 0.46, 0.16, 0.94, 0.48, 0.9, 0.66, 0.74, 0.78, 0.78) },
-    { z: 0.4, half: p(0.16, 0.84, 0.16, 0.92, 0.46, 0.88, 0.72, 0.8, 0.8, 0.8) },
-    { z: -0.4, half: p(0.16, 0.84, 0.16, 0.92, 0.46, 0.88, 0.72, 0.8, 0.8, 0.8) },
-    { z: -1.12, half: p(0.16, 0.48, 0.16, 0.94, 0.5, 0.9, 0.68, 0.76, 0.8, 0.8) },
-    { z: -1.55, half: p(0.18, 0.8, 0.18, 0.88, 0.44, 0.84, 0.72, 0.7, 0.84, 0.84) },
-    { z: -1.95, half: p(0.22, 0.68, 0.22, 0.78, 0.4, 0.74, 0.7, 0.55, 0.8, 0.8) },
-  ];
-}
-
-function deltaRoofStations() {
-  return [
-    { z: 0.2, half: [[0.05, 1.22], [0.58, 1.22], [0.6, 1.32], [0.05, 1.34]] },
-    { z: -0.5, half: [[0.05, 1.26], [0.6, 1.26], [0.62, 1.36], [0.05, 1.38]] },
-    { z: -1.12, half: [[0.05, 1.2], [0.56, 1.2], [0.58, 1.32], [0.05, 1.34]] },
-  ];
-}
-
-function stratosHullStations() {
-  const p = (keelY, sillX, sillY, flankX, flankY, shX, shY, railX, railY, crownY) => [
-    [0.04, keelY],
-    [sillX, sillY],
-    [flankX, flankY],
-    [shX, shY],
-    [railX, railY],
-    [0.04, crownY],
-  ];
-  return [
-    { z: 2.08, half: p(0.16, 0.4, 0.16, 0.56, 0.28, 0.54, 0.4, 0.22, 0.44, 0.44) },
-    { z: 1.55, half: p(0.14, 0.7, 0.14, 0.86, 0.34, 0.82, 0.5, 0.34, 0.54, 0.54) },
-    { z: 1.08, half: p(0.15, 0.44, 0.15, 0.92, 0.4, 0.86, 0.54, 0.4, 0.58, 0.58) },
-    { z: 0.15, half: p(0.16, 0.82, 0.16, 0.9, 0.42, 0.86, 0.6, 0.52, 0.64, 0.64) },
-    { z: -0.55, half: p(0.16, 0.84, 0.16, 0.92, 0.44, 0.88, 0.72, 0.68, 0.82, 0.84) },
-    { z: -1.18, half: p(0.16, 0.48, 0.16, 0.94, 0.46, 0.9, 0.74, 0.6, 0.84, 0.86) },
-    { z: -1.75, half: p(0.18, 0.76, 0.18, 0.86, 0.4, 0.82, 0.62, 0.48, 0.68, 0.7) },
-    { z: -2.08, half: p(0.2, 0.52, 0.2, 0.66, 0.32, 0.62, 0.48, 0.34, 0.52, 0.52) },
-  ];
-}
-
-function stratosRoofStations() {
-  return [
-    { z: -0.12, half: [[0.05, 1.02], [0.48, 1.02], [0.5, 1.1], [0.05, 1.12]] },
-    { z: -0.7, half: [[0.05, 1.2], [0.58, 1.2], [0.6, 1.3], [0.05, 1.32]] },
-    { z: -1.18, half: [[0.05, 1.14], [0.5, 1.14], [0.52, 1.24], [0.05, 1.26]] },
-  ];
-}
 
 function makeBrakeLamp(w, h, d) {
   const mesh = new THREE.Mesh(
@@ -7818,34 +7093,4 @@ export function updatePovHudFade(root, t) {
   }
 }
 
-function makeLiveryTexture(green, red, yellow) {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
-  const ctx = c.getContext("2d");
-  ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = "#f4f1ea";
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = "#1f7a3a";
-  ctx.beginPath();
-  ctx.moveTo(0, 40);
-  ctx.lineTo(256, 90);
-  ctx.lineTo(256, 150);
-  ctx.lineTo(0, 110);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#d0121a";
-  ctx.fillRect(0, 108, 256, 18);
-  ctx.fillStyle = "#d0121a";
-  ctx.font = "bold 28px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("OPEN STAGE", 128, 100);
-  ctx.fillStyle = "#111";
-  ctx.font = "bold 14px Arial";
-  ctx.fillText("RALLY CO", 128, 72);
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
+

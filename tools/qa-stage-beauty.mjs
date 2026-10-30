@@ -63,6 +63,18 @@ check(
   "lakeside driveable bridge",
   /bridge_span/.test(lakeside) && /kind:\s*"bridge"/.test(lakeside) && /bridge_approach/.test(lakeside)
 );
+{
+  // Invariant, not a literal: the suspension span is a late-stage landmark.
+  const lp = COURSES.lakeside.pieces;
+  const lLen = approxLen(COURSES.lakeside);
+  let acc = 0;
+  let spanAt = -1;
+  for (const p of lp) {
+    if (spanAt < 0 && (p.bridge || p.visual === "bridge_span")) spanAt = acc;
+    acc += approxLen({ pieces: [p] });
+  }
+  check("lakeside bridge starts after 55% of the stage", spanAt / lLen >= 0.55, `${((spanAt / lLen) * 100).toFixed(1)}%`);
+}
 function countKind(src, kind) {
   return (src.match(new RegExp(`kind:\\s*"${kind}"`, "g")) || []).length;
 }

@@ -23,10 +23,10 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=220";
-import { getSurface } from "./physics/surfaces.js?v=59";
-import { AI, CARS } from "./config.js?v=258";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=300";
+import { Vehicle } from "./physics/vehicle.js?v=223";
+import { getSurface } from "./physics/surfaces.js?v=60";
+import { AI, CARS } from "./config.js?v=260";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=304";
 
 const G = 9.81;
 
@@ -240,7 +240,7 @@ export class Opponent {
     const wantHero = index < heroSlots;
     try {
       this.mesh = createRivalCar(aiTintForIndex(index), index, this.chassisId, wantHero);
-      this._meshMissing = !this.mesh || this.mesh.name === "rival-placeholder";
+      this._meshMissing = !this.mesh || !!this.mesh.userData.missingCar || this.mesh.name === "rival-placeholder";
     } catch (err) {
       console.warn("[ai] rival mesh missing — soft coupe", err);
       try {

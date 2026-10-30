@@ -36,7 +36,13 @@ check("soft layer dissolve masks", /smoothstep\( 0\.12, 0\.88, n6 \)/.test(pbr))
 check("surface noise v6 (no GLSL reserved `patch`)", /sn-v6-/.test(sn) && /dust/.test(sn) && !/float patch\s*=/.test(sn));
 check("forest larger tiles", /TILE_FLOOR_M = 5\.2/.test(forest) && /TILE_DIRT_M = 3\.6/.test(forest));
 check("desert larger tiles", /TILE_SAND_M = 38/.test(desert) && /TILE_DIRT_M = 11\.5/.test(desert));
-check("surface blend ≥200m", /const BLEND = 220/.test(track));
+check(
+  "surface blend is a short centred crossfade (6..40 m), not a 220 m one-sided ease",
+  (() => {
+    const w = Number((track.match(/const SURFACE_BLEND_M = (\d+)/) || [])[1]);
+    return w >= 6 && w <= 40 && !/const BLEND = 220/.test(track);
+  })()
+);
 check("slide play lane", /PLAY_WIDTH = 1\.4/.test(def) && /PLAY_STRAIGHT = 2\./.test(def));
 check("shoulder verge blend desert", /vergeEnd = 4\.6/.test(track) && /Compacted verge/.test(track));
 check("cinematic vista fog", /vistaFar/.test(game) && /1\.48/.test(game));

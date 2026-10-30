@@ -67,6 +67,7 @@ const TOOLS = [
   { name: "qa-sprint26-driving", file: "qa-sprint26-driving.mjs", sprints: [26] },
   { name: "qa-sprint27-env", file: "qa-sprint27-env.mjs", sprints: [27] },
   { name: "qa-sprint28-launch", file: "qa-sprint28-launch.mjs", sprints: [28] },
+  { name: "qa-air-parts-attached", file: "qa-air-parts-attached.mjs", sprints: [26] },
 ];
 
 function runTool(file) {

@@ -8,8 +8,8 @@
  * HOW: edits the SAME config objects physics and AI read. Those modules import
  *   config.js at their own ?v=. If you bump them, bump VEHICLE_CFG / AI_CFG below.
  */
-const VEHICLE_CFG = "../config.js?v=258";
-const AI_CFG = "../config.js?v=258";
+const VEHICLE_CFG = "../config.js?v=260";
+const AI_CFG = "../config.js?v=260";
 const KEY = "rally-play-opts";
 
 const HELP = {

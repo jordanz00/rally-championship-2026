@@ -3,7 +3,8 @@
  * Tarmac ribbon, jumps, twin hairpins, tight hooks, a cobble rush.
  */
 
-import { COLORS } from "../../config.js?v=258";
+import { COLORS } from "../../config.js?v=260";
+import { jumpSeg } from "./jump-kit.js?v=1";
 
 /** Slide ribbon — catchable hooks along the water. */
 const W = 15.0;
@@ -21,36 +22,27 @@ export const LAKESIDE_DEFINITION = {
   startY: 1,
   seed: 61,
   barriers: true,
-  identity: "Autumn lakeside: suspension bridge, then linked medium hooks / hairpins / jumps",
+  identity: "Autumn lakeside: linked medium hooks / hairpins / jumps, then the suspension bridge across the bay",
+  /**
+   * Road surface along the stage (fractions of compiled length). Shore gravel start, paved
+   * lake road, beach sand, cobble promenade, dirt track, tarmac, gravel; the
+   * bridge deck + aprons are forced tarmac by applySurfacePlan; gravel and
+   * dirt after the far shore.
+   */
+  surfacePlan: [
+    { surface: "gravel", to: 0.064 },
+    { surface: "tarmac", to: 0.201 },
+    { surface: "sand", to: 0.257 },
+    { surface: "cobble", to: 0.353 },
+    { surface: "dirt", to: 0.449 },
+    { surface: "tarmac", to: 0.559 },
+    { surface: "gravel", to: 0.627 },
+    { surface: "tarmac", to: 0.880 },
+    { surface: "dirt", to: 0.957 },
+    { surface: "tarmac" },
+  ],
   segments: [
-    { kind: "straight", length: 100, surface: "tarmac", width: W, purpose: "Start — lake bridge climbs ahead" },
-    {
-      kind: "straight",
-      length: 56,
-      surface: "tarmac",
-      width: W,
-      dy: 6.4,
-      purpose: "Bridge approach — climb onto the span",
-      visual: "bridge_approach",
-    },
-    {
-      kind: "bridge",
-      length: 210,
-      surface: "tarmac",
-      width: W,
-      dy: 0,
-      purpose: "Suspension bridge — drive the span over the lake",
-      visual: "bridge_span",
-    },
-    {
-      kind: "straight",
-      length: 56,
-      surface: "tarmac",
-      width: W,
-      dy: -6.4,
-      purpose: "Bridge exit — back to the shore",
-      visual: "bridge_exit",
-    },
+    { kind: "straight", length: 100, surface: "tarmac", width: W, purpose: "Start — shore hooks, then the far bridge" },
     {
       kind: "jump",
       ramp: 20,
@@ -72,7 +64,7 @@ export const LAKESIDE_DEFINITION = {
       surface: "tarmac",
       width: W,
       bank: 0.07,
-      purpose: "Medium right off the bridge — hang the slide",
+      purpose: "Medium right off the jump — hang the slide",
     },
     { kind: "straight", length: 28, surface: "tarmac", width: W, purpose: "Linked medium left" },
     {
@@ -155,7 +147,9 @@ export const LAKESIDE_DEFINITION = {
       bank: 0.07,
       purpose: "Hairpin right — easy power slide, punch out",
     },
-    { kind: "straight", length: 36, surface: "cobble", width: W, purpose: "Unwind on brick" },
+    { kind: "straight", length: 14, surface: "cobble", width: W, purpose: "Unwind on brick — kicker ahead" },
+    jumpSeg("hop", { surface: "cobble", width: W, purpose: "Brick kicker — small hop, Rush charge" }),
+    { kind: "straight", length: 6, surface: "cobble", width: W, purpose: "Land on brick, tight left ahead" },
     {
       kind: "tight_corner",
       direction: "left",
@@ -171,8 +165,7 @@ export const LAKESIDE_DEFINITION = {
       length: 48,
       surface: "tarmac",
       width: W,
-      checkpoint: true,
-      purpose: "Second checkpoint — jump then second hairpin",
+      purpose: "Brick exit — jump then second hairpin",
     },
     {
       kind: "jump",
@@ -220,22 +213,59 @@ export const LAKESIDE_DEFINITION = {
     },
     { kind: "straight", length: 28, surface: "tarmac", width: W, purpose: "Linked medium left" },
     {
-      kind: "medium_corner",
+      kind: "fast_sweeper",
       direction: "left",
-      radius: 58,
-      angle: 64,
+      radius: 130,
+      angle: 50,
       surface: "tarmac",
       width: W,
-      purpose: "Medium left — hang it along the shelf",
+      sweep: true,
+      purpose: "Shelf sweeper — long left along the water, hang it",
     },
     {
       kind: "straight",
       length: 100,
       surface: "tarmac",
       width: W,
-      purpose: "Lakeside vista — water shelf opens to the left",
+      checkpoint: true,
+      purpose: "Checkpoint on the vista — the suspension bridge stands across the bay",
       visual: "lake_vista",
       landmark: true,
+    },
+    {
+      kind: "straight",
+      length: 60,
+      surface: "tarmac",
+      width: W,
+      purpose: "Bay straight — bridge dead ahead, tower tops over the water",
+    },
+    {
+      kind: "straight",
+      length: 100,
+      surface: "tarmac",
+      width: W,
+      // 11.5 m over ~235 m = 4.9% mean, ~7.3% peak (smoothstep) — no lip, no jump.
+      dy: 11.5,
+      purpose: "Bridge approach — climb onto the span",
+      visual: "bridge_approach",
+    },
+    {
+      kind: "bridge",
+      length: 265, // compiles to ~620 m level deck (track-definition BRIDGE_SPAN_MAX)
+      surface: "tarmac",
+      width: W,
+      dy: 0,
+      purpose: "Suspension bridge — drive the span over the lake",
+      visual: "bridge_span",
+    },
+    {
+      kind: "straight",
+      length: 100,
+      surface: "tarmac",
+      width: W,
+      dy: -11.5,
+      purpose: "Bridge exit — back to the shore",
+      visual: "bridge_exit",
     },
     {
       kind: "medium_corner",
@@ -248,16 +278,40 @@ export const LAKESIDE_DEFINITION = {
       purpose: "Shoreline medium — gold canopy, wet shelf",
       visual: "shore_sweep",
     },
-    { kind: "straight", length: 32, surface: "tarmac", width: W, purpose: "Linked shore right" },
+    { kind: "straight", length: 14, surface: "tarmac", width: W, purpose: "Shore rhythm — two kickers along the water" },
+    jumpSeg("hop", { surface: "tarmac", width: W, purpose: "Shore kicker one" }),
+    { kind: "straight", length: 12, surface: "tarmac", width: W, purpose: "Rhythm — stay on it" },
+    jumpSeg("hop", { surface: "tarmac", width: W, purpose: "Shore kicker two — medium right ahead" }),
+    {
+      kind: "straight",
+      length: 20,
+      surface: "tarmac",
+      width: W,
+      checkpoint: true,
+      purpose: "Checkpoint past the bridge — shore right ahead",
+    },
+    {
+      kind: "fast_sweeper",
+      direction: "right",
+      radius: 120,
+      angle: 36,
+      surface: "tarmac",
+      width: W,
+      sweep: true,
+      purpose: "Shore sweeper right — tightening, hold the line",
+    },
     {
       kind: "medium_corner",
       direction: "right",
-      radius: 56,
-      angle: 68,
+      radius: 52,
+      angle: 42,
       surface: "tarmac",
       width: W,
-      purpose: "Shore medium right — power into the finish",
+      bank: 0.08,
+      purpose: "Shore medium right — the radius closes, power into the finish",
     },
-    { kind: "straight", length: 280, surface: "tarmac", width: W, purpose: "Finish — autumn trees, top gear" },
+    { kind: "straight", length: 40, surface: "tarmac", width: W, purpose: "Finish run — flat out at the big lip" },
+    jumpSeg("big", { surface: "tarmac", width: W, purpose: "Lake big air — hang time on the finish straight, land flat" }),
+    { kind: "straight", length: 85, surface: "tarmac", width: W, purpose: "Finish — autumn trees, top gear" },
   ],
 };

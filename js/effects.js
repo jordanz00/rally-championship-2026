@@ -16,8 +16,8 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=59";
-import { VISUAL } from "./config.js?v=258";
+import { getSurface } from "./physics/surfaces.js?v=60";
+import { VISUAL } from "./config.js?v=260";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { isPhonePlay } from "./ui/touch-controls.js?v=7";
 
@@ -1308,19 +1308,58 @@ export class TireMarks {
     this._aliveMarks = 0;
     this._aiSoftGate = 0;
     this._segA = { x: 0, y: 0, z: 0, heading: 0, surface: "" };
+    this._srcCounter = 1;
+    this._emitLoad = { throttle: 0, brake: 0, dig: 0, speed: 0, hb: 0 };
+    this._digLoad = { throttle: 0, brake: 0, dig: 0, speed: 0, hb: 0, side: 0 };
     for (let i = 0; i < this.pos.length; i += 3) this.pos[i + 1] = -40;
+  }
+
+  /**
+   * Landing impact: stamp a crater + rim under each wheel of a car that just
+   * touched down on soft ground. Presentation only.
+   * @param {{position:{x:number,y:number,z:number}, yaw:number, surfaceId:string, spec?:object}} vehicle
+   * @param {{query:Function, wheelDeform?:object}} track
+   * @param {number} impact vehicle.lastImpact (m/s-ish, ~1..12)
+   */
+  landing(vehicle, track, impact) {
+    const f = track && track.wheelDeform;
+    if (!f || !vehicle || !(impact > 0.85)) return;
+    const wb = (vehicle.spec && vehicle.spec.wheelbase) || 2.5;
+    const tf = ((vehicle.spec && vehicle.spec.trackFront) || 1.5) * 0.5;
+    const tr = ((vehicle.spec && vehicle.spec.trackRear) || 1.5) * 0.5;
+    const yaw = vehicle.yaw || 0;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const strength = Math.min(1, (impact - 0.85) / 7);
+    const radius = 0.5 + strength * 0.55;
+    for (let i = 0; i < 4; i++) {
+      const along = i < 2 ? wb * 0.5 : -wb * 0.5;
+      const lat = (i & 1 ? -1 : 1) * (i < 2 ? tf : tr);
+      const x = vehicle.position.x + fx * along + rx * lat;
+      const z = vehicle.position.z + fz * along + rz * lat;
+      const q = track.query(x, z, this._query, vehicle.progress || 0);
+      if (!q || q.jumpKind === "gap") continue;
+      const surf = q.surface;
+      const baseH = q.baseHeight != null ? q.baseHeight : q.height - (q.wheelDeform || 0);
+      f.stampImpact(x, baseH, z, radius, strength * (i < 2 ? 0.8 : 1), surf);
+    }
   }
 
   /**
    * @param {{position:{x:number,y:number,z:number}, yaw:number, speed:number, surfaceId:string, slip?:number, drifting?:boolean, driftAngle?:number, onGround?:boolean, ai?:boolean, velocity?:{x:number,z:number}, steer?:number, spec?:{wheelbase?:number, trackRear?:number, trackFront?:number}}} vehicle
    * @param {{query:(x:number,z:number,out?:object,hintDist?:number)=>object, wheelDeform?:object, wheelRuts?:object}} track
    * @param {number} dt
+   * @param {number} [lod] 0 full (decals + trench), 1 mid / 2 far: rear-wheel
+   *   deform only (no decals); caller gates cadence and passes the summed dt.
    */
-  emit(vehicle, track, dt) {
+  emit(vehicle, track, dt, lod = 0) {
     if (!track || !vehicle || vehicle.onGround === false) return;
     const id = vehicle.surfaceId;
     const profile = MARK_PROFILE[id];
     if (!profile) return;
+    if (lod > 0 && (profile.type !== "soft" || !track.wheelDeform || track.wheelDeform.quality < 2)) return;
     const speed = vehicle.speed || 0;
     const slip = Math.abs(vehicle.slip || 0);
     const steer = Math.abs(vehicle.steer || 0);
@@ -1349,13 +1388,13 @@ export class TireMarks {
     }
 
     // AI soft: half-rate stamps when only rolling — same trench look, half CPU.
-    if (vehicle.ai && soft && rollOnly) {
+    if (lod === 0 && vehicle.ai && soft && rollOnly) {
       this._aiSoftGate += 1;
       if (this._aiSoftGate & 1) return;
     }
 
     // Denser player soft stamps so twin trenches read as continuous tracks.
-    const stride = soft ? (vehicle.ai ? 0.22 : 0.09) : 0.22;
+    const stride = lod > 0 ? 0.5 : soft ? (vehicle.ai ? 0.22 : 0.09) : 0.22;
     const budget = (this._carry.get(vehicle) || 0) + speed * dt;
     if (budget < stride) {
       this._carry.set(vehicle, budget);
@@ -1394,6 +1433,7 @@ export class TireMarks {
         { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
         { x: 0, y: 0, z: 0, heading: 0, surface: "", valid: false },
       ];
+      prev.src = this._srcCounter++;
       this._last.set(vehicle, prev);
     }
 
@@ -1401,15 +1441,18 @@ export class TireMarks {
     const omegaR = Math.abs(vehicle.omegaR || 0);
     const radius = (vehicle.spec && vehicle.spec.wheelRadius) || 0.325;
     const spinDig = Math.min(1, Math.max(0, omegaR * radius - speed) / 10);
-    const load = {
-      throttle,
-      brake,
-      dig: spinDig + (vehicle.drifting ? 0.35 : 0) + drift * 0.5,
-      speed,
-    };
+    const load = this._emitLoad;
+    load.throttle = throttle;
+    load.brake = brake;
+    load.dig = spinDig + (vehicle.drifting ? 0.35 : 0) + drift * 0.5;
+    load.speed = speed;
+    load.hb = 0;
 
     // AI soft: rear tires only — fronts add little visual, cut 2× queries/stamps.
-    const w0 = soft && vehicle.ai ? 2 : 0;
+    const w0 = soft && (vehicle.ai || lod > 0) ? 2 : 0;
+    const maxSeg = lod > 0 ? 7 : 2.8;
+    const hbHold = vehicle.handbrake || 0;
+    load.hb = hbHold;
     for (let i = w0; i < 4; i++) {
       const w = wheels[i];
       const x = vehicle.position.x + fx * w.along + rx * w.lat;
@@ -1438,12 +1481,12 @@ export class TireMarks {
       const dx = slot.x - lastX;
       const dz = slot.z - lastZ;
       const len = Math.hypot(dx, dz);
-      if (len < stride * 0.55 || len > 2.8) continue;
+      if (len < stride * 0.55 || len > maxSeg) continue;
       this._segA.x = lastX;
       this._segA.y = lastY;
       this._segA.z = lastZ;
       this._segA.surface = lastSurf;
-      this._writeSegment(this._segA, slot, profile, slip, drift, speed, i >= 2, rollOnly, track, load);
+      this._writeSegment(this._segA, slot, profile, slip, drift, speed, i >= 2, rollOnly, track, load, lod, prev.src * 4 + i);
     }
   }
 
@@ -1457,9 +1500,11 @@ export class TireMarks {
    * @param {boolean} rear
    * @param {boolean} [rollOnly]
    * @param {{wheelDeform?:object,wheelRuts?:object}} [track]
-   * @param {{throttle?:number, brake?:number, dig?:number, speed?:number}|null} [load]
+   * @param {{throttle?:number, brake?:number, dig?:number, speed?:number, hb?:number}|null} [load]
+   * @param {number} [lod]
+   * @param {number} [src] stable wheel id for the deform pass counter
    */
-  _writeSegment(a, b, profile, slip, drift, speed, rear, rollOnly = false, track = null, load = null) {
+  _writeSegment(a, b, profile, slip, drift, speed, rear, rollOnly = false, track = null, load = null, lod = 0, src = 0) {
     const dirX = b.x - a.x;
     const dirZ = b.z - a.z;
     const len = Math.hypot(dirX, dirZ) || 1;
@@ -1473,25 +1518,18 @@ export class TireMarks {
     if (profile.type === "soft" && track && track.wheelDeform) {
       const surface = a.surface || b.surface || "dirt";
       const pressure = rollOnly ? 0.95 : 1.35;
-      const digLoad = {
-        throttle: (load && load.throttle) || 0,
-        brake: (load && load.brake) || 0,
-        dig: ((load && load.dig) || 0) * (rear ? 1.2 : 0.88) * (rollOnly ? 0.72 : 1),
-        speed,
-      };
-      track.wheelDeform.stampSegment(
-        a,
-        b,
-        halfW,
-        surface,
-        slip * pressure,
-        drift * pressure,
-        speed,
-        digLoad
-      );
-      if (track.wheelRuts) {
-        track.wheelRuts.writeSegment(a, b, halfW, surface, slip * pressure, drift * pressure, digLoad);
-      }
+      const digLoad = this._digLoad;
+      digLoad.throttle = (load && load.throttle) || 0;
+      digLoad.brake = (load && load.brake) || 0;
+      digLoad.dig = ((load && load.dig) || 0) * (rear ? 1.2 : 0.88) * (rollOnly ? 0.72 : 1);
+      digLoad.speed = speed;
+      digLoad.hb = (load && load.hb) || 0;
+      digLoad.side = 0;
+      // Slide berm bias: which side of the trail the tire's heading leans toward.
+      const sideDot = Math.sin(b.heading || 0) * -dirZ / len + Math.cos(b.heading || 0) * dirX / len;
+      digLoad.side = sideDot > 0.33 ? 1 : sideDot < -0.33 ? -1 : sideDot * 3;
+      track.wheelDeform.stampSegment(a, b, halfW, surface, slip * pressure, drift * pressure, speed, digLoad, lod, src);
+      if (lod > 0) return;
       // Dark tread sits on the road between the raised lips. Dropping it
       // into the dug floor hides it under the ribbon, so the groove vanishes.
       const ay = a.y + 0.012;

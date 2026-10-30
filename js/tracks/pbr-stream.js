@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=258";
+import { VISUAL } from "../config.js?v=260";
 
 const ASSET_V = "2";
 const BOOT_MS = 900;

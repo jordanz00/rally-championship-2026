@@ -15,7 +15,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { VISUAL } from "../config.js?v=258";
+import { VISUAL } from "../config.js?v=260";
 import { flatParams, paintedTexture, sharedMaterial } from "./saturn.js?v=2";
 import { SURFACE_NOISE_GLSL, applySurfaceNoisePass, armSurfaceNoise } from "./surface-noise.js?v=7";
 
@@ -515,7 +515,10 @@ export function armProjectedMaps(mat, opts = {}) {
   const blotch = !!opts.blotch;
   const key = opts.key || `proj-${mode}-v1`;
   mat.onBeforeCompile = (shader) => {
-    injectProjectedMaps(shader, { mode, amount, ribbon, bump, blotch });
+    // userData.projScale = 5.5 / photoTileMetres (stage-pbr.js). Read at compile
+    // so callers may set it right after construction. Default 1 = legacy look.
+    const scale = Number(mat.userData.projScale) > 0 ? Number(mat.userData.projScale) : 1;
+    injectProjectedMaps(shader, { mode, amount, ribbon, bump, blotch, scale });
   };
   mat.customProgramCacheKey = () => key;
 }
@@ -548,6 +551,7 @@ function injectProjectedMaps(shader, opts) {
   shader.uniforms.uProjRibbon = { value: opts.ribbon };
   shader.uniforms.uBumpAmt = { value: opts.bump };
   shader.uniforms.uRoadVar = { value: opts.amount };
+  shader.uniforms.uProjScale = { value: opts.scale > 0 ? opts.scale : 1 };
   shader.uniforms.uNoiseAmt = { value: opts.amount > 0.7 ? 0.38 : 0.28 };
   const triDef = opts.mode === "triplanar" ? "#define USE_PROJ_TRIPLANAR\n" : "";
   // Macro islands + meso grain + micro flecks — soft dissolve so layers read
@@ -602,6 +606,7 @@ ${triDef}uniform float uProjAmt;
 uniform float uProjRibbon;
 uniform float uBumpAmt;
 uniform float uRoadVar;
+uniform float uProjScale;
 uniform float uNoiseAmt;
 varying vec3 vProjWorld;
 varying vec3 vProjNrm;
@@ -629,7 +634,7 @@ vec2 stochasticUv(vec2 xz, float scale, float cell) {
   vec2 local = fract(xz / max(cell, 0.001)) - 0.5;
   vec2 rot = vec2(local.x * ca - local.y * sa, local.x * sa + local.y * ca);
   vec2 off = vec2(roadHash(cellId + 19.0), roadHash(cellId + 47.0));
-  return (rot + 0.5 + off * 0.37) * scale * cell;
+  return (rot + 0.5 + off * 0.37) * scale * cell * uProjScale;
 }
 vec2 projUvA(vec3 w) { return stochasticUv(w.xz, 0.18, 5.5); }
 vec2 projUvB(vec3 w) {

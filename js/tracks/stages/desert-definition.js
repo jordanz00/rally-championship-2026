@@ -8,7 +8,8 @@
  * Built for easy power slides — hard hooks with room to catch.
  */
 
-import { COLORS } from "../../config.js?v=258";
+import { COLORS } from "../../config.js?v=260";
+import { jumpSeg } from "./jump-kit.js?v=1";
 
 /** Slide ribbon — narrow enough to hang attitude, wide enough to catch. */
 const W = {
@@ -34,6 +35,20 @@ export const DESERT_DEFINITION = {
   barriers: false,
   identity:
     "Saturn Desert: village grid, linked medium hooks, hairpins you slide, jumps, Very Long Easy Right Maybe",
+  /**
+   * Road surface along the stage (fractions of compiled length; `to` = patch end, snapped to
+   * a legal boundary by applySurfacePlan). Safari order: sand start, tarmac
+   * town/highway, hardpack dirt, tarmac again, dunes, dirt, gravel wash.
+   */
+  surfacePlan: [
+    { surface: "sand", to: 0.113 },
+    { surface: "tarmac", to: 0.173 },
+    { surface: "dirt", to: 0.286 },
+    { surface: "tarmac", to: 0.377 },
+    { surface: "sand", to: 0.531 },
+    { surface: "dirt", to: 0.712 },
+    { surface: "gravel" },
+  ],
   segments: [
     {
       kind: "straight",
@@ -200,7 +215,11 @@ export const DESERT_DEFINITION = {
       width: W.drift,
       purpose: "Fast S — left then right, throttle steers",
     },
-    { kind: "straight", length: 40, surface: "sand", width: W.drift, purpose: "Medium right into the second hairpin" },
+    { kind: "straight", length: 14, surface: "sand", width: W.drift, purpose: "Dune rhythm — two kickers, stay on the throttle" },
+    jumpSeg("hop", { surface: "sand", width: W.drift, purpose: "Rhythm kicker one — small hop, Rush charge" }),
+    { kind: "straight", length: 14, surface: "sand", width: W.drift, purpose: "Rhythm — settle, then kicker two" },
+    jumpSeg("hop", { surface: "sand", width: W.drift, purpose: "Rhythm kicker two — land, lift, medium right ahead" }),
+    { kind: "straight", length: 14, surface: "sand", width: W.drift, purpose: "Medium right into the second hairpin" },
     {
       kind: "medium_corner",
       direction: "right",
@@ -234,15 +253,38 @@ export const DESERT_DEFINITION = {
       landmark: true,
     },
     {
-      kind: "medium_corner",
+      kind: "fast_sweeper",
       direction: "left",
-      radius: 62,
-      angle: 66,
+      radius: 150,
+      angle: 40,
       surface: "sand",
       width: W.open,
-      purpose: "Dune medium left — hang sand attitude",
+      bank: 0.08,
+      sweep: true,
+      purpose: "Dune sweeper left — tightening: lift late, hang the slide",
     },
-    { kind: "straight", length: 40, surface: "sand", width: W.open, purpose: "Linked dune right" },
+    {
+      kind: "medium_corner",
+      direction: "left",
+      radius: 56,
+      angle: 44,
+      surface: "sand",
+      width: W.open,
+      bank: 0.1,
+      purpose: "Dune medium left — the radius closes, power-slide out",
+    },
+    { kind: "straight", length: 22, surface: "sand", width: W.open, purpose: "Flat-out kink pair — dune right" },
+    {
+      kind: "s_bend",
+      direction: "right",
+      radius: 220,
+      angle: 14,
+      length: 20,
+      surface: "sand",
+      width: W.open,
+      purpose: "Flat-out kinks — right then left, do not lift",
+    },
+    { kind: "straight", length: 18, surface: "sand", width: W.open, purpose: "Linked dune right" },
     {
       kind: "medium_corner",
       direction: "right",
@@ -252,7 +294,13 @@ export const DESERT_DEFINITION = {
       width: W.open,
       purpose: "Dune medium right — power-slide into VLER",
     },
-    { kind: "straight", length: 64, surface: "sand", width: W.open, purpose: "Build speed for VLER Maybe" },
+    { kind: "straight", length: 8, surface: "sand", width: W.open, purpose: "Table-top ahead — build speed" },
+    jumpSeg("table", {
+      surface: "sand",
+      width: W.open,
+      purpose: "Dune table-top — carry speed over the lip, land flat into VLER",
+    }),
+    { kind: "straight", length: 22, surface: "sand", width: W.open, purpose: "Build speed for VLER Maybe" },
     {
       kind: "fast_sweeper",
       direction: "right",
@@ -265,9 +313,15 @@ export const DESERT_DEFINITION = {
       purpose: "VERY LONG EASY RIGHT MAYBE — hang the slide, punch the exit",
       visual: "vler_maybe",
     },
+    { kind: "straight", length: 40, surface: "sand", width: W.finish, purpose: "Finish run — flat out at the big lip" },
+    jumpSeg("big", {
+      surface: "sand",
+      width: W.finish,
+      purpose: "Safari big air — hang time on the finish straight, land flat",
+    }),
     {
       kind: "straight",
-      length: 300,
+      length: 68,
       surface: "sand",
       width: W.finish,
       purpose: "Finish straight — zebras, top gear, wide safari view",

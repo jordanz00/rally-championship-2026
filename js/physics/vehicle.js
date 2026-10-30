@@ -49,9 +49,9 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=260";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=59";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=60";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=62";
-import { JumpModel } from "./jump.js?v=42";
+import { JumpModel } from "./jump.js?v=43";
 import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=10";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
@@ -83,7 +83,7 @@ JUMP.worstScrub = 0.52;
 JUMP.landUpsetYaw = 0.95;
 JUMP.balanceDecay = 3.2;
 JUMP.balanceGripLoss = 0.34;
-import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=14";
+import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=15";
 
 const TMP = {
   fwd: new THREE.Vector3(),
@@ -145,6 +145,12 @@ const ROAD_THICKNESS = 0.85;
  * Lift onto the deck when XZ is still on a ribbon; otherwise checkpoint.
  */
 const VOID_RECOVER_M = 1.25;
+/** Per-tick ribbon plane change (m) still read as grade, not a pit / jump edge. */
+const MANEUVER_GRADE_STEP_MAX = 0.09;
+/** Planted hull may trail the paint by this much (m) before catch-up engages. */
+const MANEUVER_LAG_M = 0.12;
+/** Catch-up cap (m/tick) once the hull trails past MANEUVER_LAG_M. */
+const MANEUVER_CATCHUP_STEP = 0.03;
 /**
  * Metres between swept-segment samples. A 56 m/s tick is ~0.93 m; this
  * stays finer than ROAD_THICKNESS so a lip cannot be skipped.
@@ -182,6 +188,12 @@ const ROAD_PITCH_MAX = 0.55;
  * a noisy Track.query spike is a 10° twitch in one step and is what we cut.
  */
 const SLOPE_SLEW = 3.5;
+/**
+ * Rack angle (rad) at which the slide-intent grip bite and power-slide yaw
+ * kick are fully on. Below it both ramp smoothly, so yaw rate rises with the
+ * stick instead of jumping at |st| 0.06 and then falling toward full lock.
+ */
+const STEER_BITE_FULL = 0.16;
   /**
    * Visual road-pitch follow (1/s) and deadzone (rad). Physics `_slope` stays
    * on SLOPE_SLEW so gravity still bites hills; the mesh ignores sub-degree
@@ -2852,7 +2864,10 @@ export class Vehicle {
     const floor = Number.isFinite(axle) ? axle : this._solidFloorY(track);
     if (!Number.isFinite(floor)) return;
     const drop = floor - this.position.y;
-    if (drop <= 0.12) return;
+    // The hull rides the ribbon plane; the axle floor includes road micro (cobble up to
+    // ~0.19 m). Without this allowance the "under-world" recovery fired every few ticks.
+    const microAllow = this._q && Number.isFinite(this._q.roadMicro) ? Math.max(0, this._q.roadMicro) : 0;
+    if (drop <= 0.12 + microAllow) return;
     if (this.onGround && drop > VOID_RECOVER_M) {
       if (this._liftOntoPaintedDeck(track)) return;
       const solid = this._querySolidAtCar(track);
@@ -3670,11 +3685,13 @@ export class Vehicle {
     const q = this._q;
     if (!this.onGround || !this._wantPlantedDeck() || !q) {
       this._maneuverY = null;
+      this._maneuverRaw = null;
       this._maneuverFollow = 0;
       return false;
     }
     if (q.jumpKind === "gap" || q.jumpKind === "ramp") {
       this._maneuverY = null;
+      this._maneuverRaw = null;
       this._maneuverFollow = 0;
       return false;
     }
@@ -3688,12 +3705,23 @@ export class Vehicle {
     const hold = Number.isFinite(this._maneuverY) ? this._maneuverY : this.position.y;
     const raw = this._stableDeckY(q, hold);
     if (!Number.isFinite(raw)) return false;
+    // Ribbon grade rides along (feed-forward). The 0.006 m/tick follow cap alone
+    // is a 0.36 m/s climb limit: Lakeside's 5-6 % bridge climb at 30 m/s needs
+    // ~1.8 m/s, so the hull sank to 3.8 m under the deck (and hovered the same
+    // height on the descent). Plane only — micro / ruts stay out, no hop.
+    const rawPrev = this._maneuverRaw;
+    this._maneuverRaw = raw;
+    const gradeStep =
+      Number.isFinite(rawPrev) && Math.abs(raw - rawPrev) < MANEUVER_GRADE_STEP_MAX
+        ? raw - rawPrev
+        : 0;
     if (!Number.isFinite(this._maneuverY)) {
       const cap = this._offRoadRiseCap(FIXED_DT);
       this._maneuverY =
         Number.isFinite(cap) && raw > this.position.y + cap ? this.position.y + cap : raw;
       this._maneuverFollow = 0;
     } else {
+      this._maneuverY += gradeStep;
       const err = raw - this._maneuverY;
       if (Math.abs(err) <= 0.035) {
         this._maneuverFollow = 0;
@@ -3704,8 +3732,11 @@ export class Vehicle {
         if (Math.abs(this._maneuverFollow) >= 4 || Math.abs(err) > 0.18) {
           const rate = Math.abs(err) > 0.22 ? 10 : 5;
           let dy = err * (1 - Math.exp(-rate * FIXED_DT));
-          if (dy > 0.006) dy = 0.006;
-          if (dy < -0.006) dy = -0.006;
+          // Never let the hull lag the paint by more than ~12 cm: past that,
+          // catch up fast instead of crawling at the noise cap.
+          const lim = Math.abs(err) > MANEUVER_LAG_M ? MANEUVER_CATCHUP_STEP : 0.006;
+          if (dy > lim) dy = lim;
+          if (dy < -lim) dy = -lim;
           this._maneuverY += dy;
         }
       }
@@ -4643,7 +4674,7 @@ export class Vehicle {
       const steerBite = clamp(Math.abs(st) * 2.4, 0, 1);
       const gasBite = clamp(this.throttle * 1.55, 0, 1);
       // Hard steer alone still dumps rear µ — "turned in too hot."
-      const hardBite = hardSteer ? clamp((Math.abs(st) - 0.05) / 0.16, 0.35, 1) : 0;
+      const hardBite = hardSteer ? clamp((Math.abs(st) - 0.05) / (STEER_BITE_FULL - 0.05), 0.35, 1) : 0;
       muR *= lerp(1, 0.38, Math.max(steerBite * Math.max(gasBite, 0.22), hardBite * 0.85));
     }
     if (this._shiftKick > 0.08) muR *= lerp(1, 0.5, Math.min(1, this._shiftKick));
@@ -4868,7 +4899,11 @@ export class Vehicle {
         rollRes *= k;
       }
     }
-    let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m - G * Math.sin(this._slope);
+    // Gravity is NOT engine pull: it stays outside the player cut so a hill
+    // costs/pays the same m/s² for the hero and the pack (the cut used to
+    // scale it ×0.52–0.68 and swallow most of the downhill gain).
+    const gradeA = G * Math.sin(this._slope);
+    let axTire = (Fx - aero - rollRes - coastN * sign(vx)) / m;
     // Player-only pull cut so the pack stays in the fight. Always on —
     // the old first-260 m "commit" free pass let the hero rocket away at GO.
     // Slides keep a bit more drive so exit punch still pays.
@@ -4876,6 +4911,7 @@ export class Vehicle {
       const slideKeep = clamp(Math.abs(this._alphaR || 0) / 0.35, 0, 1);
       axTire *= lerp(0.52, 0.68, slideKeep);
     }
+    axTire -= gradeA;
     this._axDrive += (axTire - this._axDrive) * (1 - Math.exp(-AX_DRIVE_RATE * dt));
     vx += this._axDrive * dt;
     // Lights-out / respawn: throttle means GO forward. Gravity, leftover
@@ -4911,7 +4947,9 @@ export class Vehicle {
     // driftEase near 1.0 = planted; >1 softens mud for easier power slides.
     latG /= Math.max(0.92, Math.min(1.28, ease));
     if (slideIntent) {
-      const latBite = clamp(Math.abs(st) * 2.8, 0, 1);
+      // Saturates by STEER_BITE_FULL so yaw never DROPS as the stick opens
+      // (old |st|*2.8 kept cutting grip out to full lock: 15% stick out-turned 100%).
+      const latBite = clamp((Math.abs(st) - 0.02) / (STEER_BITE_FULL - 0.02), 0, 1);
       latG *= lerp(1, 0.48, latBite * Math.max(this.throttle, hardSteer ? 0.55 : 0.2));
     }
     // Progressive yaw-grip falloff — same envelope as the tire, not a binary clip.
@@ -4939,7 +4977,7 @@ export class Vehicle {
     rWant = softLimit(rWant, rGrip * 2.05, mush);
     // Hard-steer initiation shove — rotate into the drift like a tournament entry.
     if (hardSteer && Math.abs(vx) > 5) {
-      const entry = clamp((Math.abs(st) - 0.05) / 0.18, 0, 1);
+      const entry = clamp((Math.abs(st) - 0.05) / (STEER_BITE_FULL - 0.04), 0, 1);
       rWant += Math.sign(st) * entry * (1.15 + Math.abs(vx) * 0.028) * (0.55 + this.throttle * 0.65);
     }
     // Weight-transfer yaw: light rear rotates in the steer direction (brake).
@@ -4998,9 +5036,12 @@ export class Vehicle {
       const steerDir = Math.abs(st) > 0.025 ? Math.sign(st) : sign(r) || sign(vy) || 1;
       rWant += steerDir * this.throttle * Math.max(hb, 0.35) * pMul * (0.72 + Math.abs(vx) * 0.022);
     }
-    if (!hbSlide && this.throttle > 0.12 && Math.abs(st) > 0.06 && Math.abs(vx) > 4.5) {
+    // Ramped, not gated: a hard `|st| > 0.06` step turned stick 0.12→0.16 into a
+    // 4.6x yaw jump (0.37→1.71 rad/s @ 90 km/h). Phys-Lab sweep: qa-vehicle-dynamics.
+    const pwRamp = clamp((Math.abs(st) - 0.03) / (STEER_BITE_FULL - 0.03), 0, 1);
+    if (!hbSlide && this.throttle > 0.12 && pwRamp > 0 && Math.abs(vx) > 4.5) {
       const pitch = HANDLING.powerSlidePitch != null ? HANDLING.powerSlidePitch : 1.35;
-      rWant += Math.sign(st) * this.throttle * pitch * (0.42 + Math.abs(vx) * 0.016);
+      rWant += Math.sign(st) * this.throttle * pitch * (0.42 + Math.abs(vx) * 0.016) * pwRamp * pwRamp * (3 - 2 * pwRamp);
     }
     // Lift-off: close throttle mid-corner and the tail comes (GTA IV).
     if (liftAmt > 0.08) {

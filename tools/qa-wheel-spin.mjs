@@ -53,8 +53,8 @@ check(
 );
 check(
   "rivals + player share applyWheelPose",
-  /applyWheelPose\(this\.mesh\.userData\.wheels/.test(fs.readFileSync(path.join(ROOT, "js/ai.js"), "utf8")) &&
-    /applyWheelPose\(this\.playerMesh\.userData\.wheels/.test(game)
+  /applyWheelPose\(\s*this\.mesh\.userData\.wheels/.test(fs.readFileSync(path.join(ROOT, "js/ai.js"), "utf8")) &&
+    /applyWheelPose\(\s*this\.playerMesh\.userData\.wheels/.test(game)
 );
 const celicaV = Number((game.match(/celica\.js\?v=(\d+)/) || [])[1] || 0);
 check("celica.js cache-bust ≥146", celicaV >= 146, `v=${celicaV}`);

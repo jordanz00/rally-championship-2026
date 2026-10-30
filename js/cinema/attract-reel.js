@@ -26,8 +26,8 @@ let CoursesMap = null;
 async function loadStageApi() {
   if (TrackCtor && CoursesMap) return;
   const [trackMod, courseMod] = await Promise.all([
-    import("../tracks/track.js?v=491"),
-    import("../tracks/courses.js?v=111"),
+    import("../tracks/track.js?v=499"),
+    import("../tracks/courses.js?v=114"),
   ]);
   TrackCtor = trackMod.Track;
   CoursesMap = courseMod.COURSES;
@@ -139,6 +139,15 @@ function buildBeats(track) {
     if (Math.abs(dy) > 0.62) {
       add(b.dist - 12, "apex", Math.abs(dy) > 1.1 ? "HAIRPIN" : "APEX", "bank");
     }
+  }
+
+  // Lakeside suspension bridge: aerial establishing, jib over the span, roadside pass at the far tower.
+  const br = track._lakesideBridge;
+  if (br && br.dist1 > br.dist0) {
+    const td = Array.isArray(br.towerDists) && br.towerDists.length ? br.towerDists : null;
+    add(br.dist0 - 60, "open", "SUSPENSION BRIDGE", "heli");
+    add((br.dist0 + br.dist1) * 0.5, "open", "LONG SPAN", "crane");
+    add((td ? td[td.length - 1] : br.dist1 - 90) - 30, "open", "TOWER PORTAL", "whip");
   }
 
   raw.sort((a, b) => a.dist - b.dist);

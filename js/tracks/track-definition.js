@@ -58,6 +58,7 @@ import { SEGMENT_KINDS } from "./segment-kinds.js?v=1";
  *   seed?: number,
  *   barriers?: boolean,
  *   identity?: string,
+ *   surfacePlan?: {surface: string, to?: number}[],
  *   segments: TrackSegment[],
  * }} TrackDefinition
  */
@@ -337,6 +338,8 @@ const PLAY_WIDTH_MIN = 7.5;
 const PLAY_WIDTH_MAX = 40;
 const PLAY_TUNNEL_EXTRA = 2.8;
 const PLAY_STRAIGHT = 2.35;
+/** Hard ceiling for a compiled bridge deck run (m). */
+const BRIDGE_SPAN_MAX = 720;
 const PLAY_FINISH_PAD = {
   desert: 320,
   forest: 360,
@@ -430,6 +433,11 @@ export function easePlayPiece(piece, scaleStraight = true, speedLane = false) {
   }
   if (scaleStraight && out.type === "straight" && out.length) {
     out.length = easePlayLength(out.length);
+    // Lakeside suspension span is exempt from the 480 m straight cap — a long
+    // bridge is the stage's set piece (authored 265 m -> ~620 m of level deck).
+    if (out.bridge && piece.length) {
+      out.length = Math.round(Math.min(BRIDGE_SPAN_MAX, Math.max(4, piece.length * PLAY_STRAIGHT)) * 10) / 10;
+    }
   }
   return out;
 }
@@ -479,58 +487,60 @@ const HILL_CHUNK_M = 24;
  * ribbon still clears an earlier one. Quiet zones hold the grid and jump
  * landings. Forest 3180–3900 is eased so that deck stays under a 5% grade.
  */
-const HILL_PROFILE = {
+export const HILL_PROFILE = {
+  // Wave tables are tuned so the compiled road keeps: max grade <= ~10%,
+  // sustained (40 m) <= 10%, grade-kink <= 0.009 (vertical radius >= ~350 m).
+  // Phases were searched (tools: stage-fun gate proves the result).
   desert: {
-    cap: 3.25,
-    fade: 88,
-    startQuiet: 24,
-    jumpPre: 34,
+    cap: 20,
+    fade: 110,
+    startQuiet: 150,
+    jumpPre: 40,
     jumpPost: 92,
-    trend: 0.7,
+    trend: 0,
     waves: [
-      { amp: 2.45, k: 92, phase: 0.35 },
-      { amp: 1.25, k: 44, phase: 1.65 },
-      { amp: 0.45, k: 26, phase: 0.55 },
+      { amp: 4.4, k: 72, phase: 3.88 },
+      { amp: 1.6, k: 40, phase: 4.22 },
+      { amp: 0.3, k: 21, phase: 5.99 },
     ],
   },
   forest: {
-    cap: 3.15,
-    fade: 96,
-    startQuiet: 28,
-    jumpPre: 30,
-    jumpPost: 64,
-    trend: 0.4,
-    deck: { from: 3180, to: 3900, keep: 0.38, fade: 110 },
+    cap: 20,
+    fade: 110,
+    startQuiet: 120,
+    jumpPre: 40,
+    jumpPost: 80,
+    trend: 0,
     waves: [
-      { amp: 2.3, k: 86, phase: 0.55 },
-      { amp: 1.1, k: 42, phase: 2.05 },
-      { amp: 0.42, k: 26, phase: 0.2 },
+      { amp: 3.6, k: 68, phase: 0.28 },
+      { amp: 1.5, k: 38, phase: 0 },
+      { amp: 0.3, k: 21, phase: 3.8 },
     ],
   },
   mountain: {
-    cap: 3.35,
-    fade: 86,
-    startQuiet: 22,
-    jumpPre: 30,
-    jumpPost: 52,
-    trend: 1.5,
+    cap: 20,
+    fade: 100,
+    startQuiet: 100,
+    jumpPre: 40,
+    jumpPost: 70,
+    trend: 0,
     waves: [
-      { amp: 2.55, k: 78, phase: 0.2 },
-      { amp: 1.3, k: 40, phase: 1.35 },
-      { amp: 0.48, k: 24, phase: 2.4 },
+      { amp: 2.4, k: 64, phase: 2.26 },
+      { amp: 1.2, k: 36, phase: 0.95 },
+      { amp: 0.3, k: 20, phase: 4.06 },
     ],
   },
   lakeside: {
-    cap: 3.0,
-    fade: 90,
-    startQuiet: 26,
-    jumpPre: 32,
-    jumpPost: 70,
-    trend: 0.55,
+    cap: 20,
+    fade: 100,
+    startQuiet: 100,
+    jumpPre: 40,
+    jumpPost: 80,
+    trend: 0,
     waves: [
-      { amp: 2.15, k: 84, phase: 0.8 },
-      { amp: 1.05, k: 38, phase: 2.2 },
-      { amp: 0.4, k: 24, phase: 0.15 },
+      { amp: 3.8, k: 66, phase: 0.23 },
+      { amp: 1.5, k: 38, phase: 5.36 },
+      { amp: 0.3, k: 21, phase: 5.92 },
     ],
   },
 };
@@ -549,7 +559,7 @@ function smoothstep01(t) {
  * @param {object} piece
  * @returns {number}
  */
-function pieceRunMetres(piece) {
+export function pieceRunMetres(piece) {
   if (!piece) return 0;
   if (piece.type === "straight") return piece.length || 0;
   if (piece.type === "curve") {
@@ -669,15 +679,37 @@ function deckScale(s, spec) {
   return 1;
 }
 
-function stageHill(s, spec, zones, total) {
-  let y = spec.trend ? spec.trend * Math.sin((Math.PI * s) / Math.max(1, total)) : 0;
-  const waves = spec.waves;
-  for (let i = 0; i < waves.length; i++) {
-    const w = waves[i];
-    y += w.amp * Math.sin(s / w.k + w.phase);
+/**
+ * Hill height builder. Flat zones (grid, jump approach + pad, checkpoint,
+ * bridge) are made by WARPING the distance the waves are read at: the warp
+ * slows smoothly to a stop at each zone edge (derivative 0), so the road is
+ * dead level inside the zone and the grade eases to 0 on the way in and out
+ * with no kink — and the hill keeps its full amplitude everywhere else.
+ * (Old approach multiplied the wave by a window, which dumps a big step into
+ * the grade when the wave is tall.)
+ * @param {object} spec
+ * @param {{a:number,b:number}[]} zones
+ * @param {number} total
+ * @returns {(s:number)=>number}
+ */
+function makeStageHill(spec, zones, total) {
+  const n = Math.max(2, Math.ceil(total) + 2);
+  const warp = new Float64Array(n + 1);
+  for (let i = 1; i <= n; i++) {
+    warp[i] = warp[i - 1] + hillWindow(i - 0.5, zones, spec.fade) * deckScale(i - 0.5, spec);
   }
-  const capped = spec.cap * Math.tanh(y / spec.cap);
-  return capped * hillWindow(s, zones, spec.fade) * deckScale(s, spec);
+  return (s) => {
+    const c = s < 0 ? 0 : s > n ? n : s;
+    const i = Math.min(n - 1, Math.floor(c));
+    const g = warp[i] + (warp[i + 1] - warp[i]) * (c - i);
+    let y = spec.trend ? spec.trend * Math.sin((Math.PI * g) / Math.max(1, total)) : 0;
+    const waves = spec.waves;
+    for (let k = 0; k < waves.length; k++) {
+      const w = waves[k];
+      y += w.amp * Math.sin(g / w.k + w.phase);
+    }
+    return spec.cap * Math.tanh(y / spec.cap);
+  };
 }
 
 /**
@@ -700,12 +732,23 @@ export function sculptRoadElevation(course) {
   /** @type {{a:number,b:number}[]} */
   const zones = [{ a: 0, b: spec.startQuiet }];
   let s = 0;
+  let bridgeA = -1;
+  let bridgeB = -1;
   for (let i = 0; i < pieces.length; i++) {
     const run = runs[i];
     const p = pieces[i];
     if (p.type === "jump") zones.push({ a: s - spec.jumpPre, b: s + run + spec.jumpPost });
+    // Checkpoint gates stay on a level, plain road (never a crest / climb).
+    if (p.checkpoint) zones.push({ a: s - 34, b: s + run + 16 });
+    if (p.bridge || /^bridge_/.test(p.visual || "")) {
+      // Whole bridge group = one quiet zone: both shores sit at the same height.
+      if (bridgeA < 0) bridgeA = s;
+      bridgeB = s + run;
+    }
     s += run;
   }
+  if (bridgeA >= 0) zones.push({ a: bridgeA, b: bridgeB });
+  const hillAt = makeStageHill(spec, zones, total);
   s = 0;
   for (let i = 0; i < pieces.length; i++) {
     const run = runs[i];
@@ -719,13 +762,165 @@ export function sculptRoadElevation(course) {
         p.visual === "bridge_approach" ||
         p.visual === "bridge_exit";
       if (!bridgePiece) {
-        p.dy = (p.dy || 0) + (stageHill(s1, spec, zones, total) - stageHill(s, spec, zones, total));
+        p.dy = (p.dy || 0) + (hillAt(s1) - hillAt(s));
       }
     }
     s = s1;
   }
   course.pieces = pieces;
   return course;
+}
+
+/** Surface boundaries keep this far from checkpoints / jumps (m). */
+const SURFACE_KEEP_OUT = 20;
+/** Shortest patch the snapper will leave (m). */
+const SURFACE_MIN_PATCH = 140;
+/** Bridge decks stay paved; the lanes either side stay paved this far (m). */
+const SURFACE_BRIDGE_APRON = 28;
+
+/**
+ * Per-piece start distance + length along the compiled spline.
+ * @param {object[]} pieces
+ * @returns {{starts:number[], runs:number[], total:number}}
+ */
+function pieceSpans(pieces) {
+  const starts = [];
+  const runs = [];
+  let d = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const run = pieceRunMetres(pieces[i]);
+    starts.push(d);
+    runs.push(run);
+    d += run;
+  }
+  return { starts, runs, total: d };
+}
+
+/**
+ * @param {object} p
+ * @returns {boolean}
+ */
+function isBridgePiece(p) {
+  return !!(p && (p.bridge || /^bridge_/.test(p.visual || "")));
+}
+
+/**
+ * Paint authored road-surface patches onto a compiled course.
+ *
+ * Plan entries run start -> finish: `{ surface, to }` where `to` is the
+ * target end (<= 1: fraction of the stage; else metres along the compiled spline). The last entry has no
+ * `to`. Layout edits move pieces around, so the target snaps to the nearest
+ * legal piece boundary: mid-straight, clear of checkpoints / jumps, never
+ * inside a tunnel or on a bridge. Bridge decks (and a short apron either
+ * side) always stay tarmac.
+ *
+ * @param {object} course compiled course
+ * @param {{surface:string, to?:number}[]|undefined} plan
+ * @returns {object} same course
+ */
+export function applySurfacePlan(course, plan) {
+  const pieces = course && course.pieces;
+  if (!Array.isArray(plan) || plan.length === 0 || !Array.isArray(pieces) || !pieces.length) {
+    return course;
+  }
+  const { starts, runs, total } = pieceSpans(pieces);
+  const n = pieces.length;
+
+  // Spans where a boundary must not land.
+  /** @type {{a:number,b:number}[]} */
+  const keep = [];
+  /** @type {{a:number,b:number}[]} */
+  const paved = [];
+  for (let i = 0; i < n; i++) {
+    const p = pieces[i];
+    const a = starts[i];
+    const b = a + runs[i];
+    if (p.type === "jump") keep.push({ a: a - SURFACE_KEEP_OUT, b: b + SURFACE_KEEP_OUT });
+    if (p.checkpoint) keep.push({ a: b - SURFACE_KEEP_OUT, b: b + SURFACE_KEEP_OUT });
+    if (p.checkpoint) keep.push({ a: a - SURFACE_KEEP_OUT, b: a + SURFACE_KEEP_OUT });
+    if (isBridgePiece(p)) {
+      const last = paved[paved.length - 1];
+      if (last && a - last.b < 1) last.b = b;
+      else paved.push({ a, b });
+    }
+  }
+  for (let i = 0; i < paved.length; i++) {
+    paved[i].a -= SURFACE_BRIDGE_APRON;
+    paved[i].b += SURFACE_BRIDGE_APRON;
+    keep.push({ a: paved[i].a - SURFACE_KEEP_OUT, b: paved[i].b + SURFACE_KEEP_OUT });
+  }
+  const blocked = (d) => keep.some((k) => d > k.a && d < k.b);
+
+  /** @param {number} i boundary index (before piece i) @param {boolean} strict */
+  const legal = (i, strict) => {
+    const prev = pieces[i - 1];
+    const next = pieces[i];
+    if (prev.type === "jump" || next.type === "jump") return false;
+    if (isBridgePiece(prev) || isBridgePiece(next)) return false;
+    if (prev.tunnel && next.tunnel) return false;
+    void strict;
+    return !blocked(starts[i]);
+  };
+  /**
+   * Snap cost (m-equivalent): mid-straight is free, exiting a corner onto the
+   * new surface is cheap, turning in on it costs more, corner-to-corner most.
+   */
+  const bendCost = (i) => {
+    const prevBend = pieces[i - 1].type === "curve";
+    const nextBend = pieces[i].type === "curve";
+    if (prevBend && nextBend) return 110;
+    if (nextBend) return 55;
+    if (prevBend) return 30;
+    return 0;
+  };
+
+  /** @type {number[]} chosen boundary piece indices, one per plan edge */
+  const cuts = [];
+  let floor = 1;
+  for (let k = 0; k < plan.length - 1; k++) {
+    // `to` <= 1 is a fraction of the stage, so layout growth keeps the mix balanced.
+    const target = plan[k].to <= 1 ? plan[k].to * total : plan[k].to;
+    let best = -1;
+    let bd = 1e9;
+    for (let i = Math.max(floor, 1); i < n; i++) {
+      if (!legal(i, false)) continue;
+      if (floor > 1 && starts[i] - starts[floor - 1] < SURFACE_MIN_PATCH) continue;
+      const d = Math.abs(starts[i] - target) + bendCost(i);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best >= 0) {
+      cuts.push(best);
+      floor = best + 1;
+    } else {
+      cuts.push(-1);
+    }
+  }
+
+  // Paint: patch k covers pieces [cut(k-1), cut(k)).
+  // A cut with no legal boundary is dropped, so the previous patch carries on.
+  const edges = [];
+  const surfaces = [plan[0].surface];
+  for (let k = 0; k < cuts.length; k++) {
+    if (cuts[k] < 0) continue;
+    edges.push(cuts[k]);
+    surfaces.push(plan[k + 1].surface);
+  }
+  let patch = 0;
+  for (let i = 0; i < n; i++) {
+    while (patch < edges.length && i >= edges[patch]) patch += 1;
+    pieces[i].surface = surfaces[patch];
+    delete pieces[i].surfaceOut;
+  }
+  // Bridge decks + aprons stay paved.
+  for (let i = 0; i < n; i++) {
+    const mid = starts[i] + runs[i] * 0.5;
+    if (paved.some((z) => mid >= z.a && mid <= z.b)) pieces[i].surface = "tarmac";
+  }
+  course.surfacePlan = plan;
+    return course;
 }
 
 export function compileTrackDefinition(def) {
@@ -765,7 +960,8 @@ export function compileTrackDefinition(def) {
     segments: def.segments,
     pieces,
   };
-  return sculptRoadElevation(easePlayCourse(course));
+  // Surface patches last: they snap to the final (split + eased) piece list.
+  return applySurfacePlan(sculptRoadElevation(easePlayCourse(course)), def.surfacePlan);
 }
 
 /**

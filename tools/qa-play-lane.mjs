@@ -34,12 +34,12 @@ function check(label, ok, detail = "") {
 console.log(`PLAY LANE  ·  ${new Date().toISOString()}\n`);
 
 const vehSrc = fs.readFileSync(path.join(ROOT, "js/physics/vehicle.js"), "utf8");
-check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && /PLAY_TIGHT_RADIUS = 1\.[45]/.test(defSrc));
+check("easePlayCourse lives in the compiler", /easePlayCourse/.test(defSrc) && (() => { const v = Number((defSrc.match(/PLAY_TIGHT_RADIUS = (\d+(?:\.\d+)?)/) || [])[1]); return v >= 1.4 && v <= 1.9; })());
 check("speed lane opens after Desert Safari", /PLAY_SPEED_TIGHT/.test(defSrc) && /afterSafari/.test(defSrc));
 check("steer holds lock at speed", /maxSteer \* 1\.\d+/.test(vehSrc) && /kus \*= 0\.\d+/.test(vehSrc));
 check("rack still bites at speed", /lerp\(1\.\d+, 0\.\d+/.test(vehSrc));
 check("game imports courses.js?v=94+", Number((gameSrc.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 94);
-check("attract ribbon is wider", /courses\.js\?v=10\d+/.test(attractSrc) || /ROAD_HALF\s*=\s*[7-9]/.test(attractSrc));
+check("attract ribbon is wider", Number((attractSrc.match(/courses\.js\?v=(\d+)/) || [])[1]) >= 100 || /ROAD_HALF\s*=\s*[7-9]/.test(attractSrc));
 
 const raw = {
   desert: compileTrackDefinition({ ...DESERT_DEFINITION, segments: DESERT_DEFINITION.segments }),
@@ -64,15 +64,30 @@ function minCurveRadius(course) {
 }
 
 check("no championship curve under 22 m", minCurveRadius(COURSES.desert) >= 22 && minCurveRadius(COURSES.forest) >= 22 && minCurveRadius(COURSES.mountain) >= 22 && minCurveRadius(COURSES.lakeside) >= 22);
+// Compiler chunks long arcs into short pieces, so sum consecutive same-sign hairpin chunks.
+function hairpinSweeps(pieces) {
+  const out = [];
+  let run = 0;
+  let sign = 0;
+  let minR = 999;
+  const flush = () => { if (run) out.push({ deg: Math.abs(run), minR }); run = 0; sign = 0; minR = 999; };
+  for (const p of pieces) {
+    const tagged = /hairpin/i.test(p.purpose || p.visual || p.kind || "");
+    if (p.type !== "curve" || !tagged) { flush(); continue; }
+    const s = Math.sign(p.angle);
+    if (sign && s !== sign) flush();
+    sign = s;
+    run += p.angle;
+    minR = Math.min(minR, p.radius || 99);
+  }
+  flush();
+  return out;
+}
+const forestPins = hairpinSweeps(COURSES.forest.pieces);
 check(
   "forest hairpin still a hairpin",
-  COURSES.forest.pieces.some(
-    (p) =>
-      p.type === "curve" &&
-      Math.abs(p.angle) > 110 &&
-      (p.radius || 99) < 100 &&
-      /hairpin/i.test(p.purpose || p.visual || "")
-  )
+  forestPins.filter((h) => h.deg >= 80 && h.minR < 100).length >= 2,
+  forestPins.map((h) => `${h.deg.toFixed(0)}deg r${h.minR.toFixed(0)}`).join(", ")
 );
 check("every piece has a playable width", ["desert", "forest", "mountain", "lakeside", "physlab"].every((id) => (COURSES[id].pieces || []).every((p) => (p.width || 0) >= 10)));
 

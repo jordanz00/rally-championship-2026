@@ -10,7 +10,7 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=12";
+import { bootPbrSet, cloneTracked } from "./pbr-stream.js?v=13";
 
 const BASE = "assets/env/forest";
 
@@ -18,6 +18,8 @@ const BASE = "assets/env/forest";
 const TILE_DIRT_M = 3.6;
 const TILE_GRAVEL_M = 3.4;
 const TILE_FLOOR_M = 5.2;
+const TILE_TARMAC_M = 6.4;
+const TARMAC_BASE = "assets/env/desert";
 
 let prepared = false;
 /** @type {{map:THREE.Texture, normalMap:THREE.Texture|null, roughnessMap:THREE.Texture|null, aoMap:THREE.Texture|null, tileMeters:number}|null} */
@@ -26,6 +28,9 @@ let dirtSet = null;
 let gravelSet = null;
 /** @type {typeof dirtSet} */
 let landSet = null;
+/** Paved forest lane — reuses the Desert tarmac set (assets/env/desert). */
+/** @type {typeof dirtSet} */
+let tarmacSet = null;
 
 /**
  * Clone a shared GPU texture so each material can set its own repeat.
@@ -71,14 +76,16 @@ export async function prepareForestPbr() {
   if (typeof document === "undefined" || typeof Image === "undefined") return;
 
   const loader = new THREE.TextureLoader();
-  const [dirt, gravel, land] = await Promise.all([
+  const [dirt, gravel, land, tarmac] = await Promise.all([
     bootPbrSet(loader, { base: BASE, stem: "dirt_floor", tileMeters: TILE_DIRT_M, tint: "#8a6a40" }),
     bootPbrSet(loader, { base: BASE, stem: "gravel_road", tileMeters: TILE_GRAVEL_M, tint: "#9a8a70" }),
     bootPbrSet(loader, { base: BASE, stem: "forest_floor", tileMeters: TILE_FLOOR_M, tint: "#4a5a38" }),
+    bootPbrSet(loader, { base: TARMAC_BASE, stem: "tarmac", tileMeters: TILE_TARMAC_M, tint: "#6a6862" }),
   ]);
   dirtSet = dirt;
   gravelSet = gravel;
   landSet = land;
+  tarmacSet = tarmac;
 }
 
 /**
@@ -96,6 +103,8 @@ export function forestPbrReady() {
  */
 export function forestRoadMaps(surfaceId) {
   if (surfaceId === "gravel") return gravelSet || dirtSet;
+  if (surfaceId === "tarmac") return tarmacSet || dirtSet;
+  // mud: same wet dirt photo, darkened + glossier by the ribbon material tint
   return dirtSet;
 }
 

@@ -8,7 +8,8 @@
  * Championship ~1:15 Celica AT.
  */
 
-import { COLORS } from "../../config.js?v=258";
+import { COLORS } from "../../config.js?v=260";
+import { jumpSeg } from "./jump-kit.js?v=1";
 
 /**
  * Forest ribbon scale vs the Saturn-narrow authoring (11.6–13.2 m).
@@ -33,6 +34,23 @@ export const FOREST_DEFINITION = {
   barriers: false,
   identity:
     "Saturn Forest: epic gorge waterfall, linked medium hooks, tunnel slides, twin hairpins",
+  /**
+   * Road surface along the stage (fractions of compiled length). Damp dirt start, leaf
+   * gravel, paved forest lane into the tunnel (gravel floor inside), wet mud
+   * patch, dirt, leaf gravel, paved bridge lane, dirt finish.
+   */
+  surfacePlan: [
+    { surface: "dirt", to: 0.091 },
+    { surface: "gravel", to: 0.176 },
+    { surface: "tarmac", to: 0.248 },
+    { surface: "gravel", to: 0.496 },
+    { surface: "dirt", to: 0.570 },
+    { surface: "mud", to: 0.605 },
+    { surface: "dirt", to: 0.677 },
+    { surface: "gravel", to: 0.773 },
+    { surface: "tarmac", to: 0.847 },
+    { surface: "dirt" },
+  ],
   segments: [
     {
       kind: "straight",
@@ -84,7 +102,12 @@ export const FOREST_DEFINITION = {
       sweep: true,
       purpose: "Long easy right maybe — power-slide exit",
     },
-    { kind: "straight", length: 36, surface: "gravel", surfaceOut: "dirt", width: forestWidth(12.4), purpose: "Medium left before the wall" },
+    jumpSeg("hop", {
+      surface: "gravel",
+      width: forestWidth(12.4),
+      purpose: "Log hop — small kicker over the ditch, Rush charge",
+    }),
+    { kind: "straight", length: 17, surface: "gravel", surfaceOut: "dirt", width: forestWidth(12.4), purpose: "Medium left before the wall" },
     {
       kind: "medium_corner",
       direction: "left",
@@ -186,6 +209,13 @@ export const FOREST_DEFINITION = {
       checkpoint: true,
       purpose: "Tunnel exit / first checkpoint — keep the speed",
     },
+    { kind: "straight", length: 26, surface: "dirt", width: forestWidth(13.8), purpose: "Crest ahead — flat out, tight left behind it" },
+    jumpSeg("medium", {
+      surface: "dirt",
+      width: forestWidth(13.8),
+      purpose: "Crest launch — leave flat, land straight, tight left right after",
+    }),
+    { kind: "straight", length: 18, surface: "dirt", width: forestWidth(13.6), purpose: "Land, brake, turn in" },
     {
       kind: "tight_corner",
       direction: "left",
@@ -289,13 +319,19 @@ export const FOREST_DEFINITION = {
     },
     {
       kind: "straight",
-      length: 180,
+      length: 56,
       surface: "dirt",
       width: forestWidth(14.2),
       purpose: "Glade approach — trees open, light spills in",
       visual: "forest_glade",
       landmark: true,
     },
+    jumpSeg("big", {
+      surface: "dirt",
+      width: forestWidth(14.2),
+      purpose: "Stream leap — big hang over the gorge cut, waterfall on your right",
+    }),
+    { kind: "straight", length: 74, surface: "dirt", width: forestWidth(14.2), purpose: "Glade run-out — sweeper ahead" },
     {
       kind: "fast_sweeper",
       direction: "right",
@@ -308,9 +344,13 @@ export const FOREST_DEFINITION = {
       purpose: "Glade sweeper — cinematic canopy break, hang the exit",
       visual: "forest_glade_sweep",
     },
+    { kind: "straight", length: 28, surface: "dirt", width: forestWidth(14.6), purpose: "Finish run — flat out, kickers ahead" },
+    jumpSeg("hop", { surface: "dirt", width: forestWidth(14.6), purpose: "Finish rhythm kicker one" }),
+    { kind: "straight", length: 12, surface: "dirt", width: forestWidth(14.6), purpose: "Rhythm — stay on it" },
+    jumpSeg("hop", { surface: "dirt", width: forestWidth(14.6), purpose: "Finish rhythm kicker two" }),
     {
       kind: "straight",
-      length: 400,
+      length: 68,
       surface: "dirt",
       width: forestWidth(14.6),
       purpose: "Finish straight — top gear through the trees",

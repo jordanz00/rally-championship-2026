@@ -102,24 +102,31 @@ check(
 let land0 = null;
 let land1 = null;
 for (const p of pts) {
-  if (p.jumpKind === "land" && p.dist > 1500) {
+  if (p.jumpKind === "land" && p.dist > 1300) {
     if (land0 == null) land0 = p.dist;
     land1 = p.dist;
   }
 }
-check(
-  "second Safari land still covers 1654 m",
-  land0 != null && land0 < 1654 && land1 > 1654,
-  `${land0?.toFixed(1)}–${land1?.toFixed(1)}`
-);
-const y1654 = pts.reduce((best, p) =>
-  Math.abs(p.dist - 1654.1) < Math.abs(best.dist - 1654.1) ? p : best
-);
-check(
-  "1654 m stays on the authored deck",
-  Math.abs(y1654.y - 2.25) < 0.6,
-  `y=${y1654.y.toFixed(2)}`
-);
+check("second Safari land pad exists past 1300 m", land0 != null && land1 > land0, `${land0?.toFixed(1)}–${land1?.toFixed(1)}`);
+
+// Old literal "1654 m" belonged to the pre-2026-10 layout. Invariant it protected:
+// a checkpoint must never sit on a ramp / gap / crest / land sample or a steep hill
+// (checkpoint inside a jump stopped the car dead).
+const cps = track.checkpoints || [];
+check("desert has checkpoints", cps.length >= 3, `${cps.length}`);
+for (const cd of cps) {
+  const near = pts.filter((p) => Math.abs(p.dist - cd) < 18);
+  const onJump = near.find((p) => p.jumpKind && p.jumpKind !== "-");
+  let g = 0;
+  for (let i = 1; i < near.length; i++) {
+    g = Math.max(g, Math.abs((near[i].y - near[i - 1].y) / Math.max(0.01, near[i].dist - near[i - 1].dist)));
+  }
+  check(
+    `checkpoint @ ${cd.toFixed(0)} m is on plain road`,
+    !onJump && g < 0.05,
+    `${onJump ? "jump:" + onJump.jumpKind : "no jump"} grade ${(g * 100).toFixed(1)}%`
+  );
+}
 
 if (fail) {
   console.log(`\nFAIL  ${fail}`);

@@ -10,9 +10,9 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=258";
-import { roadMicroHeight } from "./road-micro.js?v=14";
-import { WheelDeformField, WheelRutMesh, DEFORM_SURFACES } from "./surface-deform.js?v=14";
+import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=260";
+import { roadMicroHeight } from "./road-micro.js?v=15";
+import { WheelDeformField, WheelRutMesh, DEFORM_PHYSICS } from "./surface-deform.js?v=15";
 import { shoulderPadForScenery } from "./track-clearance.js?v=3";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=4";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=11";
@@ -22,7 +22,7 @@ import {
   crownGeometry,
   foliageMaterial,
   treeCardKind,
-} from "./trees.js?v=46";
+} from "./trees.js?v=47";
 import { seatTrackScenery, sampleLandMeshY } from "./seat-scenery.js?v=6";
 import {
   upgradeWorld,
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=68";
+} from "../gfx/pbr.js?v=69";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -66,8 +66,8 @@ function envExtrasEnabled() {
   return true;
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
-import { armCameraFade } from "../gfx/occlusion-fade.js?v=24";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=70";
+import { armCameraFade } from "../gfx/occlusion-fade.js?v=25";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=71";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -76,7 +76,7 @@ import {
   cloneForestMap,
   forestLandRepeat,
   forestRoadRepeat,
-} from "./forest-pbr.js?v=68";
+} from "./forest-pbr.js?v=70";
 import {
   prepareDesertPbr,
   desertRoadMaps,
@@ -84,7 +84,17 @@ import {
   cloneDesertMap,
   desertLandRepeat,
   desertRoadRepeat,
-} from "./desert-pbr.js?v=69";
+} from "./desert-pbr.js?v=70";
+import {
+  prepareStagePbr,
+  stagePbrReady,
+  stageRoadMaps,
+  stageLandMaps,
+  cloneStageMap,
+  stageLandRepeat,
+  stageRoadRepeat,
+  stageProjScale,
+} from "./stage-pbr.js?v=1";
 import {
   prepareForestTunnelPbr,
   createForestTunnelMaterial,
@@ -99,13 +109,15 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=28";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=56";
+} from "./forest-tunnel.js?v=29";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=57";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=16";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=17";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
+/** Width (m) of the grip / texture crossfade centred on a surface change. */
+const SURFACE_BLEND_M = 16;
 
 /**
  * Yield so the loading screen can paint and Chrome stays responsive.
@@ -181,6 +193,12 @@ const STREAM_FAR = 1200;
 
 /** Minimum clear strip beyond the painted edge — no props on the driven line. */
 const ROAD_VERGE = 12.5;
+/** Lakeside bridge: water surface sits this far below the shore (m) — deck is ~11.5 m above shore. */
+const LAKE_BRIDGE_WATER_DROP = 2.0;
+/** Lakeside bridge: lake floor under the span, below shore (m). */
+const LAKE_BRIDGE_BED_DROP = 5.5;
+/** Lakeside bridge: half-width of the open-water bay either side of the deck centreline (m). */
+const LAKE_BRIDGE_BAY_HALF = 150;
 /**
  * Collision-safe corridor past the painted edge (m). Car half-width (~0.95) +
  * nose/tail / mirror slack so no env solid can sit where the chassis drives.
@@ -408,6 +426,9 @@ export class Track {
     } else if (def.scenery === "desert") {
       report(0.06, "Loading Desert ground photos…");
       pbrP = prepareDesertPbr();
+    } else if (def.scenery === "mountain" || def.scenery === "lakeside") {
+      report(0.06, "Loading ground photos…");
+      pbrP = prepareStagePbr(def.scenery);
     }
     this._buildSpline(def.pieces, def);
     await pbrP;
@@ -711,6 +732,8 @@ export class Track {
     // not stacked 18% flyover hills through the tunnel walls.
     this._separateTunnelOverpasses();
     this._tagLakesideBridgeDeck();
+    this._lakes = null;
+    if ((this.scenery || "") === "lakeside") this._planLakesideLakes();
 
     // Tunnel runs must be known before the land plane: Desert raises a ridge
     // around them so the tube is not a gate in empty sand.
@@ -1121,7 +1144,95 @@ export class Track {
       pts[i].flyover = true;
       pts[i].bridgeBaseY = baseY;
     }
-    this._lakesideBridge = { i0, i1, baseY, dist0: pts[i0].dist, dist1: pts[i1].dist };
+    // Approach start / exit end: the earth ramps either side of the open water.
+    let a0 = i0;
+    while (a0 > 0 && pts[a0 - 1].visual === "bridge_approach") a0 -= 1;
+    let e1 = i1;
+    while (e1 < pts.length - 1 && pts[e1 + 1].visual === "bridge_exit") e1 += 1;
+    this._lakesideBridge = {
+      i0,
+      i1,
+      a0,
+      e1,
+      baseY,
+      dist0: pts[i0].dist,
+      dist1: pts[i1].dist,
+      apDist0: pts[a0].dist,
+      exDist1: pts[e1].dist,
+      // Visual water + lake floor under the span (collision never reads these).
+      waterY: baseY - LAKE_BRIDGE_WATER_DROP,
+      bedY: baseY - LAKE_BRIDGE_BED_DROP,
+      deckY: pts[i0].y,
+    };
+  }
+
+  /**
+   * Water runs for Lakeside: two shore basins plus the open bay under the
+   * suspension span (water both sides of the deck). Needs the bridge tag, so it
+   * runs before the land plane — the heightmap and water mesh read the same list.
+   * @returns {Array<{from:number,to:number,side:number,bay?:boolean,i0?:number,i1?:number}>}
+   */
+  _planLakesideLakes() {
+    const len = this.length > 1 ? this.length : 1;
+    const br = this._lakesideBridge;
+    const lakes = [{ from: 0.1, to: 0.5, side: 1 }];
+    const bayFrom = br ? br.apDist0 / len : 1;
+    const second = Math.min(0.88, bayFrom - 0.02);
+    if (second - 0.56 > 0.03) lakes.push({ from: 0.56, to: second, side: -1 });
+    if (br) {
+      // Water runs a little past each abutment — the ramp fill hides the cut edge.
+      const pad = 12;
+      for (const side of [1, -1]) {
+        lakes.push({
+          from: br.dist0 / len,
+          to: br.dist1 / len,
+          side,
+          bay: true,
+          i0: Math.max(0, br.i0 - pad),
+          i1: Math.min(this.points.length - 1, br.i1 + pad),
+        });
+      }
+    }
+    this._lakes = lakes;
+    return lakes;
+  }
+
+  /**
+   * Lakeside bridge land: earth ramps at both abutments, open lake floor under
+   * the span, shore rim beyond the bay. Visual only — Track.query reads the
+   * road ribbon, never this surface. Returns null outside the bridge zone.
+   * @param {{dist:number,roadY:number,roadW:number,along:number}} near
+   * @param {number} drop bed drop below the paint
+   * @returns {{y:number,w:number}|null} land Y and blend weight vs the stock shore
+   */
+  _lakesideBridgeLand(near, drop) {
+    const br = this._lakesideBridge;
+    if (!br || !Number.isFinite(br.baseY)) return null;
+    const along = near.along;
+    const fade = 60;
+    const a0 = br.apDist0 - 40;
+    const a1 = br.exDist1 + 40;
+    if (!Number.isFinite(along) || along < a0 - fade || along > a1 + fade) return null;
+    const w = smoothstep((along - (a0 - fade)) / fade) * smoothstep((a1 + fade - along) / fade);
+    if (w <= 0) return null;
+    const d = near.dist;
+    const roadW = near.roadW;
+    const cell = this._landCell || 32;
+    const trench = Math.max(this._trenchWidth(roadW), roadW * 0.5 + 12, cell * 1.15);
+    const shore = br.baseY - drop;
+    // Ramp: paint floor inside the trench, then a steep rock-fill slope to the shore.
+    const bed = near.roadY - drop;
+    const ramp = d < trench ? bed : Math.max(shore, bed - (d - trench) * 0.55);
+    // Channel: lake floor across the bay, rising to a low shore rim beyond it.
+    const rim = shore + 0.9;
+    const chan =
+      d < LAKE_BRIDGE_BAY_HALF
+        ? br.bedY
+        : br.bedY + (rim - br.bedY) * smoothstep((d - LAKE_BRIDGE_BAY_HALF) / 80);
+    const k =
+      smoothstep((along - (br.dist0 - 6)) / 34) * smoothstep((br.dist1 + 6 - along) / 34);
+    // Beyond the bay it stays a flat shore plain (no knolls): open sightline to the towers.
+    return { y: ramp + (chan - ramp) * k, w };
   }
 
   /**
@@ -2397,20 +2508,14 @@ export class Track {
     const mountain = scenery === "mountain";
     const forest = scenery === "forest";
     const drop = bedDropFor(scenery);
-    // Suspension span: basin stays at shore height under the elevated paint.
-    if (scenery === "lakeside" && this._lakesideBridge) {
-      const br = this._lakesideBridge;
-      const alongHere = along != null ? along : near.along;
-      if (
-        Number.isFinite(alongHere) &&
-        alongHere >= br.dist0 - 28 &&
-        alongHere <= br.dist1 + 28 &&
-        Number.isFinite(br.baseY)
-      ) {
-        const clearance = near.minOver != null ? near.minOver : dist - roadW * 0.5;
-        if (clearance < roadW * 0.5 + 52) {
-          return br.baseY - drop;
-        }
+    // Suspension bridge: earth ramps at the abutments, lake floor under the span
+    // (visual only — the drivable deck is the ribbon, never this surface).
+    if (scenery === "lakeside" && this._lakesideBridge && !near._noBridge) {
+      const bz = this._lakesideBridgeLand(near, drop);
+      if (bz) {
+        if (bz.w >= 1) return bz.y;
+        const stock = this._groundHeightRaw(x, z, scenery, { ...near, _noBridge: true });
+        return stock + (bz.y - stock) * bz.w;
       }
     }
     // On the paint of a lower ribbon, the floor is that ribbon. The nearest
@@ -2694,9 +2799,22 @@ export class Track {
       if (washed != null) return washed;
       if (dist < roadW * 0.5 + ROAD_VERGE + 1.2) return bed;
       const alongT = this.length > 1 ? (along || 0) / this.length : 0;
-      const lakeA = alongT > 0.1 && alongT < 0.5 && side > 0;
-      const lakeB = alongT > 0.56 && alongT < 0.88 && side < 0;
-      const lake = lakeA || lakeB;
+      // Shore basins follow the same runs the water mesh uses (this._lakes).
+      let lake = false;
+      const lakeRuns = this._lakes;
+      if (lakeRuns) {
+        for (let li = 0; li < lakeRuns.length; li++) {
+          const run = lakeRuns[li];
+          if (run.bay) continue;
+          if (alongT > run.from && alongT < run.to && (run.side > 0) === (side > 0)) {
+            lake = true;
+            break;
+          }
+        }
+      } else {
+        lake =
+          (alongT > 0.1 && alongT < 0.5 && side > 0) || (alongT > 0.56 && alongT < 0.88 && side < 0);
+      }
       if (dist < trench) return bed;
       if (lake) {
         const floor = roadY - 2.15;
@@ -3818,6 +3936,47 @@ export class Track {
     this._skirtReachL = reachL;
     this._skirtReachR = reachR;
 
+    const lerp1 = (a, b, t) => a + (b - a) * t;
+    const apronHex = (ex, ey, ez, roadY) => {
+      this._biomeTint(skirtCol, scenery, ey, roadY, ex, ez, { minOver: sl * 0.35 });
+      return skirtCol.getHex();
+    };
+    /**
+     * Surface hand-over quad: SURFACE_STRIPS lateral strips, each switching
+     * texture at its own offset from the cut (broken edge / drifted tongues).
+     * Texture swap per strip, vertex tint stays one-surface-coherent.
+     */
+    const emitHandover = (cut, p, q, e, f, chunk, dm) => {
+      const S = SURFACE_STRIPS;
+      const aPL = apronHex(e.lx, e.yL, e.lz, p.y);
+      const aPR = apronHex(e.rx, e.yR, e.rz, p.y);
+      const aQL = apronHex(f.lx, f.yL, f.lz, q.y);
+      const aQR = apronHex(f.rx, f.yR, f.rz, q.y);
+      for (let j = 0; j < S; j++) {
+        const u0 = j / S;
+        const u1 = (j + 1) / S;
+        const sid = dm > cut.d + cut.off[j] ? cut.to : cut.from;
+        const sb = roadBucket(sid, chunk);
+        const vs = ROAD_UV_SCALE[sid] || 0.12;
+        const mixTo = sid === cut.to ? 0.9 : 0.1;
+        const put = (post, edgeP, apL, apR, u, vDist) => {
+          const x = lerp1(edgeP.lx, edgeP.rx, u);
+          const z = lerp1(edgeP.lz, edgeP.rz, u);
+          const y = lerp1(edgeP.yL, edgeP.yR, u);
+          let hex = organicRoadTint(cut.from, cut.to, mixTo, x, z, scenery);
+          if (u === 0) hex = mixHex(hex, apL, 0.58);
+          else if (u === 1) hex = mixHex(hex, apR, 0.58);
+          vert(sb, x, y, z, hex, u, vDist * vs);
+          void post;
+        };
+        put(p, e, aPL, aPR, u0, p.dist);
+        put(p, e, aPL, aPR, u1, p.dist);
+        put(q, f, aQL, aQR, u0, q.dist);
+        put(q, f, aQL, aQR, u1, q.dist);
+        quad(sb);
+      }
+    };
+
     for (let i = 0; i < pts.length - 1; i++) {
       const p = pts[i];
       const q = pts[i + 1];
@@ -3829,7 +3988,9 @@ export class Track {
       const hereQ = SURFACES[q.surface] ? q.surface : "dirt";
       const blendP = this._surfaceBlend(p.dist, hereP);
       const blendQ = this._surfaceBlend(q.dist, hereQ);
-      const id = (blendP.mix + blendQ.mix) * 0.5 > 0.72 ? blendQ.to : blendP.from;
+      const dmid = (p.dist + q.dist) * 0.5;
+      const handCut = this._cutNear(dmid, SURFACE_CUT_REACH);
+      const id = handCut ? (dmid > handCut.d ? handCut.to : handCut.from) : hereP;
       const rb = roadBucket(id, chunk);
       const vScale = ROAD_UV_SCALE[id] || 0.12;
       const v0 = p.dist * vScale;
@@ -3852,11 +4013,15 @@ export class Track {
         this._biomeTint(apron, scenery, f.yR, q.y, f.rx, f.rz, { minOver: sl * 0.35 });
         tintQR = mixHex(tintQR, apron.getHex(), 0.58);
       }
-      vert(rb, e.lx, e.yL, e.lz, tintPL, 0, v0);
-      vert(rb, e.rx, e.yR, e.rz, tintPR, 1, v0);
-      vert(rb, f.lx, f.yL, f.lz, tintQL, 0, v1);
-      vert(rb, f.rx, f.yR, f.rz, tintQR, 1, v1);
-      quad(rb);
+      if (handCut && !p.tunnel && !q.tunnel) {
+        emitHandover(handCut, p, q, e, f, chunk, dmid);
+      } else {
+        vert(rb, e.lx, e.yL, e.lz, tintPL, 0, v0);
+        vert(rb, e.rx, e.yR, e.rz, tintPR, 1, v0);
+        vert(rb, f.lx, f.yL, f.lz, tintQL, 0, v1);
+        vert(rb, f.rx, f.yR, f.rz, tintQR, 1, v1);
+        quad(rb);
+      }
 
       // Skirt: the strip of loose ground that tucks the ribbon into the land
       // plane. Two quads, one per side, drawn double-sided so a car that gets
@@ -3949,7 +4114,7 @@ export class Track {
         quad(sb);
       }
 
-      const kerbSurface = (blendP.mix + blendQ.mix) * 0.5 > 0.72 ? blendQ.to : blendP.from;
+      const kerbSurface = id;
       const paintedKerb =
         kerbSurface === "tarmac" ||
         kerbSurface === "cobble" ||
@@ -3968,6 +4133,35 @@ export class Track {
         vert(kb, f.rx, f.yR + 0.02, f.rz, hexQ);
         vert(kb, f.rx - q.nx * kerbW, f.yR + 0.05, f.rz - q.nz * kerbW, hexQ);
         quad(kb);
+      }
+      // Painted lines on tarmac only. They live in the kerb bucket (no new draw
+      // call) and stop ~14 m before / start ~14 m after a surface change.
+      if (
+        kerbSurface === "tarmac" &&
+        !handCut &&
+        !inTunnel &&
+        !inUnderpass &&
+        !(p.bridge || q.bridge || p.jump || q.jump || p.jumpKind || q.jumpKind)
+      ) {
+        const kb = plainBucket(kerb, chunk);
+        const w = Math.max(6, p.width);
+        const strip = (t0, t1, hex) => {
+          const at = (edgeP, t) => [lerp1(edgeP.lx, edgeP.rx, t), lerp1(edgeP.yL, edgeP.yR, t) + 0.045, lerp1(edgeP.lz, edgeP.rz, t)];
+          const a0 = at(e, t0);
+          const a1 = at(e, t1);
+          const b0 = at(f, t0);
+          const b1 = at(f, t1);
+          vert(kb, a0[0], a0[1], a0[2], hex);
+          vert(kb, a1[0], a1[1], a1[2], hex);
+          vert(kb, b0[0], b0[1], b0[2], hex);
+          vert(kb, b1[0], b1[1], b1[2], hex);
+          quad(kb);
+        };
+        const inset = 0.55 / w;
+        const lw = 0.2 / w;
+        strip(inset, inset + lw, 0xd9d3c2);
+        strip(1 - inset - lw, 1 - inset, 0xd9d3c2);
+        if (p.dist % 9.6 < 3.2) strip(0.5 - lw * 0.5, 0.5 + lw * 0.5, 0xe2d49a);
       }
       if (!fastSkirt && (i & 31) === 0) {
         const wait = yieldMesh();
@@ -4014,7 +4208,9 @@ export class Track {
             if (scenery === "desert") {
               mat.color.setHex(b.id === "tarmac" ? 0xe8e0d4 : b.id === "sand" ? 0xf2e4c4 : 0xead4a8);
             } else {
-              mat.color.setHex(b.id === "gravel" ? 0xe4d4b4 : 0xf0c888);
+              mat.color.setHex(
+                b.id === "gravel" ? 0xe4d4b4 : b.id === "tarmac" ? 0xd6d2c8 : b.id === "mud" ? 0x8c6c48 : 0xf0c888
+              );
             }
             mat.userData.dryColor = mat.color.clone();
           }
@@ -4927,6 +5123,7 @@ export class Track {
     }
     if (def.scenery === "lakeside") {
       this._addLake();
+      this._addLakesideBridgeRails();
       this._addLakesideSuspensionBridge();
     }
     // Hero landmarks / verge / spectators → finishDeferredDressing after Ready.
@@ -6850,18 +7047,17 @@ export class Track {
     }
     if (def.scenery === "lakeside") {
       const br = this._lakesideBridge;
-      const span0 = br && this.length > 1 ? br.dist0 / this.length : 0.08;
-      const span1 = br && this.length > 1 ? br.dist1 / this.length : 0.28;
-      const lakes = [
-        // Basin under / beside the driveable suspension span.
-        {
-          from: Math.max(0.02, span0 - 0.05),
-          to: Math.min(0.52, span1 + 0.08),
-          side: 1,
-        },
-        { from: 0.58, to: 0.86, side: -1 },
-      ];
-      this._lakes = lakes;
+      const lakes = this._lakes || this._planLakesideLakes();
+      if (br) {
+        // Bridge ramps + bay: no tall plants on the fill or in the sightline corridor.
+        this._keepOut.push({
+          dist0: br.apDist0 - 24,
+          dist1: br.exDist1 + 24,
+          side: null,
+          minOff: 96,
+          maxH: 1.0,
+        });
+      }
       for (let i = 0; i < lakes.length; i++) {
         const lake = lakes[i];
         this._keepOut.push({
@@ -7841,6 +8037,7 @@ export class Track {
     ];
     const pts = this.points;
     for (const run of runs) {
+      if (run.bay) continue;
       const start = (pts.length * run.from) | 0;
       const end = (pts.length * run.to) | 0;
       if (end - start < 4) continue;
@@ -9404,9 +9601,11 @@ export class Track {
     const rocks = [];
     const reeds = [];
 
+    const bridgeInfo = this._lakesideBridge;
     for (const run of runs) {
-      const start = (pts.length * run.from) | 0;
-      const end = (pts.length * run.to) | 0;
+      const bay = !!run.bay && !!bridgeInfo;
+      const start = bay ? run.i0 : (pts.length * run.from) | 0;
+      const end = bay ? run.i1 : (pts.length * run.to) | 0;
       if (end - start < 4) continue;
       const pos = [];
       const col = [];
@@ -9428,18 +9627,18 @@ export class Track {
         const p = pts[i];
         const t = (i - start) / span;
         const bend = Math.sin(t * Math.PI) * 32;
-        const onBridge = !!(p.bridge || p.visual === "bridge_span");
-        // Under the span the water goes under the paint; elsewhere it hugs the verge.
-        const inner = onBridge ? 0.6 : p.width * 0.5 + 4.2;
-        const outer = onBridge ? p.width * 0.5 + 110 + bend : inner + 98 + bend;
+        // Bay: open water both sides of the deck centreline at one flat level well
+        // below the paint. Shore runs: a basin that hugs the verge.
+        const inner = bay ? 0 : p.width * 0.5 + 4.2;
+        // Bay water runs out under the shore rim so no lake floor shows at the edge.
+        const outer = bay ? LAKE_BRIDGE_BAY_HALF + 95 : inner + 98 + bend;
         const ix = p.x + p.nx * run.side * inner;
         const iz = p.z + p.nz * run.side * inner;
         const ox = p.x + p.nx * run.side * outer;
         const oz = p.z + p.nz * run.side * outer;
-        const basin = Number.isFinite(p.bridgeBaseY) ? p.bridgeBaseY : p.y;
-        const y = basin - (onBridge ? 1.05 : 0.78);
-        const a = vert(ix, y, iz, 0.08);
-        const b = vert(ox, y - 0.72, oz, 0.82);
+        const y = bay ? bridgeInfo.waterY : p.y - 0.78;
+        const a = vert(ix, y, iz, bay ? 0.5 : 0.08);
+        const b = vert(ox, bay ? y : y - 0.72, oz, 0.82);
         ring.push({ a, b, p, ix, iz, ox, oz, i, t });
       }
       for (let k = 0; k < ring.length - 1; k++) {
@@ -9469,6 +9668,8 @@ export class Track {
       const mid = pts[(start + end) >> 1];
       this._registerChunk(mesh, this._chunkOfDist(mid.dist));
       this.group.add(mesh);
+      // Open bay: no shore rocks / reeds on the centreline.
+      if (bay) continue;
 
       for (let k = 0; k < ring.length; k += 3) {
         const u = ring[k];
@@ -9528,7 +9729,9 @@ export class Track {
       } else return;
     }
     if (i1 - i0 < 12) return;
-    const step = Math.max(1, ((i1 - i0) / 56) | 0);
+    // ~9 m between hangers however long the span is (620 m deck -> ~70 samples).
+    const spanM = Math.max(1, pts[i1].dist - pts[i0].dist);
+    const step = Math.max(1, ((i1 - i0) / Math.max(56, Math.round(spanM / 9))) | 0);
     /** @type {Array<{x:number,z:number,y:number,nx:number,nz:number,dist:number,half:number,baseY:number}>} */
     const samples = [];
     for (let i = i0; i <= i1; i += step) {
@@ -9549,9 +9752,12 @@ export class Track {
     const n = samples.length;
     const ia = Math.max(2, (n * 0.14) | 0);
     const ib = Math.min(n - 3, (n * 0.86) | 0);
-    const towerH = 28;
+    // Bridge cinema (gameplay/lakeside-bridge-moment.js) keys whooshes off these.
+    if (this._lakesideBridge) this._lakesideBridge.towerDists = [samples[ia].dist, samples[ib].dist];
     const chordLen = Math.hypot(samples[ib].x - samples[ia].x, samples[ib].z - samples[ia].z);
-    const mainSag = Math.max(7.5, chordLen * 0.07);
+    // Tall towers on a long main span so the cable clears the deck at mid-span.
+    const towerH = Math.min(46, Math.max(28, 28 + (chordLen - 160) * 0.045));
+    const mainSag = Math.min(towerH * 0.62, Math.max(7.5, chordLen * 0.07));
     const sideSag = Math.max(2.8, mainSag * 0.36);
     const yawAt = (i) => {
       const a = samples[Math.max(0, i - 1)];
@@ -9648,7 +9854,8 @@ export class Track {
       const s = samples[i];
       const yaw = yawAt(i);
       const legX = s.half + 1.1;
-      const base = Math.min(s.baseY - 1.2, s.y - 7.5);
+      // Tower feet stand on the lake floor, through the water surface.
+      const base = Math.min(s.baseY - LAKE_BRIDGE_BED_DROP - 0.6, s.y - 7.5);
       const top = s.y + towerH;
       const legH = top - base;
       for (const lane of [1, -1]) {
@@ -9665,7 +9872,9 @@ export class Track {
       }
       addBox(towerBoxes, s.x, s.y + towerH * 0.55, s.z, legX * 2 + 1.4, 1.2, 1.6, yaw);
       addBox(towerBoxes, s.x, top - 0.65, s.z, legX * 2 + 1.8, 1.35, 1.9, yaw);
-      addBox(towerBoxes, s.x, base + 1.2, s.z, s.half * 2 + 3.2, 2.4, 3.8, yaw);
+      // Pier footing: lake floor up to just above the waterline.
+      const footTop = s.baseY + 0.9;
+      addBox(towerBoxes, s.x, (base + footTop) * 0.5, s.z, s.half * 2 + 3.2, footTop - base, 3.8, yaw);
     };
     plantTower(ia);
     plantTower(ib);
@@ -9742,6 +9951,7 @@ export class Track {
     const AUTUMN = ["autumn", "autumnGold", "oak"];
     const treeBags = { autumn: [], autumnGold: [], oak: [] };
     for (const run of runs) {
+      if (run.bay) continue;
       const start = (pts.length * run.from) | 0;
       const end = (pts.length * run.to) | 0;
       const span = Math.max(1, end - start);
@@ -12510,6 +12720,10 @@ export class Track {
     const jlB = b.jumpLip != null ? b.jumpLip : 1;
     let distAlong = a.dist + (b.dist - a.dist) * t;
     const blend = this._surfaceBlend(distAlong, surface);
+    // Micro height follows the paint the ribbon MESH carries (per-point surface),
+    // not the 220 m grip blend: Lakeside tarmac→cobble used tarmac micro for
+    // ~110 m of cobble, a 0.19 m query-vs-mesh mismatch under the wheels.
+    const meshSurface = surface;
     if (!onRoad && !tunnel) {
       const extra = Math.abs(lateral) - half;
       if (extra > 1.2) surface = this.offroad;
@@ -12517,13 +12731,19 @@ export class Track {
     }
     const micro =
       onRoad || tunnel
-        ? roadMicroHeight(distAlong, lateral, blend.id, jumpKind, tunnel)
+        ? roadMicroHeight(distAlong, lateral, meshSurface, jumpKind, tunnel)
+        : 0;
+    // The kerb mesh carries the paint-edge micro; off the paint start the
+    // shoulder from that edge height or cobble gets a 0.15 m lip at the kerb.
+    const edgeMicro =
+      !onRoad && !tunnel && jumpKind !== "gap"
+        ? roadMicroHeight(distAlong, lateral >= 0 ? half : -half, meshSurface, jumpKind, false)
         : 0;
     let deform = 0;
-    if ((onRoad || tunnel) && DEFORM_SURFACES.has(blend.id) && this.wheelDeform) {
+    if ((onRoad || tunnel) && DEFORM_PHYSICS.has(blend.id) && this.wheelDeform) {
       deform = this.wheelDeform.sample(x, z);
     }
-    const roadH = y + ROAD_DECK + micro;
+    const roadH = y + ROAD_DECK + micro + edgeMicro;
     let height = roadH;
     // Off the painted deck: plant on the *visual* shoulder skirt, then land.
     // Blending straight to `_groundHeight` (roadY − biome drop) sank the car
@@ -12742,6 +12962,14 @@ export class Track {
    */
   dispose() {
     if (!this.group) return;
+    if (this.wheelRuts) {
+      this.wheelRuts.dispose();
+      this.wheelRuts = null;
+    }
+    if (this.wheelDeform) {
+      this.wheelDeform.dispose();
+      this.wheelDeform = null;
+    }
     this._streamable = [];
     this._compileQueue = [];
     if (this._compileScratch) {
@@ -12775,43 +13003,70 @@ export class Track {
   }
 
   /**
-   * Ease into the current ribbon over ~72 m AFTER the named cut.
+   * Spline cuts where the driving surface changes (mid-way between the two posts).
+   * Cached per spline so the hot path never rescans the ribbon.
+   * @returns {{d:number, from:string, to:string}[]}
+   */
+  _surfaceCuts() {
+    const pts = this.points;
+    if (this._surfCutsFor === pts && this._surfCutsN === pts.length) return this._surfCuts;
+    const cuts = [];
+    for (let k = 1; k < pts.length; k++) {
+      if (pts[k].surface !== pts[k - 1].surface) {
+        const d = (pts[k - 1].dist + pts[k].dist) * 0.5;
+        cuts.push({ d, from: pts[k - 1].surface, to: pts[k].surface, off: surfaceStripOffsets(pts[k - 1].surface, pts[k].surface, d) });
+      }
+    }
+    this._surfCuts = cuts;
+    this._surfCutsFor = pts;
+    this._surfCutsN = pts.length;
+    return cuts;
+  }
+
+  /**
+   * Grip / texture / HUD blend around a surface change.
    *
-   * Blending both sides of the cut used to flip mix from ~1 to ~0 at the
-   * spline boundary (gravel for a metre, then sand again, then gravel) —
-   * that is the HUD/audio/grip teleporter. One-sided smoothstep stays
-   * continuous: just before the cut you are fully `here`, just after you
-   * are still fully the previous surface, then you ease into the new one.
+   * Centred on the cut and SURFACE_BLEND_M wide (smoothstep): the ribbon
+   * crossfades, grip ramps over a few metres, and the HUD id flips at the
+   * seam. Continuous both sides, so no grip teleport. (Was a 220 m one-sided
+   * ease that finished after a short patch was already over.)
    *
    * @param {number} dist
    * @param {string} here
    */
   _surfaceBlend(dist, here) {
-    const pts = this.points;
-    const BLEND = 220;
-    let prev = here;
-    let prevDist = -1e9;
+    const cuts = this._surfaceCuts();
+    const half = SURFACE_BLEND_M * 0.5;
     let lo = 0;
-    let hi = pts.length - 1;
+    let hi = cuts.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (pts[mid].dist < dist) lo = mid + 1;
+      if (cuts[mid].d + half <= dist) lo = mid + 1;
       else hi = mid;
     }
-    const i = Math.max(0, lo);
-    for (let k = i; k >= 0; k--) {
-      if (pts[k].surface !== here) {
-        prev = pts[k].surface;
-        prevDist = pts[k].dist;
-        break;
-      }
-    }
-    const dPrev = dist - prevDist;
-    if (dPrev >= 0 && dPrev < BLEND && prev !== here) {
-      const mix = smoothstep(dPrev / BLEND);
-      return { id: mix > 0.55 ? here : prev, from: prev, to: here, mix };
+    if (lo < cuts.length && cuts[lo].d - half < dist) {
+      const c = cuts[lo];
+      const mix = smoothstep((dist - (c.d - half)) / SURFACE_BLEND_M);
+      return { id: mix > 0.5 ? c.to : c.from, from: c.from, to: c.to, mix };
     }
     return { id: here, from: here, to: here, mix: 0 };
+  }
+
+  /**
+   * Surface cut within `reach` metres of `dist`, or null (mesh build only).
+   * @param {number} dist
+   * @param {number} reach
+   */
+  _cutNear(dist, reach) {
+    const cuts = this._surfaceCuts();
+    let lo = 0;
+    let hi = cuts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cuts[mid].d + reach <= dist) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < cuts.length && cuts[lo].d - reach < dist ? cuts[lo] : null;
   }
 
   /**
@@ -12947,6 +13202,48 @@ export class Track {
   }
 
   /**
+   * Lakeside suspension span rails as physical wall faces. The rail mesh used
+   * to be visual only: a slide at the bridge edge drove clean through it and
+   * the shoulder plant carried the car out over open water at deck height.
+   * One face per ribbon sample, both sides, just outside the paint edge —
+   * the same lateral as the `bridge-rails` mesh. Faces stop at the rail top,
+   * so a jump / airborne car is not walled. Spline only (node-runnable).
+   */
+  _addLakesideBridgeRails() {
+    const br = this._lakesideBridge;
+    const pts = this.points;
+    if (!br || !pts || br.i1 <= br.i0) return;
+    const RAIL_OUT = 0.2; // metres past the painted edge (mesh rail sits here)
+    const RAIL_TOP = 1.05; // matches `rail` height in _addLakesideSuspensionBridge
+    const RAIL_DEPTH = 0.6;
+    this.colliders = (this.colliders || []).filter((c) => !c.bridgeRail);
+    for (let i = br.i0; i < br.i1; i++) {
+      const p = pts[i];
+      const q = pts[i + 1];
+      const segLen = Math.max(0.5, q.dist - p.dist);
+      const halfLen = segLen * 0.6 + 0.3;
+      const th = (p.heading + q.heading) * 0.5;
+      const tx = Math.sin(th);
+      const tz = Math.cos(th);
+      const mx = (p.x + q.x) * 0.5;
+      const mz = (p.z + q.z) * 0.5;
+      const nx = (p.nx + q.nx) * 0.5;
+      const nz = (p.nz + q.nz) * 0.5;
+      const nLen = Math.hypot(nx, nz) || 1;
+      const ux = nx / nLen;
+      const uz = nz / nLen;
+      const out = (p.width + q.width) * 0.25 + RAIL_OUT;
+      const top = (p.y + q.y) * 0.5 + ROAD_DECK + RAIL_TOP;
+      for (const side of [-1, 1]) {
+        const before = this.colliders.length;
+        this._wallFace(mx + ux * side * out, mz + uz * side * out, -ux * side, -uz * side, tx, tz, halfLen, RAIL_DEPTH, top);
+        if (this.colliders.length > before) this.colliders[this.colliders.length - 1].bridgeRail = true;
+      }
+    }
+    this._colGrid = null;
+  }
+
+  /**
    * Register a solid collider only when the prop sits near the driven line
    * (and never on the roadway corridor). Far wilderness stays visual-only.
    * @param {number} x
@@ -12980,6 +13277,43 @@ export class Track {
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
+}
+
+/** Lateral strips across the ribbon where one surface hands over to the next. */
+const SURFACE_STRIPS = 10;
+/** Max reach (m) a loose-surface tongue spills onto tarmac / cobble. */
+const SURFACE_SPILL_M = 9;
+/** Quads this close to a cut are rebuilt as broken-edge strips. */
+const SURFACE_CUT_REACH = SURFACE_BLEND_M * 0.5 + SURFACE_SPILL_M + 3;
+const SURFACE_LOOSE = new Set(["sand", "gravel", "dirt", "mud"]);
+const SURFACE_HARD = new Set(["tarmac", "cobble"]);
+
+/**
+ * Per-strip hand-over offsets (m) for one surface cut: how far each lateral
+ * strip switches early (-) or late (+) of the cut. Loose ground drifts onto
+ * the hard road in tongues (strongest at the edges); everything else gets a
+ * ragged edge. Deterministic per cut, so the build is repeatable.
+ * @param {string} from
+ * @param {string} to
+ * @param {number} d cut distance
+ * @returns {number[]}
+ */
+function surfaceStripOffsets(from, to, d) {
+  const rnd = (j, k) => {
+    const h = Math.sin(d * 12.9898 + j * 78.233 + k * 37.719 + 4.1) * 43758.5453;
+    return h - Math.floor(h);
+  };
+  const out = [];
+  for (let j = 0; j < SURFACE_STRIPS; j++) {
+    const um = (j + 0.5) / SURFACE_STRIPS;
+    const edge = Math.abs(um * 2 - 1);
+    const jag = (rnd(j, 1) - 0.5) * 4;
+    const tongue = SURFACE_SPILL_M * (0.12 + 0.88 * edge * edge) * (0.3 + 0.7 * rnd(j, 2));
+    if (SURFACE_LOOSE.has(from) && SURFACE_HARD.has(to)) out.push(jag + tongue);
+    else if (SURFACE_HARD.has(from) && SURFACE_LOOSE.has(to)) out.push(jag - tongue);
+    else out.push((rnd(j, 3) - 0.5) * 12);
+  }
+  return out;
 }
 
 /** Hermite ease 0..1 so grip and HUD mix have no linear kinks. */
@@ -13051,7 +13385,18 @@ function liftForestPhotoTint(c) {
 }
 
 function roadTintHex(from, to, mix, scenery) {
-  let surfaceBlend = mixHex(surfaceRibbonHex(from), surfaceRibbonHex(to), mix);
+  // Photo ribbons multiply vertex colour into the albedo. Painted-dark tarmac
+  // (0x52565e) x a dark asphalt photo = a black hole, so hard surfaces lift
+  // toward neutral on the photo stages (Desert / Forest).
+  const photoStage = scenery === "desert" || (scenery === "forest" && forestPbrReady());
+  const ribbonHex = (id) => {
+    const h = surfaceRibbonHex(id);
+    if (!photoStage) return h;
+    if (id === "tarmac") return mixHex(h, 0xe6e2da, 0.66);
+    if (id === "cobble" && scenery === "desert") return mixHex(h, 0xe6e2da, 0.4);
+    return h;
+  };
+  let surfaceBlend = mixHex(ribbonHex(from), ribbonHex(to), mix);
   if (scenery === "lakeside") return mixHex(surfaceBlend, 0xe7eef6, 0.78);
   // Stage 3 alpine tarmac — bright pale deck so paint reads in fog / rain.
   if (scenery === "mountain") return mixHex(surfaceBlend, 0xf0ece4, 0.78);
@@ -13061,7 +13406,11 @@ function roadTintHex(from, to, mix, scenery) {
   }
   // Photo maps: vertex colour multiplies albedo. Forest packed dirt stays
   // warm ochre so it does not disappear into the moss floor.
-  if (scenery === "forest" && forestPbrReady()) return mixHex(surfaceBlend, 0xf2c878, 0.48);
+  if (scenery === "forest" && forestPbrReady()) {
+    // Warm ochre keeps dirt readable on the moss floor; tarmac stays neutral.
+    const paved = (from === "tarmac" ? 1 - mix : 0) + (to === "tarmac" ? mix : 0);
+    return mixHex(surfaceBlend, 0xf2c878, 0.48 * (1 - Math.min(1, paved)));
+  }
   if (forestPbrReady()) return mixHex(surfaceBlend, 0xf6f2ea, 0.78);
   return mixHex(surfaceBlend, 0xf2eee6, 0.11);
 }

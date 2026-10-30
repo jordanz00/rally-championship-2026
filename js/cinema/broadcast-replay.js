@@ -63,6 +63,24 @@ export function shuffleShots(list) {
   return out;
 }
 
+/**
+ * Lakeside suspension-bridge coverage. Only offered while the tape car is on the span
+ * (`track._lakesideBridge`). Kept out of BROADCAST_SHOTS so the 8-setup contract holds.
+ * @type {readonly string[]}
+ */
+export const BRIDGE_SHOTS = Object.freeze(["bridgeSide", "bridgeUnder", "bridgeDrone"]);
+
+/**
+ * @param {object|null} track
+ * @param {{progress?:number}|null} pose
+ * @returns {boolean}
+ */
+export function poseOnBridge(track, pose) {
+  const br = track && track._lakesideBridge;
+  if (!br || !pose || !Number.isFinite(pose.progress)) return false;
+  return pose.progress >= br.dist0 - 30 && pose.progress <= br.dist1 + 30;
+}
+
 export const HERO_SHOTS = new Set(["bumper", "chase", "heli", "nose", "threeq", "crane", "hero"]);
 
 export const SHOT_HOLD = {
@@ -74,6 +92,9 @@ export const SHOT_HOLD = {
   threeq: 5.2,
   crane: 5.6,
   hero: 4.8,
+  bridgeSide: 5.4,
+  bridgeUnder: 4.6,
+  bridgeDrone: 5.8,
 };
 
 export const SHOT_LABEL = {
@@ -85,6 +106,9 @@ export const SHOT_LABEL = {
   threeq: "THREE-QUARTER",
   crane: "CRANE",
   hero: "HERO",
+  bridgeSide: "LONG LENS",
+  bridgeUnder: "UNDER DECK",
+  bridgeDrone: "DRONE",
 };
 
 const SHOT_CYCLE = ["heli", "bumper", "threeq", "nose", "flyby", "crane", "chase", "hero"];
@@ -375,7 +399,7 @@ export function composeBroadcastShot(kind, pose, track, opts) {
   const deck = road && Number.isFinite(road.y) ? Math.max(pose.y, road.y + 0.28) : pose.y;
   const tunnel = !!(road && road.tunnel);
   const side = Number.isFinite(opts && opts.side) ? opts.side : shotSide(kind, pose);
-  const shot = BROADCAST_SHOTS.includes(kind) ? kind : "chase";
+  const shot = BROADCAST_SHOTS.includes(kind) || BRIDGE_SHOTS.includes(kind) ? kind : "chase";
 
   let lead = 1.55;
   let back = 7.6;
@@ -440,6 +464,27 @@ export function composeBroadcastShot(kind, pose, track, opts) {
     lat = 10.1;
     up = 1.18;
     fov = 40;
+  } else if (shot === "bridgeSide") {
+    // Long-lens side track along the span: compressed cables, car sliding through them.
+    lead = 3.2;
+    back = -3;
+    lat = 38;
+    up = 5.5;
+    fov = 22;
+  } else if (shot === "bridgeUnder") {
+    // Below the soffit, outside the rail — car cuts across the sky above the deck edge.
+    lead = 2.2;
+    back = 2;
+    lat = 11.8;
+    up = -3.4;
+    fov = 38;
+  } else if (shot === "bridgeDrone") {
+    // Drone ahead of the car, high over the cables, looking back through the tower portals.
+    lead = 2.6;
+    back = -34;
+    lat = 17;
+    up = 21;
+    fov = 34;
   }
 
   const lookX = pose.x + fx * lead;
@@ -802,7 +847,9 @@ export class BroadcastDirector {
     const tunnel = !!(road && road.tunnel);
     const jump = !!(road && road.jump);
     let pool = shuffleShots(BROADCAST_SHOTS);
-    if (tunnel) {
+    if (poseOnBridge(this.track, pose)) {
+      pool = [...shuffleShots(BRIDGE_SHOTS), ...pool];
+    } else if (tunnel) {
       pool = ["hero", "bumper", "chase", ...pool.filter((k) => k !== "hero" && k !== "bumper" && k !== "chase")];
     } else if (jump) {
       pool = ["crane", "hero", "threeq", ...pool.filter((k) => k !== "crane" && k !== "hero" && k !== "threeq")];
@@ -829,7 +876,14 @@ export class BroadcastDirector {
     const jump = !!(road && road.jump);
     const prev = this.kind;
     const prefs = [];
-    if (tunnel) prefs.push("hero", "bumper", "chase");
+    if (poseOnBridge(this.track, pose)) {
+      // Rotate through the bridge set so each cut is a new angle on the span.
+      const bi = BRIDGE_SHOTS.indexOf(prev);
+      for (let k = 1; k <= BRIDGE_SHOTS.length; k++) {
+        prefs.push(BRIDGE_SHOTS[(Math.max(bi, -1) + k + BRIDGE_SHOTS.length) % BRIDGE_SHOTS.length]);
+      }
+      prefs.push("chase", "threeq", "heli");
+    } else if (tunnel) prefs.push("hero", "bumper", "chase");
     else if (jump) prefs.push("hero", "crane", "threeq");
     else if (Math.abs(pose.yawRate || 0) > 0.62) prefs.push("crane", "flyby", "threeq");
     else {

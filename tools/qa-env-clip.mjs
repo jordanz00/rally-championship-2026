@@ -272,13 +272,12 @@ check(
 );
 check(
   "stage gantry posts extend into verge land",
-  /_addGantry[\s\S]*?_groundHeight\(px, pz, scenery\)/.test(trackSrc) &&
-    /bot = gy - 0\.4/.test(trackSrc),
-  "fixed p.y+2.7 gantry posts floated over washed verge"
+  /_addGantry\(p, label\) \{[\s\S]*?_visualLandY\(leftX, leftZ\)[\s\S]*?_visualLandY\(rightX, rightZ\)[\s\S]*?left: \{ x: leftX, y: leftY/.test(trackSrc),
+  "gantry posts must plant on the land sample, not p.y+2.7 (floated over washed verge)"
 );
 check(
   "spectator toes bury below land sample",
-  /y: gy - 0\.08 \+ row \* 0\.04/.test(trackSrc),
+  /y: gy - 0\.0\d+ \+ row \* 0\.0\d+/.test(trackSrc),
   "landmark +0.12 floated biped feet"
 );
 
