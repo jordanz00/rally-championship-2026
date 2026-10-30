@@ -572,6 +572,8 @@ export class RallyGame {
     this._floorLevel = 0;
     this._floorScale = 1;
     this._floorSaved = null;
+    this._floorParticlesOff = false;
+    this._floorRivalsLite = false;
     this._pack = [];
     this._blobPack = [];
     this._qLight = {};
@@ -3194,8 +3196,16 @@ export class RallyGame {
     if (!this.camera || !this.opponents.length) return;
     const cx = this.camera.position.x;
     const cz = this.camera.position.z;
-    const farM = STREAM.rivalShadowFar != null ? STREAM.rivalShadowFar : 85;
-    const midM = STREAM.rivalFxMid != null ? STREAM.rivalFxMid : farM * 0.45;
+    const farM = this._floorRivalsLite
+      ? 28
+      : STREAM.rivalShadowFar != null
+        ? STREAM.rivalShadowFar
+        : 85;
+    const midM = this._floorRivalsLite
+      ? 12
+      : STREAM.rivalFxMid != null
+        ? STREAM.rivalFxMid
+        : farM * 0.45;
     const hyst = 6;
     for (let i = 0; i < this.opponents.length; i++) {
       const o = this.opponents[i];
@@ -4367,7 +4377,7 @@ export class RallyGame {
     this.raceTime += dt;
     this.timeLeft -= dt;
     this._checkpoints();
-    if (isPhonePlay()) {
+    if (isPhonePlay() || this._floorParticlesOff) {
       if (this.dust && this.dust.points) this.dust.points.visible = false;
     } else if (this.dust) {
       this.dust.cockpit = !!this._cockpitLive;
@@ -6882,6 +6892,83 @@ export class RallyGame {
     } else if (ema < 16.2 && mode !== "quality" && mode !== "dlaa") {
       this.tsr.setMode("quality");
     }
+  }
+
+  /**
+   * New stage: forget 30 fps floor sheds so countdown starts at full look.
+   * `_settleRacePresent` calls this — it must exist or Desert never boots.
+   */
+  _resetFloorGuard() {
+    if (this.floorGuard && typeof this.floorGuard.reset === "function") {
+      this.floorGuard.reset();
+    }
+    this._floorLevel = 0;
+    this._floorScale = 1;
+    this._floorParticlesOff = false;
+    this._floorRivalsLite = false;
+    this._floorSaved = null;
+  }
+
+  /**
+   * Apply FLOOR_LADDER rungs 1..level. Level 0 restores scale; TSR user pin wins.
+   * @param {number} level
+   */
+  _applyFloorLevel(level) {
+    const n = Math.max(0, Math.min(FLOOR_LADDER.length, level | 0));
+    let scale = 1;
+    let tsrPerf = false;
+    let post = null;
+    let shadows = null;
+    let particlesOff = false;
+    let rivalsLite = false;
+    for (let i = 0; i < n; i++) {
+      const r = FLOOR_LADDER[i];
+      if (!r) continue;
+      if (r.id === "tsr-performance") tsrPerf = true;
+      if (r.scale) scale = r.scale;
+      if (r.id === "post-low") post = "low";
+      if (r.id === "post-off") post = "off";
+      if (r.id === "shadow-lite") shadows = "lite";
+      if (r.id === "shadow-off") shadows = "off";
+      if (r.id === "particles") particlesOff = true;
+      if (r.id === "rivals") rivalsLite = true;
+    }
+    const scaleChanged = this._floorScale !== scale;
+    this._floorLevel = n;
+    this._floorScale = scale;
+    this._floorParticlesOff = particlesOff;
+    this._floorRivalsLite = rivalsLite;
+
+    if (this.tsr && typeof this.tsr.setMode === "function" && !this._tsrUserPinned) {
+      if (tsrPerf) {
+        if (!this._floorSaved) this._floorSaved = { tsr: this.tsr.mode };
+        else if (this._floorSaved.tsr == null) this._floorSaved.tsr = this.tsr.mode;
+        if (this.tsr.mode !== "performance") {
+          this.tsr.setMode("performance");
+          if (this.tsr.reset) this.tsr.reset();
+        }
+      } else if (this._floorSaved && this._floorSaved.tsr) {
+        this.tsr.setMode(this._floorSaved.tsr);
+        this._floorSaved.tsr = null;
+      }
+    }
+
+    if (this.post) {
+      if (post === "off") this.post.enabled = false;
+      else if (post === "low" && this.post.setQuality) this.post.setQuality("low");
+    }
+
+    if (this.renderer) {
+      if (shadows === "off") {
+        this.renderer.shadowMap.enabled = false;
+        if (this.sun) this.sun.castShadow = false;
+      } else if (shadows === "lite" && this.sun && this.sun.shadow) {
+        const lite = Math.min(this._qualityShadowFloor || 1024, 1024);
+        if (this.sun.shadow.mapSize.x > lite) this._setShadowMapSize(lite, true);
+      }
+    }
+
+    if (scaleChanged) this._onResize();
   }
 
   _applyQualityTier(t) {

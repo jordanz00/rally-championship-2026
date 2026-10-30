@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Desert boot crash — missing floor-guard methods (2026-10-30)
+
+**Player moment:** Championship / Desert start died on the loading plate: `TypeError: this._resetFloorGuard is not a function` at `_settleRacePresent`. Stage never reached 3-2-1.
+
+**Cause:** `createFloorGuard()` was wired in the constructor and `_settleRacePresent` called `_resetFloorGuard()`, but the method (and `_applyFloorLevel`) were never added. Incomplete 30 fps floor pass.
+
+**Shipped:** `_resetFloorGuard` + `_applyFloorLevel` on `RallyGame`. Settle resets the arbiter. Present ticks apply the shed ladder (TSR / scale / post / shadows / particles / rival LOD) instead of throwing.
+
+**Boot:** `main.js?v=1246` · `game.js?v=1246` · `floor-guard.js?v=1`
+
+**Proof:** `node tools/qa-static-audit.mjs` · grep `_resetFloorGuard` defined on the class · human: start Desert, countdown must appear.
+
 ## Parts stay on the car in mid air (2026-10-29)
 
 **Player moment:** Desert Safari jumps (ramp 735 / 1418 / 1632 m), crests, lip-offs. Wheels must fly with the shell.
