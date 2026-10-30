@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Spin-out / mid-air — controls stay with the car (2026-10-30)
+
+**Player moment:** Spin 90–360° on the dirt or in the air. Left is still left. Throttle is still the nose. The wheel does not reverse because you are facing the wrong way.
+
+**Cause:** (1) `_unstickReversedNose` snapped yaw onto travel past ~140°, so the stick you were holding became the other lock. (2) Bicycle yaw used signed body-forward speed (`vx * steer`) — backwards travel inverted the rack; a 90° slide killed it (`vx ≈ 0`). (3) Chase cam blended to travel yaw past 90° and looked at the nose.
+
+**Shipped:** No yaw snap. Steer uses planar speed. Slip angles stay in the forward hemisphere. Camera stays behind the car when the heading error is > 90°.
+
+**Boot:** `main.js?v=1248` · `game.js?v=1248` · `vehicle.js?v=225` · `ai.js?v=288`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-spin-controls.mjs` PASS (90/135/180/225/270/360° + mid-air 180°, both locks; 180° not snapped to travel).
+
 ## Road-edge apron — no verge cliff / bounce (2026-10-30)
 
 **Player moment:** Put a wheel off the paint. The dirt meets the road. The car does not fall into a ditch and bounce back up.

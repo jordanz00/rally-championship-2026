@@ -7,7 +7,7 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=224";
+import { Vehicle } from "./physics/vehicle.js?v=225";
 import { getSurface } from "./physics/surfaces.js?v=60";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=114";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=304";
@@ -15,7 +15,7 @@ import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=500";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=13";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=71";
-import { Opponent } from "./ai.js?v=287";
+import { Opponent } from "./ai.js?v=288";
 import { RallyAudio } from "./audio/engine.js?v=84";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=49";
@@ -6023,7 +6023,8 @@ export class RallyGame {
               ? CAMERA.slideYawBlend
               : 0.28;
         const align = Math.min(1, driftEarly * 1.55) * slideBlend;
-        yawTarget = yaw + dvy * align;
+        // Past 90° the lens would look at the nose and steer would read backwards.
+        if (Math.abs(dvy) < Math.PI * 0.5) yawTarget = yaw + dvy * align;
       }
     }
     let dy = yawTarget - this._camYaw;
@@ -6174,9 +6175,11 @@ export class RallyGame {
               ? CAMERA.slideLook
               : 0.32;
         const k = Math.min(1, drift * 2.2) * slideLook;
-        const lookYaw = this._camYaw + dvy * k;
-        lookSin = Math.sin(lookYaw);
-        lookCos = Math.cos(lookYaw);
+        if (Math.abs(dvy) < Math.PI * 0.5) {
+          const lookYaw = this._camYaw + dvy * k;
+          lookSin = Math.sin(lookYaw);
+          lookCos = Math.cos(lookYaw);
+        }
       }
       const speedLookScale = mode.speedLookAheadScale != null ? mode.speedLookAheadScale : 1;
       const speedPush =

@@ -69,6 +69,7 @@ const TOOLS = [
   { name: "qa-sprint28-launch", file: "qa-sprint28-launch.mjs", sprints: [28] },
   { name: "qa-air-parts-attached", file: "qa-air-parts-attached.mjs", sprints: [26] },
   { name: "qa-verge-apron", file: "qa-verge-apron.mjs", sprints: [26] },
+  { name: "qa-spin-controls", file: "qa-spin-controls.mjs", sprints: [26] },
 ];
 
 function runTool(file) {

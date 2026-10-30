@@ -487,7 +487,9 @@ function combinedTire(alpha, kappa, Fz, muPeak, muSlide, curve, camber, out) {
  */
 function slipAngle(vLat, vLong) {
   if (vLat * vLat + vLong * vLong < 0.16) return 0;
-  return Math.atan2(vLat, vLong);
+  // Always the forward hemisphere. Signed vLong used to flip slip (and the
+  // wheel) whenever the car travelled backwards after a spin-out.
+  return Math.atan2(vLat, Math.abs(vLong));
 }
 
 /**
@@ -1295,7 +1297,6 @@ export class Vehicle {
     this._gripUsed = clamp(this.slip * 0.72 + this._slidePct * 0.38, 0, 1);
 
     this.yaw += this.yawRate * dt;
-    this._unstickReversedNose();
     const sin2 = Math.sin(this.yaw);
     const cos2 = Math.cos(this.yaw);
     this.velocity.set(sin2 * vx + cos2 * vy, 0, cos2 * vx - sin2 * vy);
@@ -3639,22 +3640,10 @@ export class Vehicle {
    * @returns {number}
    */
   /**
-   * A landing yaw past ~140° leaves the nose facing backwards while the
-   * car is still travelling down the road. Steer and throttle then feel
-   * reversed. Put the nose back with the direction of travel.
+   * Do not snap yaw to travel. That flipped the wheel after a spin-out.
+   * Steer and throttle stay body-relative through a full 360°.
    */
-  _unstickReversedNose() {
-    if (!this.onGround) return;
-    const spd = this.speed || 0;
-    if (spd < 8) return;
-    const travel = Math.atan2(this.velocity.x, this.velocity.z);
-    let delta = travel - this.yaw;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    if (Math.abs(delta) < 2.35) return;
-    this.yaw = travel;
-    this.yawRate *= 0.15;
-  }
+  _unstickReversedNose() {}
 
   _offRoadRiseCap(dt) {
     const q = this._q;
@@ -5005,7 +4994,10 @@ export class Vehicle {
     kus *= 0.42;
     kus *= 1 + frontLight * 1.15;
     kus *= Math.max(0.28, 1 - rearLight * 0.78);
-    let rWant = (vx * st) / (L * (1 + kus * vx * vx));
+    // Planar speed, not signed vx: a 90°/180° spin used to invert the rack
+    // (vx*st) or kill it (vx≈0). Left stays left through a full 360°.
+    const vPlanar = Math.hypot(vx, vy);
+    let rWant = (vPlanar * st) / (L * (1 + kus * vPlanar * vPlanar));
     const mush = HANDLING.limitMush != null ? HANDLING.limitMush : 0.42;
     rWant = softLimit(rWant, rGrip * 2.05, mush);
     // Hard-steer initiation shove — rotate into the drift like a tournament entry.
@@ -5137,7 +5129,7 @@ export class Vehicle {
     const yawAsst = ARCADE_ASSIST.yawAssist != null ? ARCADE_ASSIST.yawAssist : 0;
     const yawBoost = HANDLING.yawAssistBoost != null ? HANDLING.yawAssistBoost : 1;
     if (yawAsst > 0.01 && Math.abs(st) > 0.035 && Math.abs(vx) > 4.5 && hb < hbEnter) {
-      const rDesire = (vx * st) / L;
+      const rDesire = (vPlanar * st) / L;
       const err = clamp(rDesire - r, -0.55, 0.55);
       rWant += err * yawAsst * yawBoost * 0.24 * (1 - slipAmt * 0.45);
     }
