@@ -7,10 +7,10 @@
  *   resolution → post → shadows → particles → rival detail — and climbs back
  *   one rung at a time only after a long calm window, with a probation + ban
  *   so a rung that fails once is never retried this stage (no oscillation).
- * HOW IT CONNECTS: perf-tier.js still owns cadence (60 vs even-30 lock) and the
- *   `lockRaceQuality` look; this module owns the *floor* — it is the only
- *   system allowed to shed look when the floor is missed. game.js applies the
- *   level via `_applyFloorLevel`. Pure policy: no THREE, no DOM, unit-testable.
+ * HOW IT CONNECTS: perf-tier.js owns cadence (60 vs even-30). Desktop
+ *   `lockRaceQuality` / `lockRaceLook()` refuses this ladder — mid-stage
+ *   TSR / post / shadow / scale dumps read as lighting and texture pops.
+ *   Phones still apply via `_applyFloorLevel`. Pure policy: no THREE, no DOM.
  *
  * POWER BI MAPPING: none
  */

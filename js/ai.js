@@ -23,10 +23,10 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=225";
+import { Vehicle } from "./physics/vehicle.js?v=227";
 import { getSurface } from "./physics/surfaces.js?v=60";
 import { AI, CARS } from "./config.js?v=260";
-import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=304";
+import { aiTintForIndex, createRivalCar, applyWheelPose, chassisDeckEmbed, setBrakeLights, rivalChassisForIndex } from "./cars/celica.js?v=308";
 
 const G = 9.81;
 

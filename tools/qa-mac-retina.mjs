@@ -35,11 +35,12 @@ check(
   /mem == null \|\| mem >= 8/.test(game)
 );
 check("desktop keeps 60 Hz", /GFX\.targetFps = 60/.test(game) && /preferLock30 = false/.test(game));
-check("desktop softScaleMin 0.78", /GFX\.softScaleMin = 0\.78/.test(game));
-check("race soft scale headroom", /_softRenderScale = isPhonePlay\(\) \? 0\.78 : 0\.94/.test(game));
-check("TSR quality ≤ 0.88", /quality: 0\.86/.test(tsr));
-check("QualityManager fast down", /DOWN_HOLD = 6/.test(qm) && /DOWN_STEP = 0\.06/.test(qm));
-check("early TSR shed for 60", /ema > 18\.2/.test(game) && /ema > 22/.test(game));
+check("desktop pins softScaleMin at 1", /GFX\.softScaleMin = 1/.test(game));
+check("race desktop full scale", /_softRenderScale = phoneRace \? 0\.62 : 1/.test(game));
+check("lockRaceLook skips mid-stage sheds", /if \(!lockRaceLook\(\)\) \{/.test(game));
+check("TSR quality is native shade", /quality: 1\.0/.test(tsr));
+check("QualityManager still owns phone scale", /DOWN_HOLD = 6/.test(qm) && /DOWN_STEP = 0\.06/.test(qm));
+check("phone TSR shed still in adapt", /ema > 18\.2/.test(game) && /ema > 22/.test(game));
 check("QUALITY_CAPS DPR 2", /maxPixelRatio: 2/.test(perf));
 check("sdk imports tsr v991+", Number((sdk.match(/tsr-upscaler\.js\?v=(\d+)/) || [])[1]) >= 991);
 

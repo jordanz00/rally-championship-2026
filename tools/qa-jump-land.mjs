@@ -52,12 +52,12 @@ check(
 check("land-exit blender", /_smoothJumpLandExits/.test(trackSrc));
 check(
   "deck follow on landLock",
-  /snapRate/.test(vehSrc) && /landing thud/.test(vehSrc),
-  "hard plantDeck assign was the thud"
+  /snapRate/.test(vehSrc) && /plantDeck - sink/.test(vehSrc),
+  "hull sits on the land spring, not a 12 mm glue clamp"
 );
 check(
-  "near-critical land spring (readable bounce)",
-  /landCompressZeta = 0\.78/.test(vehSrc) && /springFraction = 0\.14/.test(vehSrc)
+  "underdamped land spring (readable bounce)",
+  /landCompressZeta = 0\.62/.test(vehSrc) && /springFraction = 0\.14/.test(vehSrc)
 );
 
 console.log("\nlive desert spline");

@@ -22,11 +22,11 @@ const { JUMP } = await import(pathToFileURL(path.join(ROOT, "js/config.js")).hre
 // Mirror vehicle.js arcade-sim jump knobs (config stays pinned).
 JUMP.springFraction = 0.14;
 JUMP.lipGrain = 0.16;
-JUMP.landBounceImpact = 5.6;
-JUMP.landBounce = 0.16;
-JUMP.landCompressZeta = 0.78;
-JUMP.landCompressWn = 17.5;
-JUMP.mismatchFull = 0.2;
+JUMP.landBounceImpact = 4.4;
+JUMP.landBounce = 0.28;
+JUMP.landCompressZeta = 0.62;
+JUMP.landCompressWn = 20;
+JUMP.mismatchFull = 0.16;
 
 const { JumpModel } = await import(
   pathToFileURL(path.join(ROOT, "js/physics/jump.js")).href
@@ -228,7 +228,7 @@ ok(span(axles) > 0.2, `axleBias span ${span(axles).toFixed(3)} (nose vs tail)`);
   ok(/axleBias: this\._landAxleBias/.test(jumpSrc), "JumpModel.land returns axleBias");
   ok(!/Math\.random/.test(jumpSrc), "no Math.random in jump.js");
   ok(JUMP.springFraction === 0.14, `springFraction live=${JUMP.springFraction}`);
-  ok(JUMP.landCompressZeta === 0.78, `zeta live=${JUMP.landCompressZeta}`);
+  ok(JUMP.landCompressZeta === 0.62, `zeta live=${JUMP.landCompressZeta}`);
 }
 
 if (fails.length) {

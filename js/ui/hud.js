@@ -112,6 +112,7 @@ export class Hud {
       this.rushFill.style.transform = `scaleX(${meter.toFixed(3)})`;
       this.rush.dataset.hot = heat > 0.35 ? "1" : "0";
       this.rush.dataset.fire = fire > 0.45 ? "1" : "0";
+      this.rush.dataset.punch = s.rushPunch ? "1" : "0";
       if (this.rushLabel) {
         this.rushLabel.textContent = fire > 0.45 ? "ON FIRE" : "RUSH";
       }

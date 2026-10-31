@@ -1,6 +1,7 @@
 POV driver hands
 
-Source: Godot XR Tools hand meshes (Hand_Nails_L / Hand_Nails_R)
+Shipped grip: assets/driver/hand-grip-l.glb, hand-grip-r.glb
+Source rig: Godot XR Tools Hand_Nails_L / Hand_Nails_R (26-bone skinned glTF)
 https://github.com/GodotVR/godot-xr-tools/tree/master/addons/godot-xr-tools/hands
 
 Author of the Godot XR Tools hand models: DigitalN8m4r3 (Miodrag Sejic), Austria, 7 November 2022.
@@ -9,6 +10,11 @@ Godot XR Tools publishes these hand models under CC0 1.0 Universal.
 https://github.com/GodotVR/godot-xr-tools/blob/master/addons/godot-xr-tools/hands/License.md
 https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md
 
-This game uses a grip-posed export of those rigs. The fingers are closed
-around a steering rim in the mesh itself. The race does not bend the bones
-again. You can copy, modify, and ship them, including in a commercial build.
+This build keeps the skin weights and poses the live bones into a 9/3
+steering-wheel wrap (local-X flexion). Fingers can still bend at runtime.
+Rest-pose sources are in assets/driver/src/.
+
+Also downloaded (CC0, not the shipped POV mesh):
+Blender Studio Human Base Meshes v1.1.0 "Hand  - Realistic"
+https://download.blender.org/demo/asset-bundles/human-base-meshes/
+Kept as assets/driver/src/studio-hand-rest.glb for a later weight-painted pass.

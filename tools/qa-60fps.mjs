@@ -32,11 +32,12 @@ const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 check("desktop targetFps 60", /GFX\.targetFps = 60/.test(game));
 check("desktop never preferLock30", /GFX\.preferLock30 = false/.test(game));
 check("desktop never forceLock30AtSettle", /GFX\.forceLock30AtSettle = false/.test(game));
-check("softScaleMin allows shed", /GFX\.softScaleMin = 0\.78/.test(game));
-check("GO soft-scale headroom 0.94", /0\.94/.test(game) && /_softRenderScale/.test(game));
-check("QualityManager protects 16.7ms", /TARGET_MS = 16\.7/.test(qm) && /DOWN_HOLD = 6/.test(qm));
-check("TSR quality shade ≤0.88", /quality: 0\.86/.test(tsr));
-check("present budget sheds before 30", /ema > 18\.2/.test(game));
+check("desktop pins softScaleMin at 1", /GFX\.softScaleMin = 1/.test(game));
+check("GO desktop full scale", /_softRenderScale = phoneRace \? 0\.62 : 1/.test(game));
+check("lockRaceLook skips mid-stage sheds", /if \(!lockRaceLook\(\)\) \{/.test(game));
+check("QualityManager still owns phone scale", /TARGET_MS = 16\.7/.test(qm) && /DOWN_HOLD = 6/.test(qm));
+check("TSR quality is native shade", /quality: 1\.0/.test(tsr));
+check("phone present budget still sheds", /ema > 18\.2/.test(game) && /if \(lockRaceLook\(\)\) return;/.test(game));
 check("lockRenderFps caps present", /GFX\.lockRenderFps = true/.test(game));
 check(
   "cache-bust",

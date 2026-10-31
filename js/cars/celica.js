@@ -22,7 +22,7 @@ import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils
 import { COLORS, TUNNEL, CARS } from "../config.js?v=260";
 import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=69";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
-import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=27";
+import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=31";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
 import {
   gaugeMph,

@@ -41,8 +41,8 @@ check("GO rush window is 1.55 s", /const GO_RUSH_S = 1\.55/.test(veh));
 check("GO rush drive is 1.28×", /const GO_RUSH_DRIVE = 1\.28/.test(veh));
 check("freezeLaunch arms the rush", /this\._goRush = GO_RUSH_S/.test(veh));
 check("straight launch plants, steer still slides", /Math\.abs\(st\) < 0\.18/.test(veh) && /muR \*= lerp\(1, 1\.16/.test(veh));
-check("play-turn lock untouched", /maxSteer \* 1\.28/.test(veh) && /kus \*= 0\.55/.test(veh));
-check("rack bite untouched", /lerp\(1\.62, 0\.82/.test(veh));
+check("play-turn lock still bites", /maxSteer \* 1\.18/.test(veh) && /Controllable lock/.test(veh));
+check("rack bite is live", /lerp\(1\.35, 0\.72/.test(veh) && /snapRack/.test(veh));
 check("slide-bounce plant still the glue", /_pinManeuverDeck\(\)/.test(veh));
 
 check("GO feel lasts 1.8 s", /this\._goFeel = 1\.8/.test(game));

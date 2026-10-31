@@ -902,14 +902,14 @@ button.ghost {
 
 #hud-rush .label {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.32em;
   color: #ffb000;
   margin-bottom: 4px;
 }
 
 .rush-bar {
-  height: 9px;
+  height: 11px;
   border: 1px solid rgba(255, 176, 0, 0.55);
   background: rgba(0, 0, 0, 0.5);
   overflow: hidden;
@@ -3176,14 +3176,24 @@ button.ui-ghost:focus-visible {
 }
 
 #hud-rush {
-  padding: 8px 12px 10px;
+  padding: 8px 14px 12px;
   bottom: 132px;
 }
 
 .rush-bar {
-  height: 12px;
+  height: 16px;
   border: 1px solid rgba(255, 210, 0, 0.45);
   background: rgba(0, 0, 0, 0.55);
+}
+
+#hud-rush[data-punch="1"] .label {
+  color: #fff4c8;
+  text-shadow: 0 0 14px rgba(255, 160, 0, 0.85);
+}
+
+#hud-rush[data-punch="1"] #hud-rush-fill {
+  filter: brightness(1.35);
+  box-shadow: 0 0 18px rgba(255, 140, 0, 0.7);
 }
 
 #screen-hud .hud-distance {

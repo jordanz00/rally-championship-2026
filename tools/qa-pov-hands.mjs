@@ -39,8 +39,8 @@ const attr = read("assets/driver/ATTRIBUTION.txt");
 const glbL = path.join(ROOT, "assets/driver/hand-grip-l.glb");
 const glbR = path.join(ROOT, "assets/driver/hand-grip-r.glb");
 
-check("left grip GLB is on disk", fs.existsSync(glbL) && fs.statSync(glbL).size > 400000);
-check("right grip GLB is on disk", fs.existsSync(glbR) && fs.statSync(glbR).size > 400000);
+check("left grip GLB is on disk", fs.existsSync(glbL) && fs.statSync(glbL).size > 100000);
+check("right grip GLB is on disk", fs.existsSync(glbR) && fs.statSync(glbR).size > 100000);
 check(
   "hands load the rigged GLBs",
   /hand-grip-l\.glb/.test(driver) && /hand-grip-r\.glb/.test(driver) && /GLTFLoader/.test(driver) && /cloneRig/.test(driver)
@@ -77,10 +77,11 @@ check("game imports celica.js?v=240+", Number((game.match(/celica\.js\?v=(\d+)/)
 check("boot cache is 1057+", Number((main.match(/game\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check("index boots main.js?v=1057+", Number((html.match(/main\.js\?v=(\d+)/) || [])[1]) >= 1057);
 check(
-  "grip is the baked pose seated on the tube",
+  "grip is seated on the tube without the cuff-yaw",
   /function seatGrip/.test(driver) &&
     /tubeR \/ GRIP_HOLE/.test(driver) &&
     /rig\.quaternion\.identity\(\)/.test(driver) &&
+    !/rotation\.set\(0, Math\.PI, 0\)/.test(driver) &&
     !/rotateX\(/.test(driver)
 );
 

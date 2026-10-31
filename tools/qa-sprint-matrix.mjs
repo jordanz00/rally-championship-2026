@@ -63,6 +63,7 @@ const TOOLS = [
   { name: "qa-sprint22-runoff", file: "qa-sprint22-runoff.mjs", sprints: [22] },
   { name: "qa-sprint23-photoreal", file: "qa-sprint23-photoreal.mjs", sprints: [23] },
   { name: "qa-sprint24-perf", file: "qa-sprint24-perf.mjs", sprints: [24] },
+  { name: "qa-lock-race-look", file: "qa-lock-race-look.mjs", sprints: [24] },
   { name: "qa-sprint25-ue5", file: "qa-sprint25-ue5.mjs", sprints: [25] },
   { name: "qa-sprint26-driving", file: "qa-sprint26-driving.mjs", sprints: [26] },
   { name: "qa-sprint27-env", file: "qa-sprint27-env.mjs", sprints: [27] },
@@ -70,6 +71,7 @@ const TOOLS = [
   { name: "qa-air-parts-attached", file: "qa-air-parts-attached.mjs", sprints: [26] },
   { name: "qa-verge-apron", file: "qa-verge-apron.mjs", sprints: [26] },
   { name: "qa-spin-controls", file: "qa-spin-controls.mjs", sprints: [26] },
+  { name: "qa-jump-land-feel", file: "qa-jump-land-feel.mjs", sprints: [26] },
 ];
 
 function runTool(file) {

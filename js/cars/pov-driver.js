@@ -2,12 +2,11 @@
  * POV driver — rigged human hands on the steering wheel.
  *
  * WHO THIS IS FOR: cockpit / POV camera only (layer 1 overlay).
- * WHAT IT DOES: loads a CC0 skinned hand (MakeHuman mesh, 26-bone rig)
- *   already posed as a closed wheel grip. Fingers stay in that pose.
- *   seatGrip yaws the mesh 180° so the knuckles face the driver.
- *   The raw GLB shows the wrist cuff on that side — that is the fat disc.
- *   Hands ride steer-spin with the wheel.
- *   Two-bone sleeves hang from the wrist empties.
+ * WHAT IT DOES: loads the CC0 Godot XR Tools / MakeHuman 26-bone skinned
+ *   hands, already posed as a 9/3 leather wrap. Skins stay live so fingers
+ *   can still bend. Seat rolls around the tube so fingers wrap the leather
+ *   toward the driver. Do not yaw 180° (that is the open cuff).
+ *   Hands ride steer-spin with the wheel. Sleeves hang from the wrist empty.
  * HOW IT CONNECTS: celica.js attachPovDriverArms → cockpit-anim IK each frame.
  *   Models: assets/driver/hand-grip-l.glb, hand-grip-r.glb (see ATTRIBUTION.txt).
  */
@@ -38,8 +37,8 @@ const CLOCK_9_3 = 0.14;
  */
 const GRIP_HOLE = 0.016;
 
-const HAND_L_URL = new URL("../../assets/driver/hand-grip-l.glb?v=4", import.meta.url).href;
-const HAND_R_URL = new URL("../../assets/driver/hand-grip-r.glb?v=4", import.meta.url).href;
+const HAND_L_URL = new URL("../../assets/driver/hand-grip-l.glb?v=8", import.meta.url).href;
+const HAND_R_URL = new URL("../../assets/driver/hand-grip-r.glb?v=8", import.meta.url).href;
 
 /** @type {Promise<{scene: THREE.Group}[]>|null} */
 let HAND_LOAD = null;
@@ -284,10 +283,11 @@ function makeMount(side, rimR, tubeR) {
   const mount = new THREE.Group();
   mount.name = side > 0 ? "hand-L" : "hand-R";
   const clock = side > 0 ? CLOCK_9_3 : Math.PI - CLOCK_9_3;
-  const gripClock = clock + (side > 0 ? 0 : 0);
+  const gripClock = clock;
   mount.userData.clock = gripClock;
   mount.position.set(Math.cos(gripClock) * rimR, Math.sin(gripClock) * rimR, 0);
-  mount.rotation.z = gripClock;
+  // Keep +Y world-up. A π spin here double-flips the mirrored right GLB off the rim.
+  mount.rotation.z = side > 0 ? CLOCK_9_3 : -CLOCK_9_3;
   // Fit comes from seatGrip once the GLB tip radius is known.
   mount.scale.setScalar(1);
   const wrist = new THREE.Object3D();
@@ -320,8 +320,11 @@ function seatRig(mount, rig, tubeR) {
     o.userData.povDriver = true;
   });
   mount.add(rig);
-  // Keep the driver-side wrist placeholder. The right-hand bone sits on the
-  // cuff, and after the yaw that cuff is through the rim. Sleeves must not follow it.
+  const exportedWrist = rig.getObjectByName("wrist");
+  if (exportedWrist) {
+    mount.userData.wrist = exportedWrist;
+    capWristCut(exportedWrist);
+  }
   mount.userData.tris = countTris(mount);
   const proximal = rig.getObjectByName(side > 0 ? "Index_Proximal_L" : "Index_Proximal_R");
   mount.userData.gripBone = proximal ? proximal.name : "";
@@ -329,19 +332,35 @@ function seatRig(mount, rig, tubeR) {
 
 /**
  * Park the baked grip on the rim. The mesh already wraps a tube of GRIP_HOLE.
- * The bake stores the knuckle side on local +Z and the open wrist cuff on −Z.
- * Spin −Z points at the driver, so a half-turn on Y shows the fingers, not the cuff.
- * Scaling to the live tube keeps the pads on the leather. Do not curl bones here.
+ * Roll around the tube (+Y) so the finger wrap faces the driver. Left and
+ * right take opposite signs — a shared +90° X hid the fingers as loaves.
+ * Do not yaw 180° (that is the open cuff). Do not curl bones here.
  * @param {THREE.Object3D} rig
  * @param {number} tubeR tube radius in steer-spin space
  */
 function seatGrip(rig, tubeR) {
+  const left = rig.name === "rig-L";
   rig.quaternion.identity();
   rig.position.set(0, 0, 0);
-  rig.rotation.set(0, Math.PI, 0);
-  const fit = THREE.MathUtils.clamp((tubeR / GRIP_HOLE) * 0.82, 0.68, 0.9);
+  rig.rotation.set(0, left ? Math.PI / 2 : -Math.PI / 2, 0);
+  const fit = THREE.MathUtils.clamp(tubeR / GRIP_HOLE, 0.94, 1.12);
   rig.scale.setScalar(fit);
   rig.updateMatrixWorld(true);
+}
+
+/**
+ * The MakeHuman cut is a raw disc. Cover it so POV never shows bone.
+ * @param {THREE.Object3D} wrist
+ */
+function capWristCut(wrist) {
+  if (wrist.getObjectByName("wrist-cap")) return;
+  const cap = mesh(
+    CUFF_MAT,
+    geo("wrist-cap", () => new THREE.SphereGeometry(0.024, 12, 10))
+  );
+  cap.name = "wrist-cap";
+  cap.scale.set(1.15, 0.72, 1.05);
+  wrist.add(cap);
 }
 
 /**
@@ -493,6 +512,8 @@ export function attachPovDriverArms(root, hooks) {
       if (root.userData.povDriver !== driver) return;
       seatRig(handL, cloneRig(left.scene), tubeR);
       seatRig(handR, cloneRig(right.scene), tubeR);
+      driver.wristL = handL.userData.wrist;
+      driver.wristR = handR.userData.wrist;
       driver.trisL = handL.userData.tris;
       driver.trisR = handR.userData.tris;
       hooks.markSteerPovLayer(grips);

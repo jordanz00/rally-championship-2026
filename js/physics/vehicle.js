@@ -51,33 +51,38 @@ import * as THREE from "../../vendor/three.module.js";
 import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=260";
 import { blendSurfaces, gripGap } from "./surfaces.js?v=60";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=62";
-import { JumpModel } from "./jump.js?v=43";
+import { JumpModel } from "./jump.js?v=45";
 import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=10";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
 
 applyBurnoutDriveTuning(HANDLING, ARCADE_ASSIST);
 
-// Arcade-sim jump: ballistic leave + one readable land rebound, then plant.
-// config.js stays pinned at ?v=241 — live knobs mutate JUMP here.
+// Arcade-sim jump: ballistic leave + abrupt pad hit. Chassis sinks, shocks
+// load by axle/side from attitude + roadway, then one rebound. config.js
+// stays pinned — live knobs mutate JUMP here.
 JUMP.springFraction = 0.14;
 JUMP.lipGrain = 0.16;
-JUMP.landReairMin = 0.72;
-JUMP.landSettleMin = 0.2;
-JUMP.landSettleMax = 0.48;
-// Slightly underdamped so a hard hit shows weight, then snaps level.
-JUMP.landCompressZeta = 0.78;
-JUMP.landCompressWn = 17.5;
-JUMP.landBounceImpact = 5.6;
-JUMP.landBounce = 0.16;
-JUMP.landCompressMax = 0.2;
-JUMP.landCompressGain = 0.12;
-JUMP.landCompressExtMin = -0.022;
-JUMP.landSettleDamp = 5.4;
-JUMP.landSettleDampEnd = 12.5;
-JUMP.landImpactSquash = 0.042;
-JUMP.landVelAbsorb = 0.86;
-JUMP.mismatchFull = 0.2;
+JUMP.airPitchDamp = 0.68;
+JUMP.airRollDamp = 0.82;
+JUMP.airPitchRate = 3.85;
+JUMP.aeroFloat = 0.08;
+JUMP.landReairMin = 0.55;
+JUMP.landSettleMin = 0.18;
+JUMP.landSettleMax = 0.62;
+JUMP.landSettlePitchMax = 0.22;
+JUMP.landCompressZeta = 0.62;
+JUMP.landCompressWn = 20;
+JUMP.landBounceImpact = 4.4;
+JUMP.landBounce = 0.28;
+JUMP.landCompressMax = 0.28;
+JUMP.landCompressGain = 0.17;
+JUMP.landCompressExtMin = -0.048;
+JUMP.landSettleDamp = 3.8;
+JUMP.landSettleDampEnd = 9.2;
+JUMP.landImpactSquash = 0.058;
+JUMP.landVelAbsorb = 0.58;
+JUMP.mismatchFull = 0.16;
 JUMP.flatScrub = 0.995;
 JUMP.worstScrub = 0.52;
 JUMP.landUpsetYaw = 0.95;
@@ -703,6 +708,10 @@ export class Vehicle {
     this._landCompressVel = 0;
     /** +rear / −front land axle dig from JumpModel (drives heave bias). */
     this._landAxleBias = 0;
+    /** +right / −left land roll dig (air roll + pad camber). */
+    this._landRollBias = 0;
+    /** +uphill pad / −downhill pad from axle heights at touchdown. */
+    this._landRoadBias = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -935,6 +944,8 @@ export class Vehicle {
     this._landCompress = 0;
     this._landCompressVel = 0;
     this._landAxleBias = 0;
+    this._landRollBias = 0;
+    this._landRoadBias = 0;
     this.hitWall = 0;
     this.hitCar = 0;
     this.hitNx = 0;
@@ -1888,18 +1899,26 @@ export class Vehicle {
       if (bumpVy > 0.35 && !onJumpApproach) {
         this._suspCompress = Math.min(0.55, this._suspCompress + bumpVy * 0.06);
       }
-      // Follow the painted deck. A hard assign on landLock was the landing thud.
+      // Follow the painted deck. During a land the hull sits on the compress
+      // spring — a 12 mm clamp hid every shock and made every pad identical.
       if (this._landLock > 0 || onJumpApproach) {
         const landing = this._landLock > 0;
-        const snapRate = landing ? 22 : 38;
+        const sink = landing
+          ? clamp(this._landCompress || 0, 0, JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.28)
+          : 0;
+        const wantY = plantDeck - sink;
+        const snapRate = landing ? 42 : 38;
         const u = 1 - Math.exp(-snapRate * dt);
-        this.position.y = prevY + (plantDeck - prevY) * u;
-        const hover = landing ? 0.02 : 0.006;
+        this.position.y = prevY + (wantY - prevY) * u;
+        const hover = landing
+          ? Math.max(0.02, Math.max(0, -(this._landCompress || 0)) * 0.85)
+          : 0.006;
+        const bury = landing ? Math.max(0.018, sink + 0.03) : 0.012;
         if (this.position.y > plantDeck + hover) this.position.y = plantDeck + hover;
-        if (this.position.y < plantDeck - 0.012) this.position.y = plantDeck - 0.012;
+        if (this.position.y < plantDeck - bury) this.position.y = plantDeck - bury;
         this._deckFilt = this.position.y;
         this._deckSmoothY = this.position.y;
-        if (landing && this._landSettle <= 0 && Math.abs(this._landCompress || 0) <= 0.004) {
+        if (landing && this._landSettle <= 0 && Math.abs(this._landCompress || 0) <= 0.008) {
           this._snapPitchToRoad(axles);
         }
       } else {
@@ -1948,11 +1967,12 @@ export class Vehicle {
         this._airTime = 0;
         this._climbVel = 0;
         this._groundVy = 0;
-        this._deckSmoothY = floorY;
-        this._deckFilt = floorY;
-        this._landLock = 0.16;
+        this._landLock = 0.18 + impact * 0.01;
         this._armLandPad(track, q2.dist, floorY);
         this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
+        this.position.y = floorY - clamp(this._landCompress || 0, 0, 0.1);
+        this._deckSmoothY = this.position.y;
+        this._deckFilt = this.position.y;
         return;
       }
     }
@@ -1984,18 +2004,20 @@ export class Vehicle {
       this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
       const bounceNeed = JUMP.landBounceImpact != null ? JUMP.landBounceImpact : 5.2;
       const reairMin = JUMP.landReairMin != null ? JUMP.landReairMin : 0.85;
-      // Soft rebound only on severe mismatch — most energy is already in the spring.
+      const sink0 = clamp(this._landCompress || 0, 0, 0.1);
+      this.position.y = floorY - sink0;
+      // Tail-first / downhill mismatch can leave the pad once. Flat kisses plant.
       if (bounce > reairMin && impact > bounceNeed && this._landLock <= 0) {
-        this.velY = Math.min(bounce * 0.12, 0.2);
+        this.velY = Math.min(bounce * 0.42, 2.4);
         this.onGround = false;
         this._airTime = 0.04;
         this._landLock = 0.08;
         this.position.y = floorY + 0.02;
       } else {
-        this.velY = 0;
+        this.velY = Math.min(0, this.velY);
         this.onGround = true;
         this._airTime = 0;
-        this._landLock = 0.16 + impact * 0.006;
+        this._landLock = 0.18 + impact * 0.01;
       }
     }
   }
@@ -2055,10 +2077,17 @@ export class Vehicle {
     const res = this.jump.land(fallSpeed, this.speed, {
       surfaceBump: surf.bump,
       jumpDrop: this._q && this._q.jumpDrop,
+      padGrade: axles && Number.isFinite(axles.pitch) ? axles.pitch : this._slope,
+      frontH: axles && axles.front && axles.front.height,
+      rearH: axles && axles.rear && axles.rear.height,
+      camber: this._roadRoll || 0,
     });
     this._jumpBounce = res.bounce || 0;
     this.lastLandUpset = res.upset;
     if (res.axleBias != null) this._landAxleBias = clamp(res.axleBias, -1, 1);
+    if (res.rollBias != null) this._landRollBias = clamp(res.rollBias, -1, 1);
+    if (res.roadBias != null) this._landRoadBias = clamp(res.roadBias, -1, 1);
+    this._landCompressHint = res.compress || 0;
     this._surfShock = Math.max(this._surfShock, clamp(impact / 12, 0.2, 0.85) * (0.5 + res.upset));
     this.velocity.x *= res.scrub;
     this.velocity.z *= res.scrub;
@@ -3247,12 +3276,11 @@ export class Vehicle {
     const roadPitch = -grade;
     this._slope = grade;
     this._roadPitch = roadPitch;
-    this._visPitch = roadPitch;
 
     const messy = clamp(this.jump.sideHit || 0, 0, 1);
     this._sideLand = messy;
-    // Pose stays where the air left it. A spring eases it onto the road.
-    // Rewriting pitch/roll on this frame was the identical landing snap.
+    // Pose stays where the air left it. A spring slams it onto this pad —
+    // rewriting visPitch to the road here made every landing identical.
     const noseUp = this.jump.noseUp || 0;
     const airRoll = this.jump.roll || this.roll || 0;
     this._landPitch0 = this.pitch - roadPitch;
@@ -3262,7 +3290,8 @@ export class Vehicle {
     this._landUpset = clamp(upset, 0, 1.45);
     this._landEase = 0;
     this._landFromAir = true;
-    this._seedLandCompress(impact, upset);
+    this._visPitch = this.pitch;
+    this._seedLandCompress(impact, upset, this._landCompressHint);
     const hang = clamp((this.lastAirTime || this._airTime || 0) / 0.9, 0, 1);
     const crooked = clamp(
       Math.abs(noseUp) * 1.3 + Math.abs(airRoll) * 1.15 + messy * 0.55,
@@ -3295,23 +3324,31 @@ export class Vehicle {
    * @param {number} impact m/s descent
    * @param {number} [upset]
    */
-  _seedLandCompress(impact = 0, upset = 0) {
+  _seedLandCompress(impact = 0, upset = 0, hint = 0) {
     const gain = JUMP.landCompressGain != null ? JUMP.landCompressGain : 0.12;
-    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.2;
+    const maxC = JUMP.landCompressMax != null ? JUMP.landCompressMax : 0.28;
     const squashK = JUMP.landImpactSquash != null ? JUMP.landImpactSquash : 0.042;
-    // Harder hits + mismatch dig deeper — soft kisses barely load the spring.
-    const seed = clamp(impact * gain * (0.7 + upset * 0.85) + upset * 0.035, 0.02, maxC);
-    this._landCompress = Math.max(this._landCompress || 0, seed);
-    // Dive velocity so the first frames compress; rebound is underdamped once.
-    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * (0.055 + upset * 0.04));
-    this._landSquash = clamp(
-      Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.32),
-      0.01,
-      0.12
+    // Harder hits + mismatch + roadway hint dig deeper — kisses stay light.
+    const seed = clamp(
+      Math.max(hint || 0, impact * gain * (0.75 + upset * 0.95) + upset * 0.04),
+      0.03,
+      maxC
     );
-    // Tail-first vs nose-first axle bias for suspension heave (deterministic).
+    this._landCompress = Math.max(this._landCompress || 0, seed);
+    this._landCompressVel = Math.max(this._landCompressVel || 0, impact * (0.085 + upset * 0.055));
+    this._landSquash = clamp(
+      Math.max(this._landSquash || 0, this._landCompress * 0.95 + impact * squashK * 0.4),
+      0.02,
+      0.16
+    );
     const bias = this.jump && this.jump._landAxleBias != null ? this.jump._landAxleBias : 0;
     this._landAxleBias = clamp(bias, -1, 1);
+    if (this.jump && this.jump._landRollBias != null) {
+      this._landRollBias = clamp(this.jump._landRollBias, -1, 1);
+    }
+    if (this.jump && this.jump._landRoadBias != null) {
+      this._landRoadBias = clamp(this.jump._landRoadBias, -1, 1);
+    }
   }
 
   /**
@@ -3539,7 +3576,7 @@ export class Vehicle {
     const tightPlant = tightDeckPlant(kind, this._landLock);
     const sinkAllow =
       this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004
-        ? -0.02
+        ? -Math.max(0.03, this._landCompress || 0)
         : tightPlant
           ? AXLE_SINK_MAX
           : DECK_FOLLOW_SLACK;
@@ -3594,12 +3631,19 @@ export class Vehicle {
         this._landLock = Math.max(this._landLock || 0, 0.16);
         this._beginLandSettle(axles, impact, this.lastLandUpset || 0);
         const deck = this._roadDeckY(axles);
-        if (Number.isFinite(deck) && this.position.y < deck) this.position.y = deck;
+        const sink = clamp(this._landCompress || 0, 0, 0.12);
+        if (Number.isFinite(deck) && this.position.y < deck - sink) {
+          this.position.y = deck - sink;
+        }
       }
     }
     if (this.onGround && !pit && !this._stalePit && !axles.bothGap && Number.isFinite(axles.midH)) {
       const deck = axles.midH - TIRE_PLANT;
-      const slack = tightPlant ? GROUND_HOVER_MAX : DECK_FOLLOW_SLACK;
+      const landSink =
+        this._landSettle > 0 || Math.abs(this._landCompress || 0) > 0.004
+          ? Math.max(0.03, this._landCompress || 0)
+          : 0;
+      const slack = landSink > 0 ? landSink : tightPlant ? GROUND_HOVER_MAX : DECK_FOLLOW_SLACK;
       if (this.position.y < deck - slack) this.position.y = deck - slack;
       // Only pull down when both axles agree this is real tarmac — a gap
       // sample leaking through as midH used to shove every car into the road.
@@ -4185,19 +4229,25 @@ export class Vehicle {
     const dLatF = (dLat / tF) * shareF;
     const dLatR = (dLat / tR) * (1 - shareF);
     // Landing heave: land spring compresses all four corners. Tail-first
-    // digs the rears; nose-first digs the fronts (axleBias from JumpModel).
+    // digs the rears; nose-first digs the fronts; roll + pad camber split sides.
     const heave = this._landCompress || 0;
     const bias = clamp(this._landAxleBias || 0, -1, 1);
-    const heaveF = heave > 0 ? k * heave * (0.88 - bias * 0.28) : 0;
-    const heaveR = heave > 0 ? k * heave * (1.08 + bias * 0.32) : 0;
+    const rollB = clamp(this._landRollBias || 0, -1, 1);
+    const roadB = clamp(this._landRoadBias || 0, -1, 1);
+    const heaveF = heave * k * (0.88 - bias * 0.32 - roadB * 0.18);
+    const heaveR = heave * k * (1.08 + bias * 0.36 + roadB * 0.16);
+    const heaveFL = heaveF * (1 - rollB * 0.22);
+    const heaveFR = heaveF * (1 + rollB * 0.22);
+    const heaveRL = heaveR * (1 - rollB * 0.28);
+    const heaveRR = heaveR * (1 + rollB * 0.28);
     const loads = this._wheelLoad;
     // Outside wheels are on the −ay side (vy, ay are + toward the body right vector).
     const minF = staticF * 0.08;
     const minR = staticR * 0.08;
-    loads[0] = Math.max(minF, staticF - dLong * 0.5 - dLatF + heaveF);
-    loads[1] = Math.max(minF, staticF - dLong * 0.5 + dLatF + heaveF);
-    loads[2] = Math.max(minR, staticR + dLong * 0.5 - dLatR + heaveR);
-    loads[3] = Math.max(minR, staticR + dLong * 0.5 + dLatR + heaveR);
+    loads[0] = Math.max(minF, staticF - dLong * 0.5 - dLatF + heaveFL);
+    loads[1] = Math.max(minF, staticF - dLong * 0.5 + dLatF + heaveFR);
+    loads[2] = Math.max(minR, staticR + dLong * 0.5 - dLatR + heaveRL);
+    loads[3] = Math.max(minR, staticR + dLong * 0.5 + dLatR + heaveRR);
   }
 
   /**
@@ -4275,8 +4325,8 @@ export class Vehicle {
       this._suspRollRate = v + acc * dt;
       this._suspRoll = clamp(this._suspRoll + this._suspRollRate * dt, -rollMax, rollMax);
     }
-    // Drifts stay leaned, not rocking. Stronger roll damp kills left/right wobble.
-    if (ground) {
+    // Drifts stay leaned, not rocking. Do not kill the land nod/roll on contact.
+    if (ground && !(this._landSettle > 0 || this._landFromAir)) {
       this._suspPitchRate *= Math.exp(-7 * dt);
       this._suspRollRate *= Math.exp(-14 * dt);
     }
@@ -4296,11 +4346,15 @@ export class Vehicle {
     const theta = this._suspPitch;
     const heave = this._landCompress || 0;
     const bias = clamp(this._landAxleBias || 0, -1, 1);
-    const heaveFMul = heave > 0 ? 0.88 - bias * 0.3 : 0.8;
-    const heaveRMul = heave > 0 ? 1.12 + bias * 0.34 : 0.95;
+    const rollB = clamp(this._landRollBias || 0, -1, 1);
+    const roadB = clamp(this._landRoadBias || 0, -1, 1);
+    const heaveFMul = 0.88 - bias * 0.34 - roadB * 0.2;
+    const heaveRMul = 1.12 + bias * 0.38 + roadB * 0.18;
     const st = this._suspTravel;
-    st[0] = st[1] = -theta * lf - heave * heaveFMul;
-    st[2] = st[3] = theta * lr - heave * heaveRMul;
+    st[0] = -theta * lf - heave * heaveFMul * (1 - rollB * 0.24);
+    st[1] = -theta * lf - heave * heaveFMul * (1 + rollB * 0.24);
+    st[2] = theta * lr - heave * heaveRMul * (1 - rollB * 0.3);
+    st[3] = theta * lr - heave * heaveRMul * (1 + rollB * 0.3);
     const maxT = s.travel != null ? s.travel : 0.18;
     const rt = this._roadTravel;
     const wt = this._wheelTravel;
@@ -4344,10 +4398,14 @@ export class Vehicle {
         0,
         1
       );
-      // Heavy kiss. The air pose slams onto the road instead of floating down.
-      const wn = lerp(14, 24, ease * ease) * (this.ai ? 1.15 : 1);
-      const zeta = lerp(crooked > 0.28 ? 1.05 : 1.25, crooked > 0.28 ? 1.35 : 1.6, ease);
-      const rollTarget = (this._suspRoll || 0) + (this._roadRoll || 0);
+      // Abrupt kiss. Mismatch stays underdamped so the chassis rocks onto
+      // THIS pad (grade + camber), not a canned upright pose.
+      const wn = lerp(20, 30, ease * ease) * (this.ai ? 1.15 : 1);
+      const zeta = lerp(crooked > 0.22 ? 0.58 : 0.78, crooked > 0.22 ? 0.72 : 0.98, ease);
+      const rollTarget =
+        (this._suspRoll || 0) +
+        (this._roadRoll || 0) +
+        (this._landRollBias || 0) * 0.14 * (1 - ease);
       this._springAxis("roll", rollTarget, dt, wn * 0.82, zeta);
       this.roll = clamp(this.roll, -0.95, 0.95);
     } else if (this.onGround) {
@@ -4382,9 +4440,14 @@ export class Vehicle {
         0,
         1
       );
-      const wn = lerp(14, 24, ease * ease) * (this.ai ? 1.15 : 1);
-      const zeta = lerp(crooked > 0.28 ? 1.05 : 1.25, crooked > 0.28 ? 1.35 : 1.6, ease);
-      const road = this._visPitch + (this._bodyPitch || 0);
+      const wn = lerp(20, 30, ease * ease) * (this.ai ? 1.15 : 1);
+      const zeta = lerp(crooked > 0.22 ? 0.58 : 0.78, crooked > 0.22 ? 0.72 : 0.98, ease);
+      const nod = clamp(this._landCompress || 0, 0, 0.28) * 0.7;
+      const axle = clamp(this._landAxleBias || 0, -1, 1);
+      const road =
+        this._roadPitch +
+        (this._bodyPitch || 0) +
+        nod * (axle > 0 ? 0.38 : -0.5);
       this._springAxis("pitch", road, dt, wn, zeta);
       if (
         ease > 0.92 &&

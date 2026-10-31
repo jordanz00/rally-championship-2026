@@ -149,6 +149,7 @@ check(
 check("config keeps the mirror small", /mirrorW:\s*(?:256|320|384)/.test(config) && /mirrorH:\s*(?:80|100|120)/.test(config));
 check("race locks visual tier mid-stage", /lockRaceQuality:\s*true/.test(config));
 check("lockRaceQuality honoured in scaler", /lockQuality = !!gfx\.lockRaceQuality/.test(perf));
+check("present path pins desktop look", /function lockRaceLook\(/.test(game) && /if \(!lockRaceLook\(\)\) \{/.test(game));
 check("tier can stretch mirror cadence", /_qualityMirrorEvery/.test(game));
 check(
   "mirror RT is fixed size, not the framebuffer",

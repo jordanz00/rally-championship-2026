@@ -38,7 +38,7 @@ check("no Math.random in jump model", !/Math\.random/.test(jump));
 check("lipGrain is a function of dist + lateral", /function lipGrain\(dist, lat/.test(jump));
 check("launch inherits chassis pitch/roll/line", /launch\(rawVelY, grade, springBoost = 0, body = \{\}\)/.test(jump));
 check("air integrates roll inertia", /this\.roll \+= this\.rollRate \* dt/.test(jump));
-check("land can bounce instead of glue", /bounce: Math\.min\(2\.8 \* dropMod, bounce\)/.test(jump));
+check("land can bounce instead of glue", /bounce: Math\.min\(3\.[28] \* dropMod, bounce\)/.test(jump));
 check("vehicle passes takeoff body state", /pitchRate: -\(this\.pitchRate \|\| 0\)/.test(vehicle));
 check("air roll is not sprung to zero", /wantRoll = clamp\(this\.jump\.roll/.test(vehicle));
 check("graded landings settle residual attitude", /_beginLandSettle\(/.test(vehicle));

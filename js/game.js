@@ -7,15 +7,15 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { Vehicle } from "./physics/vehicle.js?v=225";
+import { Vehicle } from "./physics/vehicle.js?v=227";
 import { getSurface } from "./physics/surfaces.js?v=60";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=114";
-import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=304";
+import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=308";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
 import { Track } from "./tracks/track.js?v=500";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=13";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=71";
-import { Opponent } from "./ai.js?v=288";
+import { Opponent } from "./ai.js?v=289";
 import { RallyAudio } from "./audio/engine.js?v=84";
 import { zoneFromSample } from "./audio/reverb-zones.js?v=1";
 import { CoDriver } from "./audio/codriver.js?v=49";
@@ -27,7 +27,7 @@ import {
   waitLoadingBarSettled,
   formatTime,
   placeOrdinal,
-} from "./ui/hud.js?v=58";
+} from "./ui/hud.js?v=59";
 import { initPlayOptions } from "./ui/play-options.js?v=5";
 import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=106";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=62";
@@ -54,7 +54,7 @@ import { createPerfTier } from "./gfx/perf-tier.js?v=57";
 import { createGameRenderer } from "./gfx/renderer-factory.js?v=8";
 import { RenderPipeline } from "./gfx/render-pipeline.js?v=2";
 import { QualityManager } from "./gfx/quality-manager.js?v=6";
-import { createFloorGuard, FLOOR_LADDER } from "./gfx/floor-guard.js?v=1";
+import { createFloorGuard, FLOOR_LADDER } from "./gfx/floor-guard.js?v=3";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { Spring1, Spring3, criticalDamp } from "./camera/camera-spring.js?v=1";
 import { createPerformanceMonitor } from "./debug/performance-monitor.js?v=4";
@@ -357,6 +357,16 @@ function isMacDesktopPlay() {
   } catch {
     return false;
   }
+}
+
+/**
+ * Desktop cinema look stays put for the whole stage. FloorGuard / TSR mode /
+ * QualityManager scale used to step down every late burst and never fully
+ * recover — lighting, textures and resolution “switched” then got worse.
+ * Phones still shed. Pause-menu IMAGE remains user-pinned.
+ */
+function lockRaceLook() {
+  return !!GFX.lockRaceQuality && !isPhonePlay();
 }
 
 /**
@@ -754,15 +764,13 @@ export class RallyGame {
     } else {
       // Desktop presents at 60. Do not trade the frame for a 30 Hz lock,
       // and do not shrink the framebuffer or the shadow atlas to get there.
-      // Sharper race buffer. Title keeps its own smaller cap. TSR still
-      // shades under this, and a late GPU steps the mode and the scale down.
+      // lockRaceQuality pins look for the stage — a late burst must not dump
+      // TSR / post / scale (that was the mid-lap lighting and mush).
       GFX.preferLock30 = false;
       GFX.forceLock30AtSettle = false;
       GFX.targetFps = 60;
       GFX.lockRenderFps = true;
-      // Soft scale may shed fill-rate to hold 60 — never lock desktop to 30.
-      // Floor stays high enough that spikes do not mush the whole stage soft.
-      GFX.softScaleMin = 0.86;
+      GFX.softScaleMin = 1;
       if (isMacDesktopPlay()) {
         // Retina-native race present. Soft scale covers spikes without a 30 Hz lock.
         GFX.maxPixelRatio = 2;
@@ -3604,11 +3612,16 @@ export class RallyGame {
    */
   _warmPackHeroesAfterGo() {
     if (isPhonePlay()) return;
-    for (let i = 0; i < GARAGE_CAR_IDS.length; i++) {
-      const id = GARAGE_CAR_IDS[i];
-      if (id === this.carId) continue;
-      prepareHeroCar(id).catch((err) => console.warn("[warm] pack hero", id, err));
-    }
+    if (this._packHeroWarmTimer) return;
+    // Do not parse garage GLBs on the GO frame — that is the hitch.
+    this._packHeroWarmTimer = setTimeout(() => {
+      this._packHeroWarmTimer = 0;
+      for (let i = 0; i < GARAGE_CAR_IDS.length; i++) {
+        const id = GARAGE_CAR_IDS[i];
+        if (id === this.carId) continue;
+        prepareHeroCar(id).catch((err) => console.warn("[warm] pack hero", id, err));
+      }
+    }, 480);
   }
 
   /**
@@ -4133,10 +4146,10 @@ export class RallyGame {
           // drive the scaler.
           const presentDelta = this._lastPresent > 0 ? now - this._lastPresent : frameMs;
           this._lastPresentDelta = presentDelta;
-          // One quality scaler owns DPR, shadow atlas, post, sky and mirror.
-          // Settling / present-frozen frames are shader/shadow compiles — do
-          // not sample them or the first corner starts on a tier the machine
-          // never earned. Refuse tier changes while countdown / freeze live.
+          // Cadence (60 vs even-30) may still adapt. Desktop look does not —
+          // FloorGuard / TSR / soft-scale were ratcheting the stage softer
+          // every late burst (lighting pop, texture reconstruct, mush).
+          // Settling / present-frozen frames are shader compiles — skip them.
           if (
             !settling &&
             !onTitle &&
@@ -4148,19 +4161,21 @@ export class RallyGame {
             }
             const t = this.perfTier.tick(presentDelta);
             if (t.changed) this._applyQualityTier(t);
-            this._adaptPresentBudget(presentDelta);
-            if (this.floorGuard) {
-              const fg = this.floorGuard.tick(presentDelta, !!(this.perfTier && this.perfTier.locked30));
-              if (fg.changed) this._applyFloorLevel(fg.level);
-            }
-            if (this.qualityMgr && (this._raceWarmFrames || 0) <= 0) {
-              const q = this.qualityMgr.tick(presentDelta);
-              if (q.changed) {
-                this._softRenderScale = q.renderScale;
-                if (this.pipeline && this.pipeline.setRenderScale) {
-                  this.pipeline.setRenderScale(q.renderScale);
+            if (!lockRaceLook()) {
+              this._adaptPresentBudget(presentDelta);
+              if (this.floorGuard) {
+                const fg = this.floorGuard.tick(presentDelta, !!(this.perfTier && this.perfTier.locked30));
+                if (fg.changed) this._applyFloorLevel(fg.level);
+              }
+              if (this.qualityMgr && (this._raceWarmFrames || 0) <= 0) {
+                const q = this.qualityMgr.tick(presentDelta);
+                if (q.changed) {
+                  this._softRenderScale = q.renderScale;
+                  if (this.pipeline && this.pipeline.setRenderScale) {
+                    this.pipeline.setRenderScale(q.renderScale);
+                  }
+                  this._onResize();
                 }
-                this._onResize();
               }
             }
           }
@@ -4271,6 +4286,7 @@ export class RallyGame {
           this._enforcePresentFreeze();
           this.hud.flashMessage("GO!");
           this.audio.countGo();
+          this._rushPunch = 1.6;
           this._warmPackHeroesAfterGo();
           // Lights-out punch. Present is forced through `_launchHold` and
           // `_goPresentHold`, so this is a start snap — not the hitch that
@@ -4347,6 +4363,7 @@ export class RallyGame {
     this._physAccum = Math.min((this._physAccum || 0) + dt, FIXED_DT * MAX_SUBSTEPS);
     const pack = this._racePack();
     if (this.perfMon) this.perfMon.beginPhysics();
+    let rushPass = false;
     while (this._physAccum >= FIXED_DT) {
       this._physAccum -= FIXED_DT;
       if (this.rush && this.player) {
@@ -4362,6 +4379,7 @@ export class RallyGame {
         this.player.rushHeat = dump.heat;
         this.player.rushDrive = dump.accel;
         this.player.rushFire = dump.fire;
+        if (dump.justPass) rushPass = true;
       }
       this.player.step(FIXED_DT, this.input, this.track);
       for (const o of this.opponents) o.step(FIXED_DT, this.player.progress, pack);
@@ -4372,6 +4390,13 @@ export class RallyGame {
       }
     }
     if (this.perfMon) this.perfMon.endPhysics();
+    if (rushPass && this.hud && this.state === "race") {
+      const now = this.raceTime || 0;
+      if (!(this._nearMissAt >= 0) || now - this._nearMissAt > 0.7) {
+        this._nearMissAt = now;
+        this.hud.flashMessage("NEAR MISS");
+      }
+    }
     this._feelPad(dt);
 
     this.raceTime += dt;
@@ -4600,6 +4625,10 @@ export class RallyGame {
     h.rushHeat = this.rush ? this.rush.heat : 0;
     h.rushFire = this.rush ? this.rush.fire : 0;
     h.rushCombo = this.rush ? this.rush.combo : 1;
+    if ((this._rushPunch || 0) > 0) {
+      this._rushPunch = Math.max(0, this._rushPunch - dt);
+    }
+    h.rushPunch = (this._rushPunch || 0) > 0;
     h.progressM = this.player.progress;
     h.dt = dt;
     const qHud = this.player._q;
@@ -6867,6 +6896,7 @@ export class RallyGame {
    * @param {number} presentDelta
    */
   _adaptPresentBudget(presentDelta) {
+    if (lockRaceLook()) return;
     const ms = Number.isFinite(presentDelta) ? presentDelta : 16.7;
     this._presentEma = (this._presentEma || 16.7) * 0.86 + Math.min(40, ms) * 0.14;
     const ema = this._presentEma;
@@ -6909,7 +6939,15 @@ export class RallyGame {
     this._floorScale = 1;
     this._floorParticlesOff = false;
     this._floorRivalsLite = false;
+    const restoreTsr = this._floorSaved && this._floorSaved.tsr;
     this._floorSaved = null;
+    if (this.tsr && typeof this.tsr.setMode === "function" && !this._tsrUserPinned) {
+      const want = restoreTsr || "quality";
+      if (this.tsr.mode !== want) this.tsr.setMode(want);
+    }
+    if (this.appear && !this._appearUserPinned && this._appearDefaultOn) {
+      this.appear.enabled = true;
+    }
   }
 
   /**
@@ -6917,6 +6955,14 @@ export class RallyGame {
    * @param {number} level
    */
   _applyFloorLevel(level) {
+    if (lockRaceLook()) {
+      if (this._floorLevel !== 0 || this._floorScale !== 1) {
+        this._floorLevel = 0;
+        this._floorScale = 1;
+        this._onResize();
+      }
+      return;
+    }
     const n = Math.max(0, Math.min(FLOOR_LADDER.length, level | 0));
     let scale = 1;
     let tsrPerf = false;
@@ -7640,7 +7686,8 @@ export class RallyGame {
       this.state === "countdown" ||
       this._presentFrozen ||
       (this._raceWarmFrames || 0) > 0 ||
-      (this._startStreamHold || 0) > 0
+      (this._startStreamHold || 0) > 0 ||
+      (this._goPresentHold || 0) > 0
     ) {
       return;
     }

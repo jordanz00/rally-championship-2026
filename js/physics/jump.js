@@ -76,6 +76,9 @@ export class JumpModel {
     this.aiHeightScale = aiScale;
     /** 0–1 when the car left from the outer edge of a lip. 0 is a clean line. */
     this.sideHit = 0;
+    this._landAxleBias = 0;
+    this._landRollBias = 0;
+    this._landRoadBias = 0;
   }
 
   /**
@@ -265,8 +268,16 @@ export class JumpModel {
     const path = Math.atan2(Math.max(0, -fallSpeed), Math.max(6, speed));
     const signed = this.noseUp - path;
     const full = Math.max(0.05, JUMP.mismatchFull);
-    const tailFirst = clamp(signed / full, 0, 1);
-    const noseFirst = clamp(-signed / full, 0, 1);
+    // Pad grade / axle step: front-high (uphill) loads the tail; front-low
+    // (downhill face) plants the nose. Same air pose, different roadway.
+    const frontH = Number(ctx.frontH);
+    const rearH = Number(ctx.rearH);
+    const axleDelta =
+      Number.isFinite(frontH) && Number.isFinite(rearH) ? frontH - rearH : 0;
+    const padGrade = Number.isFinite(ctx.padGrade) ? ctx.padGrade : 0;
+    const roadBias = clamp(axleDelta * 2.6 + padGrade * 0.9, -0.85, 0.85);
+    const tailFirst = clamp(signed / full + Math.max(0, roadBias), 0, 1);
+    const noseFirst = clamp(-signed / full + Math.max(0, -roadBias), 0, 1);
     const bad = Math.max(tailFirst, noseFirst);
     const impact = clamp(Math.max(0, -fallSpeed) / 14, 0, 1);
     this.lastLanding = bad;
@@ -295,14 +306,17 @@ export class JumpModel {
       bounce =
         fall *
         bounceAmp *
-        (0.08 + tailFirst * 0.92) *
+        (0.05 + tailFirst * 1.22) *
         (0.55 + energy * 0.55) *
         (0.7 + side * 0.45);
     }
     this.noseUpRate *= 0.9;
     this.rollRate *= side > 0.2 ? 0.96 : 0.88;
     // +1 rear dig (tail-first), −1 nose dig — suspension heave reads the hit.
-    this._landAxleBias = clamp(tailFirst - noseFirst, -1, 1);
+    this._landAxleBias = clamp(tailFirst - noseFirst + roadBias * 0.35, -1, 1);
+    const camber = Number(ctx.camber) || 0;
+    this._landRollBias = clamp((this.roll || 0) * 2.4 + camber * 1.8 + side * 0.35, -1, 1);
+    this._landRoadBias = roadBias;
     this.technique = 0;
     const weight = tailFirst * (0.5 + 0.5 * impact) + noseFirst * (0.72 + 0.28 * impact);
     const scrubBase = lerp(JUMP.flatScrub, JUMP.worstScrub, weight * techSoft);
@@ -311,9 +325,11 @@ export class JumpModel {
       scrub,
       upsetYaw: upset * JUMP.landUpsetYaw * 0.45 + this.roll * 0.22,
       upset,
-      bounce: Math.min(3.2 * dropMod, bounce),
+      bounce: Math.min(3.8 * dropMod, bounce),
       axleBias: this._landAxleBias,
-      compress: clamp(fall * 0.08 * (0.65 + bad * 0.7) * landMod, 0.02, 0.22),
+      rollBias: this._landRollBias,
+      roadBias,
+      compress: clamp(fall * 0.12 * (0.72 + bad * 0.85) * landMod * dropMod, 0.04, 0.32),
     };
   }
 

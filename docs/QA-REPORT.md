@@ -1,5 +1,65 @@
 # QA report — quality-control pass
 
+## CEO ship-order — rush read + GO hitch cut (2026-10-31)
+
+**Player moment:** GO fills the RUSH bar and punches it. A close pass says NEAR MISS. The first frame after lights-out does not parse garage GLBs or compile stream slices.
+
+**CFO cut:** No Forest densify. No second 60 fps scaler. No new cars or stages.
+
+**Shipped:** `justPass` → `NEAR MISS` (0.7 s cool). Rush bar 16 px + GO punch. Pack-hero warm waits 480 ms. Stream compile waits out `_goPresentHold`.
+
+**Boot:** `main.js?v=1255` · `game.js?v=1255` · `hud.js?v=59` · `game.css?v=84`
+
+**Proof:** `node tools/qa-rally-rush.mjs` · `node tools/qa-go-punch.mjs` · `node tools/qa-pov-hands.mjs` · `node tools/qa-static-audit.mjs`
+
+## POV hands — fingers wrap the rim (CEO close) (2026-10-31)
+
+**Player moment:** C into the seat. You see left and right hands holding 9/3. Fingers wrap the leather. Thumbs sit toward the hub. Wrist cuts are capped. Not a pair of loaves. Not a floating claw.
+
+**Cause:** The prior pass seated both hands with `+90° X`. That hid the wrap and showed the dorsum as a sausage. QA and the report called it shipped. Lab front view proved PARTIAL.
+
+**Shipped:** Opposite tube rolls (`+Y` / `−Y`) so the C-wrap faces the driver. Dark cuff caps the MakeHuman cut. Last PARTIAL closed — do not carry the loaf seat.
+
+**Boot:** `main.js?v=1254` · `game.js?v=1254` · `celica.js?v=308` · `pov-driver.js?v=31`
+
+**Proof:** `node tools/qa-pov-hands.mjs` · `node tools/qa-static-audit.mjs` · hand-grip-lab close + wide (fingers on the outside of the rim).
+
+## POV hands — live skinned grip on the rim (2026-10-31)
+
+**Player moment:** C into the seat. Real 26-bone hands sit at 9/3. Knuckles toward you. Fingers wrap the leather. Thumbs up on the crown. Not a floating claw, not a wrist disc.
+
+**Cause:** Apply-after-rebind desynced the skin from the bones, so the mesh floated off the rim. A π mount spin then double-flipped the already-mirrored right hand. The leftover 180° yaw showed the cuff.
+
+**Shipped:** Bind-safe bake (world into verts/bones, then rebind). Hole origin on the finger shafts. Mount keeps +Y world-up (no π flip). `seatGrip` rolls +90° X so the dorsum faces the driver. CC0 Godot XR Tools / MakeHuman `Hand_Nails` skins stay live.
+
+**Boot:** `main.js?v=1253` · `game.js?v=1253` · `celica.js?v=307` · `pov-driver.js?v=30` · `hand-grip-*.glb?v=8`
+
+**Proof:** `node tools/qa-pov-hands.mjs` PASS · `node tools/qa-static-audit.mjs` PASS · grip-check L/R PNGs · hand-grip-lab (hands on rim, wrap visible in side view).
+
+## Jump / landing — abrupt, variable plant (2026-10-31)
+
+**Player moment:** Leave a lip. The chassis coasts with the throw. Hit the pad. The car thuds — nose, tail, or one side — and the shocks load that way. A downhill face plants the nose; an uphill pad sits the tail. Soft identical glue landings are gone.
+
+**Cause:** Pad contact killed 86–90% of vy and clamped the hull to ±12 mm of the deck. Attitude sprang overdamped onto the road plane on the first frame. `_applyLandWheelTravel` was empty; all four hubs got the same heave. Roadway grade never entered `jump.land`.
+
+**Shipped:** Less vel absorb (0.58). Hull follows the land spring (up to 28 cm squash, one rebound). Per-corner heave from axle bias + roll + pad camber. `land()` takes front/rear heights and pad grade. From-air spring is underdamped on a mismatch so the rock stays. Air pitch/roll damp dropped so the throw still has attitude.
+
+**Boot:** `main.js?v=1250` · `game.js?v=1250` · `vehicle.js?v=226` · `jump.js?v=44` · `ai.js?v=289`
+
+**Proof:** `node tools/qa-jump-land-feel.mjs` · `qa-jump-variability` · `qa-jump-physics-fun` · `qa-static-audit`. Human: Desert 735 / 1418 / 1632 — each land should look different.
+
+## Mid-stage lighting / texture / resolution ratchet (2026-10-30)
+
+**Player moment:** Drive a stage. Lighting does not pop. Textures do not swap sharpness. Resolution does not get mushier the further you go.
+
+**Cause:** Three scalers kept dumping look after GO. FloorGuard walked TSR → 85/72/60% scale → post-low/off → shadows off. `_adaptPresentBudget` flipped TSR quality↔balanced↔performance and LOOK normals. QualityManager stepped `_softRenderScale` every ~6 late frames. `_initRenderer` had opened `GFX.softScaleMin = 0.86` on desktop, contradicting `lockRaceQuality`. Down was fast; recovery was 20 s or never.
+
+**Shipped:** `lockRaceLook()` — desktop + `GFX.lockRaceQuality` skips FloorGuard apply, TSR/LOOK adapt, and QualityManager scale for the whole stage. Cadence may still lock 30. Phones still shed. Settle restores TSR to quality unless the pause IMAGE menu pinned it. Desktop `softScaleMin` stays 1.
+
+**Boot:** `main.js?v=1249` · `game.js?v=1249` · `floor-guard.js?v=2`
+
+**Proof:** `node tools/qa-lock-race-look.mjs` PASS. `qa-60fps` / `qa-sprint76-perf` updated to the pin, not the old shed. Human: one Desert lap — grade, road texture, and sharpness must match lights-out.
+
 ## Spin-out / mid-air — controls stay with the car (2026-10-30)
 
 **Player moment:** Spin 90–360° on the dirt or in the air. Left is still left. Throttle is still the nose. The wheel does not reverse because you are facing the wrong way.
