@@ -1137,18 +1137,22 @@ float markNoise(vec2 p) {
 }
 void main() {
   if (vAlpha < 0.016) discard;
-  float across = vUv.x;
-  float along = vUv.y;
-  float edge = smoothstep(0.0, 0.16, across) * smoothstep(1.0, 0.84, across);
   float n1 = markNoise(vWorldXZ * 2.6);
   float n2 = markNoise(vWorldXZ * 8.4 + 4.0);
   float n3 = markNoise(vWorldXZ * 18.0 + 11.0);
-  float tread = abs(sin(along * 26.0 + n1 * 1.4));
-  float groove = smoothstep(0.12, 0.62, tread);
-  float grit = 0.72 + n1 * 0.18 + n2 * 0.1 + n3 * 0.06;
-  float a = vAlpha * edge * (0.62 + groove * 0.38) * grit;
+  float n4 = markNoise(vWorldXZ * 31.0 + 19.0);
+  float across = vUv.x + (n2 - 0.5) * 0.14 + (n4 - 0.5) * 0.08;
+  float along = vUv.y;
+  float edgeLo = 0.20 + n1 * 0.14 + n3 * 0.08;
+  float edgeHi = 0.80 - n2 * 0.14 - n4 * 0.08;
+  float edge = smoothstep(0.0, edgeLo, across) * smoothstep(1.0, edgeHi, across);
+  float chew = smoothstep(0.22, 0.62, n3 + n2 * 0.45);
+  float tread = abs(sin(along * 22.0 + n1 * 2.2 + n4 * 1.1));
+  float groove = smoothstep(0.10, 0.68, tread);
+  float grit = 0.68 + n1 * 0.2 + n2 * 0.12 + n3 * 0.08;
+  float a = vAlpha * edge * (0.58 + groove * 0.42) * grit * mix(0.78, 1.0, chew);
   if (a < 0.016) discard;
-  vec3 c = vColor * (0.78 + n1 * 0.16 + n2 * 0.08) * mix(0.7, 1.08, groove);
+  vec3 c = vColor * (0.76 + n1 * 0.18 + n2 * 0.1) * mix(0.68, 1.1, groove);
   gl_FragColor = vec4(c, a);
 }
 `;
@@ -1588,14 +1592,18 @@ export class TireMarks {
     const r = this._color.r * shade * jitter;
     const g = this._color.g * shade * jitter;
     const bl = this._color.b * shade * jitter;
-    const ax = ax0 + nx * halfWidth;
-    const az = az0 + nz * halfWidth;
-    const bx = ax0 - nx * halfWidth;
-    const bz = az0 - nz * halfWidth;
-    const cx = bx0 + nx * halfWidth;
-    const cz = bz0 + nz * halfWidth;
-    const dx = bx0 - nx * halfWidth;
-    const dz = bz0 - nz * halfWidth;
+    const wA = halfWidth * (0.84 + ((Math.abs(ax0 * 9.17 + az0 * 4.31) % 1) * 0.32));
+    const wB = halfWidth * (0.84 + ((Math.abs(bx0 * 9.17 + bz0 * 4.31) % 1) * 0.32));
+    const chewA = ((Math.abs(ax0 * 37.17 + az0 * 19.3) % 1) - 0.5) * halfWidth * 0.18;
+    const chewB = ((Math.abs(bx0 * 37.17 + bz0 * 19.3) % 1) - 0.5) * halfWidth * 0.18;
+    const ax = ax0 + nx * (wA + chewA);
+    const az = az0 + nz * (wA + chewA);
+    const bx = ax0 - nx * (wA - chewA);
+    const bz = az0 - nz * (wA - chewA);
+    const cx = bx0 + nx * (wB + chewB);
+    const cz = bz0 + nz * (wB + chewB);
+    const dx = bx0 - nx * (wB - chewB);
+    const dz = bz0 - nz * (wB - chewB);
     const verts = [ax, ay0, az, bx, ay0, bz, cx, by0, cz, cx, by0, cz, bx, ay0, bz, dx, by0, dz];
     for (let v = 0; v < 18; v++) this.pos[base + v] = verts[v];
     const uvs = [0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1];

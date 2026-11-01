@@ -4,7 +4,7 @@
  * WHO THIS IS FOR: Track.query (visual-only height sample), TireMarks (stamps)
  *   and the race render layer.
  * WHAT IT DOES: DeformField (deform-field.js) is the bounded tiled heightfield
- *   (0.2 m cells, 6.4 m tiles, LRU cap, per-surface deposit table, relaxation,
+ *   (0.125 m cells, 4.0 m tiles, LRU cap, per-surface deposit table, relaxation,
  *   wet boost, landing craters). WheelRutMesh renders it as ONE draw call:
  *   a pooled quad mesh (36k quads, 28 B/vertex) whose quads exist only for
  *   cells that carry depth/berm AND sit within MESH_RADIUS of the camera.
@@ -37,7 +37,8 @@ import {
   DEFORM_SURFACES,
   DEFORM_PHYSICS,
   trenchProfile,
-} from "./deform-field.js?v=1";
+  cellHash01,
+} from "./deform-field.js?v=2";
 
 export { DEFORM_SURFACES, DEFORM_PHYSICS, trenchProfile };
 
@@ -54,7 +55,8 @@ const CHUNK = 256;
 const MAX_UPLOAD_RANGES = 8;
 /** Lift above the exact road y so z-resolve never eats the rim. */
 const LIFT = 0.003;
-const NORMAL_GAIN = 1.25;
+const NORMAL_GAIN = 1.48;
+const JITTER = 0.34;
 
 /** Field with the legacy export name — drop-in for track.js. */
 export class WheelDeformField extends DeformField {}
@@ -131,7 +133,7 @@ export class WheelRutMesh {
       polygonOffsetUnits: -8,
     });
     this.mat.userData.kind = "prop";
-    armSurfaceNoise(this.mat, 0.28);
+    armSurfaceNoise(this.mat, 0.48);
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.receiveShadow = true;
@@ -157,6 +159,9 @@ export class WheelRutMesh {
     this._cd = 0;
     this._cx = 0;
     this._cz = 0;
+    this._jx = 0;
+    this._jz = 0;
+    this._jy = 0;
     /** Per-frame diagnostics for QA / perf probe. */
     this.stats = { quads: 0, meshedTiles: 0, uploadBytes: 0, lastFlushMs: 0, writes: 0 };
     field.onEvict = (t) => this._unmesh(t);
@@ -350,12 +355,13 @@ export class WheelRutMesh {
     this._cd = sn * 0.25 * DEPTH_Q;
   }
 
-  _colorAt(o, cd, pal, dep, wet) {
+  _colorAt(o, cd, pal, dep, wet, speck) {
     const col = this.col;
     let r;
     let g;
     let b;
     let a;
+    const k = 0.88 + speck * 0.24;
     if (cd < 0) {
       const s = Math.min(1, -cd / (dep.cap * 0.5 + 1e-4));
       const fl = pal.floor;
@@ -373,10 +379,16 @@ export class WheelRutMesh {
       b = pal.mid[2] + (lp[2] * wk - pal.mid[2]) * s;
       a = Math.min(0.9, s * 1.6);
     }
-    col[o] = (r * 255) | 0;
-    col[o + 1] = (g * 255) | 0;
-    col[o + 2] = (b * 255) | 0;
+    col[o] = (r * k * 255) | 0;
+    col[o + 1] = (g * k * 255) | 0;
+    col[o + 2] = (b * k * 255) | 0;
     col[o + 3] = (a * 255) | 0;
+  }
+
+  _jitter(ci, cj) {
+    this._jx = (cellHash01(ci, cj) - 0.5) * CELL * JITTER;
+    this._jz = (cellHash01(ci * 3 + 19, cj * 7 + 11) - 0.5) * CELL * JITTER;
+    this._jy = (cellHash01(ci * 5 + 3, cj * 11 + 2) - 0.5) * 0.0038;
   }
 
   _writeQuad(q, ix, iz, t, c) {
@@ -392,40 +404,66 @@ export class WheelRutMesh {
     const z0 = iz * CELL;
     // corner order: 0=(ix,iz) 1=(ix+1,iz) 2=(ix,iz+1) 3=(ix+1,iz+1)
     this._corner(ix, iz, fb);
-    const y0 = this._cy + this._cd + LIFT;
-    this._colorAt(oc, this._cd, pal, dep, wet);
+    this._jitter(ix, iz);
+    const xA = x0 + this._jx;
+    const zA = z0 + this._jz;
+    const y0 = this._cy + this._cd + LIFT + this._jy;
+    this._colorAt(oc, this._cd, pal, dep, wet, cellHash01(ix, iz));
     this._corner(ix + 1, iz, fb);
-    const y1 = this._cy + this._cd + LIFT;
-    this._colorAt(oc + 4, this._cd, pal, dep, wet);
+    this._jitter(ix + 1, iz);
+    const xB = x0 + CELL + this._jx;
+    const zB = z0 + this._jz;
+    const y1 = this._cy + this._cd + LIFT + this._jy;
+    this._colorAt(oc + 4, this._cd, pal, dep, wet, cellHash01(ix + 1, iz));
     this._corner(ix, iz + 1, fb);
-    const y2 = this._cy + this._cd + LIFT;
-    this._colorAt(oc + 8, this._cd, pal, dep, wet);
+    this._jitter(ix, iz + 1);
+    const xC = x0 + this._jx;
+    const zC = z0 + CELL + this._jz;
+    const y2 = this._cy + this._cd + LIFT + this._jy;
+    this._colorAt(oc + 8, this._cd, pal, dep, wet, cellHash01(ix, iz + 1));
     this._corner(ix + 1, iz + 1, fb);
-    const y3 = this._cy + this._cd + LIFT;
-    this._colorAt(oc + 12, this._cd, pal, dep, wet);
-    p[o] = x0;
+    this._jitter(ix + 1, iz + 1);
+    const xD = x0 + CELL + this._jx;
+    const zD = z0 + CELL + this._jz;
+    const y3 = this._cy + this._cd + LIFT + this._jy;
+    this._colorAt(oc + 12, this._cd, pal, dep, wet, cellHash01(ix + 1, iz + 1));
+    p[o] = xA;
     p[o + 1] = y0;
-    p[o + 2] = z0;
-    p[o + 3] = x0 + CELL;
+    p[o + 2] = zA;
+    p[o + 3] = xB;
     p[o + 4] = y1;
-    p[o + 5] = z0;
-    p[o + 6] = x0;
+    p[o + 5] = zB;
+    p[o + 6] = xC;
     p[o + 7] = y2;
-    p[o + 8] = z0 + CELL + 0;
-    p[o + 9] = x0 + CELL;
+    p[o + 8] = zC;
+    p[o + 9] = xD;
     p[o + 10] = y3;
-    p[o + 11] = z0 + CELL;
-    const gx = ((y1 + y3 - y0 - y2) / (2 * CELL)) * NORMAL_GAIN;
-    const gz = ((y2 + y3 - y0 - y1) / (2 * CELL)) * NORMAL_GAIN;
-    const inv = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
-    const nx = -gx * inv;
-    const ny = inv;
-    const nz = -gz * inv;
-    for (let v = 0; v < 4; v++) {
-      n[o + v * 3] = nx;
-      n[o + v * 3 + 1] = ny;
-      n[o + v * 3 + 2] = nz;
-    }
+    p[o + 11] = zD;
+    const invC = 1 / CELL;
+    const gx0 = (y1 - y0) * invC * NORMAL_GAIN;
+    const gz0 = (y2 - y0) * invC * NORMAL_GAIN;
+    const gx1 = (y1 - y0) * invC * NORMAL_GAIN;
+    const gz1 = (y3 - y1) * invC * NORMAL_GAIN;
+    const gx2 = (y3 - y2) * invC * NORMAL_GAIN;
+    const gz2 = (y2 - y0) * invC * NORMAL_GAIN;
+    const gx3 = (y3 - y2) * invC * NORMAL_GAIN;
+    const gz3 = (y3 - y1) * invC * NORMAL_GAIN;
+    const i0 = 1 / Math.sqrt(gx0 * gx0 + 1 + gz0 * gz0);
+    const i1 = 1 / Math.sqrt(gx1 * gx1 + 1 + gz1 * gz1);
+    const i2 = 1 / Math.sqrt(gx2 * gx2 + 1 + gz2 * gz2);
+    const i3 = 1 / Math.sqrt(gx3 * gx3 + 1 + gz3 * gz3);
+    n[o] = -gx0 * i0;
+    n[o + 1] = i0;
+    n[o + 2] = -gz0 * i0;
+    n[o + 3] = -gx1 * i1;
+    n[o + 4] = i1;
+    n[o + 5] = -gz1 * i1;
+    n[o + 6] = -gx2 * i2;
+    n[o + 7] = i2;
+    n[o + 8] = -gz2 * i2;
+    n[o + 9] = -gx3 * i3;
+    n[o + 10] = i3;
+    n[o + 11] = -gz3 * i3;
     this._touchChunk(q);
     this.stats.writes++;
   }

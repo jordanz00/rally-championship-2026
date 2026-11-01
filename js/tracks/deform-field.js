@@ -4,7 +4,7 @@
  * WHO THIS IS FOR: surface-deform.js (mesh + Track.query sampler), TireMarks
  *   (stamps), qa-road-deform.mjs (node simulation test). No THREE import so it
  *   runs headless.
- * WHAT IT DOES: world-space 0.2 m cell grid grouped into 32x32 tiles (6.4 m).
+ * WHAT IT DOES: world-space 0.125 m cell grid grouped into 32x32 tiles (4.0 m).
  *   Each tile owns quantised Uint8 depth + berm + pass-id and an Int16 base-y
  *   (mm, tile-relative). Tiles live in a Map with an LRU cap (MAX_TILES) so
  *   memory is bounded (~5 KB/tile). Per-surface DEPOSIT table decides what
@@ -23,8 +23,8 @@
  *   list; relaxation is round-robin time-sliced (RELAX_TILES_PER_STEP).
  */
 
-/** Cell edge (m) — finer than a tire so left/right tracks stay distinct. */
-export const CELL = 0.2;
+/** Cell edge (m) — finer than a tire so the trench is not a 20 cm brick. */
+export const CELL = 0.125;
 /** Cells per tile edge (power of two). */
 export const TILE_N = 32;
 export const TILE_CELLS = TILE_N * TILE_N;
@@ -79,18 +79,39 @@ export const DEPOSIT_BY_IDX = [];
 for (const id of Object.keys(DEPOSIT)) DEPOSIT_BY_IDX[DEPOSIT[id].idx] = DEPOSIT[id];
 
 /**
+ * Integer hash → 0..1. Stamp wander + watertight mesh jitter share this.
+ * @param {number} ix
+ * @param {number} iz
+ * @returns {number}
+ */
+export function cellHash01(ix, iz) {
+  let n = Math.imul(ix | 0, 374761393) + Math.imul(iz | 0, 668265263);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n >>> 0) & 1023) * 0.000977517;
+}
+
+/**
  * Lateral trench shape in normalised tire half-width space.
- * Negative = dig, positive = berm lip.
+ * Negative = dig, positive = berm lip. Smoothstep pieces — no linear kinks.
  * @param {number} u
  * @returns {number}
  */
 export function trenchProfile(u) {
-  const a = Math.abs(u);
-  if (a < 0.48) return -(0.92 + (1 - a / 0.48) * 0.14);
-  if (a < 0.9) return -0.92 * (1 - (a - 0.48) / 0.42);
-  if (a < 1.28) {
-    const t = 1 - Math.abs(a - 1.08) / 0.24;
-    return 0.78 * Math.max(0, t);
+  const a = u < 0 ? -u : u;
+  if (a < 0.72) {
+    const t = a / 0.72;
+    const s = t * t * (3 - 2 * t);
+    return -(1.06 - 0.18 * s);
+  }
+  if (a < 0.98) {
+    const t = (a - 0.72) / 0.26;
+    const s = t * t * (3 - 2 * t);
+    return -0.88 * (1 - s);
+  }
+  if (a < 1.42) {
+    const t = (a - 0.98) / 0.44;
+    const w = t < 0.5 ? t * 2 : (1 - t) * 2;
+    return 0.84 * w * w * (3 - 2 * w);
   }
   return 0;
 }
@@ -364,14 +385,14 @@ export class DeformField {
   _footprint(x, y, z, dirX, dirZ, hw, targetM, incM, dep, capM, pass, side, slide) {
     const latX = -dirZ;
     const latZ = dirX;
-    const r = Math.ceil((hw * 1.8) / CELL) + 1;
+    const r = Math.ceil((hw * 1.7) / CELL) + 1;
     const ix0 = Math.floor(x / CELL);
     const iz0 = Math.floor(z / CELL);
     const capU = Math.min(255, Math.floor(capM / DEPTH_Q + 1e-6));
     const bermCapU = Math.min(255, Math.floor(dep.bermCap / DEPTH_Q + 1e-6));
     const bermGain = dep.berm * (0.55 + 0.6 * slide);
     const sd = dep.idx;
-    const along2 = hw * 1.12;
+    const along2 = hw * 1.24;
     for (let di = -r; di <= r; di++) {
       for (let dj = -r; dj <= r; dj++) {
         const ix = ix0 + di;
@@ -381,15 +402,22 @@ export class DeformField {
         const latS = dx * latX + dz * latZ;
         const lat = latS < 0 ? -latS : latS;
         const along = Math.abs(dx * dirX + dz * dirZ);
-        if (lat > hw * 1.75 || along > along2) continue;
-        const lt = lat / hw;
+        const h = cellHash01(ix, iz);
+        const wander = (h - 0.5) * 0.3;
+        const hwEff = hw * (1.05 + wander * 0.2);
+        const latN = lat / (hwEff * 1.32);
+        const alongN = along / along2;
+        if (latN * latN + alongN * alongN > 1) continue;
+        const lt = lat / hw + wander * 0.2;
         const at = along / along2;
-        const profile = trenchProfile(lt > 1 ? lt * 1.05 : lt);
+        const profile = trenchProfile(lt);
         const edge = 1 - at * at;
-        const bowl = profile < 0 ? -profile * edge : 0;
-        // Wider than the trench-profile lip: 0.2 m cells need a ~0.3 m ridge to read.
-        const lipT = 1 - Math.abs(lt - 1.22) / 0.5;
-        const lip = lipT > 0 ? 0.8 * lipT * edge : 0;
+        const crumb = 0.84 + h * 0.32;
+        const bowl = profile < 0 ? -profile * edge * crumb : 0;
+        const lipP = profile > 0 ? profile * edge * (0.85 + h * 0.3) : 0;
+        const lipT = 1 - Math.abs(lt - 1.16) / 0.5;
+        const lipX = lipT > 0 ? 0.55 * lipT * edge : 0;
+        const lip = lipP > lipX ? lipP : lipX;
         if (bowl < 0.012 && lip < 0.04) continue;
         const t = this._tile(ix >> 5, iz >> 5, true);
         const ci = (ix & 31) | ((iz & 31) << 5);
@@ -481,7 +509,7 @@ export class DeformField {
     if (slide > 1) slide = 1;
     const pass = this.passId(src);
     const hw = halfW < 0.11 ? 0.11 : halfW;
-    const stepLen = CELL * (lod > 0 ? 0.9 : 0.48);
+    const stepLen = CELL * (lod > 0 ? 1.15 : 0.7);
     const steps = Math.max(1, Math.ceil(len / stepLen));
     const dy = b.y - a.y;
     for (let i = 0; i <= steps; i++) {
@@ -518,12 +546,19 @@ export class DeformField {
         const iz = iz0 + dj;
         const dx = (ix + 0.5) * CELL - x;
         const dz = (iz + 0.5) * CELL - z;
-        const rr = Math.sqrt(dx * dx + dz * dz) / rad;
-        if (rr > 1.4) continue;
+        const h = cellHash01(ix, iz);
+        const rr = Math.sqrt(dx * dx + dz * dz) / rad * (0.86 + h * 0.28);
+        if (rr > 1.45) continue;
         let bowl = 0;
         let lip = 0;
-        if (rr < 1) bowl = 1 - rr * rr;
-        if (rr > 0.78 && rr < 1.4) lip = 1 - Math.abs(rr - 1.05) / 0.35;
+        if (rr < 1) {
+          const t = 1 - rr;
+          bowl = t * t * (1.05 - 0.12 * h);
+        }
+        if (rr > 0.72 && rr < 1.45) {
+          const w = 1 - Math.abs(rr - 1.04) / 0.41;
+          lip = w > 0 ? w * w * (3 - 2 * w) * (0.85 + h * 0.25) : 0;
+        }
         if (bowl < 0.02 && lip < 0.05) continue;
         const t = this._tile(ix >> 5, iz >> 5, true);
         const ci = (ix & 31) | ((iz & 31) << 5);

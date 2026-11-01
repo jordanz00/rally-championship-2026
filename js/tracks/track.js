@@ -12,7 +12,7 @@ import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=260";
 import { roadMicroHeight } from "./road-micro.js?v=15";
-import { WheelDeformField, WheelRutMesh, DEFORM_PHYSICS } from "./surface-deform.js?v=15";
+import { WheelDeformField, WheelRutMesh, DEFORM_PHYSICS } from "./surface-deform.js?v=16";
 import { shoulderPadForScenery } from "./track-clearance.js?v=3";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=4";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=11";

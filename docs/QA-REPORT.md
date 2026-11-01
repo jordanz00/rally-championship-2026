@@ -1,5 +1,17 @@
 # QA report — quality-control pass
 
+## Organic tire-track road deform (2026-10-31)
+
+**Player moment:** Soft-road ruts read as dug dirt, not a 20 cm brick trench. Edges wander. Lips catch light. Marks chew instead of printing a rectangle.
+
+**Cause:** Axis-aligned 0.2 m quads, box footprints, piecewise-linear trench, one normal per quad.
+
+**Shipped:** 0.125 m cells. Smoothstep trench. Elliptical stamp + hash wander. Watertight corner jitter. Per-vertex normals. Ragged mark ribbons.
+
+**Boot:** `main.js?v=1256` · `game.js?v=1256` · `track.js?v=501` · `surface-deform.js?v=16` · `effects.js?v=107`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-road-deform.mjs` · `node tools/qa-static-audit.mjs`
+
 ## CEO ship-order — rush read + GO hitch cut (2026-10-31)
 
 **Player moment:** GO fills the RUSH bar and punches it. A close pass says NEAR MISS. The first frame after lights-out does not parse garage GLBs or compile stream slices.

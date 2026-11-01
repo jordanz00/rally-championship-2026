@@ -12,7 +12,7 @@ import { getSurface } from "./physics/surfaces.js?v=60";
 import { COURSES, COURSE_ORDER } from "./tracks/courses.js?v=114";
 import { prepareCelica, prepareTitleCar, prepareHeroCar, preparePhoneRaceCars, prepareRivalLods, isRivalGarageReady, loadCelicaFromFile, watchForCelicaFile, isGltfCar, isTitleCarReady, garageLoadSummary, createPlayerCar, createTitleCar, createRivalCar, createAttractLead, aiTintForIndex, applyWheelPose, chassisDeckEmbed, setBrakeLights, setHeadlights, setCockpitView, updateCockpit, updatePovHudFade, setCockpitMirrorMap, getPovRig, updatePovRoofClip, GARAGE_CAR_IDS, POV_HUD_LAYER, bindCarDirt, updateCarDirt, resetCarDirt } from "./cars/celica.js?v=308";
 import { updateCockpitMotion } from "./cars/cockpit-anim.js?v=10";
-import { Track } from "./tracks/track.js?v=500";
+import { Track } from "./tracks/track.js?v=501";
 import { holdGpuUploads, releaseGpuUploads, wantHiMaps } from "./tracks/pbr-stream.js?v=13";
 import { preparePropKit, prefetchForestHeroTrees, warmCrowdKit, warmFullTracksideKit, warmDesertExtras, loadTitleRocks, styleTitleRock } from "./tracks/prop-kit.js?v=71";
 import { Opponent } from "./ai.js?v=289";
@@ -29,7 +29,7 @@ import {
   placeOrdinal,
 } from "./ui/hud.js?v=59";
 import { initPlayOptions } from "./ui/play-options.js?v=5";
-import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=106";
+import { Dust, TireMarks, ImpactSparks, BoostWake } from "./effects.js?v=107";
 import { resolveVehicleCollisions } from "./physics/collide.js?v=62";
 import { createSky, applySky, tickSky, setSkyQuality, isSkyReady } from "./sky.js?v=53";
 import { applyEnvMap, setShowcaseReflectivity, armRaceCarReflections } from "./gfx/pbr.js?v=69";
@@ -135,7 +135,7 @@ function raceTunnelLighting(courseId) {
 import { Input } from "./input.js?v=44";
 import { GhostRecorder, GhostPlayer } from "./telemetry/ghost.js?v=2";
 import { ReplayTape, BroadcastDirector } from "./cinema/broadcast-replay.js?v=11";
-import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=58";
+import { AttractReel, paintAttractFx } from "./cinema/attract-reel.js?v=59";
 import { LiveTelemetry } from "./telemetry/live-qa.js?v=1";
 import { TouchControls, isPhonePlay } from "./ui/touch-controls.js?v=7";
 import {
