@@ -39,6 +39,7 @@ export class Hud {
     this.rush = document.getElementById("hud-rush");
     this.rushFill = document.getElementById("hud-rush-fill");
     this.rushLabel = this.rush ? this.rush.querySelector(".label") : null;
+    if (this.rush) this.rush.hidden = true;
     this.pace = document.getElementById("hud-pace");
     this.trans = document.getElementById("hud-trans");
     this.hudRoot = document.getElementById("screen-hud");
@@ -104,19 +105,7 @@ export class Hud {
       this.speed.textContent = speedTxt;
     }
     this.speed.dataset.fast = "0";
-    if (this.rush && this.rushFill) {
-      const meter = Math.max(0, Math.min(1, s.rush != null ? s.rush : 0));
-      const heat = s.rushHeat != null ? s.rushHeat : 0;
-      const fire = s.rushFire != null ? s.rushFire : 0;
-      this.rush.hidden = false;
-      this.rushFill.style.transform = `scaleX(${meter.toFixed(3)})`;
-      this.rush.dataset.hot = heat > 0.35 ? "1" : "0";
-      this.rush.dataset.fire = fire > 0.45 ? "1" : "0";
-      this.rush.dataset.punch = s.rushPunch ? "1" : "0";
-      if (this.rushLabel) {
-        this.rushLabel.textContent = fire > 0.45 ? "ON FIRE" : "RUSH";
-      }
-    }
+    if (this.rush) this.rush.hidden = true;
     const gearTxt = s.gear === 0 ? "N" : String(s.gear);
     if (this._gearTxt !== gearTxt) {
       this._gearTxt = gearTxt;

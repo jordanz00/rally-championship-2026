@@ -167,6 +167,31 @@ function hoistBar(g, w, h, color) {
   g.fillRect(0, 0, Math.max(18, w * 0.042), h);
 }
 
+/** @param {CanvasRenderingContext2D} g @param {number} w @param {number} h @param {string[]} colors */
+function bandsV(g, w, h, colors) {
+  const n = colors.length;
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = colors[i];
+    g.fillRect((w / n) * i, 0, w / n + 1, h);
+  }
+}
+
+/** @param {CanvasRenderingContext2D} g @param {number} w @param {number} h @param {string[]} colors */
+function bandsH(g, w, h, colors) {
+  const n = colors.length;
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = colors[i];
+    g.fillRect(0, (h / n) * i, w, h / n + 1);
+  }
+}
+
+/** Nordic cross. Hoist is the left edge. */
+function nordicCross(g, w, h, color, arm) {
+  g.fillStyle = color;
+  g.fillRect(w * 0.28, 0, arm, h);
+  g.fillRect(0, h * 0.38, w, arm);
+}
+
 /**
  * Stage start avenue — ten unique festive faces, one per pole.
  * @param {string} scenery
@@ -174,7 +199,10 @@ function hoistBar(g, w, h, color) {
  */
 export function startFlagKinds(scenery) {
   if (scenery === "desert") {
-    return ["gold", "orange", "maroon", "navy", "checkers", "sunrise", "ember", "ivory", "medina", "yellow"];
+    return [
+      "jp", "it", "fr", "de", "es", "se",
+      "ke", "br", "ie", "nl", "fi", "be",
+    ];
   }
   if (scenery === "forest") {
     return ["green", "gold", "white", "red", "maroon", "jade", "lime", "ivory", "tricolor", "orange"];
@@ -189,7 +217,8 @@ export function startFlagKinds(scenery) {
 }
 
 /**
- * Rally / event flag faces. Festive originals — not national lockups.
+ * Rally / event flag faces, plus the Desert gate set of national flags.
+ * Simplified geometry so they read at speed. Not a licensed sponsor lockup.
  * @type {Record<string, function(CanvasRenderingContext2D, number, number): void>}
  */
 const FLAG_PAINT = {
@@ -204,6 +233,82 @@ const FLAG_PAINT = {
         g.fillRect(x * cw, y * rh, cw + 0.6, rh + 0.6);
       }
     }
+  },
+  /** Japan */
+  jp(g, w, h) {
+    g.fillStyle = "#f7f4ee";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#bc002d";
+    g.beginPath();
+    g.arc(w * 0.5, h * 0.5, h * 0.28, 0, Math.PI * 2);
+    g.fill();
+  },
+  /** Italy */
+  it(g, w, h) {
+    bandsV(g, w, h, ["#009246", "#f4f5f0", "#ce2b37"]);
+  },
+  /** France */
+  fr(g, w, h) {
+    bandsV(g, w, h, ["#0055a4", "#f4f5f0", "#ef4135"]);
+  },
+  /** Germany */
+  de(g, w, h) {
+    bandsH(g, w, h, ["#000000", "#dd0000", "#ffce00"]);
+  },
+  /** Spain */
+  es(g, w, h) {
+    g.fillStyle = "#c60b1e";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#ffc400";
+    g.fillRect(0, h * 0.25, w, h * 0.5);
+  },
+  /** Sweden */
+  se(g, w, h) {
+    g.fillStyle = "#006aa7";
+    g.fillRect(0, 0, w, h);
+    nordicCross(g, w, h, "#fecc00", w * 0.1);
+  },
+  /** Finland */
+  fi(g, w, h) {
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, 0, w, h);
+    nordicCross(g, w, h, "#003580", w * 0.1);
+  },
+  /** Ireland */
+  ie(g, w, h) {
+    bandsV(g, w, h, ["#169b62", "#ffffff", "#ff883e"]);
+  },
+  /** Belgium */
+  be(g, w, h) {
+    bandsV(g, w, h, ["#000000", "#fdda24", "#ef3340"]);
+  },
+  /** Netherlands */
+  nl(g, w, h) {
+    bandsH(g, w, h, ["#ae1c28", "#ffffff", "#21468b"]);
+  },
+  /** Kenya — bands and fimbriation, shield omitted so it reads at speed */
+  ke(g, w, h) {
+    bandsH(g, w, h, ["#000000", "#bb0000", "#006600"]);
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, h * 0.3, w, h * 0.06);
+    g.fillRect(0, h * 0.64, w, h * 0.06);
+  },
+  /** Brazil */
+  br(g, w, h) {
+    g.fillStyle = "#009c3b";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#ffdf00";
+    g.beginPath();
+    g.moveTo(w * 0.5, h * 0.08);
+    g.lineTo(w * 0.92, h * 0.5);
+    g.lineTo(w * 0.5, h * 0.92);
+    g.lineTo(w * 0.08, h * 0.5);
+    g.closePath();
+    g.fill();
+    g.fillStyle = "#002776";
+    g.beginPath();
+    g.arc(w * 0.5, h * 0.5, h * 0.2, 0, Math.PI * 2);
+    g.fill();
   },
   red(g, w, h) {
     fillV(g, w, h, "#dc1c22", "#8a1016");
@@ -753,6 +858,8 @@ export function createClothFlag(opts) {
   group.name = kind === "checkers" ? "cloth-flag-finish" : "cloth-flag-start";
   group.position.set(opts.x, opts.y, opts.z);
   group.rotation.y = ry;
+  const prominence = opts.scale > 1 ? opts.scale : 1;
+  if (prominence !== 1) group.scale.setScalar(prominence);
   group.userData.clothFlag = true;
   group.userData.envProp = false;
   group.userData.clothSeed = seed;

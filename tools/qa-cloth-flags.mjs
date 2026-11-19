@@ -27,10 +27,10 @@ check("start kinds are festive per stage", /startFlagKinds/.test(trackSrc) && /s
 check("finish plants cloth flags", /_plantClothFlags\(finish, "FINISH"\)/.test(trackSrc));
 check("finish plants checker row of 10", /_plantFinishCheckerRow/.test(trackSrc));
 check(
-  "finish forces 5 checkers per verge",
-  /alongSlots\.length/.test(trackSrc) && /Forced verge/.test(trackSrc) && /five poles per verge/.test(trackSrc),
-  "every stage must plant 5+5 even when clearance fails"
+  "finish still plants when the ribbon is tight",
+  /alongSlots\.length/.test(trackSrc) && /Forced verge/.test(trackSrc)
 );
+check("desert finish mixes nations with checkers", /nations\[planted % nations\.length\]/.test(trackSrc));
 check("start and finish plant cloth gantry banners", /createGantryBanner/.test(trackSrc) && /_addGantry\(start, "START"\)/.test(trackSrc) && /_addGantry\(finish, "FINISH"\)/.test(trackSrc));
 check("overhead banner is not a 1-poly PlaneGeometry card", !/new THREE\.PlaneGeometry\(span, bannerH\)/.test(trackSrc));
 check("Kenney gate flags removed", !/flagKind/.test(trackSrc) && !/propGeometry\("flag_checkers"\)/.test(trackSrc));
@@ -106,8 +106,8 @@ const forest = stageWind("forest", 1.2);
 check("desert wind stronger than forest", Math.hypot(desert.x, desert.z) > Math.hypot(forest.x, forest.z));
 const desertKinds = startFlagKinds("desert");
 const forestKinds = startFlagKinds("forest");
-check("start avenue is ten unique faces", desertKinds.length === 10 && new Set(desertKinds).size === 10);
-check("forest start is not a red pair", forestKinds.length === 10 && forestKinds.some((k) => k !== "red"));
+check("desert start is twelve national flags", desertKinds.length === 12 && desertKinds.includes("jp") && desertKinds.includes("ke") && desertKinds.includes("br"));
+check("forest start stays a festive set of ten", forestKinds.length === 10 && forestKinds.includes("jade"));
 check("stages use different festive sets", desertKinds.join(",") !== forestKinds.join(","));
 
 const a = stageWind("desert", 1.2, { phase: 0, gustPhase: 0 });
@@ -198,9 +198,14 @@ for (let i = 3; i < f0.cur.length; i += 3) {
 }
 check("independent cloth motion (not synced)", diverge > 0.01);
 
-const alongMatch = trackSrc.match(/alongSlots\s*=\s*\[([^\]]+)\]/);
-const slots = alongMatch ? alongMatch[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
-check("finish row has five along slots × two sides (=10)", slots.length === 5);
+check(
+  "other stages still finish with five checkers a side",
+  /: \[-1\.15, 0\.55, 2\.25, 3\.95, 5\.65\]/.test(trackSrc)
+);
+check(
+  "desert finish row is a long national line",
+  /\[-12, -7\.2, -2\.4, 2\.4, 7\.2, 12, 16\.5\]/.test(trackSrc)
+);
 
 const tautBanner = createGantryBanner({
   label: "START",

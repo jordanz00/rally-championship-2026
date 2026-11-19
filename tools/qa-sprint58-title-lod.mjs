@@ -38,17 +38,18 @@ const rivalStart = celica.indexOf("export function createRivalCar");
 const titleSlice = titleStart >= 0 && rivalStart > titleStart ? celica.slice(titleStart, rivalStart) : "";
 
 check(
-  "prepareTitleCar loads rival LOD first (hero is fallback)",
+  "prepareTitleCar loads the hero before the rival LOD",
   /export async function prepareTitleCar/.test(celica) &&
-    /await tryRivalGltf\(chassis\)/.test(celica) &&
-    celica.indexOf("await tryRivalGltf(chassis)") < celica.indexOf("await tryLocalGltf(chassis)")
+    /if \(await tryLocalGltf\(chassis\)\) return/.test(celica) &&
+    celica.indexOf("if (await tryLocalGltf(chassis)) return") <
+      celica.indexOf("if (!templates[chassis]) await tryRivalGltf(chassis)")
 );
 check(
-  "createTitleCar prefers rival LOD templates, hides cockpit",
-  /rivalTemplates\[chassis\]/.test(titleSlice) &&
-    titleSlice.indexOf("rivalTemplates[chassis]") < titleSlice.indexOf("templates[chassis]") &&
+  "createTitleCar prefers the hero GLB and hides the cockpit",
+  /const hero = templates\[chassis\]/.test(titleSlice) &&
+    /const template = hero \|\| lod/.test(titleSlice) &&
     /hideHeavyInterior\(clone\)/.test(celica) &&
-    /titleLod = true/.test(titleSlice)
+    /titleLod = !hero/.test(titleSlice)
 );
 check(
   "title boot shows the attract car, garage warms after",

@@ -1,5 +1,191 @@
 # QA report — quality-control pass
 
+## Desert groves — procedural, same heroes (2026-11-18)
+
+**Player moment:** Desert opens and closes in stands of quiver trees, boulders, and scrub, with empty sand between them.
+
+**Shipped:** A noise field places the existing Namaqualand meshes along the stage after the corridor scrub. The gate and finish keep their own rows. No stand-in shapes.
+
+**Boot:** `main.js?v=1287` · `game.js?v=1285` · `track.js?v=516`
+
+**Proof:** `node --check js/tracks/track.js`
+
+## Desert ground — photograph, not flat orange (2026-11-18)
+
+**Player moment:** The Desert chase view shows sand grain instead of one painted orange sheet.
+
+**Shipped:** With the desert photos loaded, land and ribbon vertex colours stay near neutral so they no longer multiply the albedo into a single hue. The road material colour is white. Dune shade is value only.
+
+**Boot:** `main.js?v=1286` · `game.js?v=1284` · `track.js?v=515` · `pbr.js?v=71`
+
+**Tile:** Desert land and road project the sand photo at its 38 m tile, so the tire tracks are large enough to see from the chase camera.
+
+**Proof:** `node --check js/tracks/track.js`
+
+## Art direction — real materials on the corners (2026-11-18)
+
+**Player moment:** Hairpins and sweepers show photogrammetry boulders, moss, and logs. Alpine houses and tents keep their authored textures.
+
+**Shipped:** Forest and Mountain drift landmarks no longer plant flat boxes. The mountain village uses the house and tent kit materials. Mountain load now includes the two boulder heroes and a moss set so those corners have a mesh when the stage builds. Desert opening rocks and quiver trees sit just past the flag line, close enough for the chase camera. Forest ground and road PBR are still missing; this pass does not fake them.
+
+**Boot:** `main.js?v=1283` · `game.js?v=1281` · `track.js?v=512` · `prop-kit.js?v=72`
+
+**Proof:** `node --check js/tracks/track.js` · `node --check js/tracks/prop-kit.js`
+
+## Three stages — slide and drive (2026-11-18)
+
+**Player moment:** Desert sand, Forest dirt, and Mountain tarmac all take a slide and still catch. Hairpins are banked. The mountain road is not lined with plaster boxes.
+
+**Shipped:** Tarmac holds a rally slide instead of snapping straight. Sand sinks less and carries the drift. Dirt and gravel hang longer. The three stages are wider, tight hooks open from 52 m to 58 m, hairpins bank at 0.12. Mountain barriers sit further off the ribbon and only use the real barrier mesh. The village no longer falls back to cubes.
+
+**Boot:** `main.js?v=1279` · `game.js?v=1277` · `vehicle.js?v=231` · `courses.js?v=115` · `track.js?v=508`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-play-lane.mjs` PASS
+
+## Opening presentation (2026-11-18)
+
+**Player moment:** The game opens on Lead Developer Jordan Zabady, then the Celica, then Desert, Forest, and Mountain, then the title.
+
+**Shipped:** Each card fades in and out. On desktop the car card opens onto the live showroom once the hero is up. Click, Skip, or Enter leaves the sequence on the title. Phones stay on the cards and still wait for PRESS START before the engine.
+
+**Boot:** `main.js?v=1278` · `game.js?v=1276` · `game.css?v=95` · `intro-present.js?v=3`
+
+**Car and stages:** The Celica is a letterboxed hold on the live car. Desert, Forest, and Mountain are full cards (sky and ground) that fade up from black, so the showroom never shows through a stage title.
+
+**Proof:** `node --check js/ui/intro-present.js` · headed title at `index.html?v=1277`
+
+## Desert stage 1 — flags and place (2026-11-18)
+
+**Player moment:** The Desert start and finish read as a rally gate. National flags line both ends. Rocks, quiver trees, towers, and light posts replace the plaster boxes.
+
+**Cause:** The opening straight was flat-shaded cubes. Flags were invented event colors, small, and the finish was checkers only.
+
+**Shipped:** Twelve national flags (Japan, Italy, France, Germany, Spain, Sweden, Kenya, Brazil, Ireland, Netherlands, Finland, Belgium), larger, at the Desert start and again at the finish with a checker pair so the line still reads as a finish. Start and finish bands use the existing desert hero rocks and plants plus banner towers and light posts. Other stages keep their festive flags.
+
+**Boot:** `main.js?v=1275` · `game.js?v=1275` · `track.js?v=507` · `flag-cloth.js?v=18`
+
+**Proof:** `node --check js/tracks/flag-cloth.js` · `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-cloth-flags.mjs`
+
+## Jump cones removed (2026-11-18)
+
+**Player moment:** The car leaves a jump as one shell. No cones drop off the bottom.
+
+**Cause:** Sketchfab `x0_suspension_*` cones sit next to the wheels, not on them. In the air the hubs move with the body and the cones stay behind.
+
+**Shipped:** Those cones are removed when a car is built. Calipers and wishbones stay.
+
+**Boot:** `main.js?v=1274` · `game.js?v=1274` · `celica.js?v=311` · `ai.js?v=294`
+
+**Proof:** `node --check js/cars/celica.js`
+
+## Jump landing no longer reverses the car (2026-11-18)
+
+**Player moment:** Land a jump on the gas. The car keeps going forward. The wheel does not swap directions.
+
+**Cause:** In the air the nose could yaw past backwards, so throttle drove back down the stage. A steep landing also turned fall speed into a backward shove. Both stuck until reset.
+
+**Shipped:** Airborne yaw stays within 72° of the takeoff heading. A landing contact cannot reverse forward speed, and throttle after a landing cannot be driven into reverse.
+
+**Boot:** `main.js?v=1273` · `game.js?v=1273` · `vehicle.js?v=230` · `ai.js?v=293`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-spin-controls.mjs` · contact sweep 0 reversals · forced air yaw held at the limit
+
+## Title attract — held beauty shot (2026-11-01)
+
+**Player moment:** The title holds a front three-quarter of the lacquered Celica on dark asphalt, under the clouds, with the logo clear of the roof. PRESS START is type, not a yellow brick. The car does not swap when you click.
+
+**Cause:** The attract was a high, far turntable. A pale sand shelf cut the horizon. The start control was a plastic yellow button that a later CSS rule kept winning.
+
+**Shipped:** Camera holds ~6.8 m, FOV 30, a few degrees of sway. Asphalt pad reaches past the fog so the sand shelf is not the horizon. Sky stays the cloud photo. The winning `#btn-start` rule is transparent with a gold underline.
+
+**Still open:** A thin pale line remains where the sky photo meets the pad. Fogging the sky to hide it also ate the clouds, so that cut stays.
+
+**Boot:** `main.js?v=1272` · `game.js?v=1272` · `game.css?v=90`
+
+**Proof:** `node --check js/game.js` · headed title at `index.html?shot=7` (`titleHero: true`, no boot error)
+
+## Photo grade, catchable rack, lit gravel (2026-11-01)
+
+**Player moment:** Desert noon has color and a sun glint on the paint. The road stays pale and shows gravel relief. A corner is a placed turn, and a slide throws a visible roost. No teal grade. No speed fringe. No RUSH bar.
+
+**Cause:** The grade was flattened to 1.0 after the teal look was cut, so the stage went gray. Road projection still multiplied albedo down to 0.84. The rack snap (1.28) still threw the car off the paint at the slower cruise. Dust sprites capped at 9 px.
+
+**Shipped:** Stage photograph (Desert sat 1.08 / contrast 1.06 / bloom 0.22, Lakeside quieter, teal and chroma stay 0). Road tint floor 0.96, stronger dirt normals. Steer snap 0.96, slide needs more lock, countersteer stronger. Slide dust larger. Rush meter stays hidden.
+
+**Boot:** `main.js?v=1267` · `game.js?v=1267` · `vehicle.js?v=229` · `postfx.js?v=51` · `pbr.js?v=70` · `effects.js?v=109` · `track.js?v=506`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs` · `tools/qa-rally-rush.mjs` · `node tools/qa-texture-layers.mjs` · `node tools/qa-static-audit.mjs`
+
+## Subtle high-res tire grooves (2026-11-01)
+
+**Player moment:** Soft roads take a tire print. A shallow tread, a low lip, the road still showing through. Not a dark trench.
+
+**Cause:** The 3D stamp used the decal width as a half-width, so each tire dug a groove about 70 cm across and up to 10 cm deep. 6 cm cells made that ditch look faceted. The floor color was nearly black.
+
+**Shipped:** Contact patch ~23–26 cm. Caps 1.6–5.2 cm. Berms under 2 cm. 3.125 cm cells. Floor tint stays close to the soil. `deform-field.js?v=4` · `surface-deform.js?v=19` · `effects.js?v=109`.
+
+**Boot:** `main.js?v=1265` · `game.js?v=1265` · `track.js?v=506`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-road-deform.mjs` · `node tools/qa-static-audit.mjs`
+
+## Title attract — one lacquered hero (2026-11-01)
+
+**Player moment:** Open the game. The emblem is there immediately. The car fades in once, already the reflective hero. It does not pop from a dull stand-in when you click.
+
+**Cause:** Desktop `prepareTitleCar` fetched the rival LOD first and painted it. The hero GLB and the showroom reflections landed later, and PRESS START lifted the pad on that same click. A 900 ms IBL delay left the first car matte.
+
+**Shipped:** Desktop title waits for `gt4.glb` (the fetch starts in `index.html` so it overlaps engine parse). The canvas stays behind a veil until the hero is env-mapped, cube-primed, and shader-compiled, then fades in. Phones still use the LOD. Click no longer unveils an unfinished car.
+
+**Boot:** `main.js?v=1264` · `game.js?v=1264` · `celica.js?v=310` · `ai.js?v=292` · `game.css?v=88`
+
+**Proof:** `node tools/qa-sprint58-title-lod.mjs` · `node tools/qa-sprint84-title-showroom.mjs --static` · `node tools/qa-static-audit.mjs`
+
+## Slower cruise, easier corners (2026-11-01)
+
+**Player moment:** Flat-out pace is about 25% lower, so a corner arrives slower and the rack has more lock. Launch from the line is the same.
+
+**Cause:** Cruise is power vs air drag (~180 km/h). The 255 km/h ceiling never bound, so cutting `maxSpeedKmh` would not slow the car.
+
+**Shipped:** Aero drag × 1/0.75³ on every car. Pack stays the same race, just slower. `vehicle.js?v=228`.
+
+**Boot:** `main.js?v=1260` · `game.js?v=1260` · `ai.js?v=290`
+
+**Proof:** `node tools/qa-static-audit.mjs`
+
+## High-res tire ruts (2026-11-01)
+
+**Player moment:** Soft-road line is a dug groove, not a 12 cm brick stack. No shimmer, no cracked quads.
+
+**Cause:** 12.5 cm cells + 34% XZ jitter crossed quads and opened gaps. Transparent `depthWrite:false` ruts z-sparkled on the ribbon.
+
+**Shipped:** 6.25 cm cells. Grid-aligned mesh. Shared neighbor normals. Opaque depth-written dirt. Tighter stamp wander.
+
+**Boot:** `main.js?v=1259` · `track.js?v=503` · `surface-deform.js?v=17` · `deform-field.js?v=3`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-road-deform.mjs` · `node tools/qa-static-audit.mjs`
+
+## Cut Burnout look + RUSH gauge (2026-11-01)
+
+**Player moment:** Drive. No teal-amber grade. No speed fringe. No RUSH bar, NEAR MISS, or ON FIRE. Speedo and tach stay.
+
+**Shipped:** Flat `burnoutLookFor`. Rush tank not stepped. Dump / wake / hiss zeroed. `#hud-rush` hidden.
+
+**Boot:** `main.js?v=1258` · `game.js?v=1258` · `hud.js?v=60` · `game.css?v=85` · `burnout-look.js?v=8`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-burnout-look.mjs` · `tools/qa-rally-rush.mjs` · `node tools/qa-static-audit.mjs`
+
+## Desert lighting / lighter roads (2026-11-01)
+
+**Player moment:** First-stage noon. Sun still sculpts. Shade is sky-lit, not ink. The ribbon reads pale packed dirt, not charcoal. Car contact shadows stay soft.
+
+**Cause:** Burnout contrast 1.20 + crushed desert fill + organic tint `k=0.64` (then ×0.64 blotches). Race present forced hard PCF and a 0.016 normal-bias cap, so the deck self-shadowed dark.
+
+**Shipped:** Desert grade 1.06 contrast. Shade floor on fill/ambient/hemi. Ribbon tints start near 0.94. Soft PCF + authored normal bias. Forest/Mountain pulled the same way, Lakeside left quiet.
+
+**Boot:** `main.js?v=1257` · `game.js?v=1257` · `track.js?v=502` · `lighting-rig.js?v=38` · `burnout-look.js?v=7`
+
+**Proof:** `node --experimental-loader ./tools/qa-strip-query-loader.mjs tools/qa-lighting-harsh.mjs` · `tools/qa-burnout-look.mjs` · `node tools/qa-static-audit.mjs`
+
 ## Organic tire-track road deform (2026-10-31)
 
 **Player moment:** Soft-road ruts read as dug dirt, not a 20 cm brick trench. Edges wander. Lips catch light. Marks chew instead of printing a rectangle.

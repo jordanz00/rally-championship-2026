@@ -229,7 +229,7 @@ export const FOREST_ROCK_KINDS = Object.freeze([
 
 /**
  * Forest close-range hero props — Poly Haven CC0 photogrammetry, 1k PBR.
- * Procedural placement only. Not used on Desert / Mountain / Lakeside.
+ * Procedural placement only. Mountain hairpins use the boulders. Trees stay Forest.
  */
 export const FOREST_HERO_KINDS = Object.freeze([
   "forest_hero_boulder_a",
@@ -402,7 +402,14 @@ const FOREST_NATURE = Object.freeze([
   "plant_bushFern",
   "log_large",
 ]);
-const MOUNTAIN_NATURE = Object.freeze([...FOREST_NATURE, "tent_detailedClosed", "house-alpine"]);
+const MOUNTAIN_NATURE = Object.freeze([
+  ...FOREST_NATURE,
+  "forest_hero_boulder_a",
+  "forest_hero_boulder_b",
+  "forest_hero_moss_set_a",
+  "tent_detailedClosed",
+  "house-alpine",
+]);
 
 /**
  * Target / clamp heights in metres (bounding-box Y extent after footing).

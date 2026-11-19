@@ -10,11 +10,11 @@ import { jumpSeg } from "./jump-kit.js?v=1";
 
 /** Slide ribbon — tighter than the old speed highway, still catchable. */
 const W = {
-  start: 16.6,
-  open: 16.0,
-  drift: 15.4,
-  tight: 15.0,
-  finish: 16.8,
+  start: 18.2,
+  open: 17.6,
+  drift: 17.0,
+  tight: 16.6,
+  finish: 18.4,
 };
 
 export const MOUNTAIN_DEFINITION = {
@@ -166,7 +166,7 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 52,
+      radius: 58,
       angle: 78,
       surface: "tarmac",
       width: W.tight,
@@ -195,7 +195,7 @@ export const MOUNTAIN_DEFINITION = {
       surface: "tarmac",
       width: W.drift,
       landmark: true,
-      bank: 0.08,
+      bank: 0.12,
       dy: -3,
       purpose: "Hairpin right — easy power slide, do not park it",
       visual: "rock_face_hairpin",
@@ -234,7 +234,7 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 52,
+      radius: 58,
       angle: 80,
       surface: "tarmac",
       width: W.tight,
@@ -256,7 +256,7 @@ export const MOUNTAIN_DEFINITION = {
       angle: 96,
       surface: "tarmac",
       width: W.drift,
-      bank: 0.07,
+      bank: 0.12,
       dy: 4,
       purpose: "Hairpin left — slide it, floor the exit",
       visual: "ridge_hairpin",
@@ -296,7 +296,7 @@ export const MOUNTAIN_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 52,
+      radius: 58,
       angle: 74,
       surface: "tarmac",
       width: W.tight,

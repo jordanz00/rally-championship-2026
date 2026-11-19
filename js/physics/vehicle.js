@@ -48,11 +48,11 @@
  */
 
 import * as THREE from "../../vendor/three.module.js";
-import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=260";
-import { blendSurfaces, gripGap } from "./surfaces.js?v=60";
+import { CELICA, ROAD_DECK, HANDLING, ARCADE_ASSIST, JUMP, FIXED_DT, SURFACES } from "../config.js?v=261";
+import { blendSurfaces, gripGap } from "./surfaces.js?v=61";
 import { bounceOffRoad, glanceObstacles, holdVisualGround } from "./collide.js?v=62";
 import { JumpModel } from "./jump.js?v=45";
-import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=10";
+import { applyBurnoutDriveTuning, BURNOUT_STEER_SNAP, rushTorqueMul } from "./burnout-drive.js?v=11";
 /** Fallback if an older burnout-drive cache lacks the named export. */
 const DRIFT_SWING_STEER = 1.72;
 
@@ -86,6 +86,12 @@ JUMP.mismatchFull = 0.16;
 JUMP.flatScrub = 0.995;
 JUMP.worstScrub = 0.52;
 JUMP.landUpsetYaw = 0.95;
+/**
+ * How far the nose may yaw from the takeoff heading while airborne (rad).
+ * Past this, the flight path has turned around: throttle drives back down
+ * the stage and the wheel feels reversed until reset.
+ */
+const AIR_NOSE_LIM = 1.25;
 JUMP.balanceDecay = 3.2;
 JUMP.balanceGripLoss = 0.34;
 import { bumpField, bumpSideAt, roadChatter } from "../tracks/road-micro.js?v=15";
@@ -225,6 +231,13 @@ const LAUNCH_HOLD_S = 0.55;
  */
 const GO_RUSH_S = 1.55;
 const GO_RUSH_DRIVE = 1.28;
+/**
+ * Flat-out pace vs the previous cruise. Power vs v² drag means speed scales
+ * with 1/aero^(1/3), so aero grows by 1/pace³. Below ~80 km/h drag is still
+ * small, so the launch stays. Same scale on the pack — rivals stay a race.
+ */
+const CRUISE_PACE = 0.75;
+const CRUISE_AERO_SCALE = 1 / (CRUISE_PACE * CRUISE_PACE * CRUISE_PACE);
 /** Ignore sub-centimetre along-track noise when undoing a launch shove. */
 const LAUNCH_REVERSE_EPS = 0.015;
 /**
@@ -611,6 +624,10 @@ export class Vehicle {
     this._airTime = 0;
     this._jumpLock = 0;
     this._landLock = 0;
+    /** Seconds after a landing where throttle cannot be driven into reverse. */
+    this._landDriveHold = 0;
+    /** Takeoff heading. NaN on the ground. */
+    this._airHead = NaN;
     this._rampThrow = 0;
     this._rampGrade = 0;
     this._rampClimb = 0;
@@ -913,6 +930,8 @@ export class Vehicle {
     this._airTime = 0;
     this._jumpLock = 0;
     this._landLock = 0;
+    this._landDriveHold = 0;
+    this._airHead = NaN;
     this._rampThrow = 0;
     this._rampGrade = 0;
     this._rampClimb = 0;
@@ -1291,6 +1310,7 @@ export class Vehicle {
     const omegaDrive = s.drivetrain === "2wd" ? this.omegaR : this.omegaR * 0.62 + this.omegaF * 0.38;
     this._updateEngine(dt, omegaDrive);
     if (this._launchHold > 0) this._launchHold = Math.max(0, this._launchHold - dt);
+    if (this._landDriveHold > 0) this._landDriveHold = Math.max(0, this._landDriveHold - dt);
     if (this._goRush > 0) this._goRush = Math.max(0, this._goRush - dt);
 
     this.yawRate = r;
@@ -1308,6 +1328,7 @@ export class Vehicle {
     this._gripUsed = clamp(this.slip * 0.72 + this._slidePct * 0.38, 0, 1);
 
     this.yaw += this.yawRate * dt;
+    this._keepAirNoseForward();
     const sin2 = Math.sin(this.yaw);
     const cos2 = Math.cos(this.yaw);
     this.velocity.set(sin2 * vx + cos2 * vy, 0, cos2 * vx - sin2 * vy);
@@ -1734,6 +1755,7 @@ export class Vehicle {
 
       if (takeoff || sideLip) {
         this.onGround = false;
+        this._armAirHead();
         this._airTime = 0;
         const lipGrade = this._lipGradeFromTrack(track, q2.dist, this._rampGrade);
         // Departure angle from axle/spline geometry. Pit samples are flat, so
@@ -2010,12 +2032,14 @@ export class Vehicle {
       if (bounce > reairMin && impact > bounceNeed && this._landLock <= 0) {
         this.velY = Math.min(bounce * 0.42, 2.4);
         this.onGround = false;
+        this._armAirHead();
         this._airTime = 0.04;
         this._landLock = 0.08;
         this.position.y = floorY + 0.02;
       } else {
         this.velY = Math.min(0, this.velY);
         this.onGround = true;
+        this._airHead = NaN;
         this._airTime = 0;
         this._landLock = 0.18 + impact * 0.01;
       }
@@ -2091,6 +2115,9 @@ export class Vehicle {
     this._surfShock = Math.max(this._surfShock, clamp(impact / 12, 0.2, 0.85) * (0.5 + res.upset));
     this.velocity.x *= res.scrub;
     this.velocity.z *= res.scrub;
+    // Gas after a landing means forward. A reversed shove used to stick
+    // until the player hit reset.
+    this._landDriveHold = 0.75;
     if (res.upsetYaw > 0.01) {
       // Which way the car snaps is the road, not a dice roll: the cambered side
       // of the landing pad and whatever lock you were holding decide it.
@@ -2678,6 +2705,32 @@ export class Vehicle {
   }
 
   /**
+   * Remember the heading we left the ground with. A later bounce must not
+   * replace it — that heading is what "forward" still means.
+   */
+  _armAirHead() {
+    if (!Number.isFinite(this._airHead)) this._airHead = this.yaw;
+  }
+
+  /**
+   * Keep a jump from turning the car around in the air. Ground spins are
+   * untouched: this only runs while `_airHead` is armed.
+   */
+  _keepAirNoseForward() {
+    if (this.onGround || !Number.isFinite(this._airHead)) return;
+    let d = this.yaw - this._airHead;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    if (d > AIR_NOSE_LIM) {
+      this.yaw = this._airHead + AIR_NOSE_LIM;
+      if (this.yawRate > 0) this.yawRate = 0;
+    } else if (d < -AIR_NOSE_LIM) {
+      this.yaw = this._airHead - AIR_NOSE_LIM;
+      if (this.yawRate < 0) this.yawRate = 0;
+    }
+  }
+
+  /**
    * Contact + surface offset, then remove velocity into the road.
    * Heightfield normal from the local grade (flat road → (0,1,0)).
    * @param {number} floorY plant height at the contact XZ
@@ -2685,22 +2738,30 @@ export class Vehicle {
   _resolveTrackContact(floorY) {
     if (!Number.isFinite(floorY)) return;
     this.position.y = floorY + SURFACE_EPS;
-    const pitch = clamp(
-      this._axles && Number.isFinite(this._axles.pitch) ? this._axles.pitch : this._slope || 0,
-      -ROAD_PITCH_MAX,
-      ROAD_PITCH_MAX
-    );
+    // Slewed grade, not a one-frame axle spike. A spike turned fall speed
+    // into a backward shove and left throttle driving the wrong way.
+    const pitch = clamp(this._slope || 0, -ROAD_PITCH_MAX, ROAD_PITCH_MAX);
     const sp = Math.sin(pitch);
     const cp = Math.cos(pitch);
     const nx = -sp * Math.sin(this.yaw);
     const ny = cp;
     const nz = -sp * Math.cos(this.yaw);
     this._pipe.normalY = ny;
+    const fx = Math.sin(this.yaw);
+    const fz = Math.cos(this.yaw);
+    const alongBefore = this.velocity.x * fx + this.velocity.z * fz;
     const vn = this.velocity.x * nx + this.velY * ny + this.velocity.z * nz;
     if (vn < 0) {
       this.velocity.x -= vn * nx;
       this.velY -= vn * ny;
       this.velocity.z -= vn * nz;
+    }
+    if (alongBefore > 1.5) {
+      const alongAfter = this.velocity.x * fx + this.velocity.z * fz;
+      if (alongAfter < 0) {
+        this.velocity.x -= fx * alongAfter;
+        this.velocity.z -= fz * alongAfter;
+      }
     }
     this.speed = this.velocity.length();
     if (this.onGround || this.velY <= 0.25) {
@@ -4962,7 +5023,7 @@ export class Vehicle {
     const sinS = Math.sin(st);
     const Fx = front.fx * cosS - front.fy * sinS + rear.fx;
 
-    let aero = 0.5 * RHO * s.aeroDrag * FRONTAL_A * vx * Math.abs(vx);
+    let aero = 0.5 * RHO * s.aeroDrag * FRONTAL_A * vx * Math.abs(vx) * CRUISE_AERO_SCALE;
     if (this.throttle > 0.12 && slidingDrive && slideKeepAmt > 0.12) {
       const aeroCut = HANDLING.slideAeroCut != null ? HANDLING.slideAeroCut : 0.45;
       aero *= lerp(1, aeroCut, slideKeepAmt * this.throttle);
@@ -5002,6 +5063,10 @@ export class Vehicle {
     // Lights-out / respawn: throttle means GO forward. Gravity, leftover
     // collide Δv, and env depenetration must not win the first frames.
     if (this._launchHold > 0 && this.throttle > 0.12 && this.brake < 0.2 && vx < 0) {
+      vx = 0;
+      if (this._axDrive < 0) this._axDrive = 0;
+    }
+    if (this._landDriveHold > 0 && this.throttle > 0.2 && this.brake < 0.3 && vx < 0) {
       vx = 0;
       if (this._axDrive < 0) this._axDrive = 0;
     }

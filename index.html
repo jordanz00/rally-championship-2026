@@ -30,10 +30,11 @@
       #boot-error[hidden] { display: none !important; }
       noscript { display: block; padding: 24px; color: #f4f0e0; }
     </style>
-    <link rel="stylesheet" href="css/game.css?v=84" />
+    <link rel="stylesheet" href="css/game.css?v=95" />
     <!-- No modulepreload / GLB preload — iPhone Safari must paint HTML before the ES graph. -->
     <script>
       window.__rallyLeftTitle = false;
+      document.documentElement.classList.add("intro-playing");
       // Tag phone/tablet before modules so CSS + lite boot arm even if JS later fails.
       (function () {
         try {
@@ -49,6 +50,11 @@
           }
         } catch (e) { /* ignore */ }
       })();
+      // Desktop only: start the hero GLB during HTML parse so it overlaps the
+      // engine download. Phones must not pull this file on the splash.
+      if (!window.__rallyPhoneLite) {
+        fetch("assets/celica/gt4.glb?v=2").catch(function () {});
+      }
       // Phase R.2 — opt-in WebGPU THREE build. Default stays r160 WebGL.
       // Must run before js/main.js so every `three.module.js` import remaps.
       (function () {
@@ -248,6 +254,7 @@
     <noscript>Rally Championship 2026 needs JavaScript. Enable it, then reload. Use Chrome or Safari — not an in-app browser.</noscript>
     <div id="crt" class="is-title">
       <div id="game-view"></div>
+      <div id="showroom-veil" aria-hidden="true"></div>
       <div id="tsr-badge" hidden aria-live="polite">TSR</div>
       <div id="attract-fx" class="attract-fx" hidden aria-hidden="true">
         <div class="attract-letterbox attract-letterbox-top"></div>
@@ -270,6 +277,46 @@
       </div>
       <div class="scanlines"></div>
       <div id="fx-curtain" class="fx-curtain is-on" aria-hidden="true"></div>
+
+      <div id="intro-present" role="region" aria-label="Opening">
+        <div class="intro-beat" data-beat="name">
+          <p class="intro-kicker">Lead Developer</p>
+          <p class="intro-name">Jordan Zabady</p>
+          <span class="intro-rule" aria-hidden="true"></span>
+        </div>
+        <div class="intro-beat" data-beat="car">
+          <div class="intro-copy">
+            <p class="intro-kicker">The Car</p>
+            <p class="intro-display">Celica GT-Four</p>
+            <p class="intro-line">Toyota · locked for the season</p>
+          </div>
+        </div>
+        <div class="intro-beat" data-beat="desert">
+          <div class="intro-land" aria-hidden="true"></div>
+          <div class="intro-copy">
+            <p class="intro-kicker">Stage 01</p>
+            <p class="intro-display">Desert</p>
+            <p class="intro-line">Open sand · jumps · heat</p>
+          </div>
+        </div>
+        <div class="intro-beat" data-beat="forest">
+          <div class="intro-land" aria-hidden="true"></div>
+          <div class="intro-copy">
+            <p class="intro-kicker">Stage 02</p>
+            <p class="intro-display">Forest</p>
+            <p class="intro-line">Rhythm · shade · dirt</p>
+          </div>
+        </div>
+        <div class="intro-beat" data-beat="mountain">
+          <div class="intro-land" aria-hidden="true"></div>
+          <div class="intro-copy">
+            <p class="intro-kicker">Stage 03</p>
+            <p class="intro-display">Mountain</p>
+            <p class="intro-line">Commitment · elevation · tarmac</p>
+          </div>
+        </div>
+        <button type="button" id="intro-skip">Skip</button>
+      </div>
 
       <section id="screen-title" class="screen active">
           <div class="sr-emblem" aria-hidden="true">
@@ -300,8 +347,8 @@
           <h1 class="sr-a11y">Rally Championship 2026</h1>
 
           <div class="sr-push-wrap">
-            <p class="sr-attract-tag">ATTRACT · WORLD FEED</p>
-            <button type="button" id="btn-start" autofocus>PUSH START BUTTON</button>
+            <p class="sr-attract-tag">ATTRACT</p>
+            <button type="button" id="btn-start" autofocus>PRESS START</button>
             <p class="press sr-input-hint">ENTER · SPACE · TAP</p>
             <p class="sr-credit">
               Developed by Jordan Zabady
@@ -449,7 +496,6 @@
             <li><kbd>T</kbd> <span>Auto / Manual</span></li>
             <li><kbd>C</kbd> <span>Camera POV · Medium · Far</span></li>
             <li><kbd>R</kbd> <span>Reset</span> · <kbd>P</kbd> <span>Pause</span></li>
-            <li><span class="ui-ctrl-label">RUSH</span> <span>Fill from slides, drafts, clean passes — throttle dumps it; walls and off-road drain it</span></li>
             <li><span class="ui-ctrl-label">Gamepad</span> <span>Stick + triggers</span></li>
             <li><span class="ui-ctrl-label">Phone</span> <span>Gas / brake / HB · steer pad or tilt</span></li>
           </ul>
@@ -477,7 +523,7 @@
         </div>
         <canvas id="minimap" role="img" aria-label="Track minimap" width="140" height="100"></canvas>
         <div id="hud-flash"></div>
-        <div id="hud-rush">
+        <div id="hud-rush" hidden>
           <span class="label">RUSH</span>
           <div class="rush-bar"><div id="hud-rush-fill"></div></div>
         </div>
@@ -705,6 +751,6 @@
       </section>
     </div>
     <pre id="world-validate-badge" hidden aria-hidden="true"></pre>
-    <script type="module" src="js/main.js?v=1256" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
+    <script type="module" src="js/main.js?v=1287" onerror="(function(){var el=document.getElementById('boot-error');if(!el)return;el.hidden=false;el.textContent='Engine script failed to load.\\n\\njs/main.js\\n\\nOpen this page in Chrome or Safari. In-app browsers often block modules.';})()"></script>
   </body>
 </html>

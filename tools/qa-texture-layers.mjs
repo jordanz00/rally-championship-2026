@@ -31,7 +31,7 @@ const game = read("js/game.js");
 
 check("stochastic UV helper", /vec2 stochasticUv\(/.test(pbr));
 check("macro/meso/micro layer weights", /wMacro/.test(pbr) && /wMeso/.test(pbr) && /wMicro/.test(pbr));
-check("road organic v11 cache", /road-organic-v11-/.test(pbr));
+check("road organic v12 cache", /road-organic-v12-/.test(pbr));
 check("soft layer dissolve masks", /smoothstep\( 0\.12, 0\.88, n6 \)/.test(pbr));
 check("surface noise v6 (no GLSL reserved `patch`)", /sn-v6-/.test(sn) && /dust/.test(sn) && !/float patch\s*=/.test(sn));
 check("forest larger tiles", /TILE_FLOOR_M = 5\.2/.test(forest) && /TILE_DIRT_M = 3\.6/.test(forest));

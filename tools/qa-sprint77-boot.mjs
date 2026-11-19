@@ -46,7 +46,7 @@ check(
   /titleShadowMap:\s*(?:512|1024|1536)/.test(config) && /GFX\.titleShadowMap/.test(game)
 );
 check("title boot is next-frame, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(bootGfx\)\)/.test(game) && !/, 1600\)/.test(game));
-check("title loads attract car (LOD first)", /prepareTitleCar\(this\.carId\)/.test(game) && /tryRivalGltf/.test(read("js/cars/celica.js")));
+check("title loads the attract car (hero on desktop, LOD on phone)", /prepareTitleCar\(this\.carId\)/.test(game) && /tryLocalGltf/.test(read("js/cars/celica.js")));
 check(
   "PRESS START warms LODs, not mid-attract hero garage",
   /_idleWarmAfterTitle/.test(game) &&

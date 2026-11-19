@@ -2,8 +2,8 @@
  * Burnout-rally drive overlay — controllable dirt, learnable slides.
  *
  * WHO THIS IS FOR: vehicle.js (player + AI share HANDLING).
- * WHAT IT DOES: v10 balances v9 road-holding with Saturn attack→slide→catch.
- *   Hard-steer still needs commit; power + throttle can light the rear again.
+ * WHAT IT DOES: v11 keeps the launch punch and makes the rack catchable.
+ *   Cruise is already slower. The wheel no longer snaps the car off the paint.
  * HOW IT CONNECTS: docs/SEGA_RALLY_DRIVING_MODEL.md · BURNOUT_RALLY_DIRECTION.md
  */
 
@@ -12,7 +12,7 @@
  * @param {object} [A] ARCADE_ASSIST
  */
 export function applyBurnoutDriveTuning(H, A) {
-  if (!H || H._burnoutDriveV10) return;
+  if (!H || H._burnoutDriveV11) return;
   H._burnoutDrive = true;
   H._burnoutDriveV2 = true;
   H._burnoutDriveV3 = true;
@@ -23,13 +23,14 @@ export function applyBurnoutDriveTuning(H, A) {
   H._burnoutDriveV8 = true;
   H._burnoutDriveV9 = true;
   H._burnoutDriveV10 = true;
+  H._burnoutDriveV11 = true;
   H.easySlide = true;
   // Pendulum L↔R — hold attitude through center without whip.
-  H.driftSwingSteerMul = 1.42;
+  H.driftSwingSteerMul = 1.12;
   H.driftSwingVyKeep = 0.78;
-  // Initiation: commit required, but not full lock (v9 0.42 was too gated).
-  H.easySlideHardSteer = 0.26;
-  H.easySlideHardSteerLoose = 0.18;
+  // A small correction stays on the paint. A committed lock still rotates.
+  H.easySlideHardSteer = 0.36;
+  H.easySlideHardSteerLoose = 0.26;
   H.easySlideHardSpeed = 12;
   H.easySlideTarmacSteer = 0.16;
   H.easySlideTarmacThrottle = 0.28;
@@ -46,18 +47,18 @@ export function applyBurnoutDriveTuning(H, A) {
   H.slideSpeedConvert = 1.35;
   if (H.slideAeroCut == null || H.slideAeroCut > 0.12) H.slideAeroCut = 0.12;
   // Power slides learnable again — below the old 4.85 chaos, above 1.85 mush.
-  H.powerSlidePitch = 2.55;
-  H.maxSlideVel = 20;
-  H.maxSlideVelHandbrake = 26;
+  H.powerSlidePitch = 2.05;
+  H.maxSlideVel = 16.5;
+  H.maxSlideVelHandbrake = 22;
   H.driftBleedMul = 0.011;
   H.outrunHang = 0.62;
-  H.counterAuthority = 3.15;
-  // Mild high-speed push — stay on ribbon without understeering every sweeper.
-  H.speedUndersteer = 0.0019;
+  H.counterAuthority = 3.55;
+  // High speed pushes less. Sweepers stay on the ribbon.
+  H.speedUndersteer = 0.0026;
   H.yawAssistBoost = 1.0;
   H.handbrakeYawKick = 2.55;
   H.handbrakePowerMul = 2.05;
-  H.throttleSlide = 1.95;
+  H.throttleSlide = 1.55;
   H.trailBrakeYaw = 1.05;
   if (A) {
     if (A.yawAssist == null || A.yawAssist > 0.55) A.yawAssist = 0.48;
@@ -68,8 +69,8 @@ export function applyBurnoutDriveTuning(H, A) {
   }
 }
 
-/** Rack into lock — quicker than v9, calmer than the old 1.92 whip. */
-export const BURNOUT_STEER_SNAP = 1.28;
+/** Rack into lock — slow enough to place a corner at the slower cruise. */
+export const BURNOUT_STEER_SNAP = 0.96;
 
 /** Extra rack when swinging lock→lock mid-slide. */
 export const DRIFT_SWING_STEER = 1.38;

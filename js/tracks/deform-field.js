@@ -4,7 +4,7 @@
  * WHO THIS IS FOR: surface-deform.js (mesh + Track.query sampler), TireMarks
  *   (stamps), qa-road-deform.mjs (node simulation test). No THREE import so it
  *   runs headless.
- * WHAT IT DOES: world-space 0.125 m cell grid grouped into 32x32 tiles (4.0 m).
+ * WHAT IT DOES: world-space 0.03125 m cell grid grouped into 32x32 tiles (1.0 m).
  *   Each tile owns quantised Uint8 depth + berm + pass-id and an Int16 base-y
  *   (mm, tile-relative). Tiles live in a Map with an LRU cap (MAX_TILES) so
  *   memory is bounded (~5 KB/tile). Per-surface DEPOSIT table decides what
@@ -23,8 +23,8 @@
  *   list; relaxation is round-robin time-sliced (RELAX_TILES_PER_STEP).
  */
 
-/** Cell edge (m) — finer than a tire so the trench is not a 20 cm brick. */
-export const CELL = 0.125;
+/** Cell edge (m). ~3 cm so a real contact patch (~24 cm) is a smooth groove. */
+export const CELL = 0.03125;
 /** Cells per tile edge (power of two). */
 export const TILE_N = 32;
 export const TILE_CELLS = TILE_N * TILE_N;
@@ -32,10 +32,10 @@ export const TILE_CELLS = TILE_N * TILE_N;
 export const TILE_M = CELL * TILE_N;
 /** Metres per quantised depth/berm unit (u8 → 0.1785 m max). */
 export const DEPTH_Q = 0.0007;
-/** Hard LRU cap on live tiles (≈ 5 KB each → ~8 MB worst case). */
-export const MAX_TILES = 1536;
+/** Hard LRU cap on live tiles (1 m tiles, ≈ 5 KB each → ~10 MB worst case). */
+export const MAX_TILES = 2048;
 /** Dirty-cell ring capacity handed to the mesh each frame. */
-export const DIRTY_CAP = 16384;
+export const DIRTY_CAP = 65536;
 /** Relaxation tiles processed per step() call. */
 export const RELAX_TILES_PER_STEP = 4;
 /** Minimum seconds between relax applications on one tile. */
@@ -61,11 +61,11 @@ export const Q_FULL = 2;
 export const DEPOSIT = {
   tarmac: { idx: 0, cap: 0, soft: 0, deepen: 0, berm: 0, bermCap: 0, relaxMps: 0, wetCap: 0, wetDepth: 0 },
   cobble: { idx: 1, cap: 0, soft: 0, deepen: 0, berm: 0, bermCap: 0, relaxMps: 0, wetCap: 0, wetDepth: 0 },
-  sand: { idx: 2, cap: 0.12, soft: 0.52, deepen: 0.2, berm: 0.75, bermCap: 0.085, relaxMps: 0.0004, wetCap: 0.1, wetDepth: 0.15 },
-  dirt: { idx: 3, cap: 0.1, soft: 0.55, deepen: 0.22, berm: 0.62, bermCap: 0.07, relaxMps: 0.00005, wetCap: 0.18, wetDepth: 0.45 },
-  gravel: { idx: 4, cap: 0.07, soft: 0.5, deepen: 0.18, berm: 0.95, bermCap: 0.065, relaxMps: 0, wetCap: 0.12, wetDepth: 0.2 },
-  mud: { idx: 5, cap: 0.15, soft: 0.65, deepen: 0.26, berm: 0.85, bermCap: 0.1, relaxMps: 0.00012, wetCap: 0.15, wetDepth: 0.2 },
-  grass: { idx: 6, cap: 0.045, soft: 0.6, deepen: 0.2, berm: 0.4, bermCap: 0.03, relaxMps: 0.0006, wetCap: 0.2, wetDepth: 0.3 },
+  sand: { idx: 2, cap: 0.042, soft: 0.4, deepen: 0.14, berm: 0.34, bermCap: 0.016, relaxMps: 0.0004, wetCap: 0.22, wetDepth: 0.18 },
+  dirt: { idx: 3, cap: 0.034, soft: 0.38, deepen: 0.13, berm: 0.28, bermCap: 0.012, relaxMps: 0.00005, wetCap: 0.28, wetDepth: 0.32 },
+  gravel: { idx: 4, cap: 0.02, soft: 0.36, deepen: 0.12, berm: 0.4, bermCap: 0.01, relaxMps: 0, wetCap: 0.18, wetDepth: 0.14 },
+  mud: { idx: 5, cap: 0.052, soft: 0.46, deepen: 0.16, berm: 0.36, bermCap: 0.018, relaxMps: 0.00012, wetCap: 0.18, wetDepth: 0.22 },
+  grass: { idx: 6, cap: 0.016, soft: 0.42, deepen: 0.14, berm: 0.2, bermCap: 0.006, relaxMps: 0.0006, wetCap: 0.22, wetDepth: 0.26 },
 };
 
 /** Surface ids that dig geometry (cap > 0). */
@@ -98,25 +98,27 @@ export function cellHash01(ix, iz) {
  */
 export function trenchProfile(u) {
   const a = u < 0 ? -u : u;
-  if (a < 0.72) {
-    const t = a / 0.72;
+  // Flat tread, soft shoulder, low wide berm. u is lateral / tire half-width.
+  if (a < 0.62) {
+    const t = a / 0.62;
     const s = t * t * (3 - 2 * t);
-    return -(1.06 - 0.18 * s);
+    return -(1 - 0.06 * s);
   }
-  if (a < 0.98) {
-    const t = (a - 0.72) / 0.26;
+  if (a < 1.08) {
+    const t = (a - 0.62) / 0.46;
     const s = t * t * (3 - 2 * t);
-    return -0.88 * (1 - s);
+    return -0.94 * (1 - s);
   }
-  if (a < 1.42) {
-    const t = (a - 0.98) / 0.44;
-    const w = t < 0.5 ? t * 2 : (1 - t) * 2;
-    return 0.84 * w * w * (3 - 2 * w);
+  if (a < 1.9) {
+    const t = (a - 1.08) / 0.82;
+    const w = t < 0.4 ? t / 0.4 : (1 - t) / 0.6;
+    const s = w > 0 ? w * w * (3 - 2 * w) : 0;
+    return 0.38 * s;
   }
   return 0;
 }
 
-/** One 6.4 m tile of quantised deformation. */
+/** One 1.0 m tile of quantised deformation. */
 class Tile {
   constructor() {
     this.depth = new Uint8Array(TILE_CELLS);
@@ -385,7 +387,7 @@ export class DeformField {
   _footprint(x, y, z, dirX, dirZ, hw, targetM, incM, dep, capM, pass, side, slide) {
     const latX = -dirZ;
     const latZ = dirX;
-    const r = Math.ceil((hw * 1.7) / CELL) + 1;
+    const r = Math.ceil((hw * 2.05) / CELL) + 1;
     const ix0 = Math.floor(x / CELL);
     const iz0 = Math.floor(z / CELL);
     const capU = Math.min(255, Math.floor(capM / DEPTH_Q + 1e-6));
@@ -403,22 +405,22 @@ export class DeformField {
         const lat = latS < 0 ? -latS : latS;
         const along = Math.abs(dx * dirX + dz * dirZ);
         const h = cellHash01(ix, iz);
-        const wander = (h - 0.5) * 0.3;
-        const hwEff = hw * (1.05 + wander * 0.2);
-        const latN = lat / (hwEff * 1.32);
+        const wander = (h - 0.5) * 0.1;
+        const hwEff = hw * (1.02 + wander * 0.08);
+        const latN = lat / (hwEff * 1.95);
         const alongN = along / along2;
         if (latN * latN + alongN * alongN > 1) continue;
-        const lt = lat / hw + wander * 0.2;
+        const lt = lat / hw + wander * 0.08;
         const at = along / along2;
         const profile = trenchProfile(lt);
         const edge = 1 - at * at;
-        const crumb = 0.84 + h * 0.32;
+        const crumb = 0.94 + h * 0.12;
         const bowl = profile < 0 ? -profile * edge * crumb : 0;
-        const lipP = profile > 0 ? profile * edge * (0.85 + h * 0.3) : 0;
-        const lipT = 1 - Math.abs(lt - 1.16) / 0.5;
-        const lipX = lipT > 0 ? 0.55 * lipT * edge : 0;
+        const lipP = profile > 0 ? profile * edge * (0.9 + h * 0.16) : 0;
+        const lipT = 1 - Math.abs(lt - 1.14) / 0.48;
+        const lipX = lipT > 0 ? 0.5 * lipT * edge : 0;
         const lip = lipP > lipX ? lipP : lipX;
-        if (bowl < 0.012 && lip < 0.04) continue;
+        if (bowl < 0.008 && lip < 0.03) continue;
         const t = this._tile(ix >> 5, iz >> 5, true);
         const ci = (ix & 31) | ((iz & 31) << 5);
         t.lastTouch = this.clock;
@@ -434,7 +436,7 @@ export class DeformField {
           t.y[ci] = dy;
         }
         const samePass = t.pass[ci] === pass;
-        if (bowl >= 0.012) {
+        if (bowl >= 0.008) {
           const prev = t.depth[ci];
           let want = Math.round((targetM * bowl) / DEPTH_Q);
           if (!samePass) {
@@ -447,7 +449,7 @@ export class DeformField {
             t.depth[ci] = want;
           }
         }
-        if (lip >= 0.04) {
+        if (lip >= 0.03) {
           // Berm lip pushed out of the groove; slides pile it on the leading side.
           const bias = 1 + 0.6 * slide * side * (latS < 0 ? -1 : 1);
           const wantB0 = (targetM * 1.05 * bermGain * lip * (bias < 0.4 ? 0.4 : bias)) / DEPTH_Q;
@@ -509,7 +511,9 @@ export class DeformField {
     if (slide > 1) slide = 1;
     const pass = this.passId(src);
     const hw = halfW < 0.11 ? 0.11 : halfW;
-    const stepLen = CELL * (lod > 0 ? 1.15 : 0.7);
+    // Footprints overlap along the contact patch. Spacing follows the tire, not the cell,
+    // or a 3 cm grid would stamp the same dirt dozens of times per frame.
+    const stepLen = (lod > 0 ? 1.35 : 0.72) * hw;
     const steps = Math.max(1, Math.ceil(len / stepLen));
     const dy = b.y - a.y;
     for (let i = 0; i <= steps; i++) {

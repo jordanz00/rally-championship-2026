@@ -4,7 +4,7 @@
  * WHO THIS IS FOR: Track.query (visual-only height sample), TireMarks (stamps)
  *   and the race render layer.
  * WHAT IT DOES: DeformField (deform-field.js) is the bounded tiled heightfield
- *   (0.125 m cells, 4.0 m tiles, LRU cap, per-surface deposit table, relaxation,
+ *   (0.03125 m cells, 1.0 m tiles, LRU cap, per-surface deposit table, relaxation,
  *   wet boost, landing craters). WheelRutMesh renders it as ONE draw call:
  *   a pooled quad mesh (36k quads, 28 B/vertex) whose quads exist only for
  *   cells that carry depth/berm AND sit within MESH_RADIUS of the camera.
@@ -38,25 +38,24 @@ import {
   DEFORM_PHYSICS,
   trenchProfile,
   cellHash01,
-} from "./deform-field.js?v=2";
+} from "./deform-field.js?v=4";
 
 export { DEFORM_SURFACES, DEFORM_PHYSICS, trenchProfile };
 
 /** Quad pool for the single rut mesh (4 verts each). */
-export const POOL_QUADS = 36000;
-/** Camera radius (m) inside which tiles carry GPU quads. */
-export const MESH_RADIUS = 110;
-export const MESH_RADIUS_LOW = 45;
+export const POOL_QUADS = 40000;
+/** Camera radius (m) inside which tiles carry GPU quads. Hero distance — finer cells fill the pool if this is a whole straight. */
+export const MESH_RADIUS = 42;
+export const MESH_RADIUS_LOW = 22;
 const MESH_HYST = 14;
-const SCAN_TILES = 24;
-const MESH_TILES_PER_FRAME = 8;
-const MAX_MESHED = 384;
+const SCAN_TILES = 32;
+const MESH_TILES_PER_FRAME = 12;
+const MAX_MESHED = 768;
 const CHUNK = 256;
 const MAX_UPLOAD_RANGES = 8;
-/** Lift above the exact road y so z-resolve never eats the rim. */
-const LIFT = 0.003;
-const NORMAL_GAIN = 1.48;
-const JITTER = 0.34;
+/** Lift above the road. Just enough to win z-fight on a shallow groove. */
+const LIFT = 0.0011;
+const NORMAL_GAIN = 1.65;
 
 /** Field with the legacy export name — drop-in for track.js. */
 export class WheelDeformField extends DeformField {}
@@ -68,11 +67,11 @@ function hexRgb(h) {
 }
 (function buildPalette() {
   const rows = {
-    2: [0xc4a06a, 0x6f5233, 0xeedcb8], // sand
-    3: [0x8a6a48, 0x2c1c12, 0xa88660], // dirt
-    4: [0x8a847c, 0x3c3a38, 0xb3aba0], // gravel
-    5: [0x4a3a2c, 0x16120e, 0x6a5440], // mud
-    6: [0x4f6a35, 0x2a2a1c, 0x78884e], // grass
+    2: [0xc4a06a, 0xa68452, 0xd4c09a], // sand
+    3: [0x8a6a48, 0x6a5238, 0xa48a62], // dirt
+    4: [0x8a847c, 0x726e68, 0xa8a298], // gravel
+    5: [0x4a3a2c, 0x3a2e24, 0x625040], // mud
+    6: [0x4f6a35, 0x3e522c, 0x627848], // grass
   };
   for (const k of Object.keys(rows)) {
     const r = rows[k];
@@ -125,15 +124,16 @@ export class WheelRutMesh {
     this.mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       transparent: true,
-      depthWrite: false,
-      roughness: 0.96,
+      depthWrite: true,
+      depthTest: true,
+      roughness: 0.94,
       metalness: 0,
       polygonOffset: true,
-      polygonOffsetFactor: -8,
-      polygonOffsetUnits: -8,
+      polygonOffsetFactor: -6,
+      polygonOffsetUnits: -6,
     });
     this.mat.userData.kind = "prop";
-    armSurfaceNoise(this.mat, 0.48);
+    armSurfaceNoise(this.mat, 0.2);
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.receiveShadow = true;
@@ -363,21 +363,21 @@ export class WheelRutMesh {
     let a;
     const k = 0.88 + speck * 0.24;
     if (cd < 0) {
-      const s = Math.min(1, -cd / (dep.cap * 0.5 + 1e-4));
+      const s = Math.min(1, -cd / (dep.cap * 0.72 + 1e-4));
       const fl = pal.floor;
-      const wk = 1 - 0.28 * wet;
+      const wk = 1 - 0.22 * wet;
       r = pal.mid[0] + (fl[0] * wk - pal.mid[0]) * s;
       g = pal.mid[1] + (fl[1] * wk - pal.mid[1]) * s;
       b = pal.mid[2] + (fl[2] * wk - pal.mid[2]) * s;
-      a = Math.min(0.96, s * 1.7);
+      a = Math.min(0.78, 0.1 + s * 0.58);
     } else {
-      const s = Math.min(1, cd / (dep.bermCap * 0.55 + 1e-4));
+      const s = Math.min(1, cd / (dep.bermCap * 0.7 + 1e-4));
       const lp = pal.lip;
-      const wk = 1 - 0.18 * wet;
+      const wk = 1 - 0.12 * wet;
       r = pal.mid[0] + (lp[0] * wk - pal.mid[0]) * s;
       g = pal.mid[1] + (lp[1] * wk - pal.mid[1]) * s;
       b = pal.mid[2] + (lp[2] * wk - pal.mid[2]) * s;
-      a = Math.min(0.9, s * 1.6);
+      a = Math.min(0.62, 0.06 + s * 0.42);
     }
     col[o] = (r * k * 255) | 0;
     col[o + 1] = (g * k * 255) | 0;
@@ -386,9 +386,16 @@ export class WheelRutMesh {
   }
 
   _jitter(ci, cj) {
-    this._jx = (cellHash01(ci, cj) - 0.5) * CELL * JITTER;
-    this._jz = (cellHash01(ci * 3 + 19, cj * 7 + 11) - 0.5) * CELL * JITTER;
-    this._jy = (cellHash01(ci * 5 + 3, cj * 11 + 2) - 0.5) * 0.0038;
+    this._jx = 0;
+    this._jz = 0;
+    this._jy = (cellHash01(ci * 5 + 3, cj * 11 + 2) - 0.5) * 0.00035;
+  }
+
+  _writeN(o, gx, gz) {
+    const inv = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
+    this.nor[o] = -gx * inv;
+    this.nor[o + 1] = inv;
+    this.nor[o + 2] = -gz * inv;
   }
 
   _writeQuad(q, ix, iz, t, c) {
@@ -397,7 +404,6 @@ export class WheelRutMesh {
     const pal = PALETTE[t.surf] || PALETTE[3];
     const wet = this.field.wetness;
     const p = this.pos;
-    const n = this.nor;
     const o = q * 12;
     const oc = q * 16;
     const x0 = ix * CELL;
@@ -439,31 +445,27 @@ export class WheelRutMesh {
     p[o + 9] = xD;
     p[o + 10] = y3;
     p[o + 11] = zD;
-    const invC = 1 / CELL;
-    const gx0 = (y1 - y0) * invC * NORMAL_GAIN;
-    const gz0 = (y2 - y0) * invC * NORMAL_GAIN;
-    const gx1 = (y1 - y0) * invC * NORMAL_GAIN;
-    const gz1 = (y3 - y1) * invC * NORMAL_GAIN;
-    const gx2 = (y3 - y2) * invC * NORMAL_GAIN;
-    const gz2 = (y2 - y0) * invC * NORMAL_GAIN;
-    const gx3 = (y3 - y2) * invC * NORMAL_GAIN;
-    const gz3 = (y3 - y1) * invC * NORMAL_GAIN;
-    const i0 = 1 / Math.sqrt(gx0 * gx0 + 1 + gz0 * gz0);
-    const i1 = 1 / Math.sqrt(gx1 * gx1 + 1 + gz1 * gz1);
-    const i2 = 1 / Math.sqrt(gx2 * gx2 + 1 + gz2 * gz2);
-    const i3 = 1 / Math.sqrt(gx3 * gx3 + 1 + gz3 * gz3);
-    n[o] = -gx0 * i0;
-    n[o + 1] = i0;
-    n[o + 2] = -gz0 * i0;
-    n[o + 3] = -gx1 * i1;
-    n[o + 4] = i1;
-    n[o + 5] = -gz1 * i1;
-    n[o + 6] = -gx2 * i2;
-    n[o + 7] = i2;
-    n[o + 8] = -gz2 * i2;
-    n[o + 9] = -gx3 * i3;
-    n[o + 10] = i3;
-    n[o + 11] = -gz3 * i3;
+    const inv2 = NORMAL_GAIN / (2 * CELL);
+    this._corner(ix - 1, iz, fb);
+    const yL0 = this._cy + this._cd + LIFT;
+    this._corner(ix, iz - 1, fb);
+    const yB0 = this._cy + this._cd + LIFT;
+    this._corner(ix + 2, iz, fb);
+    const yR1 = this._cy + this._cd + LIFT;
+    this._corner(ix + 1, iz - 1, fb);
+    const yB1 = this._cy + this._cd + LIFT;
+    this._corner(ix - 1, iz + 1, fb);
+    const yL2 = this._cy + this._cd + LIFT;
+    this._corner(ix, iz + 2, fb);
+    const yF2 = this._cy + this._cd + LIFT;
+    this._corner(ix + 2, iz + 1, fb);
+    const yR3 = this._cy + this._cd + LIFT;
+    this._corner(ix + 1, iz + 2, fb);
+    const yF3 = this._cy + this._cd + LIFT;
+    this._writeN(o, (y1 - yL0) * inv2, (y2 - yB0) * inv2);
+    this._writeN(o + 3, (yR1 - y0) * inv2, (y3 - yB1) * inv2);
+    this._writeN(o + 6, (y3 - yL2) * inv2, (yF2 - y0) * inv2);
+    this._writeN(o + 9, (yR3 - y2) * inv2, (yF3 - y1) * inv2);
     this._touchChunk(q);
     this.stats.writes++;
   }

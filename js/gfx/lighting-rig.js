@@ -64,13 +64,13 @@ export const DAYLIGHT_FLOORS = {
  */
 export const HARSH_PEAKS = {
   desert: {
-    fillMax: 0.36,
-    ambientMax: 0.26,
-    hemiMin: 0.52,
-    hemiMax: 0.62,
+    fillMax: 0.38,
+    ambientMax: 0.34,
+    hemiMin: 0.58,
+    hemiMax: 0.72,
     rimMax: 0.22,
-    exposureMax: 0.9,
-    exposureCeil: 0.97,
+    exposureMax: 0.86,
+    exposureCeil: 0.9,
     carEnvMax: 1.72,
     coatEnvMax: 2.85,
     worldEnvMax: 0.88,
@@ -214,11 +214,13 @@ export function applyDaylightLook(lights, fogColor, L, tunnelBlend, tunnelFog, c
 
   if (open > 0.85 && lights) {
     if (stage === "desert") {
-      // Seat boosts fill ×2.15 / ambient ×1.7 and flattens the key.
-      // Cap sky bounce so the Kelvin sun still sculpts sand and the car.
+      // Seat boosts fill ×2.15 / ambient ×1.7. Keep a shade floor so noon
+      // sand is sculpted, not a black-and-white cut.
       const pk = HARSH_PEAKS.desert;
-      if (lights.fill) lights.fill.intensity = Math.min(lights.fill.intensity, pk.fillMax);
-      if (lights.ambient) lights.ambient.intensity = Math.min(lights.ambient.intensity, pk.ambientMax);
+      if (lights.fill) lights.fill.intensity = Math.min(Math.max(lights.fill.intensity, 0.3), pk.fillMax);
+      if (lights.ambient) {
+        lights.ambient.intensity = Math.min(Math.max(lights.ambient.intensity, 0.24), pk.ambientMax);
+      }
       if (lights.hemi) {
         lights.hemi.intensity = Math.min(Math.max(lights.hemi.intensity, pk.hemiMin), pk.hemiMax);
       }
@@ -545,11 +547,9 @@ export function applyShadowQualityContract(sun, opts = {}) {
   if (!sun || !sun.shadow) return;
   const cinema = opts.cinema === true || (VISUAL.tier || 0) >= 13 || VISUAL.cinemaRealism === true;
   sun.shadow.bias = GFX.shadowBias != null ? GFX.shadowBias : cinema ? -0.00018 : -0.00012;
-  sun.shadow.normalBias = Math.min(
-    GFX.shadowNormalBias != null ? GFX.shadowNormalBias : cinema ? 0.045 : 0.038,
-    0.016
-  );
-  sun.shadow.radius = GFX.shadowRadius != null ? GFX.shadowRadius : cinema ? 2.6 : 2.2;
+  sun.shadow.normalBias =
+    GFX.shadowNormalBias != null ? GFX.shadowNormalBias : cinema ? 0.038 : 0.032;
+  sun.shadow.radius = GFX.shadowRadius != null ? GFX.shadowRadius : cinema ? 2.8 : 2.4;
   if (sun.shadow.camera) {
     const near = GFX.shadowNear != null ? GFX.shadowNear : 2.5;
     const far = GFX.shadowFar != null ? GFX.shadowFar : 140;

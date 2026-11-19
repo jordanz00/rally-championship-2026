@@ -156,7 +156,7 @@ async function main() {
         const hit = document.elementFromPoint(x, y);
         return (hit === el || el.contains(hit)) ? { x, y } : null;
       `,
-        { timeout: 10000, label: "#btn-start to be the top element at its own centre" }
+        { timeout: 16000, label: "#btn-start to be the top element at its own centre" }
       );
       // Re-run the full diagnostic so a failure explains itself.
       const detail = await hitTest(cdp, "#btn-start");

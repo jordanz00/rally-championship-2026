@@ -36,7 +36,9 @@ for (const id of Object.keys(DEPOSIT)) {
   ok(typeof d.relaxMps === "number" && d.relaxMps >= 0, `relaxation rate defined for ${id}`);
   ok(d.cap * (1 + d.wetCap) <= DEPTH_HARD_CEILING + 1e-9, `${id} wet cap <= hard ceiling ${DEPTH_HARD_CEILING}`);
 }
-ok(DEPOSIT.sand.cap <= 0.12 && DEPOSIT.dirt.cap <= 0.12, "sand/dirt visual depth cap <= 12 cm");
+ok(DEPOSIT.sand.cap <= 0.05 && DEPOSIT.dirt.cap <= 0.04, "sand/dirt caps stay a tire groove (<= 5 / 4 cm)");
+ok(DEPOSIT.dirt.bermCap <= 0.016 && DEPOSIT.mud.bermCap <= 0.02, "berm lips stay low");
+ok(CELL <= 0.035, `deform cell ${CELL} m is 3.5 cm or finer`);
 ok(DEPOSIT.sand.relaxMps > 0 && DEPOSIT.gravel.relaxMps === 0, "sand relaxes, gravel stays");
 ok([...DEFORM_PHYSICS].every((s) => DEFORM_SURFACES.has(s)) && !DEFORM_PHYSICS.has("grass"), "physics sample set = ribbon soft surfaces, grass visual-only");
 ok(MAX_TILES <= 2048, `LRU tile cap bounded (${MAX_TILES})`);
@@ -188,7 +190,7 @@ for (const s of ["sand", "dirt", "gravel", "mud", "grass"]) {
   const f = new DeformField();
   f.stampImpact(4, 2, 4, 0.9, 1, "sand");
   const dep = f.maxDepthM();
-  ok(dep > 0.05 && dep <= DEPOSIT.sand.cap + 1e-6, `landing crater on sand ${(dep * 100).toFixed(1)} cm (capped)`);
+  ok(dep > 0.015 && dep <= DEPOSIT.sand.cap + 1e-6, `landing crater on sand ${(dep * 100).toFixed(1)} cm (capped)`);
   const t = new DeformField();
   t.stampImpact(4, 2, 4, 0.9, 1, "tarmac");
   ok(t.tileCount === 0, "landing on tarmac deforms nothing");

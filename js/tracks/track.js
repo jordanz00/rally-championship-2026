@@ -12,7 +12,7 @@ import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
 import { SURFACES, COLORS, ROAD_DECK, LIGHTING, VISUAL, STREAM } from "../config.js?v=260";
 import { roadMicroHeight } from "./road-micro.js?v=15";
-import { WheelDeformField, WheelRutMesh, DEFORM_PHYSICS } from "./surface-deform.js?v=16";
+import { WheelDeformField, WheelRutMesh, DEFORM_PHYSICS } from "./surface-deform.js?v=19";
 import { shoulderPadForScenery } from "./track-clearance.js?v=3";
 import { buildTunnelVolumes, tunnelAtDist, tunnelExclusionHalf } from "./tunnel-volume.js?v=4";
 import { runWorldGeometryValidation } from "./world-geometry-validator.js?v=11";
@@ -34,7 +34,7 @@ import {
   worldKerbMaterial,
   worldPropMaterial,
   upgradeWorldMaterials,
-} from "../gfx/pbr.js?v=69";
+} from "../gfx/pbr.js?v=71";
 
 /** Heightmap subdivisions — cinema segs on desktop / ?perf=high. */
 function terrainTileSegs() {
@@ -67,7 +67,7 @@ function envExtrasEnabled() {
 }
 import { paintedTexture } from "../gfx/saturn.js?v=2";
 import { armCameraFade } from "../gfx/occlusion-fade.js?v=25";
-import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=71";
+import { preparePropKit, propGeometry, propCharacterParts, propForestTreeParts, propReady, propNatureMaterial, propKitMaterial, forestCardForTree, FOREST_TREE_KINDS, FOREST_ROCK_KINDS, FOREST_HERO_ROCK_KINDS, DESERT_HERO_ROCK_KINDS, DESERT_HERO_PLANT_KINDS, FOREST_STAGE_PALETTE, FOREST_MOUNTAIN_PALETTE } from "./prop-kit.js?v=72";
 import {
   prepareForestPbr,
   forestPbrReady,
@@ -79,6 +79,7 @@ import {
 } from "./forest-pbr.js?v=70";
 import {
   prepareDesertPbr,
+  desertPbrReady,
   desertRoadMaps,
   desertLandMaps,
   cloneDesertMap,
@@ -109,10 +110,10 @@ import {
   createForestTunnelPendantGlobeGeometry,
   createForestTunnelPendantConduitGeometry,
   createForestTunnelPendantPlateGeometry,
-} from "./forest-tunnel.js?v=29";
-import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=57";
+} from "./forest-tunnel.js?v=30";
+import { CrowdField, CROWD_CHARACTER_KINDS } from "./crowd.js?v=58";
 import { pickPaceNote } from "./pace-call.mjs?v=4";
-import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=17";
+import { createClothFlag, createGantryBanner, updateClothFlags, startFlagKinds, GANTRY_POST_PAD } from "./flag-cloth.js?v=18";
 // Spectators: character-male-a … character-female-f biped GLBs (CrowdField).
 
 const STEP = 3.2;
@@ -540,6 +541,11 @@ export class Track {
     // Seat can settle props — scrub corridor again so nothing rides onto paint.
     this._scrubRoadwayColliders();
     this._scrubRoadwayVisuals({ skipLand: true });
+    if (def.scenery === "desert") {
+      // After the corridor scrub, so the chase-camera rocks stay beside the gate.
+      this._addDesertStartTown(rng);
+      this._addDesertGroves(rng);
+    }
     try {
       if (!(typeof window !== "undefined" && window.__rallyPhoneLite)) {
         upgradeWorld(this.group);
@@ -2194,8 +2200,19 @@ export class Track {
       normalScale: landNs,
       vertexColors: true,
       side: THREE.FrontSide,
+      projAmount: desert ? 0.2 : 1,
+      blotch: !desert,
     });
+    if (mat.map) mat.map.anisotropy = 16;
     if (scenery === "lakeside" && mat.color) mat.color.setRGB(1.35, 2.05, 1.15);
+    if (desert) {
+      const sandTile = desertLandMaps();
+      const tileM = sandTile && sandTile.tileMeters ? sandTile.tileMeters : 38;
+      mat.userData.projScale = 5.5 / tileM;
+      const prevKey = mat.customProgramCacheKey;
+      mat.customProgramCacheKey = () =>
+        `${typeof prevKey === "function" ? prevKey() : "terrain"}@${mat.userData.projScale.toFixed(3)}`;
+    }
     mat.polygonOffset = true;
     // Mountain: push land further behind asphalt so ridge textures cannot z-fight the deck.
     if (scenery === "mountain") {
@@ -3010,6 +3027,21 @@ export class Track {
     const wobble =
       Math.abs(Math.sin(x * 0.41 + z * 0.33)) * 1.55 + Math.abs(Math.sin(x * 0.093 - z * 0.11)) * 0.85;
     if (scenery === "desert") {
+      // The sand photograph already has the hue. A painted orange multiply
+      // turned the whole chase view into one flat colour.
+      if (desertPbrReady()) {
+        const grit =
+          Math.abs(Math.sin(x * 0.055 + z * 0.049)) * 0.45 +
+          Math.abs(Math.sin(x * 0.019 - z * 0.027 + 1.7)) * 0.35 +
+          Math.abs(Math.sin(x * 0.11 + z * 0.093)) * 0.2;
+        let shade = 0.9 + lift * 0.12;
+        if (over < 7) shade *= 0.94;
+        if (grit > 0.72) shade *= 0.9;
+        if (grit < 0.28) shade *= 1.05;
+        shade = Math.min(1, shade);
+        c.setRGB(shade, shade * 0.98, shade * 0.94);
+        return;
+      }
       // Compacted verge → warm sand → dune crest. Soft distance blend, not a hard sheet.
       const vergeEnd = 4.6 + wobble * 1.2;
       const sandEnd = 14.5 + wobble * 2.0;
@@ -4229,7 +4261,12 @@ export class Track {
           );
           if (mat.color) {
             if (scenery === "desert") {
-              mat.color.setHex(b.id === "tarmac" ? 0xe8e0d4 : b.id === "sand" ? 0xf2e4c4 : 0xead4a8);
+              mat.color.setHex(0xffffff);
+              const tileM = photo.tileMeters || 38;
+              mat.userData.projScale = 5.5 / tileM;
+              const prevKey = mat.customProgramCacheKey;
+              mat.customProgramCacheKey = () =>
+                `${typeof prevKey === "function" ? prevKey() : "road"}@${mat.userData.projScale.toFixed(3)}`;
             } else {
               mat.color.setHex(
                 b.id === "gravel" ? 0xe4d4b4 : b.id === "tarmac" ? 0xd6d2c8 : b.id === "mud" ? 0x8c6c48 : 0xf0c888
@@ -5084,15 +5121,11 @@ export class Track {
           : useGlb && propGeometry("construction_barrier")
             ? "construction_barrier"
             : null;
-      const wallGeo = wallKind ? propGeometry(wallKind) : new THREE.BoxGeometry(0.35, 0.85, 2.8);
-      const wallMat = wallKind
-        ? propKitMaterial(wallKind)
-        : new THREE.MeshLambertMaterial({
-            color: def.scenery === "mountain" ? 0x8a4030 : 0x8a7a62,
-            flatShading: true,
-          });
+      if (wallKind) {
+      const wallGeo = propGeometry(wallKind);
+      const wallMat = propKitMaterial(wallKind);
       const posts = [];
-      const barrierOff = ROAD_VERGE + 1.4;
+      const barrierOff = ROAD_VERGE + 3.6;
       const barrierH = 0.85;
       const scenery = def.scenery || "forest";
       for (let i = 0; i < this.points.length; i += 3) {
@@ -5118,6 +5151,7 @@ export class Track {
       }
       this._addInstances(wallGeo, wallMat, posts, { castShadow: true, cameraFade: true });
       this._bumpPoses(posts, 0.42);
+      }
     }
 
     if (onProgress) {
@@ -5126,7 +5160,7 @@ export class Track {
       if (wait) await wait;
     }
     if (def.scenery === "desert") {
-      this._addDesertStartTown(rng);
+      // Start rocks wait until finishDeferredDressing, after the corridor scrub.
       this._addDriftSweepBerms("desert");
       // Safari / gallery / tumbleweed → finishDeferredDressing after Ready.
     }
@@ -6832,53 +6866,147 @@ export class Track {
   }
 
   /**
-   * Saturn Desert start — a small plaster town and banner line, not empty dunes.
+   * Desert start and finish place. Photogrammetry rocks and quiver trees
+   * sit off the ribbon; banner towers and light posts break the skyline.
    * @param {() => number} rng
    */
   _addDesertStartTown(rng) {
-    const plaster = new THREE.MeshLambertMaterial({ color: 0xe8d4a4, flatShading: true });
-    const roof = new THREE.MeshLambertMaterial({ color: 0xb44a28, flatShading: true });
-    const unit = new THREE.BoxGeometry(1, 1, 1);
-    const walls = [];
-    const roofs = [];
-    for (let i = 0; i < this.points.length; i += 2) {
-      const p = this.points[i];
-      if (p.dist > 175) break;
-      if (p.tunnel) continue;
-      const side = i % 4 === 0 ? 1 : -1;
-      const off = p.width * 0.5 + 9.5 + rng() * 4;
-      const hx = p.x + p.nx * side * off;
-      const hz = p.z + p.nz * side * off;
-      if (!this._driveClear(hx, hz, 3.6)) continue;
-      const hy = this._visualLandY(hx, hz);
-      const chunk = this._chunkOfDist(p.dist);
-      const w = 2.2 + rng() * 1.1;
-      const d = 3.0 + rng() * 1.2;
-      const h = 2.0 + rng() * 1.1;
-      walls.push({
-        x: hx,
-        y: this._plantBoxY(hy, h, 0.22),
-        z: hz,
-        sx: w,
-        sy: h,
-        sz: d,
-        ry: p.heading + (rng() - 0.5) * 0.15,
-        c: chunk,
-      });
-      roofs.push({
-        x: hx,
-        y: hy + h + 0.22,
-        z: hz,
-        sx: w + 0.45,
-        sy: 0.5,
-        sz: d + 0.45,
-        ry: p.heading,
-        c: chunk,
-      });
-      this._bumpNearRoad(hx, hz, 2.1);
+    if (this._desertTownDressed) return;
+    const useGlb = (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    if (!useGlb || !this.points || !this.points.length) return;
+    const bands = [
+      { lo: 36, hi: 260, step: 3 },
+      { lo: Math.max(300, this.length - 240), hi: this.length - 20, step: 5 },
+    ];
+    const recipes = [
+      { kind: "desert_hero_quiver_a", nature: true },
+      { kind: "desert_hero_boulder_a", nature: true },
+      { kind: "banner_tower", nature: false },
+      { kind: "desert_hero_scrub", nature: true },
+      { kind: "desert_hero_boulder_c", nature: true },
+      { kind: "light_post", nature: false },
+      { kind: "desert_hero_quiver_b", nature: true },
+      { kind: "desert_hero_othonna", nature: true },
+      { kind: "desert_hero_boulder_b", nature: true },
+      { kind: "desert_hero_stones", nature: true },
+      { kind: "desert_hero_sand_rocks", nature: true },
+      { kind: "desert_hero_rocks", nature: true },
+    ];
+    const buckets = new Map();
+    let n = 0;
+    for (let b = 0; b < bands.length; b++) {
+      const band = bands[b];
+      for (let i = 0; i < this.points.length; i += band.step) {
+        const p = this.points[i];
+        if (p.dist < band.lo || p.dist > band.hi) continue;
+        if (p.tunnel) continue;
+        const recipe = recipes[n % recipes.length];
+        n += 1;
+        const geo = propGeometry(recipe.kind);
+        if (!geo) continue;
+        const side = i % 2 === 0 ? 1 : -1;
+        const off = p.width * 0.5 + 7.4 + rng() * 2.6;
+        const hx = p.x + p.nx * side * off;
+        const hz = p.z + p.nz * side * off;
+        const hy = this._visualLandY(hx, hz);
+        // Verge scatter wants 12 m of empty sand. The chase camera never
+        // reaches that. Seat these on the collision-clear line instead.
+        if (this._laneKeepout(hx, hz, 1.15, hy, 1.6)) continue;
+        let list = buckets.get(recipe.kind);
+        if (!list) {
+          list = { geo, nature: recipe.nature, poses: [] };
+          buckets.set(recipe.kind, list);
+        }
+        const sc = 1.15 + rng() * 0.35;
+        list.poses.push({
+          x: hx,
+          y: hy,
+          z: hz,
+          sx: sc,
+          sy: sc,
+          sz: sc,
+          ry: p.heading + (rng() - 0.5) * 1.1,
+          c: this._chunkOfDist(p.dist),
+        });
+        this._bumpNearRoad(hx, hz, recipe.nature ? 2.4 : 1.5);
+      }
     }
-    if (walls.length) this._addInstances(unit, plaster, walls, { castShadow: true });
-    if (roofs.length) this._addInstances(unit, roof, roofs, { castShadow: true });
+    let planted = 0;
+    for (const [kind, list] of buckets) {
+      if (!list.poses.length) continue;
+      const mat = list.nature ? propNatureMaterial(kind) : propKitMaterial(kind);
+      if (!mat) continue;
+      this._addInstances(list.geo, mat, list.poses, { castShadow: true, receiveShadow: true });
+      planted += list.poses.length;
+    }
+    if (planted) this._desertTownDressed = true;
+  }
+
+  /**
+   * Procedural desert groves. Opens and stands along the stage, built from
+   * the same Namaqualand heroes as the gate. No stand-in shapes.
+   * @param {() => number} rng
+   */
+  _addDesertGroves(rng) {
+    if (this._desertGrovesDressed) return;
+    const useGlb = (VISUAL.tier || 0) >= 8 && VISUAL.glbProps !== false && propReady();
+    if (!useGlb || !this.points || !this.points.length) return;
+    const kinds = [
+      "desert_hero_quiver_a",
+      "desert_hero_boulder_b",
+      "desert_hero_scrub",
+      "desert_hero_boulder_a",
+      "desert_hero_othonna",
+      "desert_hero_quiver_b",
+      "desert_hero_stones",
+      "desert_hero_sand_rocks",
+    ];
+    const buckets = new Map();
+    let planted = 0;
+    for (let i = 0; i < this.points.length && planted < 220; i += 6) {
+      const p = this.points[i];
+      if (!p || p.dist < 280 || p.dist > this.length - 260) continue;
+      if (p.tunnel || p.jump) continue;
+      const cover = Math.abs(Math.sin(p.dist * 0.009 + 0.4));
+      if (cover < 0.42) continue;
+      const kind = kinds[(i + ((cover * 7) | 0)) % kinds.length];
+      const geo = propGeometry(kind);
+      if (!geo) continue;
+      const side = Math.sin(p.dist * 0.021) > 0 ? 1 : -1;
+      const off = p.width * 0.5 + 8.2 + cover * 8;
+      const along = (rng() - 0.5) * 7;
+      const tx = Math.sin(p.heading);
+      const tz = Math.cos(p.heading);
+      const hx = p.x + p.nx * side * off + tx * along;
+      const hz = p.z + p.nz * side * off + tz * along;
+      const hy = this._visualLandY(hx, hz);
+      if (this._laneKeepout(hx, hz, 1.2, hy, 1.7)) continue;
+      let list = buckets.get(kind);
+      if (!list) {
+        list = { geo, poses: [] };
+        buckets.set(kind, list);
+      }
+      const sc = 0.95 + cover * 0.45;
+      list.poses.push({
+        x: hx,
+        y: hy,
+        z: hz,
+        sx: sc,
+        sy: sc,
+        sz: sc,
+        ry: p.heading + (rng() - 0.5) * 1.4,
+        c: this._chunkOfDist(p.dist),
+      });
+      this._bumpNearRoad(hx, hz, 1.6);
+      planted += 1;
+    }
+    for (const [kind, list] of buckets) {
+      if (!list.poses.length) continue;
+      const mat = propNatureMaterial(kind);
+      if (!mat) continue;
+      this._addInstances(list.geo, mat, list.poses, { castShadow: true, receiveShadow: true });
+    }
+    if (planted) this._desertGrovesDressed = true;
   }
 
   /**
@@ -6910,7 +7038,7 @@ export class Track {
       if (!this._driveClear(hx, hz, 4.2)) continue;
       const hy = this._visualLandY(hx, hz);
       const chunk = Math.min(this._chunkCount - 1, Math.max(0, Math.floor(p.dist / CHUNK_LEN)));
-      if (houseGeo && rng() > 0.35) {
+      if (houseGeo && rng() > 0.28) {
         houses.push({
           x: hx,
           y: hy - 0.12,
@@ -6919,7 +7047,7 @@ export class Track {
           ry: p.heading + (rng() - 0.5) * 0.4,
           c: chunk,
         });
-      } else if (tentGeo && rng() > 0.5) {
+      } else if (tentGeo) {
         tents.push({
           x: hx,
           y: hy - 0.1,
@@ -6929,34 +7057,16 @@ export class Track {
           c: chunk,
         });
       } else {
-        const w = 2.4 + rng();
-        const d = 3.2 + rng();
-        const h = 2.2 + rng();
-        walls.push({
-          x: hx,
-          y: this._plantBoxY(hy, h, 0.25),
-          z: hz,
-          sx: w,
-          sy: h,
-          sz: d,
-          ry: p.heading,
-          c: chunk,
-        });
-        roofs.push({
-          x: hx,
-          y: hy + h + 0.28 - 0.12,
-          z: hz,
-          sx: w + 0.5,
-          sy: 0.55,
-          sz: d + 0.5,
-          ry: p.heading,
-          c: chunk,
-        });
+        continue;
       }
       this._bump(hx, hz, 2.4);
     }
-    if (houses.length && houseGeo) this._addInstances(houseGeo, plaster, houses, { castShadow: true });
-    if (tents.length && tentGeo) this._addInstances(tentGeo, roof, tents, { castShadow: true });
+    if (houses.length && houseGeo) {
+      this._addInstances(houseGeo, propKitMaterial("house-alpine"), houses, { castShadow: true });
+    }
+    if (tents.length && tentGeo) {
+      this._addInstances(tentGeo, propKitMaterial("tent_detailedClosed"), tents, { castShadow: true });
+    }
     if (walls.length) this._addInstances(unit, plaster, walls);
     if (roofs.length) this._addInstances(unit, roof, roofs);
   }
@@ -8923,12 +9033,9 @@ export class Track {
    * the Sprint 6 Bowl / linked pair (Desert pattern, Corsica rock skin).
    */
   _addMountainDriftLandmarks() {
-    const rock = new THREE.MeshLambertMaterial({ color: 0x7a6e58, flatShading: true });
-    const rockDark = new THREE.MeshLambertMaterial({ color: 0x5a5248, flatShading: true });
-    const berms = [];
-    const shards = [];
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const shardGeo = cliffShardGeometry();
+    const kinds = ["forest_hero_boulder_a", "forest_hero_boulder_b", "forest_hero_moss_set_a"];
+    const buckets = new Map();
+    let n = 0;
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p.landmark) continue;
@@ -8939,47 +9046,40 @@ export class Track {
       while (dh < -Math.PI) dh += Math.PI * 2;
       const outside = dh > 0 ? -1 : 1;
       const chunk = this._chunkOfDist(p.dist);
-      for (let k = -8; k <= 8; k += 2) {
+      for (let k = -8; k <= 8; k += 4) {
+        const kind = kinds[n % kinds.length];
+        n += 1;
+        const geo = propGeometry(kind);
+        if (!geo) continue;
         const j = Math.max(0, Math.min(this.points.length - 1, i + k));
         const q = this.points[j];
-        const off = q.width * 0.5 + 14.5 + Math.abs(k) * 0.14;
+        const off = q.width * 0.5 + 16 + Math.abs(k) * 0.35;
         const bx = q.x + q.nx * outside * off;
         const bz = q.z + q.nz * outside * off;
-        if (!this._driveClear(bx, bz, 3.8)) continue;
-        const gy = this._groundHeight(bx, bz, "mountain");
-        const bermH = 1.1 + (8 - Math.abs(k)) * 0.05;
-        berms.push({
+        if (!this._driveClear(bx, bz, 2.4)) continue;
+        let list = buckets.get(kind);
+        if (!list) {
+          list = { geo, poses: [] };
+          buckets.set(kind, list);
+        }
+        list.poses.push({
           c: chunk,
           x: bx,
-          y: this._plantBoxY(gy, bermH, 0.45),
+          y: this._visualLandY(bx, bz),
           z: bz,
-          sx: 2.8 + Math.abs(k) * 0.12,
-          sy: bermH,
-          sz: 2.2,
-          ry: q.heading + outside * 0.2,
-        });
-      }
-      const sx = p.x + p.nx * outside * (p.width * 0.5 + 13.5);
-      const sz = p.z + p.nz * outside * (p.width * 0.5 + 13.5);
-      if (this._driveClear(sx, sz, 3.2)) {
-        const sgy = this._groundHeight(sx, sz, "mountain");
-        const shardS = 2.2 + (i % 3) * 0.4;
-        shards.push({
-          c: chunk,
-          x: sx,
-          y: sgy + shardS * 0.22,
-          z: sz,
-          s: shardS,
-          rx: i * 0.15,
-          ry: i * 0.35,
-          rz: outside * 0.25,
+          s: 1.05 + (Math.abs(k) % 3) * 0.12,
+          ry: q.heading + outside * 0.4,
         });
       }
     }
-    if (berms.length) this._addInstances(box, rock, berms, { castShadow: true });
-    this._bumpPoses(berms, 0.48);
-    if (shards.length) this._addInstances(shardGeo, rockDark, shards, { castShadow: true });
-    this._bumpPoses(shards, 0.5);
+    for (const [kind, list] of buckets) {
+      if (!list.poses.length) continue;
+      this._addInstances(list.geo, propNatureMaterial(kind), list.poses, {
+        castShadow: true,
+        receiveShadow: true,
+      });
+      this._bumpPoses(list.poses, 0.8);
+    }
   }
 
   /**
@@ -8991,75 +9091,49 @@ export class Track {
     // Desert sweeps were a continuous cube wall. That wall sat on the last
     // turn and is what the frame time fell through around 2471 m.
     if (scenery === "desert") return;
-    const forest = scenery === "forest";
-    const desert = scenery === "desert";
-    const mat = new THREE.MeshLambertMaterial({
-      color: forest ? 0x3a4828 : desert ? 0x9a8468 : 0x7a6e58,
-      flatShading: true,
-    });
-    const rockDark = new THREE.MeshLambertMaterial({
-      color: desert ? 0x6a5a48 : forest ? 0x2e3820 : 0x5a5040,
-      flatShading: true,
-    });
-    const berms = [];
-    const shards = [];
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const shardGeo = cliffShardGeometry();
-    for (let i = 0; i < this.points.length; i++) {
+    const kinds =
+      scenery === "forest"
+        ? ["forest_hero_boulder_b", "forest_hero_moss_set_a", "forest_hero_log"]
+        : ["forest_hero_boulder_a", "forest_hero_moss_set_a", "forest_hero_boulder_b"];
+    const buckets = new Map();
+    let n = 0;
+    for (let i = 0; i < this.points.length; i += 5) {
       const p = this.points[i];
       if (!p.sweep) continue;
+      const kind = kinds[n % kinds.length];
+      n += 1;
+      const geo = propGeometry(kind);
+      if (!geo) continue;
       const prev = this.points[Math.max(0, i - 4)];
       let dh = p.heading - prev.heading;
       while (dh > Math.PI) dh -= Math.PI * 2;
       while (dh < -Math.PI) dh += Math.PI * 2;
       const outside = dh > 0 ? -1 : 1;
-      const chunk = this._chunkOfDist(p.dist);
-      // Desert Act 6 long easy right — continuous embankment you can lean on.
-      if (i % (desert ? 1 : 3) !== 0) continue;
-      const off = desert
-        ? p.width * 0.5 + ROAD_VERGE + 4.2
-        : p.width * 0.5 + 11.5;
+      const off = p.width * 0.5 + 14;
       const bx = p.x + p.nx * outside * off;
       const bz = p.z + p.nz * outside * off;
-      if (!this._driveClear(bx, bz, forest ? 4.0 : desert ? 3.8 : 3.4)) continue;
-      const gy = this._groundHeight(bx, bz, scenery);
-      const bermH = forest ? 1.35 : desert ? 2.15 : 1.05;
-      berms.push({
-        c: chunk,
-        x: bx,
-        y: this._plantBoxY(gy, bermH, desert ? 0.72 : forest ? 0.5 : 0.45),
-        z: bz,
-        sx: forest ? 4.2 : desert ? 5.2 : 3.6,
-        sy: bermH,
-        sz: forest ? 3.0 : desert ? 3.8 : 2.6,
-        ry: p.heading + outside * 0.18,
-      });
-      if (desert && i % 2 === 0) {
-        const sx = bx + p.nx * outside * 2.1;
-        const sz = bz + p.nz * outside * 2.1;
-        if (this._driveClear(sx, sz, 2.2)) {
-          const sgy = this._groundHeight(sx, sz, "desert");
-          const ss = 1.4 + (i % 5) * 0.12;
-          shards.push({
-            c: chunk,
-            x: sx,
-            y: sgy + ss * 0.22,
-            z: sz,
-            s: ss,
-            rx: i * 0.3,
-            ry: i * 0.5,
-            rz: i * 0.15,
-          });
-        }
+      if (!this._driveClear(bx, bz, 2.6)) continue;
+      let list = buckets.get(kind);
+      if (!list) {
+        list = { geo, poses: [] };
+        buckets.set(kind, list);
       }
+      list.poses.push({
+        c: this._chunkOfDist(p.dist),
+        x: bx,
+        y: this._visualLandY(bx, bz),
+        z: bz,
+        s: 1.1,
+        ry: p.heading + outside * 0.5,
+      });
     }
-    const kept = desert ? this._stripLanePoses(berms) : berms;
-    if (kept.length) this._addInstances(box, mat, kept, { castShadow: true, cameraFade: desert });
-    this._bumpPoses(kept, desert ? 0.62 : 0.5);
-    if (shards.length) {
-      const keptShards = this._stripLanePoses(shards);
-      if (keptShards.length) this._addInstances(shardGeo, rockDark, keptShards, { castShadow: true });
-      this._bumpPoses(keptShards, 0.55);
+    for (const [kind, list] of buckets) {
+      if (!list.poses.length) continue;
+      this._addInstances(list.geo, propNatureMaterial(kind), list.poses, {
+        castShadow: true,
+        receiveShadow: true,
+      });
+      this._bumpPoses(list.poses, 0.7);
     }
   }
 
@@ -9068,11 +9142,9 @@ export class Track {
    * surface for the Bowl and linked pair (Desert Act 5–7 pattern, Forest skin).
    */
   _addForestDriftLandmarks() {
-    const earth = new THREE.MeshLambertMaterial({ color: 0x3a4828, flatShading: true });
-    const root = new THREE.MeshLambertMaterial({ color: 0x4a3820, flatShading: true });
-    const logs = [];
-    const banks = [];
-    const box = new THREE.BoxGeometry(1, 1, 1);
+    const kinds = ["forest_hero_boulder_a", "forest_hero_log", "forest_hero_boulder_b", "forest_hero_moss_set_b"];
+    const buckets = new Map();
+    let n = 0;
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p.landmark) continue;
@@ -9082,47 +9154,40 @@ export class Track {
       while (dh < -Math.PI) dh += Math.PI * 2;
       const outside = dh > 0 ? -1 : 1;
       const chunk = this._chunkOfDist(p.dist);
-      for (let k = -12; k <= 12; k += 2) {
+      for (let k = -8; k <= 8; k += 4) {
+        const kind = kinds[n % kinds.length];
+        n += 1;
+        const geo = propGeometry(kind);
+        if (!geo) continue;
         const j = Math.max(0, Math.min(this.points.length - 1, i + k));
         const q = this.points[j];
-        const off = q.width * 0.5 + 13.6 + Math.abs(k) * 0.1;
+        const off = q.width * 0.5 + 15 + Math.abs(k) * 0.4;
         const bx = q.x + q.nx * outside * off;
         const bz = q.z + q.nz * outside * off;
-        if (!this._driveClear(bx, bz, 3.8)) continue;
-        const gy = this._groundHeight(bx, bz, "forest");
-        const bankH = 1.55 + (12 - Math.abs(k)) * 0.07;
-        banks.push({
+        if (!this._driveClear(bx, bz, 2.4)) continue;
+        let list = buckets.get(kind);
+        if (!list) {
+          list = { geo, poses: [] };
+          buckets.set(kind, list);
+        }
+        list.poses.push({
           c: chunk,
           x: bx,
-          y: this._plantBoxY(gy, bankH, 0.55),
+          y: this._visualLandY(bx, bz),
           z: bz,
-          sx: 3.6 + Math.abs(k) * 0.16,
-          sy: bankH,
-          sz: 2.8,
-          ry: q.heading + outside * 0.25,
+          s: kind.includes("log") ? 1 : 1.15,
+          ry: q.heading + (kind.includes("log") ? Math.PI * 0.5 : outside * 0.35),
         });
       }
-      const logOff = p.width * 0.5 + 14.4;
-      const lx = p.x + p.nx * outside * logOff;
-      const lz = p.z + p.nz * outside * logOff;
-      if (!this._driveClear(lx, lz, 3.6)) continue;
-      const logGy = this._groundHeight(lx, lz, "forest");
-      const logH = 0.52;
-      logs.push({
-        c: chunk,
-        x: lx,
-        y: this._plantBoxY(logGy, logH, 0.22),
-        z: lz,
-        sx: 4.4,
-        sy: logH,
-        sz: 0.52,
-        ry: p.heading + Math.PI * 0.5,
-      });
     }
-    if (banks.length) this._addInstances(box, earth, banks, { castShadow: true });
-    this._bumpPoses(banks, 0.5);
-    if (logs.length) this._addInstances(box, root, logs, { castShadow: true });
-    this._bumpPoses(logs, 0.55);
+    for (const [kind, list] of buckets) {
+      if (!list.poses.length) continue;
+      this._addInstances(list.geo, propNatureMaterial(kind), list.poses, {
+        castShadow: true,
+        receiveShadow: true,
+      });
+      this._bumpPoses(list.poses, 0.75);
+    }
   }
 
   /**
@@ -12320,11 +12385,14 @@ export class Track {
    */
   _plantStartFlagAvenue(p, scenery) {
     const kinds = startFlagKinds(scenery);
+    const desert = scenery === "desert";
     const half = p.width * 0.5;
     const tx = Math.sin(p.heading);
     const tz = Math.cos(p.heading);
     const extras = [2.85, 3.7, 4.9, ROAD_VERGE + 1.35, ROAD_VERGE + 2.2, ROAD_VERGE + 3.3];
-    const alongSlots = [-8.2, -4.1, 0, 4.1, 8.2];
+    const alongSlots = desert
+      ? [-16, -11.2, -6.4, -1.6, 3.2, 8, 12.8, 17.6]
+      : [-8.2, -4.1, 0, 4.1, 8.2];
     let planted = 0;
 
     const plantAt = (fx, fz, side, kind, seed, overHint) => {
@@ -12340,6 +12408,7 @@ export class Track {
         nx: p.nx,
         nz: p.nz,
         seed,
+        scale: desert ? 1.62 : 1,
       });
       this.group.add(flag.group);
       this._clothFlags.push(flag);
@@ -12350,7 +12419,7 @@ export class Track {
     for (const side of [-1, 1]) {
       for (let s = 0; s < alongSlots.length; s++) {
         const along = alongSlots[s];
-        const kind = kinds[(side < 0 ? 0 : 5) + s] || "red";
+        const kind = kinds[planted % kinds.length] || "red";
         let placed = false;
         for (let e = 0; e < extras.length; e++) {
           const lat = half + extras[e];
@@ -12375,23 +12444,22 @@ export class Track {
   }
 
   /**
-   * Exactly ten checkered cloth flags at the finish — five poles per verge —
-   * for every stage (Desert / Forest / Mountain / Lakeside / physlab).
-   * Spaced along-track just past the gantry. Unique seeds → independent wind.
-   * Always plants all ten: clearance preferred, forced verge fallback if needed.
+   * Finish flags. Desert gets a long row of national flags plus two checkers
+   * so the line still reads as a finish. Every other stage keeps ten checkers.
    * @param {object} p finish gate sample
    * @param {string} scenery
    */
   _plantFinishCheckerRow(p, scenery) {
+    const desert = scenery === "desert";
+    const nations = desert ? startFlagKinds("desert") : null;
     const half = p.width * 0.5;
     const tx = Math.sin(p.heading);
     const tz = Math.cos(p.heading);
     const extras = [2.75, 3.55, 4.7, ROAD_VERGE + 1.25, ROAD_VERGE + 2.1, ROAD_VERGE + 3.2];
-    // Five along-track slots per side past the gantry.
-    const alongSlots = [-1.15, 0.55, 2.25, 3.95, 5.65];
+    const alongSlots = desert ? [-12, -7.2, -2.4, 2.4, 7.2, 12, 16.5] : [-1.15, 0.55, 2.25, 3.95, 5.65];
     let planted = 0;
 
-    const plantAt = (fx, fz, side, seed, overHint) => {
+    const plantAt = (fx, fz, side, seed, overHint, kind) => {
       const gy = this._visualLandY(fx, fz);
       const flag = createClothFlag({
         x: fx,
@@ -12399,11 +12467,12 @@ export class Track {
         z: fz,
         heading: p.heading,
         side,
-        kind: "checkers",
+        kind: kind || "checkers",
         scenery,
         nx: p.nx,
         nz: p.nz,
         seed,
+        scale: desert ? 1.55 : 1,
       });
       this.group.add(flag.group);
       this._clothFlags.push(flag);
@@ -12423,16 +12492,18 @@ export class Track {
           const road = this._nearestRoad(fx, fz);
           const over = road.minOver != null ? road.minOver : road.dist - road.roadW * 0.5;
           if (over < 1.55) continue;
-          plantAt(fx, fz, side, 100 + planted, over);
+          const kind = desert && s !== 3 ? nations[planted % nations.length] : "checkers";
+          plantAt(fx, fz, side, 100 + planted, over, kind);
           placed = true;
           break;
         }
         if (!placed) {
-          // Forced verge — every stage must still show 5+5 checkers.
+          // Forced verge — the row still plants when the ribbon is tight.
           const lat = half + ROAD_VERGE + 3.4 + s * 0.2;
           const fx = p.x + p.nx * side * lat + tx * along;
           const fz = p.z + p.nz * side * lat + tz * along;
-          plantAt(fx, fz, side, 100 + planted, 1.5);
+          const kind = desert && s !== 3 ? nations[planted % nations.length] : "checkers";
+          plantAt(fx, fz, side, 100 + planted, 1.5, kind);
         }
       }
     }
@@ -13417,6 +13488,9 @@ function roadTintHex(from, to, mix, scenery) {
     if (!photoStage) return h;
     if (id === "tarmac") return mixHex(h, 0xe6e2da, 0.66);
     if (id === "cobble" && scenery === "desert") return mixHex(h, 0xe6e2da, 0.4);
+    if (scenery === "desert" && desertPbrReady() && (id === "sand" || id === "dirt" || id === "gravel" || id === "mud")) {
+      return mixHex(h, 0xfff6ea, 0.88);
+    }
     return h;
   };
   let surfaceBlend = mixHex(ribbonHex(from), ribbonHex(to), mix);
@@ -13468,11 +13542,15 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
     if (n3 > 0.88) _organicTint.multiplyScalar(0.94);
     return _organicTint.getHex();
   }
+  if (scenery === "desert" && desertPbrReady()) {
+    _organicTint.multiplyScalar(0.94 + n * 0.1);
+    return _organicTint.getHex();
+  }
   // Photo stages still need world-space soil blotches — maps alone tile too evenly.
   if (scenery === "forest" && forestPbrReady()) {
-    const k = 0.7 + n * 0.34 + (n2 - 0.5) * 0.18 + (n4 - 0.5) * 0.14 + (n5 - 0.5) * 0.1;
+    const k = 0.88 + n * 0.2 + (n2 - 0.5) * 0.1 + (n4 - 0.5) * 0.08 + (n5 - 0.5) * 0.06;
     _organicTint.multiplyScalar(k);
-    if (n3 > 0.76) _organicTint.multiplyScalar(0.78);
+    if (n3 > 0.76) _organicTint.multiplyScalar(0.92);
     if (n2 > 0.74 && n < 0.4) {
       _organicTint.r *= 0.86;
       _organicTint.g *= 0.9;
@@ -13484,11 +13562,11 @@ function organicRoadTint(from, to, mix, x, z, scenery) {
       _organicTint.b *= 0.94;
     }
   } else {
-    const k = 0.64 + n * 0.48 + (n2 - 0.5) * 0.26 + (n4 - 0.5) * 0.16 + (n5 - 0.5) * 0.12;
+    const k = 0.94 + n * 0.18 + (n2 - 0.5) * 0.1 + (n4 - 0.5) * 0.07 + (n5 - 0.5) * 0.05;
     _organicTint.r *= k;
-    _organicTint.g *= k * (0.92 + n2 * 0.1 + (n5 - 0.5) * 0.04);
-    _organicTint.b *= k * (0.86 + n * 0.12 + (n4 - 0.5) * 0.05);
-    if (n3 > 0.8) _organicTint.multiplyScalar(0.64);
+    _organicTint.g *= k * (0.96 + n2 * 0.06 + (n5 - 0.5) * 0.03);
+    _organicTint.b *= k * (0.92 + n * 0.08 + (n4 - 0.5) * 0.04);
+    if (n3 > 0.8) _organicTint.multiplyScalar(0.9);
     if (n2 < 0.14) _organicTint.multiplyScalar(1.16);
     if (n4 > 0.8) {
       _organicTint.r *= 0.88;

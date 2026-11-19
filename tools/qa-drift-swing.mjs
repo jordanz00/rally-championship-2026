@@ -42,7 +42,11 @@ check(
 check("steer swing rack", /slideSwing/.test(vehicle) && /DRIFT_SWING_STEER/.test(vehicle), "fast rack");
 check("burnout v8", /_burnoutDriveV8/.test(burnout) && /easySlideHardSteer/.test(burnout), "hard-steer drift");
 check("hardSteer initiation", /hardSteer/.test(vehicle) && /turned in too hot/.test(vehicle), "steer-only slide");
-check("tighter turn-in", /maxSteer \* 1\.48/.test(vehicle) && /speedUndersteer = 0\.00072/.test(burnout), "less understeer");
+check(
+  "catchable turn-in",
+  /maxSteer \* 1\.18/.test(vehicle) && /speedUndersteer = 0\.0026/.test(burnout) && /BURNOUT_STEER_SNAP = 0\.96/.test(burnout),
+  "placed corners, not a whip"
+);
 check("vehicle cache 211+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 211);
 check(
   "Vehicle singleton game↔ai",

@@ -47,14 +47,15 @@ const css = read("css/game.css");
 const { gameV, mainV, ok: cacheOk } = readCacheVersions(main, index);
 
 check(
-  "prepareTitleCar loads the rival LOD first",
-  /await tryRivalGltf\(chassis\)/.test(celica) &&
-    /export async function prepareTitleCar/.test(celica) &&
-    celica.indexOf("await tryRivalGltf(chassis)") < celica.indexOf("await tryLocalGltf(chassis)")
+  "prepareTitleCar loads the hero GLB before any rival LOD",
+  /export async function prepareTitleCar/.test(celica) &&
+    /if \(await tryLocalGltf\(chassis\)\) return/.test(celica) &&
+    celica.indexOf("if (await tryLocalGltf(chassis)) return") <
+      celica.indexOf("if (!templates[chassis]) await tryRivalGltf(chassis)")
 );
 check(
-  "createTitleCar prefers rival LOD templates",
-  /rivalTemplates\[chassis\]/.test(celica) &&
+  "createTitleCar prefers the hero GLB",
+  /const template = hero \|\| lod/.test(celica) &&
     /export function createTitleCar/.test(celica)
 );
 check("title windows are opaque mirrored glass", /applyShowroomWindowMaterial/.test(celica) && /showroomOpaqueGlass/.test(celica));
@@ -66,7 +67,10 @@ check(
 );
 check("title merge reverses inverted winding", /reverseTriangleWinding/.test(celica) && /determinant\(\) < 0/.test(celica));
 check("title showroom flips outer inward triangles", /reverseInwardOuterTriangles/.test(celica) && /fixTitleShowroomWinding/.test(celica));
-check("title Celica LOD is HTML-preloaded", /assets\/celica\/rival\.glb/.test(index) && /rel="preload"/.test(index));
+check(
+  "title Celica hero is fetched during HTML parse on desktop",
+  /assets\/celica\/gt4\.glb/.test(index) && /__rallyPhoneLite/.test(index)
+);
 check("WebGL boots on the next frames, not a 1.6s wait", /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) =>/.test(game) && /bootGfx\(\)/.test(game) && !/, 1600\)/.test(game));
 check("title fetch starts in the constructor", /this\._titleCarWarm = prepareTitleCar/.test(game));
 check("showroom pad is asphalt + kerb + sand, not a beige disc", /_ensureTitleWorld/.test(game) && /makeTitleAsphaltMaps/.test(game) && !/CircleGeometry\(52, 24\)/.test(game));

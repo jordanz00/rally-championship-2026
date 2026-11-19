@@ -13,7 +13,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { mergeGeometries } from "../../vendor/BufferGeometryUtils.js";
-import { armProjectedMaps } from "../gfx/pbr.js?v=69";
+import { armProjectedMaps } from "../gfx/pbr.js?v=70";
 import { bootTunnelSet, cloneTracked } from "./pbr-stream.js?v=13";
 
 const TEX_BASE = "assets/env/forest";

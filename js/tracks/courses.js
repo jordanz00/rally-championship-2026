@@ -19,9 +19,9 @@
 import { COLORS } from "../config.js?v=260";
 import { compileTrackDefinition, easePlayCourse } from "./track-definition.js?v=19";
 import { validateCourseData } from "./stage-data-validate.js?v=8";
-import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=22";
-import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=25";
-import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=20";
+import { DESERT_DEFINITION } from "./stages/desert-definition.js?v=23";
+import { FOREST_DEFINITION } from "./stages/forest-definition.js?v=26";
+import { MOUNTAIN_DEFINITION } from "./stages/mountain-definition.js?v=21";
 import { LAKESIDE_DEFINITION } from "./stages/lakeside-definition.js?v=21";
 
 /**

@@ -436,11 +436,11 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
       : id === "cobble"
         ? 1.18
         : id === "gravel"
-          ? 1.42
+          ? 1.58
           : id === "sand"
-            ? 1.28
+            ? 1.4
             : id === "dirt"
-              ? 1.35
+              ? 1.5
               : id === "mud"
                 ? 1.08
                 : 0.9;
@@ -467,7 +467,7 @@ export function worldRoadMaterial(id, map, normalMap = null, aoMap = null, rough
     aoMapIntensity: aoMap ? (tier >= 10 ? 0.72 : 0.55) : 1,
     roughnessMap: roughnessMap || null,
     bumpMap: heightMap || null,
-    bumpScale: dirty ? 0.58 : id === "cobble" ? 0.42 : id === "tarmac" ? 0.16 : 0.28,
+    bumpScale: dirty ? 0.72 : id === "cobble" ? 0.42 : id === "tarmac" ? 0.16 : 0.28,
     normalScale: new THREE.Vector2(ns, ns),
     vertexColors: true,
     side: THREE.FrontSide,
@@ -520,7 +520,8 @@ export function armProjectedMaps(mat, opts = {}) {
     const scale = Number(mat.userData.projScale) > 0 ? Number(mat.userData.projScale) : 1;
     injectProjectedMaps(shader, { mode, amount, ribbon, bump, blotch, scale });
   };
-  mat.customProgramCacheKey = () => key;
+  mat.customProgramCacheKey = () =>
+    `${key}-a${amount}-b${blotch ? 1 : 0}-s${Number(mat.userData.projScale) > 0 ? Number(mat.userData.projScale).toFixed(3) : 1}`;
 }
 
 /**
@@ -533,11 +534,11 @@ function armRoadOrganic(mat, id) {
   // Prefer world-XZ layers over ribbon UV — mesh UV is what reads as wallpaper.
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: dirty ? 1 : id === "tarmac" ? 0.88 : 0.7,
+    amount: id === "sand" ? 0.22 : dirty ? 1 : id === "tarmac" ? 0.88 : 0.7,
     ribbon: dirty ? 0.03 : id === "tarmac" ? 0.16 : id === "cobble" ? 0.1 : 0.08,
     bump: dirty ? 0.82 : id === "tarmac" ? 0.34 : id === "cobble" ? 0.58 : 0.48,
     blotch: true,
-    key: `road-organic-v11-${id}`,
+    key: `road-organic-v13-${id}`,
   });
 }
 
@@ -567,7 +568,7 @@ function injectProjectedMaps(shader, opts) {
 	float n8 = roadNoise( vProjWorld.xz * 0.0012 + 131.0 );
 	float blotch = n1 * 0.2 + n2 * 0.18 + n3 * 0.16 + n4 * 0.12 + n5 * 0.1 + n6 * 0.12 + n7 * 0.08 + n8 * 0.04;
 	float hueShift = ( n2 - 0.5 ) * 0.05 * uProjAmt + ( n5 - 0.5 ) * 0.025 * uProjAmt + ( n6 - 0.5 ) * 0.03 * uProjAmt;
-	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.84 + blotch * 0.28 ), uProjAmt );
+	sampledDiffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.96 + blotch * 0.08 ), uProjAmt );
 	sampledDiffuseColor.r *= 1.0 + hueShift;
 	sampledDiffuseColor.g *= 1.0 + hueShift * 0.32;
 	sampledDiffuseColor.b *= 1.0 - hueShift * 0.68;
@@ -826,11 +827,11 @@ export function worldTerrainMaterial(opts = {}) {
   mat.userData.kind = "terrain";
   armProjectedMaps(mat, {
     mode: "xz",
-    amount: 1,
+    amount: opts.projAmount != null ? opts.projAmount : 1,
     ribbon: 0.04,
     bump: opts.bumpScale ?? 0.62,
-    blotch: true,
-    key: "terrain-proj-v6",
+    blotch: opts.blotch !== false,
+    key: "terrain-proj-v7",
   });
   return mat;
 }

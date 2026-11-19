@@ -16,7 +16,7 @@
  */
 
 import * as THREE from "../vendor/three.module.js";
-import { getSurface } from "./physics/surfaces.js?v=60";
+import { getSurface } from "./physics/surfaces.js?v=61";
 import { VISUAL } from "./config.js?v=260";
 import { RENDER_CAPS } from "./gfx/render-caps.js?v=1";
 import { isPhonePlay } from "./ui/touch-controls.js?v=7";
@@ -228,7 +228,7 @@ export class Dust {
         uniforms: {
           uMap: { value: makeDustSprite() },
           uScale: { value: phone ? 60 : 1280 },
-          uMaxPx: { value: phone ? 3 : 9 },
+          uMaxPx: { value: phone ? 3 : 14 },
           uAlpha: { value: phone ? 0.0 : 0.9 },
           uFogColor: { value: new THREE.Color(0xc9b48a) },
           uFogNear: { value: 100 },
@@ -633,14 +633,15 @@ export class Dust {
 
     let sz = lerp(profile.size[0], profile.size[1], Math.random());
     if (grit) sz *= 0.85 + Math.random() * 0.35;
-    else if (plume) sz *= 1.05 + Math.random() * 0.35 + slipK * 0.12;
+    else if (plume) sz *= 1.15 + Math.random() * 0.4 + slipK * 0.32;
     else if (speck) sz *= 0.55 + Math.random() * 0.25;
     else sz *= 0.85 + Math.random() * 0.35 + slipK * 0.08;
     sz *= 1.05 + speedK * 0.18;
     if (this.cockpit) sz *= 0.85;
     if (this._phone) sz *= 0.45;
     if (sz < 0.008) sz = 0.008;
-    if (sz > 0.046) sz = 0.046;
+    const sizeCap = slipK > 0.35 ? 0.068 : 0.052;
+    if (sz > sizeCap) sz = sizeCap;
     this.size[i] = sz;
 
     this.angle[i] = Math.random() * 6.283;
@@ -1532,23 +1533,22 @@ export class TireMarks {
       // Slide berm bias: which side of the trail the tire's heading leans toward.
       const sideDot = Math.sin(b.heading || 0) * -dirZ / len + Math.cos(b.heading || 0) * dirX / len;
       digLoad.side = sideDot > 0.33 ? 1 : sideDot < -0.33 ? -1 : sideDot * 3;
-      track.wheelDeform.stampSegment(a, b, halfW, surface, slip * pressure, drift * pressure, speed, digLoad, lod, src);
+      // Contact patch, not the decal width. Rear is a touch wider; a slide chews out.
+      const chew = Math.min(0.16, slip * 0.1 + drift * 0.08 + digLoad.dig * 0.05);
+      const deformHalf = (rear ? 0.13 : 0.116) * (1 + chew);
+      track.wheelDeform.stampSegment(a, b, deformHalf, surface, slip * pressure, drift * pressure, speed, digLoad, lod, src);
       if (lod > 0) return;
       // Dark tread sits on the road between the raised lips. Dropping it
       // into the dug floor hides it under the ribbon, so the groove vanishes.
-      const ay = a.y + 0.012;
-      const by = b.y + 0.012;
+      const ay = a.y + 0.004;
+      const by = b.y + 0.004;
       const digAmt = digLoad.dig;
-      const width =
-        profile.width *
-        (1 + Math.min(0.35, slip * 0.2 + drift * 0.16 + digAmt * 0.12)) *
-        (rear ? 1.08 : 1.0);
       const alpha =
         profile.alpha *
         Math.min(1, 0.55 + speed / 40 + slip * 0.45 + drift * 0.35 + digAmt * 0.2) *
         (rollOnly ? 0.72 : 0.85);
       const life = profile.life * (1 + Math.min(0.35, digAmt * 0.25 + slip * 0.15));
-      const centerHex = profile.center != null ? profile.center : 0x1e1812;
+      const centerHex = profile.center != null ? profile.center : 0x3a2a1c;
       this._writeQuad(
         a.x,
         ay,
@@ -1558,10 +1558,10 @@ export class TireMarks {
         b.z,
         nx,
         nz,
-        width * 0.34,
+        deformHalf * 0.62,
         centerHex,
-        profile.dark * 0.85,
-        alpha * 0.55,
+        profile.dark * 0.55,
+        alpha * 0.32,
         life
       );
       return;

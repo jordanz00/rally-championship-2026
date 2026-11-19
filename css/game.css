@@ -40,6 +40,27 @@ body {
   pointer-events: none;
 }
 
+/* Covers the canvas until the hero car is lacquered. Not opacity on
+   #game-view — Android paints that as a white tab. */
+#showroom-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #050705;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#crt.showroom-live #showroom-veil,
+#crt.showroom-live:has(#screen-title.active) #showroom-veil {
+  opacity: 0;
+}
+
+#crt:has(#screen-title.active) #game-view {
+  visibility: visible;
+}
+
 .saturn-canvas {
   width: 100%;
   height: 100%;
@@ -77,9 +98,9 @@ body {
   align-items: center;
   justify-content: flex-start;
   flex-direction: column;
-  padding: 3.5vh 0 0;
+  padding: 2.2vh 0 0;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0) 22%, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, 0.42) 100%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 16%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.62) 100%);
   overflow: hidden;
 }
 
@@ -117,6 +138,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .fx-curtain,
   .fx-curtain.is-on,
+  #showroom-veil,
   #screen-loading .load-shell {
     transition: none !important;
   }
@@ -125,11 +147,11 @@ body {
 /* —— Classic arcade title (Rally Championship 2026 emblem) —— */
 .sr-emblem {
   position: relative;
-  width: min(300px, 46vw);
+  width: min(148px, 18vw);
   aspect-ratio: 1;
   margin-top: 0;
   flex-shrink: 0;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.5));
   pointer-events: none;
 }
 
@@ -285,26 +307,24 @@ body {
   z-index: 30;
   margin: 0;
   min-width: 0;
-  padding: 14px 22px 13px;
+  padding: 6px 0 8px;
   font-family: Impact, "Arial Black", "Helvetica Condensed", sans-serif;
-  font-size: clamp(20px, 3vw, 28px);
+  font-size: clamp(18px, 2.4vw, 26px);
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.28em;
   line-height: 1;
   text-align: left;
-  color: #1a1203;
-  background: linear-gradient(180deg, #fff1a8 0%, #ffd200 42%, #e39a00 100%);
-  border: 2px solid #fff6cc;
-  border-radius: 3px;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.65),
-    0 10px 28px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  color: #f6f1e4;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid #ffd200;
+  border-radius: 0;
+  box-shadow: none;
   cursor: pointer;
   -webkit-text-stroke: 0;
   paint-order: fill;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
-  animation: srStartGlow 1.8s ease-in-out infinite;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75);
+  animation: none;
 }
 
 #screen-title #btn-start:hover,
@@ -890,14 +910,7 @@ button.ghost {
 }
 
 #hud-rush {
-  display: block;
-  position: absolute;
-  left: 50%;
-  bottom: 118px;
-  transform: translateX(-50%);
-  width: min(340px, 52vw);
-  pointer-events: none;
-  text-align: center;
+  display: none !important;
 }
 
 #hud-rush .label {
@@ -1867,14 +1880,15 @@ body.is-mobile #screen-controls ul {
 
 /* —— Title splash credit —— */
 .sr-credit {
-  margin: 14px 0 0;
-  max-width: 32ch;
+  margin: 18px 0 0;
+  max-width: 28ch;
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: clamp(11px, 1.5vw, 13px);
+  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.03em;
-  line-height: 1.45;
-  color: rgba(244, 240, 224, 0.72);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: rgba(244, 240, 224, 0.38);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 
@@ -1929,11 +1943,10 @@ body {
 }
 
 #screen-title #btn-start {
-  border-color: #fff6cc;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.65),
-    0 10px 28px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  border: none;
+  border-bottom: 2px solid #ffd200;
+  background: transparent;
+  box-shadow: none;
 }
 
 .screen-ui.active {
@@ -3186,16 +3199,6 @@ button.ui-ghost:focus-visible {
   background: rgba(0, 0, 0, 0.55);
 }
 
-#hud-rush[data-punch="1"] .label {
-  color: #fff4c8;
-  text-shadow: 0 0 14px rgba(255, 160, 0, 0.85);
-}
-
-#hud-rush[data-punch="1"] #hud-rush-fill {
-  filter: brightness(1.35);
-  box-shadow: 0 0 18px rgba(255, 140, 0, 0.7);
-}
-
 #screen-hud .hud-distance {
   left: 16px;
   bottom: 16px;
@@ -3647,23 +3650,26 @@ button.ui-ghost:focus-visible {
 }
 
 #screen-title #btn-start {
-  min-height: 52px;
-  padding: 0 22px;
-  border-radius: 2px;
-  border: 0;
-  background: #ffd200;
-  color: #14110a;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  min-height: 0;
+  padding: 6px 0 8px;
+  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid #ffd200;
+  background: transparent;
+  color: #f6f1e4;
+  box-shadow: none;
   animation: none;
-  text-shadow: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75);
+  letter-spacing: 0.28em;
 }
 
 #screen-title #btn-start:hover,
 #screen-title #btn-start:focus-visible {
-  background: #ffe14a;
+  background: transparent;
+  color: #fff;
   filter: none;
-  outline: 2px solid #fff;
-  outline-offset: 3px;
+  outline: none;
+  border-bottom-color: #fff6cc;
 }
 
 .sr-push-wrap {
@@ -3828,6 +3834,239 @@ body.a11y-subs #hud-pace:not([hidden]) {
 @media (prefers-reduced-motion: reduce) {
   .screen.screen-enter .ui-panel,
   .screen.screen-enter .result-panel {
+    animation: none;
+  }
+}
+
+/* Opening presentation — name, car, three stages, then the title. */
+html.intro-playing #screen-title .sr-emblem,
+html.intro-playing #screen-title .sr-push-wrap,
+html.intro-playing #screen-title .sr-title-foot {
+  opacity: 0;
+}
+
+html.intro-done #screen-title .sr-emblem,
+html.intro-done #screen-title .sr-push-wrap {
+  animation: introChromeIn 0.7s ease both;
+}
+
+@keyframes introChromeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#intro-present {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background-color: #050705;
+  color: #f7f1e4;
+  pointer-events: auto;
+  transition: background-color 0.45s ease;
+}
+
+.intro-beat {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  padding: 8vh 8vw 10vh;
+  text-align: center;
+  pointer-events: none;
+}
+
+.intro-kicker {
+  margin: 0 0 16px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.48em;
+  text-transform: uppercase;
+  color: #ffd200;
+}
+
+.intro-name {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 520;
+  font-size: clamp(42px, 6.6vw, 92px);
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  color: #f7f1e4;
+}
+
+.intro-rule {
+  display: block;
+  width: 72px;
+  height: 1px;
+  margin-top: 22px;
+  background: rgba(255, 210, 0, 0.75);
+}
+
+.intro-display {
+  margin: 0;
+  font-family: var(--ui-display);
+  font-size: clamp(56px, 10vw, 128px);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 0.9;
+  text-transform: uppercase;
+  color: #f7f1e4;
+}
+
+.intro-line {
+  margin: 18px 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(247, 241, 228, 0.72);
+}
+
+.intro-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.intro-beat[data-beat="car"] {
+  background: #07090c;
+}
+
+.intro-land {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46%;
+  pointer-events: none;
+}
+
+.intro-beat[data-beat="desert"],
+.intro-beat[data-beat="forest"],
+.intro-beat[data-beat="mountain"] {
+  justify-content: flex-start;
+  padding-top: 14vh;
+}
+
+.intro-beat[data-beat="desert"] {
+  background: linear-gradient(180deg, #163e78 0%, #7eb0d8 42%, #f0d7a2 68%, #e4b56a 100%);
+}
+
+.intro-beat[data-beat="desert"] .intro-land {
+  height: 38%;
+  background: #e0a04a;
+  border-radius: 50% 50% 0 0 / 70% 70% 0 0;
+}
+
+.intro-beat[data-beat="desert"] .intro-land::before {
+  content: "";
+  position: absolute;
+  left: -20%;
+  right: 20%;
+  bottom: 28%;
+  height: 80%;
+  background: #a85a28;
+  border-radius: 50% 50% 0 0;
+}
+
+.intro-beat[data-beat="forest"] {
+  background: linear-gradient(180deg, #0c1c18 0%, #1d4634 46%, #8aa888 78%, #c5d4c0 100%);
+}
+
+.intro-beat[data-beat="forest"] .intro-land {
+  background:
+    radial-gradient(circle at 8% 78%, #07140c 0 11%, transparent 12%),
+    radial-gradient(circle at 22% 70%, #0c2416 0 16%, transparent 17%),
+    radial-gradient(circle at 40% 76%, #07140c 0 13%, transparent 14%),
+    radial-gradient(circle at 58% 68%, #102818 0 18%, transparent 19%),
+    radial-gradient(circle at 76% 74%, #07140c 0 14%, transparent 15%),
+    radial-gradient(circle at 92% 80%, #0c2416 0 12%, transparent 13%),
+    linear-gradient(180deg, transparent 8%, #0e2818 36%, #07140c 100%);
+}
+
+.intro-beat[data-beat="mountain"] {
+  background: linear-gradient(180deg, #1a3048 0%, #6e90ae 48%, #d5e0ea 100%);
+}
+
+.intro-beat[data-beat="mountain"] .intro-land {
+  height: 58%;
+  background: #243646;
+  clip-path: polygon(
+    0 100%,
+    0 72%,
+    14% 58%,
+    28% 66%,
+    46% 22%,
+    58% 40%,
+    74% 16%,
+    88% 48%,
+    100% 34%,
+    100% 100%
+  );
+}
+
+#intro-present.is-car-open {
+  background-color: rgba(5, 7, 5, 0);
+}
+
+#intro-present.is-car-open::before,
+#intro-present.is-car-open::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 13vh;
+  background: #050705;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#intro-present.is-car-open::before { top: 0; }
+#intro-present.is-car-open::after { bottom: 0; }
+
+#intro-present.is-car-open .intro-beat[data-beat="car"] {
+  justify-content: flex-start;
+  padding-top: 2.4vh;
+  background: none;
+}
+
+#intro-present.is-car-open .intro-beat[data-beat="car"] .intro-copy {
+  z-index: 3;
+}
+
+#intro-present.is-car-open .intro-beat[data-beat="car"] .intro-display {
+  font-size: clamp(28px, 4.2vw, 52px);
+}
+
+#intro-skip {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 4;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: rgba(247, 241, 228, 0.55);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#intro-skip:hover,
+#intro-skip:focus-visible {
+  color: #ffd200;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.intro-done #screen-title .sr-emblem,
+  html.intro-done #screen-title .sr-push-wrap {
     animation: none;
   }
 }

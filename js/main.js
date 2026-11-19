@@ -7,7 +7,7 @@
  * Safari on iPhone 13 tab-kills if that graph races first paint.
  */
 
-const GAME_MODULE = "./game.js?v=1256";
+const GAME_MODULE = "./game.js?v=1285";
 
 function bootWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -87,6 +87,11 @@ export async function bootEngine() {
 }
 
 function boot() {
+  import("./ui/intro-present.js?v=3").then((mod) => mod.playIntro()).catch(() => {
+    document.documentElement.classList.remove("intro-playing");
+    const el = document.getElementById("intro-present");
+    if (el) el.remove();
+  });
   if (window.game) return;
   // iPhone / Android: HTML splash only. Importing game.js here parsed
   // three + track + celica (~2.5 MB+) and Safari jetsam'd before PRESS START.

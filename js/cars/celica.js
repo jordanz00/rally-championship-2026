@@ -20,7 +20,7 @@ import * as THREE from "../../vendor/three.module.js";
 import { GLTFLoader } from "../../vendor/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "../../vendor/BufferGeometryUtils.js";
 import { COLORS, TUNNEL, CARS } from "../config.js?v=260";
-import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=69";
+import { paint, glass, chrome, rubber, sharedPaint } from "../gfx/pbr.js?v=70";
 import { bindCarDirt, updateCarDirt, resetCarDirt } from "./car-dirt.js?v=2";
 import { attachPovDriverArms as attachPovDriverHQ } from "./pov-driver.js?v=31";
 import { RIVAL_LIVERIES, aiLiveryForIndex, dressRivalCar, applyLacquerDetail } from "./rival-livery.js?v=9";
@@ -176,21 +176,29 @@ export async function prepareCelica(onEach) {
 }
 
 /**
- * Splash attract mesh — rival LOD only. The 7 MB hero + clearcoat parse was
- * freezing PRESS START / SELECT MODE while the orbit car spun. Race still
- * promotes via prepareHeroCar().
+ * Splash attract mesh.
+ * Desktop: the hero GLB only. A rival LOD on the pad is the cheap car that
+ * later "upgrades" when the hero parse finishes. Phones stay on the LOD —
+ * the 7 MB hero plus a showroom pad jetsams Safari.
  * @param {string} [id]
  * @returns {Promise<void>}
  */
 export async function prepareTitleCar(id = "celica") {
   const chassis = GARAGE[id] ? id : "celica";
-  if (rivalTemplates[chassis] || templates[chassis]) return;
-  // Let the splash and WebGL pad paint before any GLB parse.
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  if (await tryRivalGltf(chassis)) return;
-  // Hero only if the LOD file is missing — never preferred on the pad.
+  if (garagePhoneLite()) {
+    if (rivalTemplates[chassis] || templates[chassis]) return;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (await tryRivalGltf(chassis)) return;
+    if (await tryLocalGltf(chassis)) return;
+    await tryCachedGltf(chassis);
+    return;
+  }
+  if (templates[chassis]) return;
+  // Network starts immediately. index.html already began this fetch on desktop
+  // so it overlaps the engine parse instead of starting after the first frames.
   if (await tryLocalGltf(chassis)) return;
   await tryCachedGltf(chassis);
+  if (!templates[chassis]) await tryRivalGltf(chassis);
 }
 
 /**
@@ -498,8 +506,8 @@ export function createPlayerCar(carId = "celica") {
 }
 
 /**
- * Orbit-cam attract car: rival LOD first so the pad stays light. Hero is
- * fallback only when the LOD is missing. Cockpit stays hidden; race promotes.
+ * Orbit-cam attract car. Hero GLB when it is warm (desktop pad). Rival LOD
+ * only if the hero file never arrived. Cockpit stays off; race promotes.
  * @param {string} [carId]
  * @returns {THREE.Group}
  */
@@ -2629,10 +2637,29 @@ function normalizeForMerge(geo) {
 }
 
 /**
+ * Sketchfab coil cones sit beside the wheels, not on them. A jump moves the
+ * hubs with the shell and leaves the cones hanging under the car.
+ * @param {THREE.Object3D} root
+ */
+function stripSuspensionCones(root) {
+  const doomed = [];
+  root.traverse((obj) => {
+    if (/x0_suspension_|_suspension_/i.test(obj.name || "")) doomed.push(obj);
+  });
+  for (let i = 0; i < doomed.length; i++) {
+    const obj = doomed[i];
+    obj.visible = false;
+    obj.userData.axleScrap = true;
+    if (obj.parent) obj.parent.remove(obj);
+  }
+}
+
+/**
  * Keep the Sketchfab mesh intact — Physical/Standard so paint and glass reflect.
  */
 function enableCarShadows(root) {
   scrubDeltaHeadArtifacts(root);
+  stripSuspensionCones(root);
   ensureBrakeLights(root);
   ensureHeadlights(root);
   root.traverse((obj) => {

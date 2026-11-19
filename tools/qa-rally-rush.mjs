@@ -41,23 +41,23 @@ const effects = read("js/effects.js");
 const audio = read("js/audio/engine.js");
 const vehicle = read("js/physics/vehicle.js");
 
-check("game owns RallyRush", /RallyRush/.test(game) && /this\.rush\.step/.test(game));
-check("rush dumps through the drivetrain", /rushHeat/.test(game) && /rushDrive/.test(game) && !/velocity\.x \+= fx \* dump\.accel/.test(game));
-check("On Fire callout is off", !/flashMessage\("ON FIRE"\)/.test(game) && /rushFire/.test(game));
+check("rush tank is not stepped in race", !/this\.rush\.step/.test(game));
+check("rush dump is zeroed", /rushHeat = 0/.test(game) && /rushDrive = 0/.test(game));
+check("On Fire callout is off", !/flashMessage\("ON FIRE"\)/.test(game));
+check("NEAR MISS callout is off", !/flashMessage\("NEAR MISS"\)/.test(game));
 check("burnout-drive overlay is live", /burnout-drive\.js\?v=\d+/.test(vehicle) && /easySlide/.test(vehicle));
-check("HUD has a RUSH bar", /hud-rush/.test(html) && /hud-rush-fill/.test(hud));
+check("HUD hides the RUSH bar", /this\.rush\.hidden = true/.test(hud) && /id="hud-rush" hidden/.test(html));
 check("burnout callouts stay off the HUD", !/flashMessage\("RUSH"\)/.test(game) && !/flashMessage\(n >= 4 \? "UNREAL"/.test(game));
-check("near miss flashes on a close pass", /justPass/.test(game) && /flashMessage\("NEAR MISS"\)/.test(game));
 check("GO does not compile or parse heroes on the punch frame", /_goPresentHold \|\| 0\) > 0/.test(game) && /Do not parse garage GLBs on the GO frame/.test(game));
-check("rush bar is visible", /#hud-rush \{\s*display:\s*block/.test(read("css/game.css")) && /s\.rush/.test(hud));
-check("Controls teach RUSH", /RUSH/.test(html) && /slides/.test(html));
+check("rush bar is display-none", /#hud-rush \{\s*display:\s*none !important/.test(read("css/game.css")));
+check("Controls do not teach RUSH", !/<span class="ui-ctrl-label">RUSH<\/span>/.test(html));
 check("practice packs the grid", /Math\.max\(10, CHAMPIONSHIP\.practiceOpponents/.test(game));
 check("tail fire does not emit", /emit\(_car, _heat, _fire = 0\) \{\}/.test(effects));
 const rushLook = burnoutLookFor("desert", { speed: 40, rush: 1, fire: 1 });
 const calmLook = burnoutLookFor("desert", { speed: 40 });
 check(
-  "On Fire lifts bloom, not a second fringe",
-  rushLook.bloom > calmLook.bloom && rushLook.chroma === calmLook.chroma && /chroma: title/.test(look)
+  "rush does not change the grade",
+  rushLook.bloom === calmLook.bloom && rushLook.teal === 0 && rushLook.chroma === 0 && rushLook.speedAmt === 0
 );
 check("cabin rush hiss exists", /setRush\(heat/.test(audio) && /audio\.setRush/.test(game));
 check("game imports vehicle.js?v=189+", Number((game.match(/vehicle\.js\?v=(\d+)/) || [])[1]) >= 189);

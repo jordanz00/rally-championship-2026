@@ -13,11 +13,11 @@ import { jumpSeg } from "./jump-kit.js?v=1";
 
 /** Slide ribbon — narrow enough to hang attitude, wide enough to catch. */
 const W = {
-  start: 18.8,
-  open: 17.6,
-  drift: 17.0,
-  tight: 16.4,
-  finish: 18.4,
+  start: 20.4,
+  open: 19.2,
+  drift: 18.6,
+  tight: 18.0,
+  finish: 20.0,
 };
 
 export const DESERT_DEFINITION = {
@@ -99,7 +99,7 @@ export const DESERT_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 52,
+      radius: 58,
       angle: 78,
       surface: "sand",
       width: W.tight,
@@ -126,7 +126,7 @@ export const DESERT_DEFINITION = {
       angle: 96,
       surface: "sand",
       width: W.drift,
-      bank: 0.06,
+      bank: 0.12,
       purpose: "Hairpin left — easy power slide, punch out",
       visual: "desert_hairpin_a",
     },
@@ -198,7 +198,7 @@ export const DESERT_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 52,
+      radius: 58,
       angle: 80,
       surface: "sand",
       width: W.tight,
@@ -237,7 +237,7 @@ export const DESERT_DEFINITION = {
       angle: 96,
       surface: "sand",
       width: W.drift,
-      bank: 0.07,
+      bank: 0.12,
       landmark: true,
       purpose: "Hairpin right — hang attitude, punch the exit",
       visual: "desert_hairpin_b",

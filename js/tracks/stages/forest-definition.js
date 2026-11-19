@@ -16,7 +16,7 @@ import { jumpSeg } from "./jump-kit.js?v=1";
  * Slide corridor — hang dirt attitude without goat-tracking the trees.
  */
 function forestWidth(w) {
-  return Math.round(w * 1.42 * 10) / 10;
+  return Math.round(w * 1.55 * 10) / 10;
 }
 
 export const FOREST_DEFINITION = {
@@ -84,7 +84,7 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 52,
+      radius: 58,
       angle: 76,
       surface: "dirt",
       width: forestWidth(12.6),
@@ -219,7 +219,7 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "left",
-      radius: 52,
+      radius: 58,
       angle: 78,
       surface: "dirt",
       width: forestWidth(13.4),
@@ -260,6 +260,7 @@ export const FOREST_DEFINITION = {
       angle: 96,
       surface: "dirt",
       width: forestWidth(14.0),
+      bank: 0.12,
       landmark: true,
       purpose: "Hairpin right — easy power slide, do not park it",
       visual: "forest_hairpin",
@@ -272,7 +273,7 @@ export const FOREST_DEFINITION = {
       angle: 96,
       surface: "dirt",
       width: forestWidth(13.8),
-      bank: 0.06,
+      bank: 0.12,
       purpose: "Hairpin left — hang attitude, punch out",
       visual: "forest_hairpin_b",
     },
@@ -291,7 +292,7 @@ export const FOREST_DEFINITION = {
     {
       kind: "tight_corner",
       direction: "right",
-      radius: 52,
+      radius: 58,
       angle: 74,
       surface: "dirt",
       width: forestWidth(13.6),

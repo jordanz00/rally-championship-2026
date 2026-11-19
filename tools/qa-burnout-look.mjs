@@ -37,7 +37,7 @@ const main = read("js/main.js");
 const html = read("index.html");
 const css = read("css/game.css");
 
-check("post imports burnout-look", /burnout-look\.js\?v=6/.test(post) && /setDriveFeel/.test(post));
+check("post imports burnout-look", /burnout-look\.js\?v=9/.test(post) && /setDriveFeel/.test(post));
 check("desktop scene is linear HDR", /HalfFloatType/.test(post) && /acesFit/.test(post) && /setLinearScene/.test(post));
 check("low and phones skip the HDR buffer", /q === "low"\) return false/.test(post) && /__rallyPhoneLite/.test(post));
 check("composite has teal + speed CA", /tealLift/.test(post) && /speedAmt/.test(post) && /chroma/.test(post));
@@ -54,14 +54,24 @@ const lake = burnoutLookFor("lakeside", { speed: 40 });
 const title = burnoutLookFor("desert", { title: true, speed: 40 });
 const crawl = burnoutLookFor("desert", { speed: 10 });
 check(
-  "Desert grade is hot",
-  desert.sat >= 1.12 && desert.sat <= 1.28 && desert.bloom >= 0.26 && desert.bloom <= 0.42 && desert.teal >= 0.18 && desert.chroma > 0 && desert.speedAmt > 0.4,
-  `sat=${desert.sat} bloom=${desert.bloom.toFixed(2)} teal=${desert.teal}`
+  "Desert photograph has color and no teal fringe",
+  desert.sat > 1 &&
+    desert.sat < 1.12 &&
+    desert.contrast > 1 &&
+    desert.contrast < 1.12 &&
+    desert.teal === 0 &&
+    desert.chroma === 0 &&
+    desert.speedAmt === 0 &&
+    desert.warmth < 0.08,
+  `sat=${desert.sat} contrast=${desert.contrast} warmth=${desert.warmth} teal=${desert.teal}`
 );
-check("Lakeside stays under Desert", lake.bloom < desert.bloom && lake.sat < desert.sat && lake.teal < desert.teal);
+check(
+  "Lakeside stays quieter than Desert",
+  lake.bloom < desert.bloom && lake.sat < desert.sat && lake.teal === 0 && lake.chroma === 0
+);
 check("title has no speed CA", title.speedAmt === 0 && title.chroma === 0);
 check("crawl does not fringe", crawl.speedAmt === 0 && crawl.chroma === 0 && burnoutSpeedAmt(10) === 0);
-check("pace fringes", burnoutSpeedAmt(40) > 0.4 && burnoutSpeedAmt(60) > 0.9);
+check("pace does not fringe", burnoutSpeedAmt(40) === 0 && burnoutSpeedAmt(60) === 0);
 check("game imports postfx.js?v=46+", Number((game.match(/postfx\.js\?v=(\d+)/) || [])[1]) >= 46);
 check("game imports lighting-rig.js?v=33+", Number((game.match(/lighting-rig\.js\?v=(\d+)/) || [])[1]) >= 33);
 const boot = Number((main.match(/game\.js\?v=(\d+)/) || [])[1]);
@@ -72,10 +82,13 @@ check("css cache is 65+", Number((html.match(/game\.css\?v=(\d+)/) || [])[1]) >=
 const desertFire = burnoutLookFor("desert", { speed: 40, rush: 0.8, fire: 1 });
 const lakeFire = burnoutLookFor("lakeside", { speed: 40, rush: 0.8, fire: 1 });
 check(
-  "On Fire lifts bloom, not a second fringe",
-  desertFire.bloom > desert.bloom && desertFire.chroma === desert.chroma && desertFire.speedAmt === desert.speedAmt
+  "On Fire does not lift bloom",
+  desertFire.bloom === desert.bloom && desertFire.chroma === 0 && desertFire.speedAmt === 0 && desertFire.teal === 0
 );
-check("Lakeside On Fire stays under Desert", lakeFire.bloom < desert.bloom && lakeFire.sat < desert.sat);
+check(
+  "Lakeside On Fire stays pulled",
+  lakeFire.bloom === lake.bloom && lakeFire.sat === lake.sat && lakeFire.teal === 0
+);
 
 console.log(`\n${fail ? "FAIL" : "PASS"}  ·  ${fail ? fail + " check(s) failed" : "Desert grade is hot, Lakeside stays pulled"}`);
 process.exit(fail ? 1 : 0);
